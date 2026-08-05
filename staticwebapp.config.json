@@ -45,6 +45,16 @@
         "rewrite": "/index.html",
         "exclude": ["/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"]
     },
+      "auth": {
+        "identityProviders": {
+            "azureActiveDirectory": {
+                "registration": {
+                    "openIdIssuer": "https://login.microsoftonline.com/v2.0/e4fcc393-7190-4d3d-a38d-fa6429f870f3",
+                    "clientIdSettingName": "ad0eed27-4fd3-48cf-9b78-80637eb8d2f2",
+                    "clientSecretSettingName": "AAD_CLIENT_SECRET"
+                }
+            }
+        },
     "responseOverrides": {
         "401": {
             "statusCode": 302,
