@@ -1,0 +1,110 @@
+# Datamodell
+
+## Tabellstruktur (Table Storage)
+
+Alle tabeller er PK+RK-basert. Ingen indekser utover partition scan.
+
+### Skjemadefinisjoner
+- PK = "Skjematype"
+- RK = `<Skjematype_id>` (heltall som streng)
+- Egenskaper: `JSON` (hele skjematype-definisjonen), `Fase`, `Skjema_navn`, `SistOppdatert`
+
+### Skjema
+- PK = `<Skjematype_id>`
+- RK = `<Skjema_id>` (`SKJ-YYYY-NNN`)
+- Egenskaper: `JSON` (skjemadata, kompakt eller fullt format), `Fase`, `Innsender_epost`, `SistOppdatert`
+
+### Token
+- PK = "Token"
+- RK = `<GUID>`
+- Egenskaper: `UPN`, `Tilgangstype`, `SkjemaId`, `SkjematypeId`, `Utloper`, `Brukt`, `Forhandsdata`
+
+### Rollemedlemskap
+- PK = `<Rolle>` (f.eks. "Emneansvarlig")
+- RK = `<Omfang>|<upn>` (f.eks. "CBU2501|user@mil.no")
+- Egenskaper: `FN`, `EN`, `EP`, `SistOppdatert`, `Kilde`
+
+### Emner
+- PK = `<Termin>` (f.eks. "26V")
+- RK = `<EK>-<VK>` (f.eks. "CBU2501-1")
+- Egenskaper: `EK`, `VK`, `EN`, `SK`, `SN`, `C`, `Larere` (JSON), `Hovedlarere` (JSON), `LU`
+
+### EmneStudenter
+- PK = `<Termin>|<EK>-<VK>`
+- RK = `<upn>`
+- Egenskaper: `FN`, `EN`, `EP`
+
+### Loggtabeller
+- **Hendelseslogg** (skjema-lifecycle-events): PK = `<yyyy-MM>`, RK = `<timestamp>-<id>`
+- **Jobblogg** (masterdata-refresh): PK = `<jobbtype>`, RK = `<timestamp>`
+
+## Skjema-format
+
+To varianter:
+
+**Fullt format** — brukes under aktiv utfylling og behandling:
+```json
+{
+  "Skjema_id": "SKJ-2026-001",
+  "Skjematype_id": "1",
+  "Seksjoner": [{
+    "Nummer": 1,
+    "Overskrift": "...",
+    "Felter": [{ "Id": "uuid", "Nummer": 1, "Type": "Tekst", "Svar": ["..."] }]
+  }]
+}
+```
+
+**Kompakt format** — brukes for arkiv/eksport (~0.5-1 KB vs 10-15 KB):
+```json
+{
+  "Skjema_id": "SKJ-2026-001",
+  "Skjematype_id": "1",
+  "Svar": [
+    { "sek": 1, "spm": "01", "sva": ["verdi"] }
+  ]
+}
+```
+
+Konvertering skjer via `api/src/lib/skjema-kompakt.js` (`komprimerSkjema`, `ekspanderSkjema`).
+
+## Blob-containers
+
+- `vedlegg-<skjematype_id>` — vedleggsfiler for skjema av denne typen
+- `logoer` — logoer brukt i skjematype-definisjoner
+- `krypterte-nokler` — backup av krypteringsnøkler
+
+## Vilkårsmodell (DNF)
+
+Betingelser for `Vises`, `ObligatoriskHvis`, behandlingssteg lagres som:
+```json
+{
+  "EllerAv": [
+    { "OgAv": [{ "Felt": "1-01", "Operator": "=", "Verdi": "Ja" }] }
+  ]
+}
+```
+
+Feltreferanse: UUID (foretrukket) eller `<seksjon>-<felt>` (legacy).
+Se `api/src/lib/vilkar.js` for evaluering.
+
+## Faste data-oppslag
+
+Dropdown-verdier som hentes fra masterdata:
+```json
+{
+  "Datakilde": "Personer",
+  "EllerAv": [
+    { "OgAv": [
+      { "Kolonne": "EmneHovedlarere", "Operator": "=", "Verdi": "CBU2501" }
+    ]}
+  ]
+}
+```
+
+Filterverdi kan være:
+- Fast tekst (`"CBU2501"`)
+- `$upn` (pålogget bruker)
+- UUID/S-FF-referanse til annet felt i skjemaet
+
+Se `api/src/lib/faste-data.js` + `api/src/lib/masterdata/oppslag.js`.

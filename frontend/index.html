@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FHS Skjema — pilot</title>
+    <style>
+        body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
+        h1 { color: #0078d4; }
+        .status { padding: 12px 16px; border-radius: 6px; margin: 12px 0; }
+        .status.ok { background: #d4edda; color: #155724; }
+        .status.feil { background: #f8d7da; color: #721c24; }
+        .status.laster { background: #fff3cd; color: #856404; }
+        pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; }
+        button { padding: 8px 16px; font-size: 14px; margin-right: 8px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>FHS Skjema — pilot</h1>
+    <p>Verifikasjon av at frontend, API og storage er koblet sammen.</p>
+
+    <div>
+        <button id="test-ping">Test /api/ping</button>
+        <button id="test-storage">Test /api/hello-storage (krever login)</button>
+        <button id="logg-inn">Logg inn</button>
+        <button id="logg-ut">Logg ut</button>
+    </div>
+
+    <div id="bruker" class="status laster">Sjekker innlogging…</div>
+    <div id="resultat"></div>
+
+    <script type="module">
+        import { CONFIG } from './js/config.js';
+        import { api } from './js/api-client.js';
+        import { hentInnloggetBruker, logInn, logUt } from './js/auth.js';
+
+        const $ = id => document.getElementById(id);
+
+        function visStatus(id, klasse, tekst, data) {
+            const el = $(id);
+            el.className = 'status ' + klasse;
+            el.innerHTML = `<strong>${tekst}</strong>` + (data ? `<pre>${JSON.stringify(data, null, 2)}</pre>` : '');
+        }
+
+        async function sjekkInnlogging() {
+            const bruker = await hentInnloggetBruker();
+            if (bruker) {
+                visStatus('bruker', 'ok', `Innlogget som ${bruker.userDetails}`, { roles: bruker.userRoles });
+            } else {
+                visStatus('bruker', 'laster', 'Ikke innlogget');
+            }
+        }
+
+        $('test-ping').onclick = async () => {
+            try {
+                const svar = await api.get('/api/ping');
+                visStatus('resultat', 'ok', `Ping OK (miljø: ${CONFIG.MILJO || 'ukjent'})`, svar);
+            } catch (e) {
+                visStatus('resultat', 'feil', 'Ping feilet: ' + e.message);
+            }
+        };
+
+        $('test-storage').onclick = async () => {
+            try {
+                const svar = await api.get('/api/hello-storage');
+                visStatus('resultat', 'ok', 'Storage OK', svar);
+            } catch (e) {
+                visStatus('resultat', 'feil', 'Storage feilet: ' + e.message);
+            }
+        };
+
+        $('logg-inn').onclick = () => logInn('/');
+        $('logg-ut').onclick = () => logUt();
+
+        sjekkInnlogging();
+    </script>
+</body>
+</html>

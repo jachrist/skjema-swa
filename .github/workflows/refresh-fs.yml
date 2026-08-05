@@ -1,0 +1,26 @@
+name: Refresh FS-data
+
+# SWA Managed Functions støtter ikke timer-triggere.
+# Denne workflowen kaller /api/refresh-fs på schedule i stedet.
+
+on:
+  schedule:
+    - cron: '0 4 * * *' # 04:00 UTC daglig
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kall refresh-fs
+        env:
+          SWA_URL: ${{ vars.SWA_URL }}
+          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "SWA_URL eller SCHEDULER_KEY mangler — kjør workflow_dispatch etter oppsett."
+            exit 1
+          fi
+          curl -fsS -X POST "$SWA_URL/api/refresh-fs" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json"

@@ -1,0 +1,5 @@
+# Alle endringer i workflows og config krever godkjenning fra eier
+/.github/                     @jachrist
+/config/                      @jachrist
+/staticwebapp.config.json     @jachrist
+/api/local.settings.example.json  @jachrist

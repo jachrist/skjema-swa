@@ -1,0 +1,16 @@
+node_modules/
+api/local.settings.json
+frontend/js/config.js
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# Azure Functions
+bin/
+obj/
