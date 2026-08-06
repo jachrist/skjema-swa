@@ -28,7 +28,7 @@ Bruk eksisterende `FHS-skjema` (Norway East eller West Europe).
 ### 5. Static Web App
 
 - Navn: `swa-fhsskjema-pilot`
-- Plan: Free (nok til pilot; oppgrader til Standard for private endpoints)
+- **Plan: Standard (~$9/mnd)** — Free-plan støtter IKKE Managed Identity, custom Entra-registrering eller egendefinerte roller basert på Entra-grupper. Free duger kun til statisk hosting med SWA sin delte auth-provider.
 - Region: **West Europe** (SWA støttes ikke i Norway East)
 - Deployment source: GitHub → `jachrist/skjema-swa`
 - Branch: `main`
@@ -37,11 +37,19 @@ Bruk eksisterende `FHS-skjema` (Norway East eller West Europe).
   - Api location: `api`
   - Output location: (tom)
 
-Etter opprettelse:
+**Standard-planens fordeler vi bruker:**
+- System-assigned managed identity mot Storage og Key Vault (ingen connection strings i env)
+- Custom AAD-registrering med `clientSecret` — låser innlogging til én tenant
+- Egendefinerte roller (`admin`) kan tildeles via Entra-grupper (ikke bare per-bruker)
+- Private endpoints (senere aktivering)
+
+**Oppgrader fra Free til Standard:** SWA-ressurs → **Hosting plan** → velg Standard → Apply. Kan gjøres uten downtime.
+
+Etter opprettelse (og oppgradering til Standard):
 - Slå på **system-assigned managed identity** under Identity
 - Under IAM på storage-kontoen: gi MI'en `Storage Table Data Contributor` + `Storage Blob Data Contributor`
 - Under IAM på Key Vault: gi MI'en `Key Vault Secrets User`
-- Under Environment variables: sett `STORAGE_ACCOUNT_NAME`, `KEYVAULT_NAME`, `ADMIN_UPNS`, `AAD_CLIENT_ID`, `MILJO`
+- Under Environment variables: sett `STORAGE_ACCOUNT_NAME`, `KEYVAULT_NAME`, `ADMIN_UPNS`, `AAD_CLIENT_ID`, `AAD_CLIENT_SECRET`, `MILJO`
 - Under Configuration: legg til enhver `public: false`-verdi fra `env.production.json` som ikke er Key Vault-referanse
 
 ### 6. Entra ID app-registrering (for auth)
@@ -49,9 +57,25 @@ Etter opprettelse:
 - Navn: `swa-fhsskjema-pilot-auth`
 - Supported account types: single tenant
 - Redirect URI: `https://<swa-navn>.<random>.azurestaticapps.net/.auth/login/aad/callback`
-- Etter opprettelse: kopier `Application (client) ID` → sett som `AAD_CLIENT_ID` i SWA Environment variables
-- Under Authentication: slå på `ID tokens` under Implicit grant
-- Oppdater `staticwebapp.config.json`: bytt `<TENANT-ID>` med faktisk tenant-ID
+- Etter opprettelse:
+  - Kopier `Application (client) ID` → sett som `AAD_CLIENT_ID` i SWA Environment variables
+  - Under **Certificates & secrets** → New client secret → kopier verdien → sett som `AAD_CLIENT_SECRET` i SWA Environment variables (kun synlig én gang!)
+  - Under **Authentication**: slå på `ID tokens` under Implicit grant
+- Oppdater `staticwebapp.config.json`: legg tilbake `auth`-blokken med:
+  ```json
+  "auth": {
+      "identityProviders": {
+          "azureActiveDirectory": {
+              "registration": {
+                  "openIdIssuer": "https://login.microsoftonline.com/<TENANT-ID>/v2.0",
+                  "clientIdSettingName": "AAD_CLIENT_ID",
+                  "clientSecretSettingName": "AAD_CLIENT_SECRET"
+              }
+          }
+      }
+  }
+  ```
+- Bytt `<TENANT-ID>` med faktisk tenant-ID (fra Entra ID overview i portalen)
 
 ### 7. GitHub-side
 
