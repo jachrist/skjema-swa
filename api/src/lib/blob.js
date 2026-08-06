@@ -1,22 +1,18 @@
 /**
- * Blob Storage-klient med Managed Identity.
+ * Blob Storage-klient.
  *
- * Krever at appens managed identity har rollen "Storage Blob Data Contributor"
- * på storage-kontoen.
+ * Se kommentar i storage.js — samme grunn til at vi bruker connection string
+ * via KV-referanse i stedet for Managed Identity direkte i koden.
  */
 const { BlobServiceClient } = require('@azure/storage-blob');
-const { DefaultAzureCredential } = require('@azure/identity');
 
-const konto = process.env.STORAGE_ACCOUNT_NAME;
+const cs = process.env.STORAGE_CONNECTION_STRING;
 let service = null;
 
 function serviceKlient() {
-    if (!konto) throw new Error('STORAGE_ACCOUNT_NAME env-var mangler');
+    if (!cs) throw new Error('STORAGE_CONNECTION_STRING env-var mangler');
     if (!service) {
-        service = new BlobServiceClient(
-            `https://${konto}.blob.core.windows.net`,
-            new DefaultAzureCredential()
-        );
+        service = BlobServiceClient.fromConnectionString(cs);
     }
     return service;
 }
