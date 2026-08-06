@@ -1,6 +1,5 @@
 node_modules/
 api/local.settings.json
-frontend/js/config.js
 .env
 .env.local
 *.log
