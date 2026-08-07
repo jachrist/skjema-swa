@@ -299,15 +299,11 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
+        import { FELTTYPER } from './js/felt-render.js';
 
         const params = new URLSearchParams(window.location.search);
         const eksisterendeId = params.get('skjematype_id');
         const kopiFraId = params.get('kopi_fra');
-
-        const FELTTYPER = [
-            'Tekst', 'Tall', 'Dato', 'Skala',
-            'Flervalg-knapper', 'Flervalg-dropdown', 'Informasjon'
-        ];
 
         let bruker = null;
         let data = null;

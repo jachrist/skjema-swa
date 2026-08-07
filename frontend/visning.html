@@ -206,6 +206,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
+        import { byggReadonlyVisning, escapeHtml } from './js/felt-render.js';
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
@@ -305,52 +306,14 @@
             const div = document.createElement('div');
             div.className = 'felt';
 
-            if (felt.Type === 'Informasjon') {
-                const info = document.createElement('div');
-                info.className = 'informasjon';
-                info.innerHTML = escapeHtml(felt.Tekst?.Verdi || '');
-                div.appendChild(info);
-                return div;
+            if (felt.Type !== 'Informasjon') {
+                const label = document.createElement('label');
+                label.className = 'felt-label';
+                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}`;
+                div.appendChild(label);
             }
-
-            const label = document.createElement('label');
-            label.className = 'felt-label';
-            label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}`;
-            div.appendChild(label);
-
-            const svarEl = document.createElement('div');
-            svarEl.className = 'felt-svar';
-
-            if (!svar || svar.length === 0 || (svar.length === 1 && svar[0] === '')) {
-                svarEl.classList.add('tomt');
-                svarEl.textContent = '(ikke besvart)';
-            } else if (svar.length === 1) {
-                svarEl.textContent = visSvarVerdi(felt, svar[0]);
-            } else {
-                // Flere svar (typisk flervalg-knapper): vis som liste
-                const ul = document.createElement('ul');
-                for (const s of svar) {
-                    const li = document.createElement('li');
-                    li.textContent = visSvarVerdi(felt, s);
-                    ul.appendChild(li);
-                }
-                svarEl.appendChild(ul);
-            }
-
-            div.appendChild(svarEl);
+            div.appendChild(byggReadonlyVisning(felt, svar));
             return div;
-        }
-
-        function visSvarVerdi(felt, verdi) {
-            // For Skala: verdien lagres som Valg_nr; slå opp mot Tekst hvis mulig
-            if (felt.Type === 'Skala' && Array.isArray(felt.Valg)) {
-                const treff = felt.Valg.find(v => String(v.Valg_nr) === String(verdi) || v.Tekst === verdi);
-                if (treff) return treff.Tekst;
-            }
-            if (felt.Type === 'Dato') {
-                return formaterKunDato(verdi);
-            }
-            return String(verdi);
         }
 
         function formaterDato(iso) {
@@ -359,17 +322,6 @@
             if (isNaN(d)) return iso;
             const pad = n => String(n).padStart(2, '0');
             return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        }
-        function formaterKunDato(iso) {
-            if (!iso) return '';
-            // iso er allerede YYYY-MM-DD fra date-input
-            const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-            if (m) return `${m[3]}.${m[2]}.${m[1]}`;
-            return iso;
-        }
-
-        function escapeHtml(s) {
-            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
         init();

@@ -382,6 +382,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
+        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, escapeHtml as escHtml } from './js/felt-render.js';
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
@@ -425,7 +426,7 @@
         }
 
         function visListeMelding(tekst) {
-            document.getElementById('liste').innerHTML = `<div class="tom-melding">${escapeHtml(tekst)}</div>`;
+            document.getElementById('liste').innerHTML = `<div class="tom-melding">${escHtml(tekst)}</div>`;
         }
 
         window.filtrer = () => {
@@ -454,10 +455,10 @@
                 const aktiv = state.valgtId === s.Skjema_id ? ' aktiv' : '';
                 return `
                     <div class="liste-element${aktiv}" onclick="velgSkjema('${escapeAttr(s.Skjema_id)}')">
-                        <div class="liste-tittel">#${escapeHtml(s.Skjema_id)} — ${escapeHtml(s.Innsender_Epost || '–')}</div>
+                        <div class="liste-tittel">#${escHtml(s.Skjema_id)} — ${escHtml(s.Innsender_Epost || '–')}</div>
                         <div class="liste-meta">
-                            <span>${escapeHtml(dato)}</span>
-                            <span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span>
+                            <span>${escHtml(dato)}</span>
+                            <span class="status-badge status-${status}">${escHtml(STATUS_TEKST[status] || '?')}</span>
                         </div>
                     </div>
                 `;
@@ -475,7 +476,7 @@
                 state.valgtSkjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
                 renderDetalj();
             } catch (e) {
-                hoyre.innerHTML = `<div class="feilmelding">Kunne ikke hente skjema: ${escapeHtml(e.message)}</div>`;
+                hoyre.innerHTML = `<div class="feilmelding">Kunne ikke hente skjema: ${escHtml(e.message)}</div>`;
             }
         };
 
@@ -492,141 +493,73 @@
                 }
             }
 
-            const seksjonerHtml = (state.skjematype.Seksjoner || []).map(seksjon => {
+            // Bygg detaljpanel som DOM (så modul-widgets kan appendChild med event-listeners)
+            hoyre.innerHTML = '';
+            const topplinje = document.createElement('div');
+            topplinje.className = 'detalj-topplinje';
+            topplinje.innerHTML = `
+                <h2 class="detalj-tittel">#${escHtml(s.Skjema_id)}</h2>
+                <span class="status-badge status-${status}">${escHtml(STATUS_TEKST[status] || '?')}</span>
+            `;
+            hoyre.appendChild(topplinje);
+
+            const metaEl = document.createElement('div');
+            metaEl.className = 'detalj-meta';
+            metaEl.innerHTML = `
+                <div><strong>Innsender:</strong> ${escHtml(s.Innsender_Epost || '–')}</div>
+                ${s.Sist_endret ? `<div><strong>Sist endret:</strong> ${escHtml(formaterDato(s.Sist_endret))}</div>` : ''}
+            `;
+            hoyre.appendChild(metaEl);
+
+            const knapperEl = document.createElement('div');
+            knapperEl.className = 'detalj-knapper';
+            knapperEl.innerHTML = state.redigerer
+                ? `<button class="knapp primær" onclick="lagreEndringer()">Lagre endringer</button>
+                   <button class="knapp sekundær" onclick="avbrytRedigering()">Avbryt</button>`
+                : `<button class="knapp primær" onclick="startRedigering()">Rediger</button>
+                   <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>`;
+            hoyre.appendChild(knapperEl);
+
+            for (const seksjon of (state.skjematype.Seksjoner || [])) {
+                const sDiv = document.createElement('div');
+                sDiv.className = 'seksjon';
+                if (seksjon.Seksjon_overskrift) {
+                    const h = document.createElement('h3');
+                    h.className = 'seksjon-tittel';
+                    h.textContent = seksjon.Seksjon_overskrift;
+                    sDiv.appendChild(h);
+                }
                 let visningsNr = 0;
-                const felterHtml = (seksjon.Felter || []).map(felt => {
+                for (const felt of (seksjon.Felter || [])) {
                     if (felt.Type !== 'Informasjon') visningsNr++;
                     const svar = svarMap.get(`${seksjon.Seksjon_nummer}-${felt.Nummer}`) || [];
-                    return state.redigerer
-                        ? byggEditFelt(felt, seksjon.Seksjon_nummer, visningsNr, svar)
-                        : byggReadonlyFelt(felt, visningsNr, svar);
-                }).join('');
-                return `
-                    <div class="seksjon">
-                        ${seksjon.Seksjon_overskrift ? `<h3 class="seksjon-tittel">${escapeHtml(seksjon.Seksjon_overskrift)}</h3>` : ''}
-                        ${felterHtml}
-                    </div>
-                `;
-            }).join('');
-
-            const knapper = state.redigerer
-                ? `
-                    <button class="knapp primær" onclick="lagreEndringer()">Lagre endringer</button>
-                    <button class="knapp sekundær" onclick="avbrytRedigering()">Avbryt</button>
-                `
-                : `
-                    <button class="knapp primær" onclick="startRedigering()">Rediger</button>
-                    <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>
-                `;
-
-            hoyre.innerHTML = `
-                <div class="detalj-topplinje">
-                    <h2 class="detalj-tittel">#${escapeHtml(s.Skjema_id)}</h2>
-                    <span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span>
-                </div>
-                <div class="detalj-meta">
-                    <div><strong>Innsender:</strong> ${escapeHtml(s.Innsender_Epost || '–')}</div>
-                    ${s.Sist_endret ? `<div><strong>Sist endret:</strong> ${escapeHtml(formaterDato(s.Sist_endret))}</div>` : ''}
-                </div>
-                <div class="detalj-knapper">${knapper}</div>
-                ${seksjonerHtml}
-            `;
-
-            if (state.redigerer) {
-                initFlervalgListener();
+                    sDiv.appendChild(byggFeltRad(felt, seksjon.Seksjon_nummer, visningsNr, svar, state.redigerer));
+                }
+                hoyre.appendChild(sDiv);
             }
         }
 
-        // ---- Read-only felt-rendering ----
-        function byggReadonlyFelt(felt, visningsNr, svar) {
-            if (felt.Type === 'Informasjon') {
-                return `<div class="felt"><div class="informasjon">${escapeHtml(felt.Tekst?.Verdi || '')}</div></div>`;
+        function byggFeltRad(felt, seksjonNr, visningsNr, svar, redigerer) {
+            const div = document.createElement('div');
+            div.className = 'felt';
+            if (felt.Type !== 'Informasjon') {
+                const label = document.createElement('label');
+                label.className = 'felt-label';
+                const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
+                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escHtml(felt.Tekst?.Verdi || '')}${oblig}`;
+                div.appendChild(label);
             }
-            const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
-            const label = `<label class="felt-label"><span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}${oblig}</label>`;
-            let svarHtml;
-            if (!svar || svar.length === 0 || (svar.length === 1 && svar[0] === '')) {
-                svarHtml = '<div class="felt-svar tomt">(ikke besvart)</div>';
-            } else if (svar.length === 1) {
-                svarHtml = `<div class="felt-svar">${escapeHtml(visSvarVerdi(felt, svar[0]))}</div>`;
+            if (redigerer) {
+                const feltId = `edit-${seksjonNr}-${felt.Nummer}`;
+                if (felt.Type !== 'Informasjon') {
+                    const l = div.querySelector('.felt-label');
+                    if (l) l.htmlFor = feltId;
+                }
+                div.appendChild(byggEditWidget(felt, feltId, svar));
             } else {
-                svarHtml = `<div class="felt-svar"><ul>${svar.map(v => `<li>${escapeHtml(visSvarVerdi(felt, v))}</li>`).join('')}</ul></div>`;
+                div.appendChild(byggReadonlyVisning(felt, svar));
             }
-            return `<div class="felt">${label}${svarHtml}</div>`;
-        }
-
-        function visSvarVerdi(felt, verdi) {
-            if (felt.Type === 'Skala' && Array.isArray(felt.Valg)) {
-                const t = felt.Valg.find(v => String(v.Valg_nr) === String(verdi) || v.Tekst === verdi);
-                if (t) return t.Tekst;
-            }
-            if (felt.Type === 'Dato') return formaterKunDato(verdi);
-            return String(verdi);
-        }
-
-        // ---- Edit felt-rendering ----
-        function byggEditFelt(felt, seksjonNr, visningsNr, initialSvar) {
-            if (felt.Type === 'Informasjon') {
-                return `<div class="felt"><div class="informasjon">${escapeHtml(felt.Tekst?.Verdi || '')}</div></div>`;
-            }
-            const feltId = `edit-${seksjonNr}-${felt.Nummer}`;
-            const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
-            const label = `<label class="felt-label" for="${feltId}"><span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}${oblig}</label>`;
-            const førsteSvar = initialSvar && initialSvar.length > 0 ? initialSvar[0] : '';
-            let input = '';
-
-            switch (felt.Type) {
-                case 'Tekst':
-                    input = felt.Flerlinje
-                        ? `<textarea id="${feltId}" name="${feltId}">${escapeHtml(førsteSvar)}</textarea>`
-                        : `<input type="text" id="${feltId}" name="${feltId}" value="${escapeAttr(førsteSvar)}">`;
-                    break;
-                case 'Tall':
-                    input = `<input type="number" id="${feltId}" name="${feltId}" value="${escapeAttr(førsteSvar)}"${felt.Min_verdi != null ? ` min="${felt.Min_verdi}"` : ''}${felt.Max_verdi != null ? ` max="${felt.Max_verdi}"` : ''}>`;
-                    break;
-                case 'Dato':
-                    input = `<input type="date" id="${feltId}" name="${feltId}" value="${escapeAttr(førsteSvar)}">`;
-                    break;
-                case 'Skala':
-                    input = `<div class="skala">${(felt.Valg || []).map(v => {
-                        const verdi = String(v.Valg_nr ?? v.Tekst);
-                        const checked = String(førsteSvar) === verdi ? ' checked' : '';
-                        return `<label class="skala-valg"><input type="radio" name="${feltId}" value="${escapeAttr(verdi)}"${checked}><span>${escapeHtml(v.Tekst)}</span></label>`;
-                    }).join('')}</div>`;
-                    break;
-                case 'Flervalg-knapper':
-                    input = `<div class="flervalg-knapper" data-felt-id="${feltId}" data-maks="${felt.Max_valg || 1}">${(felt.Valg || []).map(v => {
-                        const valgt = (initialSvar || []).includes(v.Tekst);
-                        return `<label class="flervalg-knapp${valgt ? ' selected' : ''}"><input type="checkbox" name="${feltId}[]" value="${escapeAttr(v.Tekst)}"${valgt ? ' checked' : ''}><span>${escapeHtml(v.Tekst)}</span></label>`;
-                    }).join('')}</div>`;
-                    break;
-                case 'Flervalg-dropdown':
-                    input = `<select id="${feltId}" name="${feltId}"><option value="">— velg —</option>${(felt.Valg || []).map(v => {
-                        const selected = v.Tekst === førsteSvar ? ' selected' : '';
-                        return `<option value="${escapeAttr(v.Tekst)}"${selected}>${escapeHtml(v.Tekst)}</option>`;
-                    }).join('')}</select>`;
-                    break;
-                default:
-                    input = `<div class="felt-svar tomt">[Felttypen "${escapeHtml(felt.Type)}" er ikke støttet for redigering]</div>`;
-            }
-            return `<div class="felt">${label}${input}</div>`;
-        }
-
-        function initFlervalgListener() {
-            document.querySelectorAll('.flervalg-knapper').forEach(container => {
-                const maks = parseInt(container.dataset.maks || '1', 10);
-                container.querySelectorAll('input').forEach(cb => {
-                    cb.addEventListener('change', () => {
-                        const label = cb.closest('label');
-                        if (cb.checked) label.classList.add('selected');
-                        else label.classList.remove('selected');
-                        const antall = container.querySelectorAll('input:checked').length;
-                        container.querySelectorAll('input').forEach(c => {
-                            c.disabled = !c.checked && antall >= maks;
-                        });
-                    });
-                });
-            });
+            return div;
         }
 
         // ---- Rediger + lagre ----
@@ -653,7 +586,7 @@
                         Id: felt.Id,
                         Nummer: felt.Nummer,
                         Type: felt.Type,
-                        Svar: hentFeltverdiEdit(feltId, felt.Type)
+                        Svar: hentSvarFraDom(feltId, felt.Type)
                     });
                 }
                 nyeSeksjoner.push(seksjonUt);
@@ -677,20 +610,6 @@
                 alert('Kunne ikke lagre: ' + e.message);
             }
         };
-
-        function hentFeltverdiEdit(feltId, type) {
-            if (type === 'Flervalg-knapper') {
-                return Array.from(document.querySelectorAll(`input[name="${feltId}[]"]:checked`)).map(cb => cb.value);
-            }
-            if (type === 'Skala') {
-                const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
-                return valgt ? [valgt.value] : [];
-            }
-            const el = document.getElementById(feltId);
-            if (!el) return [];
-            const v = el.value;
-            return v === '' || v == null ? [] : [String(v)];
-        }
 
         // ---- Slett ----
         window.aapneSlettModal = () => {
@@ -730,14 +649,6 @@
             if (isNaN(d)) return iso;
             const pad = n => String(n).padStart(2, '0');
             return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        }
-        function formaterKunDato(iso) {
-            if (!iso) return '';
-            const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-            return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
-        }
-        function escapeHtml(s) {
-            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
         function escapeAttr(s) {
             return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");

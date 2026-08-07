@@ -277,6 +277,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
+        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml } from './js/felt-render.js';
 
         let skjematype = null;
         const params = new URLSearchParams(window.location.search);
@@ -380,127 +381,14 @@
                 }
             }
 
-            switch (felt.Type) {
-                case 'Informasjon': div.appendChild(byggInformasjon(felt)); break;
-                case 'Tekst': div.appendChild(byggTekst(felt, feltId)); break;
-                case 'Tall': div.appendChild(byggTall(felt, feltId)); break;
-                case 'Dato': div.appendChild(byggDato(felt, feltId)); break;
-                case 'Skala': div.appendChild(byggSkala(felt, feltId)); break;
-                case 'Flervalg-knapper': div.appendChild(byggFlervalgKnapper(felt, feltId)); break;
-                case 'Flervalg-dropdown': div.appendChild(byggFlervalgDropdown(felt, feltId)); break;
-                default:
-                    const p = document.createElement('p');
-                    p.style.color = 'var(--text-secondary)';
-                    p.style.fontStyle = 'italic';
-                    p.textContent = `[Felttypen "${felt.Type}" er ikke støttet i pilot-versjonen ennå]`;
-                    div.appendChild(p);
-            }
+            div.appendChild(byggEditWidget(felt, feltId, []));
 
-            if (felt.Obligatorisk) {
-                const feil = document.createElement('div');
-                feil.className = 'felt-feilmelding';
-                feil.textContent = 'Dette feltet er obligatorisk';
-                div.appendChild(feil);
-            }
+            const feil = document.createElement('div');
+            feil.className = 'felt-feilmelding';
+            feil.textContent = '';
+            div.appendChild(feil);
 
             return div;
-        }
-
-        function byggInformasjon(felt) {
-            const div = document.createElement('div');
-            div.className = 'informasjon';
-            div.innerHTML = escapeHtml(felt.Tekst?.Verdi || '');
-            return div;
-        }
-        function byggTekst(felt, feltId) {
-            const el = felt.Flerlinje
-                ? document.createElement('textarea')
-                : document.createElement('input');
-            if (!felt.Flerlinje) el.type = 'text';
-            el.id = feltId;
-            el.name = feltId;
-            return el;
-        }
-        function byggTall(felt, feltId) {
-            const el = document.createElement('input');
-            el.type = 'number';
-            el.id = feltId;
-            el.name = feltId;
-            if (felt.Min_verdi != null) el.min = felt.Min_verdi;
-            if (felt.Max_verdi != null) el.max = felt.Max_verdi;
-            return el;
-        }
-        function byggDato(felt, feltId) {
-            const el = document.createElement('input');
-            el.type = 'date';
-            el.id = feltId;
-            el.name = feltId;
-            return el;
-        }
-        function byggSkala(felt, feltId) {
-            const container = document.createElement('div');
-            container.className = 'skala';
-            for (const valg of (felt.Valg || [])) {
-                const label = document.createElement('label');
-                label.className = 'skala-valg';
-                const input = document.createElement('input');
-                input.type = 'radio';
-                input.name = feltId;
-                input.value = valg.Valg_nr ?? valg.Tekst;
-                const span = document.createElement('span');
-                span.textContent = valg.Tekst;
-                label.appendChild(input);
-                label.appendChild(span);
-                container.appendChild(label);
-            }
-            return container;
-        }
-        function byggFlervalgKnapper(felt, feltId) {
-            const container = document.createElement('div');
-            container.className = 'flervalg-knapper';
-            container.dataset.feltId = feltId;
-            const maks = felt.Max_valg || 1;
-            let antallValgt = 0;
-            for (const valg of (felt.Valg || [])) {
-                const label = document.createElement('label');
-                label.className = 'flervalg-knapp';
-                const cb = document.createElement('input');
-                cb.type = 'checkbox';
-                cb.name = `${feltId}[]`;
-                cb.value = valg.Tekst;
-                cb.addEventListener('change', () => {
-                    if (cb.checked) {
-                        label.classList.add('selected');
-                        antallValgt++;
-                    } else {
-                        label.classList.remove('selected');
-                        antallValgt--;
-                    }
-                    container.querySelectorAll('.flervalg-knapp').forEach(k => {
-                        const c = k.querySelector('input');
-                        c.disabled = !c.checked && antallValgt >= maks;
-                    });
-                });
-                label.appendChild(cb);
-                const span = document.createElement('span');
-                span.textContent = valg.Tekst;
-                label.appendChild(span);
-                container.appendChild(label);
-            }
-            return container;
-        }
-        function byggFlervalgDropdown(felt, feltId) {
-            const sel = document.createElement('select');
-            sel.id = feltId;
-            sel.name = feltId;
-            sel.innerHTML = '<option value="">— velg —</option>';
-            for (const valg of (felt.Valg || [])) {
-                const opt = document.createElement('option');
-                opt.value = valg.Tekst;
-                opt.textContent = valg.Tekst;
-                sel.appendChild(opt);
-            }
-            return sel;
         }
 
         function samleSvar() {
@@ -518,7 +406,7 @@
                         Id: felt.Id,
                         Nummer: felt.Nummer,
                         Type: felt.Type,
-                        Svar: hentFeltverdi(feltId, felt.Type)
+                        Svar: hentSvarFraDom(feltId, felt.Type)
                     });
                 }
                 svar.Seksjoner.push(seksjonUt);
@@ -526,43 +414,34 @@
             return svar;
         }
 
-        function hentFeltverdi(feltId, type) {
-            if (type === 'Flervalg-knapper') {
-                const checked = document.querySelectorAll(`input[name="${feltId}[]"]:checked`);
-                return Array.from(checked).map(cb => cb.value);
-            }
-            if (type === 'Skala') {
-                const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
-                return valgt ? [valgt.value] : [];
-            }
-            const el = document.getElementById(feltId);
-            if (!el) return [];
-            const v = el.value;
-            return v === '' || v == null ? [] : [String(v)];
-        }
-
-        function validerObligatoriske() {
+        function validerAlle() {
             let alleOk = true;
+            let førsteFeilFelt = null;
             for (const seksjon of (skjematype.Seksjoner || [])) {
                 for (const felt of (seksjon.Felter || [])) {
-                    if (!felt.Obligatorisk || felt.Type === 'Informasjon') continue;
+                    if (felt.Type === 'Informasjon') continue;
                     const feltId = `felt-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
-                    const verdi = hentFeltverdi(feltId, felt.Type);
+                    const verdi = hentSvarFraDom(feltId, felt.Type);
                     const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
-                    if (!verdi || verdi.length === 0) {
+                    const feilEl = feltEl?.querySelector('.felt-feilmelding');
+                    const res = valider(felt, verdi);
+                    if (!res.ok) {
                         feltEl?.classList.add('har-feil');
+                        if (feilEl) feilEl.textContent = res.feilmelding || 'Ugyldig verdi';
                         alleOk = false;
+                        if (!førsteFeilFelt) førsteFeilFelt = feltEl;
                     } else {
                         feltEl?.classList.remove('har-feil');
+                        if (feilEl) feilEl.textContent = '';
                     }
                 }
             }
+            if (førsteFeilFelt) førsteFeilFelt.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return alleOk;
         }
 
         async function submitSkjema() {
-            if (!validerObligatoriske()) {
-                alert('Ett eller flere obligatoriske felter mangler svar.');
+            if (!validerAlle()) {
                 return;
             }
 
@@ -586,14 +465,6 @@
                 submitKnapp.textContent = 'Send inn';
                 alert('Innsending feilet: ' + e.message);
             }
-        }
-
-        function escapeHtml(s) {
-            return String(s ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
         }
 
         init();
