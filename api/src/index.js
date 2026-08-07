@@ -8,6 +8,7 @@ require('./functions/whoami');
 require('./functions/skjematyper');
 require('./functions/skjemaer');
 require('./functions/seed-eksempel');
+require('./functions/postnumre');
 
 // Etter hvert:
 // require('./functions/skjema');

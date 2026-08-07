@@ -305,6 +305,7 @@
             <strong style="color: var(--text-heading);">Admin:</strong>
             <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
             <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed eksempler</button>
+            <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seedPostnumre()">Seed postnumre</button>
             <span id="admin-status" style="color: var(--text-secondary);"></span>
         </div>
 
@@ -360,6 +361,20 @@
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
             }
         }
+
+        window.seedPostnumre = async () => {
+            const statusEl = document.getElementById('admin-status');
+            statusEl.textContent = 'Seeder postnumre…';
+            statusEl.style.color = 'var(--text-secondary)';
+            try {
+                const svar = await api.post('/api/postnumre/seed', {});
+                statusEl.textContent = `${svar.antall} postnumre lagt inn`;
+                statusEl.style.color = 'var(--badge-produksjon)';
+            } catch (e) {
+                statusEl.textContent = 'Feil: ' + e.message;
+                statusEl.style.color = '#d9534f';
+            }
+        };
 
         window.seed = async () => {
             const statusEl = document.getElementById('admin-status');

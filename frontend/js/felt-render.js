@@ -48,7 +48,7 @@ export function byggEditWidget(felt, feltId, initialSvar = []) {
         case 'E-post': return _lagEpostInput(feltId, førsteSvar);
         case 'Fodselsnummer': return _lagFodselsnummerInput(feltId, førsteSvar);
         case 'Kontonummer': return _lagKontonummerInput(feltId, førsteSvar);
-        case 'Postnummer': return _lagPostnummerInput(feltId, førsteSvar);
+        case 'Postnummer': return _lagPostnummerInput(feltId, initialSvar);
         case 'Dato': return _lagDateInput(feltId, førsteSvar);
         case 'Tidspunkt': return _lagTimeInput(feltId, førsteSvar);
         case 'Skala': return _lagSkala(felt, feltId, førsteSvar);
@@ -137,17 +137,126 @@ function _lagKontonummerInput(feltId, verdi) {
     return el;
 }
 
-function _lagPostnummerInput(feltId, verdi) {
-    const el = document.createElement('input');
-    el.type = 'text';
-    el.id = feltId;
-    el.name = feltId;
-    el.value = verdi;
-    el.inputMode = 'numeric';
-    el.pattern = '\\d{4}';
-    el.maxLength = 4;
-    el.placeholder = '0000';
-    return el;
+/**
+ * Postnummer med type-ahead mot masterdata.
+ * Svar lagres som [postnr, poststed] — frosset for historikk.
+ * initialSvar kan være [postnr, poststed] (fra tidligere lagring).
+ */
+function _lagPostnummerInput(feltId, initialSvar) {
+    // initialSvar er array, feltId er unikt
+    const initialPostnr = initialSvar && initialSvar.length > 0 ? String(initialSvar[0] || '') : '';
+    const initialPoststed = initialSvar && initialSvar.length > 1 ? String(initialSvar[1] || '') : '';
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'postnummer-wrapper';
+    wrapper.style.cssText = 'position: relative; display: flex; align-items: center; gap: 8px; max-width: 480px;';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = feltId;
+    input.name = feltId;
+    input.placeholder = 'Postnr eller poststed';
+    input.autocomplete = 'postal-code';
+    input.style.cssText = 'flex: 1; min-width: 180px;';
+    input.value = initialPostnr && initialPoststed ? `${initialPostnr} ${initialPoststed}` : initialPostnr;
+    input.dataset.postnr = initialPostnr;
+    input.dataset.poststed = initialPoststed;
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'postnummer-forslag';
+    dropdown.style.cssText = 'position: absolute; top: 100%; left: 0; background: var(--bg-input, #fff); border: 1px solid var(--input-border, #ccc); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.12); max-height: 240px; overflow-y: auto; z-index: 50; display: none; margin-top: 2px; min-width: 260px;';
+
+    wrapper.append(input, dropdown);
+
+    let sokeTimer = null;
+    let aktivIndeks = -1;
+
+    async function utforSok(query) {
+        try {
+            const resp = await fetch(`/api/postnumre/sok?q=${encodeURIComponent(query)}&maks=10`);
+            if (!resp.ok) { dropdown.style.display = 'none'; return; }
+            const treff = await resp.json();
+            visForslag(treff);
+        } catch (_) {
+            dropdown.style.display = 'none';
+        }
+    }
+
+    function visForslag(treff) {
+        aktivIndeks = -1;
+        if (!Array.isArray(treff) || treff.length === 0) {
+            dropdown.style.display = 'none';
+            return;
+        }
+        dropdown.innerHTML = '';
+        treff.forEach((t, i) => {
+            const rad = document.createElement('div');
+            rad.style.cssText = 'padding: 8px 12px; cursor: pointer; display: flex; gap: 10px; font-size: 14px;';
+            rad.dataset.postnr = t.Postnr;
+            rad.dataset.poststed = t.Poststed;
+            rad.innerHTML = `<span style="font-variant-numeric: tabular-nums; min-width: 44px; color: var(--text-secondary);">${t.Postnr}</span><span>${t.Poststed}</span>`;
+            rad.addEventListener('mouseenter', () => {
+                Array.from(dropdown.children).forEach((r, idx) => {
+                    r.style.background = idx === i ? 'var(--accent-light, rgba(10,132,255,0.12))' : '';
+                });
+                aktivIndeks = i;
+            });
+            rad.addEventListener('mousedown', e => e.preventDefault());
+            rad.addEventListener('click', () => velgForslag(t));
+            dropdown.appendChild(rad);
+        });
+        dropdown.style.display = 'block';
+    }
+
+    function velgForslag(t) {
+        input.value = `${t.Postnr} ${t.Poststed}`;
+        input.dataset.postnr = t.Postnr;
+        input.dataset.poststed = t.Poststed;
+        dropdown.style.display = 'none';
+    }
+
+    input.addEventListener('input', () => {
+        // Ved endring nullstilles dataset — må velges på nytt for gyldig svar
+        input.dataset.postnr = '';
+        input.dataset.poststed = '';
+
+        const raa = input.value.trim();
+        if (sokeTimer) clearTimeout(sokeTimer);
+        if (raa.length === 0) { dropdown.style.display = 'none'; return; }
+        const første = raa.split(/\s+/)[0];
+        if (/^[A-Za-zÆØÅæøå]/.test(første) && første.length < 2) {
+            dropdown.style.display = 'none';
+            return;
+        }
+        sokeTimer = setTimeout(() => utforSok(første), 200);
+    });
+
+    input.addEventListener('keydown', e => {
+        const rader = dropdown.children;
+        if (e.key === 'ArrowDown' && rader.length > 0) {
+            e.preventDefault();
+            aktivIndeks = Math.min(aktivIndeks + 1, rader.length - 1);
+            Array.from(rader).forEach((r, i) => r.style.background = i === aktivIndeks ? 'var(--accent-light, rgba(10,132,255,0.12))' : '');
+            rader[aktivIndeks]?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'ArrowUp' && rader.length > 0) {
+            e.preventDefault();
+            aktivIndeks = Math.max(aktivIndeks - 1, 0);
+            Array.from(rader).forEach((r, i) => r.style.background = i === aktivIndeks ? 'var(--accent-light, rgba(10,132,255,0.12))' : '');
+            rader[aktivIndeks]?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter' && aktivIndeks >= 0) {
+            e.preventDefault();
+            const rad = rader[aktivIndeks];
+            if (rad?.dataset.postnr) velgForslag({ Postnr: rad.dataset.postnr, Poststed: rad.dataset.poststed || '' });
+        } else if (e.key === 'Escape') {
+            dropdown.style.display = 'none';
+        }
+    });
+
+    input.addEventListener('blur', () => {
+        setTimeout(() => dropdown.style.display = 'none', 150);
+    });
+
+    return wrapper;
 }
 
 function _lagDateInput(feltId, verdi) {
@@ -264,6 +373,12 @@ export function byggReadonlyVisning(felt, svar = []) {
     const svarEl = document.createElement('div');
     svarEl.className = 'felt-svar';
 
+    // Postnummer lagres som [postnr, poststed] — vis begge sammen
+    if (felt.Type === 'Postnummer' && Array.isArray(svar) && svar.length >= 1 && svar[0]) {
+        svarEl.textContent = `${svar[0]}${svar[1] ? ' ' + svar[1] : ''}`;
+        return svarEl;
+    }
+
     if (!svar || svar.length === 0 || (svar.length === 1 && svar[0] === '')) {
         svarEl.classList.add('tomt');
         svarEl.textContent = '(ikke besvart)';
@@ -343,6 +458,14 @@ export function hentSvarFraDom(feltId, type) {
         const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
         return valgt ? [valgt.value] : [];
     }
+    if (type === 'Postnummer') {
+        // Postnummer lagres som [postnr, poststed] fra dataset — gyldig kun etter valg fra dropdown
+        const el = document.getElementById(feltId);
+        if (!el) return [];
+        const pnr = (el.dataset.postnr || '').trim();
+        const pst = (el.dataset.poststed || '').trim();
+        return pnr ? [pnr, pst] : [];
+    }
     const el = document.getElementById(feltId);
     if (!el) return [];
     let v = el.value;
@@ -379,7 +502,7 @@ export function valider(felt, svar) {
             if (!_erGyldigKontonummer(førsteVerdi)) return { ok: false, feilmelding: 'Ugyldig kontonummer (feil kontrollsiffer)' };
             break;
         case 'Postnummer':
-            if (!/^\d{4}$/.test(String(førsteVerdi))) return { ok: false, feilmelding: 'Postnummer må være 4 siffer' };
+            if (!/^\d{4}$/.test(String(førsteVerdi))) return { ok: false, feilmelding: 'Velg et postnummer fra forslagslisten' };
             break;
         case 'Tall':
         case 'Valuta': {
