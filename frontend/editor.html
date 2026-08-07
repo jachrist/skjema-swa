@@ -103,7 +103,57 @@
             letter-spacing: 0.05em;
             color: var(--text-secondary);
             margin: 0 0 14px 0;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
         }
+        .panel h2:hover { color: var(--text-primary); }
+        .kollaps-pil {
+            display: inline-block;
+            font-size: 10px;
+            transition: transform 0.15s ease;
+            color: var(--text-secondary);
+            width: 12px;
+        }
+        .panel.kollapset .kollaps-pil,
+        .seksjon.kollapset .kollaps-pil,
+        .felt.kollapset .kollaps-pil { transform: rotate(-90deg); }
+        .panel.kollapset > *:not(h2) { display: none !important; }
+        .panel.kollapset { padding-bottom: 10px; }
+        .panel.kollapset h2 { margin-bottom: 0; }
+
+        .kollaps-verktoy {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 10px;
+            justify-content: flex-end;
+        }
+        .kollaps-verktoy .knapp.mini { padding: 4px 10px; font-size: 12px; }
+
+        .seksjon.kollapset .seksjon-innhold { display: none !important; }
+        .seksjon-innhold { margin-top: 10px; }
+        .seksjon-kollaps-btn, .felt-kollaps-btn {
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            color: var(--text-secondary);
+            font-size: 14px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            transition: transform 0.15s ease;
+        }
+        .seksjon-kollaps-btn:hover, .felt-kollaps-btn:hover {
+            background: var(--accent-light);
+            color: var(--accent);
+        }
+        .seksjon.kollapset .seksjon-kollaps-btn,
+        .felt.kollapset .felt-kollaps-btn { transform: rotate(-90deg); }
+
+        .felt.kollapset .felt-config,
+        .felt.kollapset > .dnf-slot { display: none !important; }
+        .felt.kollapset { padding-bottom: 12px; }
 
         .rad { margin-bottom: 12px; }
         .rad:last-child { margin-bottom: 0; }
@@ -394,9 +444,16 @@
                 </div>
             `;
 
-            innhold.innerHTML = knappeLinje + `
-                <div class="panel">
-                    <h2>Grunnleggende</h2>
+            const kollapsVerktoy = `
+                <div class="kollaps-verktoy">
+                    <button class="knapp mini sekundær" onclick="ekspanderAlt()" title="Vis alle avsnitt og seksjoner">▸ Vis alle</button>
+                    <button class="knapp mini sekundær" onclick="kollapsAlt()" title="Skjul alle avsnitt og seksjoner">▾ Skjul alle</button>
+                </div>
+            `;
+
+            innhold.innerHTML = knappeLinje + kollapsVerktoy + `
+                <div class="panel" data-panel-id="grunnleggende">
+                    <h2 onclick="togglePanel('grunnleggende')"><span class="kollaps-pil">▼</span>Grunnleggende</h2>
                     <div class="rad">
                         <label>Skjema-navn <small>(vises i portalen)</small></label>
                         <input type="text" id="f-navn" value="${escapeAttr(data.Skjema_navn || '')}" oninput="setNavn(this.value)">
@@ -423,15 +480,15 @@
                     </div>
                 </div>
 
-                <div class="panel">
-                    <h2>Tilgjengelighetsperioder <small style="font-weight: 400; text-transform: none;">— når utfylling er tillatt (utenfor perioden er skjemaet kun synlig for eiere)</small></h2>
+                <div class="panel" data-panel-id="tilgjengelighet">
+                    <h2 onclick="togglePanel('tilgjengelighet')"><span class="kollaps-pil">▼</span>Tilgjengelighetsperioder <small style="font-weight: 400; text-transform: none;">— når utfylling er tillatt (utenfor perioden er skjemaet kun synlig for eiere)</small></h2>
                     <div id="perioder-container"></div>
                     <button class="knapp mini sekundær" onclick="leggTilPeriode()" style="margin-top: 6px;">+ Legg til periode</button>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">Ingen perioder = alltid tilgjengelig.</div>
                 </div>
 
-                <div class="panel">
-                    <h2>Tilgang</h2>
+                <div class="panel" data-panel-id="tilgang">
+                    <h2 onclick="togglePanel('tilgang')"><span class="kollaps-pil">▼</span>Tilgang</h2>
                     <div class="rad">
                         <label>Publikum <small>(kan fylle ut skjemaet — e-postadresser, kommaseparert)</small></label>
                         <textarea id="f-publikum" oninput="setPublikum(this.value)">${escapeHtml((data.Publikum?.Personer || []).join(', '))}</textarea>
@@ -442,14 +499,18 @@
                     </div>
                 </div>
 
-                <div class="panel">
-                    <h2>Seksjoner og felter</h2>
+                <div class="panel" data-panel-id="seksjoner">
+                    <h2 onclick="togglePanel('seksjoner')"><span class="kollaps-pil">▼</span>Seksjoner og felter</h2>
+                    <div class="kollaps-verktoy" style="margin-top: -4px;">
+                        <button class="knapp mini sekundær" onclick="ekspanderAlleSeksjoner()" title="Vis alle seksjoner">▸ Vis alle seksjoner</button>
+                        <button class="knapp mini sekundær" onclick="kollapsAlleSeksjoner()" title="Skjul alle seksjoner">▾ Skjul alle seksjoner</button>
+                    </div>
                     <div id="seksjoner-container"></div>
                     <button class="knapp sekundær" onclick="leggTilSeksjon()" style="margin-top: 12px;">+ Legg til seksjon</button>
                 </div>
 
-                <div class="panel">
-                    <h2>Behandlingssteg <small style="font-weight: 400; text-transform: none;">— hvem som behandler skjemaet, i hvilken rekkefølge</small></h2>
+                <div class="panel" data-panel-id="behandling">
+                    <h2 onclick="togglePanel('behandling')"><span class="kollaps-pil">▼</span>Behandlingssteg <small style="font-weight: 400; text-transform: none;">— hvem som behandler skjemaet, i hvilken rekkefølge</small></h2>
                     <div id="behandling-container"></div>
                     <button class="knapp sekundær" onclick="leggTilSteg()" style="margin-top: 12px;">+ Legg til steg</button>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
@@ -461,6 +522,79 @@
             rendrerSeksjoner();
             rendrerBehandling();
             rendrerPerioder();
+            appliserKollapsState();
+        }
+
+        // ==================== KOLLAPS ====================
+        // Paneler: globalt (samme for alle skjematyper)
+        // Seksjoner + felter: per skjematype (bruker skjematypeId eller "ny")
+        const PANEL_IDER = ['grunnleggende', 'tilgjengelighet', 'tilgang', 'seksjoner', 'behandling'];
+        const NOKKEL_PANELER = 'editor-paneler-kollapset';
+        function nokkelSeksjoner() { return `editor-seksjoner-kollapset-${eksisterendeId || 'ny'}`; }
+        function nokkelFelter() { return `editor-felter-kollapset-${eksisterendeId || 'ny'}`; }
+
+        function lesSet(nokkel) {
+            try { return new Set(JSON.parse(localStorage.getItem(nokkel) || '[]')); }
+            catch { return new Set(); }
+        }
+        function skrivSet(nokkel, set) {
+            try { localStorage.setItem(nokkel, JSON.stringify([...set])); } catch {}
+        }
+
+        window.togglePanel = (id) => {
+            const set = lesSet(NOKKEL_PANELER);
+            if (set.has(id)) set.delete(id); else set.add(id);
+            skrivSet(NOKKEL_PANELER, set);
+            const el = document.querySelector(`.panel[data-panel-id="${id}"]`);
+            if (el) el.classList.toggle('kollapset');
+        };
+        window.toggleSeksjon = (nr) => {
+            const set = lesSet(nokkelSeksjoner());
+            const n = Number(nr);
+            if (set.has(n)) set.delete(n); else set.add(n);
+            skrivSet(nokkelSeksjoner(), set);
+            const el = document.querySelector(`.seksjon[data-seksjon-nr="${n}"]`);
+            if (el) el.classList.toggle('kollapset');
+        };
+        window.toggleFelt = (nokkel) => {
+            const set = lesSet(nokkelFelter());
+            if (set.has(nokkel)) set.delete(nokkel); else set.add(nokkel);
+            skrivSet(nokkelFelter(), set);
+            const el = document.querySelector(`.felt[data-felt-nokkel="${nokkel}"]`);
+            if (el) el.classList.toggle('kollapset');
+        };
+        window.kollapsAlleSeksjoner = () => {
+            const nrer = (data.Seksjoner || []).map((_, i) => i + 1);
+            skrivSet(nokkelSeksjoner(), new Set(nrer));
+            document.querySelectorAll('.seksjon').forEach(el => el.classList.add('kollapset'));
+        };
+        window.ekspanderAlleSeksjoner = () => {
+            skrivSet(nokkelSeksjoner(), new Set());
+            document.querySelectorAll('.seksjon').forEach(el => el.classList.remove('kollapset'));
+        };
+        window.kollapsAlt = () => {
+            skrivSet(NOKKEL_PANELER, new Set(PANEL_IDER));
+            document.querySelectorAll('.panel[data-panel-id]').forEach(el => el.classList.add('kollapset'));
+            kollapsAlleSeksjoner();
+        };
+        window.ekspanderAlt = () => {
+            skrivSet(NOKKEL_PANELER, new Set());
+            document.querySelectorAll('.panel[data-panel-id]').forEach(el => el.classList.remove('kollapset'));
+            ekspanderAlleSeksjoner();
+        };
+        function appliserKollapsState() {
+            const paneler = lesSet(NOKKEL_PANELER);
+            document.querySelectorAll('.panel[data-panel-id]').forEach(el => {
+                el.classList.toggle('kollapset', paneler.has(el.dataset.panelId));
+            });
+            const seks = lesSet(nokkelSeksjoner());
+            document.querySelectorAll('.seksjon[data-seksjon-nr]').forEach(el => {
+                el.classList.toggle('kollapset', seks.has(Number(el.dataset.seksjonNr)));
+            });
+            const felt = lesSet(nokkelFelter());
+            document.querySelectorAll('.felt[data-felt-nokkel]').forEach(el => {
+                el.classList.toggle('kollapset', felt.has(el.dataset.feltNokkel));
+            });
         }
 
         // ==================== BEHANDLINGSSTEG ====================
@@ -759,10 +893,12 @@
 
         function byggSeksjonHtml(seksjon, sIdx) {
             const feltHtml = (seksjon.Felter || []).map((f, fIdx) => byggFeltHtml(f, sIdx, fIdx, seksjon.Felter.length)).join('');
+            const seksjonNr = sIdx + 1;
             return `
-                <div class="seksjon">
+                <div class="seksjon" data-seksjon-nr="${seksjonNr}">
                     <div class="seksjon-topp">
-                        <span class="seksjon-nr">${sIdx + 1}</span>
+                        <button class="seksjon-kollaps-btn" onclick="toggleSeksjon(${seksjonNr})" title="Kollaps/ekspander seksjon"><span class="kollaps-pil">▼</span></button>
+                        <span class="seksjon-nr">${seksjonNr}</span>
                         <input type="text" placeholder="Overskrift…"
                             value="${escapeAttr(seksjon.Seksjon_overskrift || '')}"
                             oninput="setSeksjonOverskrift(${sIdx}, this.value)">
@@ -770,10 +906,12 @@
                         <button class="knapp mini sekundær" data-action="flytt-seksjon-ned" data-seksjon="${sIdx}" ${sIdx === data.Seksjoner.length - 1 ? 'disabled' : ''}>↓</button>
                         <button class="knapp mini danger" data-action="slett-seksjon" data-seksjon="${sIdx}">Slett seksjon</button>
                     </div>
-                    <div class="dnf-slot" data-slot="ses-vises-${sIdx}" style="margin-bottom: 8px;"></div>
-                    ${feltHtml || '<div style="color: var(--text-secondary); font-size: 13px; padding: 8px;">Ingen felter i denne seksjonen.</div>'}
-                    <div style="margin-top: 10px;">
-                        <button class="knapp mini sekundær" data-action="legg-til-felt" data-seksjon="${sIdx}">+ Legg til felt</button>
+                    <div class="seksjon-innhold">
+                        <div class="dnf-slot" data-slot="ses-vises-${sIdx}" style="margin-bottom: 8px;"></div>
+                        ${feltHtml || '<div style="color: var(--text-secondary); font-size: 13px; padding: 8px;">Ingen felter i denne seksjonen.</div>'}
+                        <div style="margin-top: 10px;">
+                            <button class="knapp mini sekundær" data-action="legg-til-felt" data-seksjon="${sIdx}">+ Legg til felt</button>
+                        </div>
                     </div>
                 </div>
             `;
@@ -786,10 +924,12 @@
 
             const config = byggFeltConfigHtml(felt, sIdx, fIdx);
 
+            const feltNokkel = `${sIdx + 1}-${felt.Nummer || (fIdx + 1)}`;
             return `
-                <div class="felt">
+                <div class="felt" data-felt-nokkel="${feltNokkel}">
                     <div class="felt-topp">
                         <div style="display: flex; gap: 4px; align-items: center;">
+                            <button class="felt-kollaps-btn" onclick="toggleFelt('${feltNokkel}')" title="Kollaps/ekspander felt"><span class="kollaps-pil">▼</span></button>
                             <span class="felt-nr">${felt.Nummer || (fIdx + 1)}</span>
                         </div>
                         <input type="text" placeholder="Spørsmål / label…"
