@@ -112,6 +112,7 @@
         </div>
         <div class="knapperad">
             <a class="knapp primær" href="/velgskjematype.html">Til skjemaoversikten</a>
+            <a class="knapp sekundær" href="#" id="se-skjemaet">Se skjemaet</a>
             <a class="knapp sekundær" href="#" id="nytt-lignende">Fyll ut et lignende</a>
         </div>
     </div>
@@ -124,6 +125,8 @@
         document.getElementById('skjematype-id').textContent = skjematypeId;
         document.getElementById('nytt-lignende').href =
             `/index.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
+        document.getElementById('se-skjemaet').href =
+            `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
     </script>
 </body>
 </html>

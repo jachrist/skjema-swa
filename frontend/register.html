@@ -284,8 +284,7 @@
         }
 
         window.visSkjema = (skjemaId) => {
-            // Foreløpig: åpne rå JSON i ny fane. Read-only-visning kommer i neste iterasjon.
-            window.open(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`, '_blank');
+            window.location.href = `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
         };
 
         function formaterDato(iso) {
