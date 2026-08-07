@@ -4,6 +4,8 @@
  */
 require('./functions/ping');
 require('./functions/hello-storage');
+require('./functions/skjematyper');
+require('./functions/seed-eksempel');
 
 // Etter hvert:
 // require('./functions/skjema');
