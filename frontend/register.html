@@ -15,6 +15,7 @@
             --bg-page: #e8edf2;
             --bg-container: rgba(255, 255, 255, 0.85);
             --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-svar: rgba(255, 255, 255, 0.7);
             --bg-input: white;
             --text-primary: #1c1c1e;
             --text-secondary: #6e6e73;
@@ -24,11 +25,12 @@
             --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
             --accent: #0a84ff;
             --accent-light: rgba(10, 132, 255, 0.12);
+            --danger: #ff3b30;
+            --danger-light: rgba(255, 59, 48, 0.1);
             --status-utkast: #ff9500;
             --status-innsendt: #34c759;
             --status-avvist: #ff3b30;
             --status-behandling: #af52de;
-            --status-avsluttet: #8e8e93;
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 18px;
@@ -38,6 +40,7 @@
             --bg-page: #0d1117;
             --bg-container: rgba(30, 35, 45, 0.85);
             --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-svar: rgba(20, 25, 35, 0.7);
             --bg-input: #1c2028;
             --text-primary: #f0f0f5;
             --text-secondary: #8e8e93;
@@ -51,15 +54,15 @@
             background: var(--bg-page);
             color: var(--text-primary);
             margin: 0;
-            padding: 24px;
+            padding: 16px;
             -webkit-font-smoothing: antialiased;
         }
         .container {
-            max-width: 1100px;
+            max-width: 1400px;
             margin: 0 auto;
             background: var(--bg-container);
             backdrop-filter: blur(20px);
-            padding: 32px;
+            padding: 24px;
             border-radius: var(--radius-xl);
             box-shadow: var(--shadow);
             border: 1px solid var(--border-color);
@@ -69,80 +72,94 @@
             align-items: baseline;
             justify-content: space-between;
             gap: 16px;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
-        h1 { font-size: 1.7em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+        h1 { font-size: 1.5em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
         .brukerinfo { font-size: 13px; color: var(--text-secondary); }
         .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
-        .undertittel { color: var(--text-secondary); margin: 4px 0 20px; font-size: 14px; }
+        .tilbake { color: var(--accent); text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 8px; }
+        .tilbake:hover { text-decoration: underline; }
+        .undertittel { color: var(--text-secondary); margin: 4px 0 16px; font-size: 13px; }
 
-        .sokefelt-rad { position: relative; margin-bottom: 16px; }
-        .sokefelt {
+        /* --- To-spalters layout --- */
+        .to-spalter {
+            display: grid;
+            grid-template-columns: 340px 1fr;
+            gap: 20px;
+            min-height: 600px;
+        }
+        .venstre {
+            background: var(--bg-section);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 80vh;
+            overflow: hidden;
+        }
+        .venstre-filtre {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .venstre-liste {
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin: -4px;
+            padding: 4px;
+        }
+        .hoyre {
+            background: var(--bg-section);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            min-height: 300px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="date"],
+        select,
+        textarea {
             width: 100%;
-            padding: 10px 14px 10px 40px;
-            font-size: 15px;
+            padding: 8px 12px;
+            font-size: 14px;
             border: 1px solid var(--input-border);
             border-radius: var(--radius-sm);
             background: var(--bg-input);
             color: var(--text-primary);
+            font-family: inherit;
         }
-        .sokefelt:focus {
+        input:focus, select:focus, textarea:focus {
             outline: none;
             border-color: var(--accent);
             box-shadow: 0 0 0 3px var(--accent-light);
         }
-        .sokefelt-ikon {
-            position: absolute;
-            left: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: var(--text-secondary);
-            pointer-events: none;
-        }
+        textarea { min-height: 90px; resize: vertical; }
 
-        .status-melding {
-            padding: 14px 18px;
-            border-radius: var(--radius-md);
-            background: var(--bg-section);
-            color: var(--text-secondary);
-            text-align: center;
-            margin: 20px 0;
-        }
-        .status-melding.feil { color: #ff3b30; background: rgba(255, 59, 48, 0.1); }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 14px;
-        }
-        thead th {
-            text-align: left;
+        .liste-element {
             padding: 10px 12px;
-            font-weight: 600;
-            font-size: 12px;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-secondary);
-            border-bottom: 1px solid var(--border-color);
-        }
-        tbody td {
-            padding: 12px;
-            border-bottom: 1px solid var(--border-color);
-        }
-        tbody tr {
+            border-radius: var(--radius-sm);
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
             cursor: pointer;
-            transition: background 0.1s;
+            transition: background 0.1s, border-color 0.1s;
         }
-        tbody tr:hover { background: var(--accent-light); }
-        .kol-id { font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: var(--text-secondary); }
-        .kol-innsender { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .kol-dato { color: var(--text-secondary); white-space: nowrap; }
-
+        .liste-element:hover { background: var(--accent-light); }
+        .liste-element.aktiv { border-color: var(--accent); background: var(--accent-light); }
+        .liste-tittel { font-weight: 600; font-size: 13px; margin-bottom: 4px; word-break: break-word; }
+        .liste-meta { font-size: 11px; color: var(--text-secondary); display: flex; justify-content: space-between; gap: 8px; align-items: center; }
         .status-badge {
             display: inline-block;
-            padding: 2px 10px;
+            padding: 2px 8px;
             border-radius: 999px;
-            font-size: 11px;
+            font-size: 10px;
             font-weight: 600;
             text-transform: uppercase;
             color: white;
@@ -152,17 +169,170 @@
         .status-badge.status-2 { background: var(--status-innsendt); }
         .status-badge.status-3 { background: var(--status-avvist); }
         .status-badge.status-4 { background: var(--status-behandling); }
-        .status-badge.status-5 { background: var(--status-avsluttet); }
-        .status-badge.status-0 { background: var(--status-avsluttet); }
+        .status-badge.status-0 { background: var(--text-secondary); }
 
-        .tilbake {
-            color: var(--accent);
-            text-decoration: none;
-            font-size: 14px;
-            margin-bottom: 12px;
-            display: inline-block;
+        .tom-melding {
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 20px;
+            font-size: 13px;
         }
-        .tilbake:hover { text-decoration: underline; }
+        .info-melding {
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 60px 20px;
+            font-size: 15px;
+        }
+        .feilmelding { color: var(--danger); text-align: center; padding: 20px; }
+
+        /* Detaljpanel */
+        .detalj-topplinje {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .detalj-tittel { font-size: 1.3em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+        .detalj-meta { display: flex; gap: 16px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12px; margin-bottom: 20px; }
+        .detalj-meta strong { color: var(--text-primary); }
+        .detalj-knapper { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+
+        .seksjon {
+            padding: 16px 20px;
+            margin-bottom: 14px;
+            background: var(--bg-container);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+        }
+        .seksjon-tittel {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin: 0 0 12px 0;
+        }
+        .felt { margin-bottom: 12px; }
+        .felt:last-child { margin-bottom: 0; }
+        .felt-label {
+            display: block;
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 4px;
+        }
+        .felt-nummer {
+            display: inline-block;
+            min-width: 22px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .oblig-markering { color: var(--danger); margin-left: 4px; }
+        .felt-svar {
+            padding: 8px 12px;
+            background: var(--bg-svar);
+            border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .felt-svar.tomt {
+            color: var(--text-secondary);
+            font-style: italic;
+            border-left-color: var(--border-color);
+        }
+        .felt-svar ul { margin: 4px 0 0 20px; padding: 0; }
+
+        .informasjon {
+            padding: 10px 14px;
+            background: var(--accent-light);
+            border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+        }
+
+        .flervalg-knapper { display: flex; flex-wrap: wrap; gap: 8px; }
+        .flervalg-knapp {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px;
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .flervalg-knapp:hover { background: var(--accent-light); }
+        .flervalg-knapp.selected {
+            border-color: var(--accent); background: var(--accent-light);
+            color: var(--accent); font-weight: 600;
+        }
+        .flervalg-knapp input { display: none; }
+        .skala { display: flex; flex-wrap: wrap; gap: 6px; }
+        .skala-valg {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 6px 12px;
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .knapp {
+            display: inline-flex; align-items: center;
+            padding: 8px 16px;
+            font-size: 14px;
+            font-weight: 600;
+            border: 0;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            font-family: inherit;
+            text-decoration: none;
+            gap: 6px;
+        }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.primær:hover { filter: brightness(1.1); }
+        .knapp.primær:disabled { opacity: 0.5; cursor: not-allowed; }
+        .knapp.sekundær {
+            background: transparent; color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+        .knapp.sekundær:hover { background: var(--accent-light); }
+        .knapp.danger {
+            background: transparent; color: var(--danger);
+            border: 1px solid var(--danger);
+        }
+        .knapp.danger:hover { background: var(--danger-light); }
+
+        /* Bekreft-dialog */
+        .modal-bakteppe {
+            position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            display: none;
+            align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-bakteppe.vis { display: flex; }
+        .modal {
+            background: var(--bg-container);
+            backdrop-filter: blur(20px);
+            padding: 24px 28px;
+            border-radius: var(--radius-lg);
+            max-width: 420px;
+            box-shadow: 0 8px 40px rgba(0,0,0,0.2);
+            border: 1px solid var(--border-color);
+        }
+        .modal h3 { margin: 0 0 8px 0; font-size: 1.2em; }
+        .modal p { margin: 0 0 20px 0; color: var(--text-secondary); }
+        .modal-knapper { display: flex; gap: 10px; justify-content: flex-end; }
+
+        @media (max-width: 800px) {
+            .to-spalter { grid-template-columns: 1fr; }
+            .venstre { max-height: none; }
+            .hoyre.tom { display: none; }
+        }
     </style>
 </head>
 <body>
@@ -174,23 +344,39 @@
         </div>
         <p class="undertittel" id="undertittel">Laster…</p>
 
-        <div class="sokefelt-rad">
-            <span class="sokefelt-ikon">🔍</span>
-            <input type="text" class="sokefelt" id="sok" placeholder="Søk i innsender eller Skjema-ID…" oninput="filtrer()">
-        </div>
+        <div class="to-spalter">
+            <div class="venstre">
+                <div class="venstre-filtre">
+                    <input type="text" id="sok" placeholder="🔍 Søk innsender eller ID…" oninput="filtrer()">
+                    <select id="statusFilter" onchange="filtrer()">
+                        <option value="">Alle statuser</option>
+                        <option value="1">Utkast</option>
+                        <option value="2">Innsendt</option>
+                        <option value="3">Avvist</option>
+                        <option value="4">Under behandling</option>
+                    </select>
+                </div>
+                <div class="venstre-liste" id="liste">
+                    <div class="tom-melding">Laster…</div>
+                </div>
+            </div>
 
-        <div id="status" class="status-melding" style="display: none;"></div>
-        <table id="tabell" style="display: none;">
-            <thead>
-                <tr>
-                    <th style="width: 90px;">Skjema-ID</th>
-                    <th>Innsender</th>
-                    <th style="width: 130px;">Sist endret</th>
-                    <th style="width: 130px;">Status</th>
-                </tr>
-            </thead>
-            <tbody id="tbody"></tbody>
-        </table>
+            <div class="hoyre tom" id="hoyre">
+                <div class="info-melding">Velg et skjema fra listen til venstre</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bekreft-slett-modal -->
+    <div class="modal-bakteppe" id="slettModal">
+        <div class="modal">
+            <h3>Slett skjema?</h3>
+            <p>Denne handlingen kan ikke angres. Skjemaet blir permanent slettet.</p>
+            <div class="modal-knapper">
+                <button class="knapp sekundær" onclick="lukkSlettModal()">Avbryt</button>
+                <button class="knapp danger" onclick="bekreftSlett()" id="slettBekreft">Slett skjemaet</button>
+            </div>
+        </div>
     </div>
 
     <script type="module">
@@ -199,15 +385,15 @@
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
-        let alle = [];
 
-        const STATUS_TEKST = {
-            0: '–',
-            1: 'Utkast',
-            2: 'Innsendt',
-            3: 'Avvist',
-            4: 'Under behandling',
-            5: 'Avsluttet'
+        const STATUS_TEKST = { 0: '–', 1: 'Utkast', 2: 'Innsendt', 3: 'Avvist', 4: 'Under behandling', 5: 'Avsluttet' };
+        const state = {
+            skjematype: null,
+            alle: [],
+            filtrert: [],
+            valgtId: null,
+            valgtSkjema: null,
+            redigerer: false
         };
 
         async function init() {
@@ -217,74 +403,325 @@
                 return;
             }
             document.getElementById('upn').textContent = bruker.userDetails;
-
             if (!skjematypeId) {
-                visStatus('Mangler skjematype_id i URL.', 'feil');
+                visListeMelding('Mangler skjematype_id i URL.');
                 return;
             }
 
             try {
-                // Hent skjematype-info for tittel
-                const st = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
-                document.getElementById('tittel').textContent = `Register — ${st.Skjema_navn || 'Skjematype ' + skjematypeId}`;
+                state.skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
+                document.getElementById('tittel').textContent = `Register — ${state.skjematype.Skjema_navn || 'Skjematype ' + skjematypeId}`;
                 document.title = document.getElementById('tittel').textContent;
             } catch (_) { /* ikke kritisk */ }
 
             try {
-                alle = await api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`);
+                state.alle = await api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`);
                 document.getElementById('undertittel').textContent =
-                    `${alle.length} skjema${alle.length === 1 ? '' : 'er'} totalt.`;
-                render(alle);
+                    `${state.alle.length} skjema${state.alle.length === 1 ? '' : 'er'} totalt.`;
+                filtrer();
             } catch (e) {
-                visStatus('Kunne ikke hente skjemaer: ' + e.message, 'feil');
+                visListeMelding('Kunne ikke hente skjemaer: ' + e.message);
             }
         }
 
-        function visStatus(tekst, klasse) {
-            const el = document.getElementById('status');
-            el.textContent = tekst;
-            el.className = 'status-melding' + (klasse ? ' ' + klasse : '');
-            el.style.display = tekst ? 'block' : 'none';
+        function visListeMelding(tekst) {
+            document.getElementById('liste').innerHTML = `<div class="tom-melding">${escapeHtml(tekst)}</div>`;
         }
 
         window.filtrer = () => {
-            const q = document.getElementById('sok').value.trim().toLowerCase();
-            const f = q === ''
-                ? alle
-                : alle.filter(s =>
-                    (s.Innsender_Epost || '').toLowerCase().includes(q)
-                    || (s.Skjema_id || '').toLowerCase().includes(q)
-                );
-            render(f);
+            const sok = document.getElementById('sok').value.trim().toLowerCase();
+            const status = document.getElementById('statusFilter').value;
+            state.filtrert = state.alle.filter(s => {
+                if (status !== '' && String(s.Skjema_status || 0) !== status) return false;
+                if (sok) {
+                    const t = ((s.Innsender_Epost || '') + ' ' + (s.Skjema_id || '')).toLowerCase();
+                    if (!t.includes(sok)) return false;
+                }
+                return true;
+            });
+            renderListe();
         };
 
-        function render(liste) {
-            const tbody = document.getElementById('tbody');
-            const tabell = document.getElementById('tabell');
-            if (!liste || liste.length === 0) {
-                tabell.style.display = 'none';
-                visStatus('Ingen skjemaer å vise.');
+        function renderListe() {
+            const el = document.getElementById('liste');
+            if (state.filtrert.length === 0) {
+                el.innerHTML = '<div class="tom-melding">Ingen treff</div>';
                 return;
             }
-            visStatus('');
-            tabell.style.display = 'table';
-
-            tbody.innerHTML = liste.map(s => {
+            el.innerHTML = state.filtrert.map(s => {
                 const status = s.Skjema_status ?? 0;
                 const dato = formaterDato(s.Sist_endret);
+                const aktiv = state.valgtId === s.Skjema_id ? ' aktiv' : '';
                 return `
-                    <tr onclick="visSkjema('${escapeAttr(s.Skjema_id)}')">
-                        <td class="kol-id">${escapeHtml(s.Skjema_id)}</td>
-                        <td class="kol-innsender">${escapeHtml(s.Innsender_Epost || '–')}</td>
-                        <td class="kol-dato">${escapeHtml(dato)}</td>
-                        <td><span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span></td>
-                    </tr>
+                    <div class="liste-element${aktiv}" onclick="velgSkjema('${escapeAttr(s.Skjema_id)}')">
+                        <div class="liste-tittel">#${escapeHtml(s.Skjema_id)} — ${escapeHtml(s.Innsender_Epost || '–')}</div>
+                        <div class="liste-meta">
+                            <span>${escapeHtml(dato)}</span>
+                            <span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span>
+                        </div>
+                    </div>
                 `;
             }).join('');
         }
 
-        window.visSkjema = (skjemaId) => {
-            window.location.href = `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
+        window.velgSkjema = async (skjemaId) => {
+            state.valgtId = skjemaId;
+            state.redigerer = false;
+            renderListe();
+            const hoyre = document.getElementById('hoyre');
+            hoyre.classList.remove('tom');
+            hoyre.innerHTML = '<div class="info-melding">Henter…</div>';
+            try {
+                state.valgtSkjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
+                renderDetalj();
+            } catch (e) {
+                hoyre.innerHTML = `<div class="feilmelding">Kunne ikke hente skjema: ${escapeHtml(e.message)}</div>`;
+            }
+        };
+
+        function renderDetalj() {
+            const s = state.valgtSkjema;
+            const hoyre = document.getElementById('hoyre');
+            const status = s.Skjema_status ?? 0;
+
+            // Bygg svar-lookup fra skjemaet
+            const svarMap = new Map();
+            for (const seksjon of (s.Seksjoner || [])) {
+                for (const felt of (seksjon.Felter || [])) {
+                    svarMap.set(`${seksjon.Nummer}-${felt.Nummer}`, felt.Svar || []);
+                }
+            }
+
+            const seksjonerHtml = (state.skjematype.Seksjoner || []).map(seksjon => {
+                let visningsNr = 0;
+                const felterHtml = (seksjon.Felter || []).map(felt => {
+                    if (felt.Type !== 'Informasjon') visningsNr++;
+                    const svar = svarMap.get(`${seksjon.Seksjon_nummer}-${felt.Nummer}`) || [];
+                    return state.redigerer
+                        ? byggEditFelt(felt, seksjon.Seksjon_nummer, visningsNr, svar)
+                        : byggReadonlyFelt(felt, visningsNr, svar);
+                }).join('');
+                return `
+                    <div class="seksjon">
+                        ${seksjon.Seksjon_overskrift ? `<h3 class="seksjon-tittel">${escapeHtml(seksjon.Seksjon_overskrift)}</h3>` : ''}
+                        ${felterHtml}
+                    </div>
+                `;
+            }).join('');
+
+            const knapper = state.redigerer
+                ? `
+                    <button class="knapp primær" onclick="lagreEndringer()">Lagre endringer</button>
+                    <button class="knapp sekundær" onclick="avbrytRedigering()">Avbryt</button>
+                `
+                : `
+                    <button class="knapp primær" onclick="startRedigering()">Rediger</button>
+                    <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>
+                `;
+
+            hoyre.innerHTML = `
+                <div class="detalj-topplinje">
+                    <h2 class="detalj-tittel">#${escapeHtml(s.Skjema_id)}</h2>
+                    <span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span>
+                </div>
+                <div class="detalj-meta">
+                    <div><strong>Innsender:</strong> ${escapeHtml(s.Innsender_Epost || '–')}</div>
+                    ${s.Sist_endret ? `<div><strong>Sist endret:</strong> ${escapeHtml(formaterDato(s.Sist_endret))}</div>` : ''}
+                </div>
+                <div class="detalj-knapper">${knapper}</div>
+                ${seksjonerHtml}
+            `;
+
+            if (state.redigerer) {
+                initFlervalgListener();
+            }
+        }
+
+        // ---- Read-only felt-rendering ----
+        function byggReadonlyFelt(felt, visningsNr, svar) {
+            if (felt.Type === 'Informasjon') {
+                return `<div class="felt"><div class="informasjon">${escapeHtml(felt.Tekst?.Verdi || '')}</div></div>`;
+            }
+            const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
+            const label = `<label class="felt-label"><span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}${oblig}</label>`;
+            let svarHtml;
+            if (!svar || svar.length === 0 || (svar.length === 1 && svar[0] === '')) {
+                svarHtml = '<div class="felt-svar tomt">(ikke besvart)</div>';
+            } else if (svar.length === 1) {
+                svarHtml = `<div class="felt-svar">${escapeHtml(visSvarVerdi(felt, svar[0]))}</div>`;
+            } else {
+                svarHtml = `<div class="felt-svar"><ul>${svar.map(v => `<li>${escapeHtml(visSvarVerdi(felt, v))}</li>`).join('')}</ul></div>`;
+            }
+            return `<div class="felt">${label}${svarHtml}</div>`;
+        }
+
+        function visSvarVerdi(felt, verdi) {
+            if (felt.Type === 'Skala' && Array.isArray(felt.Valg)) {
+                const t = felt.Valg.find(v => String(v.Valg_nr) === String(verdi) || v.Tekst === verdi);
+                if (t) return t.Tekst;
+            }
+            if (felt.Type === 'Dato') return formaterKunDato(verdi);
+            return String(verdi);
+        }
+
+        // ---- Edit felt-rendering ----
+        function byggEditFelt(felt, seksjonNr, visningsNr, initialSvar) {
+            if (felt.Type === 'Informasjon') {
+                return `<div class="felt"><div class="informasjon">${escapeHtml(felt.Tekst?.Verdi || '')}</div></div>`;
+            }
+            const feltId = `edit-${seksjonNr}-${felt.Nummer}`;
+            const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
+            const label = `<label class="felt-label" for="${feltId}"><span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}${oblig}</label>`;
+            const førsteSvar = initialSvar && initialSvar.length > 0 ? initialSvar[0] : '';
+            let input = '';
+
+            switch (felt.Type) {
+                case 'Tekst':
+                    input = felt.Flerlinje
+                        ? `<textarea id="${feltId}" name="${feltId}">${escapeHtml(førsteSvar)}</textarea>`
+                        : `<input type="text" id="${feltId}" name="${feltId}" value="${escapeAttr(førsteSvar)}">`;
+                    break;
+                case 'Tall':
+                    input = `<input type="number" id="${feltId}" name="${feltId}" value="${escapeAttr(førsteSvar)}"${felt.Min_verdi != null ? ` min="${felt.Min_verdi}"` : ''}${felt.Max_verdi != null ? ` max="${felt.Max_verdi}"` : ''}>`;
+                    break;
+                case 'Dato':
+                    input = `<input type="date" id="${feltId}" name="${feltId}" value="${escapeAttr(førsteSvar)}">`;
+                    break;
+                case 'Skala':
+                    input = `<div class="skala">${(felt.Valg || []).map(v => {
+                        const verdi = String(v.Valg_nr ?? v.Tekst);
+                        const checked = String(førsteSvar) === verdi ? ' checked' : '';
+                        return `<label class="skala-valg"><input type="radio" name="${feltId}" value="${escapeAttr(verdi)}"${checked}><span>${escapeHtml(v.Tekst)}</span></label>`;
+                    }).join('')}</div>`;
+                    break;
+                case 'Flervalg-knapper':
+                    input = `<div class="flervalg-knapper" data-felt-id="${feltId}" data-maks="${felt.Max_valg || 1}">${(felt.Valg || []).map(v => {
+                        const valgt = (initialSvar || []).includes(v.Tekst);
+                        return `<label class="flervalg-knapp${valgt ? ' selected' : ''}"><input type="checkbox" name="${feltId}[]" value="${escapeAttr(v.Tekst)}"${valgt ? ' checked' : ''}><span>${escapeHtml(v.Tekst)}</span></label>`;
+                    }).join('')}</div>`;
+                    break;
+                case 'Flervalg-dropdown':
+                    input = `<select id="${feltId}" name="${feltId}"><option value="">— velg —</option>${(felt.Valg || []).map(v => {
+                        const selected = v.Tekst === førsteSvar ? ' selected' : '';
+                        return `<option value="${escapeAttr(v.Tekst)}"${selected}>${escapeHtml(v.Tekst)}</option>`;
+                    }).join('')}</select>`;
+                    break;
+                default:
+                    input = `<div class="felt-svar tomt">[Felttypen "${escapeHtml(felt.Type)}" er ikke støttet for redigering]</div>`;
+            }
+            return `<div class="felt">${label}${input}</div>`;
+        }
+
+        function initFlervalgListener() {
+            document.querySelectorAll('.flervalg-knapper').forEach(container => {
+                const maks = parseInt(container.dataset.maks || '1', 10);
+                container.querySelectorAll('input').forEach(cb => {
+                    cb.addEventListener('change', () => {
+                        const label = cb.closest('label');
+                        if (cb.checked) label.classList.add('selected');
+                        else label.classList.remove('selected');
+                        const antall = container.querySelectorAll('input:checked').length;
+                        container.querySelectorAll('input').forEach(c => {
+                            c.disabled = !c.checked && antall >= maks;
+                        });
+                    });
+                });
+            });
+        }
+
+        // ---- Rediger + lagre ----
+        window.startRedigering = () => {
+            state.redigerer = true;
+            renderDetalj();
+        };
+        window.avbrytRedigering = () => {
+            state.redigerer = false;
+            renderDetalj();
+        };
+        window.lagreEndringer = async () => {
+            const nyeSeksjoner = [];
+            for (const seksjon of (state.skjematype.Seksjoner || [])) {
+                const seksjonUt = {
+                    Nummer: seksjon.Seksjon_nummer,
+                    Overskrift: seksjon.Seksjon_overskrift || '',
+                    Felter: []
+                };
+                for (const felt of (seksjon.Felter || [])) {
+                    if (felt.Type === 'Informasjon') continue;
+                    const feltId = `edit-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    seksjonUt.Felter.push({
+                        Id: felt.Id,
+                        Nummer: felt.Nummer,
+                        Type: felt.Type,
+                        Svar: hentFeltverdiEdit(feltId, felt.Type)
+                    });
+                }
+                nyeSeksjoner.push(seksjonUt);
+            }
+            const body = {
+                ...state.valgtSkjema,
+                Skjema_id: state.valgtId,
+                Skjematype_id: skjematypeId,
+                Seksjoner: nyeSeksjoner
+            };
+            try {
+                await api.post('/api/skjemaer', body);
+                // Refresh skjemaet
+                state.valgtSkjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(state.valgtId)}`);
+                state.redigerer = false;
+                renderDetalj();
+                // Refresh listen (dato/status kan ha endret seg)
+                state.alle = await api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`);
+                renderListe();
+            } catch (e) {
+                alert('Kunne ikke lagre: ' + e.message);
+            }
+        };
+
+        function hentFeltverdiEdit(feltId, type) {
+            if (type === 'Flervalg-knapper') {
+                return Array.from(document.querySelectorAll(`input[name="${feltId}[]"]:checked`)).map(cb => cb.value);
+            }
+            if (type === 'Skala') {
+                const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
+                return valgt ? [valgt.value] : [];
+            }
+            const el = document.getElementById(feltId);
+            if (!el) return [];
+            const v = el.value;
+            return v === '' || v == null ? [] : [String(v)];
+        }
+
+        // ---- Slett ----
+        window.aapneSlettModal = () => {
+            document.getElementById('slettModal').classList.add('vis');
+        };
+        window.lukkSlettModal = () => {
+            document.getElementById('slettModal').classList.remove('vis');
+        };
+        window.bekreftSlett = async () => {
+            const btn = document.getElementById('slettBekreft');
+            btn.disabled = true;
+            btn.textContent = 'Sletter…';
+            try {
+                await api.del(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(state.valgtId)}`);
+                lukkSlettModal();
+                // Fjern fra liste og nullstill detaljvisning
+                state.alle = state.alle.filter(s => s.Skjema_id !== state.valgtId);
+                state.valgtId = null;
+                state.valgtSkjema = null;
+                document.getElementById('undertittel').textContent =
+                    `${state.alle.length} skjema${state.alle.length === 1 ? '' : 'er'} totalt.`;
+                filtrer();
+                const hoyre = document.getElementById('hoyre');
+                hoyre.classList.add('tom');
+                hoyre.innerHTML = '<div class="info-melding">Velg et skjema fra listen til venstre</div>';
+            } catch (e) {
+                alert('Kunne ikke slette: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Slett skjemaet';
+            }
         };
 
         function formaterDato(iso) {
@@ -294,7 +731,11 @@
             const pad = n => String(n).padStart(2, '0');
             return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
-
+        function formaterKunDato(iso) {
+            if (!iso) return '';
+            const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+            return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+        }
         function escapeHtml(s) {
             return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }

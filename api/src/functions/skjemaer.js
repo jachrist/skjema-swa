@@ -126,6 +126,39 @@ app.http('listSkjemaer', {
     }
 });
 
+app.http('slettSkjema', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/{skjematypeId}/{skjemaId}',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const { skjematypeId, skjemaId } = request.params;
+            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            // Kun eier, admin eller innsender selv kan slette
+            const upnLower = upn.toLowerCase();
+            const erInnsender = (skjema.Innsender_Epost || '').toLowerCase() === upnLower;
+            if (!erInnsender && !erAdmin(upn)) {
+                const erEier = await harEierTilgang(skjematypeId, upn);
+                if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+            }
+
+            const slettet = await forekomstStorage.slettSkjema(skjemaId, skjematypeId);
+            if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            context.log(`skjemaer DELETE: ${upn} slettet ${skjemaId} (type ${skjematypeId})`);
+            return { jsonBody: { status: 'ok' } };
+        } catch (e) {
+            context.log('skjemaer DELETE FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('hentSkjema', {
     methods: ['GET'],
     authLevel: 'anonymous',

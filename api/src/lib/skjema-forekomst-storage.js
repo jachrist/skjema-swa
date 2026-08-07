@@ -90,8 +90,20 @@ async function hentAlleSkjemaerForType(skjematypeId) {
     return resultat;
 }
 
+async function slettSkjema(skjemaId, skjematypeId) {
+    const tabell = tabellKlient(TABELL);
+    try {
+        await tabell.deleteEntity(String(skjematypeId), String(skjemaId));
+        return true;
+    } catch (e) {
+        if (e.statusCode === 404) return false;
+        throw e;
+    }
+}
+
 module.exports = {
     hentSkjema,
     lagreSkjema,
-    hentAlleSkjemaerForType
+    hentAlleSkjemaerForType,
+    slettSkjema
 };
