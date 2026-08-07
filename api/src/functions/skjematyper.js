@@ -43,12 +43,12 @@ app.http('mineSkjematyper', {
         try {
             const alle = await skjemaStorage.hentAlleSkjematyper();
 
-            // For admin: se alt som eier. Ellers: filtrer på Eier/Publikum.
+            // For admin: se alt som både eier og publikum. Ellers: filtrer på Eier/Publikum.
             let eierIder, publikumsIder, aktuelle;
             if (erAdmin(upn)) {
                 aktuelle = alle;
                 eierIder = new Set(alle.map(t => String(t.id)));
-                publikumsIder = new Set();
+                publikumsIder = new Set(alle.map(t => String(t.id)));
             } else {
                 const [eiere, publikum] = await Promise.all([
                     filtrerTyperPåTilgang(alle, upn, 'Eiere'),
