@@ -154,7 +154,20 @@ app.http('lagreSkjema', {
                 erNytt = !eksisterer;
             }
 
-            // Bygg skjemadata
+            // Bygg skjemadata. Ved opprettelse: arv Behandling-struktur fra skjematypen
+            // (dyp kopi, alle Beslutning nullstilles til 0 = ikke behandlet).
+            let behandlingArvet = null;
+            if (erNytt) {
+                const st = await skjemaStorage.hentSkjematype(skjematypeId);
+                if (Array.isArray(st?.JSON?.Behandling)) {
+                    behandlingArvet = JSON.parse(JSON.stringify(st.JSON.Behandling)).map(steg => ({
+                        ...steg,
+                        Beslutning: 0,
+                        Dialog: []
+                    }));
+                }
+            }
+
             const skjemaData = {
                 ...body,
                 Skjema_id: skjemaId,
@@ -162,6 +175,9 @@ app.http('lagreSkjema', {
                 Innsender_Epost: upn,
                 Skjema_status: body.Skjema_status || 2 // 1=mellomlagret, 2=innsendt
             };
+            if (behandlingArvet && !Array.isArray(skjemaData.Behandling)) {
+                skjemaData.Behandling = behandlingArvet;
+            }
 
             await forekomstStorage.lagreSkjema(skjemaData, erNytt);
             context.log(`skjemaer: ${upn} ${erNytt ? 'opprettet' : 'oppdaterte'} ${skjemaId} (type ${skjematypeId})`);

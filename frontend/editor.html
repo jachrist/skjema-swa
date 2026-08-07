@@ -442,11 +442,185 @@
                     <div id="seksjoner-container"></div>
                     <button class="knapp sekundær" onclick="leggTilSeksjon()" style="margin-top: 12px;">+ Legg til seksjon</button>
                 </div>
+
+                <div class="panel">
+                    <h2>Behandlingssteg <small style="font-weight: 400; text-transform: none;">— hvem som behandler skjemaet, i hvilken rekkefølge</small></h2>
+                    <div id="behandling-container"></div>
+                    <button class="knapp sekundær" onclick="leggTilSteg()" style="margin-top: 12px;">+ Legg til steg</button>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                        Ingen steg = skjemaet trenger ingen behandling etter innsending.
+                    </div>
+                </div>
             `;
 
             rendrerSeksjoner();
+            rendrerBehandling();
             rendrerPerioder();
         }
+
+        // ==================== BEHANDLINGSSTEG ====================
+
+        function rendrerBehandling() {
+            const el = document.getElementById('behandling-container');
+            if (!el) return;
+            const behandling = data.Behandling || [];
+            if (behandling.length === 0) {
+                el.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; font-style: italic;">Ingen behandlingssteg — skjemaet arkiveres direkte etter innsending.</div>';
+                return;
+            }
+            el.innerHTML = '';
+            behandling.forEach((steg, i) => el.appendChild(byggStegElement(steg, i, behandling.length)));
+            // Bygg DNF-editorer for hvert stegs Vilkår
+            behandling.forEach((steg, i) => {
+                const slot = document.querySelector(`.dnf-slot[data-slot="steg-vilkar-${i}"]`);
+                if (slot) {
+                    byggDNFEditor(slot, steg.Vilkår, {
+                        modus: 'vilkår',
+                        feltOptions: samleReferanserForSteg(i),
+                        tittel: 'Steget kjøres kun hvis',
+                        onEndring: (ny) => { if (ny) steg.Vilkår = ny; else delete steg.Vilkår; }
+                    });
+                }
+            });
+        }
+
+        function samleReferanserForSteg(stegIdx) {
+            // Referanser: alle skjema-felter + alle tidligere behandlingssteg
+            const refs = samleFelterFør(data.Seksjoner.length - 1, -1);
+            const behandling = data.Behandling || [];
+            for (let i = 0; i < stegIdx; i++) {
+                const s = behandling[i];
+                refs.push({ ref: `behandling-${s.Steg}`, tekst: `Steg ${s.Steg}: ${s.Stegnavn || '(uten navn)'}` });
+            }
+            return refs;
+        }
+
+        function byggStegElement(steg, idx, antall) {
+            const div = document.createElement('div');
+            div.className = 'seksjon';
+            div.style.marginBottom = '12px';
+
+            const forrigeSteg = (data.Behandling || []).slice(0, idx);
+            const avhengOptions = forrigeSteg.map(s =>
+                `<option value="${s.Steg}" ${steg.AvhengigAv === s.Steg ? 'selected' : ''}>Steg ${s.Steg}: ${escapeHtml(s.Stegnavn || '')}</option>`
+            ).join('');
+
+            const valgHtml = (steg.Beslutningsvalg || []).map((v, vIdx) => `
+                <div class="valg-rad">
+                    <input type="number" value="${v.Nummer ?? vIdx + 1}" min="1" style="width: 60px;"
+                        oninput="setBeslutningsvalgNr(${idx}, ${vIdx}, this.value)">
+                    <input type="text" placeholder="Tekst (Godkjent, Avslått, ...)" value="${escapeAttr(v.Tekst || '')}"
+                        oninput="setBeslutningsvalgTekst(${idx}, ${vIdx}, this.value)">
+                    <button class="knapp mini danger" onclick="fjernBeslutningsvalg(${idx}, ${vIdx})">✕</button>
+                </div>
+            `).join('');
+
+            div.innerHTML = `
+                <div class="seksjon-topp">
+                    <span class="seksjon-nr">${steg.Steg}</span>
+                    <input type="text" placeholder="Steg-navn (Godkjenning, Verifisering, ...)"
+                        value="${escapeAttr(steg.Stegnavn || '')}"
+                        oninput="setStegNavn(${idx}, this.value)">
+                    <button class="knapp mini sekundær" onclick="flyttSteg(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
+                    <button class="knapp mini sekundær" onclick="flyttSteg(${idx}, 1)" ${idx === antall - 1 ? 'disabled' : ''}>↓</button>
+                    <button class="knapp mini danger" onclick="slettSteg(${idx})">Slett steg</button>
+                </div>
+
+                <div class="rad">
+                    <label>Behandlere <small>(e-postadresser, kommaseparert)</small></label>
+                    <textarea style="min-height: 50px;" oninput="setStegPersoner(${idx}, this.value)">${escapeHtml((steg.Personer || []).join(', '))}</textarea>
+                </div>
+
+                <div class="rad">
+                    <label>Beslutningsvalg <small>(hva behandleren kan velge)</small></label>
+                    <div class="valg-liste">${valgHtml || '<div style="color: var(--text-secondary); font-size: 12px; font-style: italic;">Ingen valg — legg til under.</div>'}</div>
+                    <button class="knapp mini sekundær" onclick="leggTilBeslutningsvalg(${idx})" style="margin-top: 6px;">+ Legg til valg</button>
+                </div>
+
+                ${forrigeSteg.length > 0 ? `
+                    <div class="rad">
+                        <label>Avhengig av <small>(kjøres først etter dette steget er ferdig — valgfritt)</small></label>
+                        <select onchange="setStegAvhengig(${idx}, this.value)">
+                            <option value="">(ingen — kjøres parallelt med tidligere steg)</option>
+                            ${avhengOptions}
+                        </select>
+                    </div>
+                ` : ''}
+
+                <div class="dnf-slot" data-slot="steg-vilkar-${idx}"></div>
+            `;
+            return div;
+        }
+
+        window.leggTilSteg = () => {
+            if (!data.Behandling) data.Behandling = [];
+            const nesteNr = (data.Behandling.length > 0 ? Math.max(...data.Behandling.map(s => s.Steg)) : 0) + 1;
+            data.Behandling.push({
+                Steg: nesteNr,
+                Stegnavn: '',
+                Personer: [],
+                Roller: [],
+                Team: [],
+                Beslutningsvalg: [
+                    { Nummer: 1, Tekst: 'Godkjent' },
+                    { Nummer: 2, Tekst: 'Avslått' }
+                ]
+            });
+            rendrerBehandling();
+        };
+        window.slettSteg = (idx) => {
+            if (!confirm('Slett dette behandlingssteget?')) return;
+            data.Behandling.splice(idx, 1);
+            renummererBehandling();
+            rendrerBehandling();
+        };
+        window.flyttSteg = (idx, retning) => {
+            const til = idx + retning;
+            if (til < 0 || til >= data.Behandling.length) return;
+            const [s] = data.Behandling.splice(idx, 1);
+            data.Behandling.splice(til, 0, s);
+            renummererBehandling();
+            rendrerBehandling();
+        };
+        function renummererBehandling() {
+            (data.Behandling || []).forEach((s, i) => {
+                const gammel = s.Steg;
+                s.Steg = i + 1;
+                // Oppdater AvhengigAv-referanser i andre steg som pekte på gammel Steg
+                if (gammel !== s.Steg) {
+                    (data.Behandling || []).forEach(annen => {
+                        if (annen.AvhengigAv === gammel) annen.AvhengigAv = s.Steg;
+                    });
+                }
+            });
+        }
+        window.setStegNavn = (idx, v) => { data.Behandling[idx].Stegnavn = v; };
+        window.setStegPersoner = (idx, v) => {
+            data.Behandling[idx].Personer = v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+        };
+        window.setStegAvhengig = (idx, v) => {
+            if (v === '') delete data.Behandling[idx].AvhengigAv;
+            else data.Behandling[idx].AvhengigAv = Number(v);
+        };
+        window.setBeslutningsvalgNr = (sIdx, vIdx, v) => {
+            data.Behandling[sIdx].Beslutningsvalg[vIdx].Nummer = Number(v) || vIdx + 1;
+        };
+        window.setBeslutningsvalgTekst = (sIdx, vIdx, v) => {
+            data.Behandling[sIdx].Beslutningsvalg[vIdx].Tekst = v;
+        };
+        window.leggTilBeslutningsvalg = (sIdx) => {
+            const steg = data.Behandling[sIdx];
+            if (!steg.Beslutningsvalg) steg.Beslutningsvalg = [];
+            const nesteNr = (steg.Beslutningsvalg.length > 0 ? Math.max(...steg.Beslutningsvalg.map(v => v.Nummer || 0)) : 0) + 1;
+            steg.Beslutningsvalg.push({ Nummer: nesteNr, Tekst: '' });
+            rendrerBehandling();
+        };
+        window.fjernBeslutningsvalg = (sIdx, vIdx) => {
+            data.Behandling[sIdx].Beslutningsvalg.splice(vIdx, 1);
+            rendrerBehandling();
+        };
+
+        // ==================== PERIODER ====================
 
         function rendrerPerioder() {
             const el = document.getElementById('perioder-container');
