@@ -306,8 +306,13 @@
         // Kolonner (filter-navn) matcher det oppslag-dispatcheren støtter.
         const DATAKILDER = [
             { navn: 'Postnumre', filtre: ['Kommune', 'Poststed'] },
-            { navn: 'Skjematyper', filtre: ['Fase'] }
-            // Personer/Roller/Team/Emner kommer i fase 5
+            { navn: 'Skjematyper', filtre: ['Fase'] },
+            { navn: 'Roller', filtre: ['Omfang'] },
+            { navn: 'Personer', filtre: ['Rolle', 'EmneLarere', 'EmneHovedlarere', 'EmneStudenter'] },
+            { navn: 'Emner', filtre: ['Termin', 'Campus'] },
+            { navn: 'Studenter', filtre: ['Emne'] },
+            { navn: 'Studieprogrammer', filtre: [] }
+            // Team kommer med Graph API (fase 8)
         ];
 
         const params = new URLSearchParams(window.location.search);
