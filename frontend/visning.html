@@ -294,7 +294,7 @@
                     if (felt.Type !== 'Informasjon') visningsNr++;
                     const key = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
                     const svar = svarMap.get(key) || [];
-                    div.appendChild(byggFelt(felt, visningsNr, svar));
+                    div.appendChild(byggFelt(felt, visningsNr, svar, skjema.Skjematype_id, skjema.Skjema_id));
                 }
                 innhold.appendChild(div);
             }
@@ -302,7 +302,7 @@
             document.getElementById('knapperad').style.display = 'flex';
         }
 
-        function byggFelt(felt, visningsNr, svar) {
+        function byggFelt(felt, visningsNr, svar, skjematypeId, skjemaId) {
             const div = document.createElement('div');
             div.className = 'felt';
 
@@ -312,7 +312,7 @@
                 label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}`;
                 div.appendChild(label);
             }
-            div.appendChild(byggReadonlyVisning(felt, svar));
+            div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId }));
             return div;
         }
 

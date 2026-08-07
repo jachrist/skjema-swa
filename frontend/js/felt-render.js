@@ -27,9 +27,12 @@ export const FELTTYPER = [
     'Tidspunkt',
     'Skala',
     'Flervalg-knapper',
-    'Flervalg-dropdown'
-    // 'Opplasting' kommer i fase 1.2 (krever Blob-oppsett)
+    'Flervalg-dropdown',
+    'Opplasting'
 ];
+
+// Maks fil-størrelse (må matche backend-grensen)
+const MAX_FIL_STORRELSE = 4 * 1024 * 1024;
 
 // ==================== EDIT WIDGETS ====================
 
@@ -54,6 +57,7 @@ export function byggEditWidget(felt, feltId, initialSvar = []) {
         case 'Skala': return _lagSkala(felt, feltId, førsteSvar);
         case 'Flervalg-knapper': return _lagFlervalgKnapper(felt, feltId, initialSvar);
         case 'Flervalg-dropdown': return _lagFlervalgDropdown(felt, feltId, førsteSvar);
+        case 'Opplasting': return _lagOpplasting(felt, feltId, initialSvar);
         default: return _lagUkjentType(felt.Type);
     }
 }
@@ -352,6 +356,204 @@ function _lagFlervalgDropdown(felt, feltId, valgtVerdi) {
     return sel;
 }
 
+/**
+ * Opplasting-widget. State holdes på wrapper-elementet:
+ *   _eksisterende: array av filnavn (fra initialSvar)
+ *   _nyeFiler:     Map<filnavn, File> — filer som er valgt men ikke opplastet ennå
+ *   _slettede:     Set<string> — eksisterende filnavn som skal slettes ved lagring
+ *
+ * Ved submit må kalleren kjøre `preSubmitOpplasting(feltEl, skjematypeId, skjemaId)`
+ * for å opplaste/slette filer. Deretter returnerer hentSvarFraDom kombinert liste.
+ */
+function _lagOpplasting(felt, feltId, initialSvar) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'opplasting-wrapper';
+    wrapper.dataset.feltId = feltId;
+    wrapper.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
+
+    // Init state
+    const eksisterende = Array.isArray(initialSvar) ? initialSvar.filter(s => s && typeof s === 'string') : [];
+    wrapper._eksisterende = [...eksisterende];
+    wrapper._nyeFiler = new Map();
+    wrapper._slettede = new Set();
+
+    const liste = document.createElement('div');
+    liste.className = 'opplasting-liste';
+    liste.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+    wrapper.appendChild(liste);
+
+    const knapperad = document.createElement('div');
+    knapperad.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.multiple = true;
+    fileInput.id = feltId;
+    fileInput.name = feltId;
+    fileInput.style.cssText = 'font-size: 13px;';
+
+    fileInput.addEventListener('change', () => {
+        for (const fil of fileInput.files) {
+            if (fil.size > MAX_FIL_STORRELSE) {
+                alert(`"${fil.name}" er for stor (maks ${MAX_FIL_STORRELSE / 1024 / 1024} MB)`);
+                continue;
+            }
+            wrapper._nyeFiler.set(fil.name, fil);
+            wrapper._slettede.delete(fil.name); // hvis re-lagt til
+        }
+        fileInput.value = ''; // gjør at samme fil kan velges igjen
+        _renderOpplastingListe(wrapper);
+    });
+
+    knapperad.appendChild(fileInput);
+    wrapper.appendChild(knapperad);
+
+    _renderOpplastingListe(wrapper);
+    return wrapper;
+}
+
+function _renderOpplastingListe(wrapper) {
+    const liste = wrapper.querySelector('.opplasting-liste');
+    liste.innerHTML = '';
+    const rader = [];
+
+    // Eksisterende filer (evt. markert for sletting)
+    for (const filnavn of wrapper._eksisterende) {
+        const erSlettet = wrapper._slettede.has(filnavn);
+        rader.push({ navn: filnavn, ny: false, slettet: erSlettet });
+    }
+    // Nye filer valgt i denne økten
+    for (const [navn] of wrapper._nyeFiler) {
+        rader.push({ navn, ny: true, slettet: false });
+    }
+
+    if (rader.length === 0) {
+        const tom = document.createElement('div');
+        tom.style.cssText = 'color: var(--text-secondary, #666); font-size: 13px; font-style: italic;';
+        tom.textContent = 'Ingen vedlegg';
+        liste.appendChild(tom);
+        return;
+    }
+
+    for (const rad of rader) {
+        const el = document.createElement('div');
+        el.style.cssText = 'display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--input-border, #ccc); border-radius: 6px; font-size: 13px;';
+        if (rad.slettet) el.style.opacity = '0.5';
+
+        const ikon = document.createElement('span');
+        ikon.textContent = rad.ny ? '📎' : '📄';
+        el.appendChild(ikon);
+
+        const navn = document.createElement('span');
+        navn.style.cssText = 'flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;';
+        navn.textContent = rad.navn + (rad.ny ? ' (ny)' : '') + (rad.slettet ? ' — vil slettes' : '');
+        el.appendChild(navn);
+
+        const knapp = document.createElement('button');
+        knapp.type = 'button';
+        knapp.style.cssText = 'padding: 2px 8px; font-size: 12px; border: 1px solid var(--danger, #ff3b30); background: transparent; color: var(--danger, #ff3b30); border-radius: 4px; cursor: pointer;';
+
+        if (rad.ny) {
+            knapp.textContent = 'Fjern';
+            knapp.addEventListener('click', () => {
+                wrapper._nyeFiler.delete(rad.navn);
+                _renderOpplastingListe(wrapper);
+            });
+        } else if (rad.slettet) {
+            knapp.textContent = 'Angre';
+            knapp.style.borderColor = 'var(--accent, #0a84ff)';
+            knapp.style.color = 'var(--accent, #0a84ff)';
+            knapp.addEventListener('click', () => {
+                wrapper._slettede.delete(rad.navn);
+                _renderOpplastingListe(wrapper);
+            });
+        } else {
+            knapp.textContent = 'Slett';
+            knapp.addEventListener('click', () => {
+                wrapper._slettede.add(rad.navn);
+                _renderOpplastingListe(wrapper);
+            });
+        }
+        el.appendChild(knapp);
+        liste.appendChild(el);
+    }
+}
+
+/**
+ * Opplast nye filer og slett merkede filer for ett Opplasting-felt.
+ * Må kalles av sidene FØR de sender skjemaet, når Skjema_id er kjent.
+ *
+ * @param {HTMLElement} feltEl — .felt-wrapperen som inneholder Opplasting-widgeten
+ * @param {string} skjematypeId
+ * @param {string} skjemaId
+ * @returns {Promise<void>}
+ */
+export async function preSubmitOpplasting(feltEl, skjematypeId, skjemaId) {
+    const wrapper = feltEl.querySelector('.opplasting-wrapper');
+    if (!wrapper) return;
+
+    // Slett merkede først
+    for (const filnavn of wrapper._slettede) {
+        try {
+            await fetch(`/api/vedlegg-fil/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/${encodeURIComponent(filnavn)}`, {
+                method: 'DELETE'
+            });
+        } catch (_) { /* ignorer enkeltfeil, best-effort */ }
+    }
+    // Fjern slettede fra eksisterende-listen
+    wrapper._eksisterende = wrapper._eksisterende.filter(f => !wrapper._slettede.has(f));
+    wrapper._slettede.clear();
+
+    // Opplast nye
+    const nyeNavn = [];
+    for (const [filnavn, fil] of wrapper._nyeFiler) {
+        const formData = new FormData();
+        formData.append('fil', fil, filnavn);
+        const resp = await fetch(`/api/vedlegg/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`, {
+            method: 'POST',
+            body: formData
+        });
+        if (!resp.ok) {
+            const feil = await resp.text();
+            throw new Error(`Kunne ikke laste opp "${filnavn}": ${feil}`);
+        }
+        const data = await resp.json();
+        nyeNavn.push(data.filnavn);
+    }
+    // Merge til eksisterende og tøm nye-lista
+    wrapper._eksisterende = [...wrapper._eksisterende, ...nyeNavn];
+    wrapper._nyeFiler.clear();
+    _renderOpplastingListe(wrapper);
+}
+
+function _byggVedleggsVisning(svar, ctx) {
+    const boks = document.createElement('div');
+    boks.className = 'felt-svar';
+    if (!Array.isArray(svar) || svar.length === 0) {
+        boks.classList.add('tomt');
+        boks.textContent = '(ingen vedlegg)';
+        return boks;
+    }
+    if (!ctx?.skjematypeId || !ctx?.skjemaId) {
+        // Uten kontekst kan vi ikke lage nedlastingslenker — bare vis navn
+        boks.textContent = svar.filter(Boolean).join(', ');
+        return boks;
+    }
+    boks.style.display = 'flex';
+    boks.style.flexDirection = 'column';
+    boks.style.gap = '4px';
+    for (const filnavn of svar) {
+        if (!filnavn) continue;
+        const a = document.createElement('a');
+        a.href = `/api/vedlegg-fil/${encodeURIComponent(ctx.skjematypeId)}/${encodeURIComponent(ctx.skjemaId)}/${encodeURIComponent(filnavn)}`;
+        a.textContent = `📄 ${filnavn}`;
+        a.style.color = 'var(--accent, #0a84ff)';
+        a.style.textDecoration = 'none';
+        boks.appendChild(a);
+    }
+    return boks;
+}
+
 function _lagUkjentType(type) {
     const p = document.createElement('p');
     p.style.color = 'var(--text-secondary)';
@@ -366,10 +568,21 @@ function _lagUkjentType(type) {
  * Bygger read-only visning av felt + svar.
  * Returnerer HTMLElement (typisk div med felt-svar-boks).
  */
-export function byggReadonlyVisning(felt, svar = []) {
+/**
+ * @param {object} felt — feltdefinisjon
+ * @param {array}  svar — svar-array (Opplasting krever ekstra kontekst — bruk byggReadonlyVisningOpplasting)
+ * @param {object} [ctx] — { skjematypeId, skjemaId } for Opplasting-type
+ */
+export function byggReadonlyVisning(felt, svar = [], ctx = null) {
     if (felt.Type === 'Informasjon') {
         return _lagInformasjon(felt);
     }
+
+    // Opplasting: bygg lenker (krever ctx)
+    if (felt.Type === 'Opplasting') {
+        return _byggVedleggsVisning(svar, ctx);
+    }
+
     const svarEl = document.createElement('div');
     svarEl.className = 'felt-svar';
 
@@ -465,6 +678,12 @@ export function hentSvarFraDom(feltId, type) {
         const pnr = (el.dataset.postnr || '').trim();
         const pst = (el.dataset.poststed || '').trim();
         return pnr ? [pnr, pst] : [];
+    }
+    if (type === 'Opplasting') {
+        // Etter preSubmitOpplasting inneholder wrapper._eksisterende endelig filnavn-liste
+        const wrapper = document.querySelector(`.opplasting-wrapper[data-felt-id="${feltId}"]`);
+        if (!wrapper) return [];
+        return [...(wrapper._eksisterende || [])];
     }
     const el = document.getElementById(feltId);
     if (!el) return [];

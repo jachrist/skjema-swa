@@ -382,7 +382,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, escapeHtml as escHtml } from './js/felt-render.js';
+        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, preSubmitOpplasting, escapeHtml as escHtml } from './js/felt-render.js';
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
@@ -557,7 +557,7 @@
                 }
                 div.appendChild(byggEditWidget(felt, feltId, svar));
             } else {
-                div.appendChild(byggReadonlyVisning(felt, svar));
+                div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId: state.valgtId }));
             }
             return div;
         }
@@ -572,6 +572,24 @@
             renderDetalj();
         };
         window.lagreEndringer = async () => {
+            // Steg 1: opplast nye vedlegg + slett merkede for hvert Opplasting-felt
+            try {
+                for (const seksjon of (state.skjematype.Seksjoner || [])) {
+                    for (const felt of (seksjon.Felter || [])) {
+                        if (felt.Type !== 'Opplasting') continue;
+                        // Finn feltet i DOM — vi bruker query på wrapper direkte
+                        const wrapper = document.querySelector(`.opplasting-wrapper[data-felt-id="edit-${seksjon.Seksjon_nummer}-${felt.Nummer}"]`);
+                        if (wrapper) {
+                            const feltEl = wrapper.closest('.felt');
+                            if (feltEl) await preSubmitOpplasting(feltEl, skjematypeId, state.valgtId);
+                        }
+                    }
+                }
+            } catch (e) {
+                alert('Feil ved opplasting: ' + e.message);
+                return;
+            }
+
             const nyeSeksjoner = [];
             for (const seksjon of (state.skjematype.Seksjoner || [])) {
                 const seksjonUt = {

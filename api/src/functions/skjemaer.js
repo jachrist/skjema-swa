@@ -14,6 +14,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
+const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 
@@ -32,6 +33,26 @@ async function harEierTilgang(skjematypeId, upn) {
     const treff = await filtrerTyperPåTilgang([st], upn, 'Eiere');
     return treff.length > 0;
 }
+
+app.http('nyttSkjemaId', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'ny-skjema-id/{skjematypeId}',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        try {
+            const skjematypeId = request.params.skjematypeId;
+            const tillatt = await harPublikumTilgang(skjematypeId, upn);
+            if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+            const skjemaId = await genererSkjemaId(skjematypeId);
+            return { jsonBody: { Skjema_id: skjemaId } };
+        } catch (e) {
+            context.log('nyttSkjemaId FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
 
 app.http('lagreSkjema', {
     methods: ['POST'],
@@ -54,11 +75,16 @@ app.http('lagreSkjema', {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang til denne skjematypen' } };
             }
 
-            // Generer nytt Skjema_id hvis ikke oppgitt
+            // Generer nytt Skjema_id hvis ikke oppgitt. Hvis oppgitt (f.eks. pre-generert
+            // av ny-skjema-id-endpoint), sjekk om det allerede finnes for å avgjøre erNytt.
             let skjemaId = body.Skjema_id ? String(body.Skjema_id) : null;
-            const erNytt = !skjemaId;
-            if (erNytt) {
+            let erNytt;
+            if (!skjemaId) {
                 skjemaId = await genererSkjemaId(skjematypeId);
+                erNytt = true;
+            } else {
+                const eksisterer = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+                erNytt = !eksisterer;
             }
 
             // Bygg skjemadata
@@ -149,6 +175,14 @@ app.http('slettSkjema', {
 
             const slettet = await forekomstStorage.slettSkjema(skjemaId, skjematypeId);
             if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            // Slett også alle vedlegg for skjemaet (best-effort)
+            try {
+                const antall = await vedleggStorage.slettAlleVedleggForSkjema(skjematypeId, skjemaId);
+                if (antall > 0) context.log(`skjemaer DELETE: ryddet ${antall} vedlegg for ${skjemaId}`);
+            } catch (e) {
+                context.log(`skjemaer DELETE: kunne ikke rydde vedlegg for ${skjemaId}: ${e.message}`);
+            }
 
             context.log(`skjemaer DELETE: ${upn} slettet ${skjemaId} (type ${skjematypeId})`);
             return { jsonBody: { status: 'ok' } };

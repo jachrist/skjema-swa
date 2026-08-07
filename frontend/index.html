@@ -277,9 +277,10 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting } from './js/felt-render.js';
 
         let skjematype = null;
+        let skjemaId = null; // pre-generert ved oppstart så vi kan opplaste vedlegg før submit
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
 
@@ -298,6 +299,15 @@
 
             try {
                 skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
+                // Pre-generer Skjema_id så vi kan opplaste vedlegg før submit.
+                // ID reserveres nå — går tapt (uten opprettet rad) hvis bruker forlater siden uten å sende inn.
+                try {
+                    const idRes = await api.get(`/api/ny-skjema-id/${encodeURIComponent(skjematypeId)}`);
+                    skjemaId = idRes.Skjema_id;
+                } catch (e) {
+                    // Ikke kritisk hvis skjematypen ikke har vedleggsfelter — send inn genererer ID uansett
+                    console.warn('ny-skjema-id feilet:', e.message);
+                }
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste skjemadefinisjon: ' + e.message);
@@ -447,6 +457,27 @@
 
             const submitKnapp = document.getElementById('submit-knapp');
             submitKnapp.disabled = true;
+            submitKnapp.textContent = 'Laster opp vedlegg…';
+
+            // Steg 1: opplast vedlegg for hvert Opplasting-felt (krever skjemaId)
+            if (skjemaId) {
+                try {
+                    for (const seksjon of (skjematype.Seksjoner || [])) {
+                        for (const felt of (seksjon.Felter || [])) {
+                            if (felt.Type !== 'Opplasting') continue;
+                            const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
+                            if (feltEl) {
+                                await preSubmitOpplasting(feltEl, skjematypeId, skjemaId);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    submitKnapp.disabled = false;
+                    submitKnapp.textContent = 'Send inn';
+                    alert('Feil ved opplasting: ' + e.message);
+                    return;
+                }
+            }
             submitKnapp.textContent = 'Sender…';
 
             const svar = samleSvar();
@@ -456,10 +487,11 @@
                 Seksjoner: svar.Seksjoner,
                 Skjema_status: 2 // 2=innsendt
             };
+            if (skjemaId) body.Skjema_id = skjemaId; // bruk pre-generert id så vedleggene binder til rett skjema
 
             try {
-                const svar = await api.post('/api/skjemaer', body);
-                window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(svar.Skjema_id)}`;
+                const resp = await api.post('/api/skjemaer', body);
+                window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
             } catch (e) {
                 submitKnapp.disabled = false;
                 submitKnapp.textContent = 'Send inn';

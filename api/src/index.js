@@ -7,6 +7,7 @@ require('./functions/hello-storage');
 require('./functions/whoami');
 require('./functions/skjematyper');
 require('./functions/skjemaer');
+require('./functions/vedlegg');
 require('./functions/seed-eksempel');
 require('./functions/postnumre');
 
