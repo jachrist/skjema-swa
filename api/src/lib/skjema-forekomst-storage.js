@@ -8,8 +8,23 @@
  *     Egenskaper: Tittel, InnsenderEpost, Skjemastatus, Opprettet, Oppdatert, JSON
  */
 const { tabellKlient } = require('./storage');
+const { erKompaktFormat, ekspanderSkjema } = require('./skjema-kompakt');
+const skjemaStorage = require('./skjema-storage');
 
 const TABELL = 'Skjemaer';
+
+/**
+ * Sikrer at et skjema returneres i fullt format, uansett hvordan det er lagret.
+ * Henter skjemadefinisjonen ved behov for å ekspandere kompakt lagring.
+ */
+async function sikrFulltFormat(skjemaData) {
+    if (!skjemaData || !erKompaktFormat(skjemaData)) return skjemaData;
+    const skjematypeId = skjemaData.Skjematype_id;
+    if (!skjematypeId) return skjemaData;
+    const def = await skjemaStorage.hentSkjematype(skjematypeId);
+    if (!def || !def.JSON) return skjemaData;
+    return ekspanderSkjema(skjemaData, def.JSON);
+}
 
 function entityTilSkjema(entity) {
     if (!entity) return null;
@@ -25,25 +40,28 @@ async function hentSkjema(skjemaId, skjematypeId) {
     const tabell = tabellKlient(TABELL);
     try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
 
+    let data = null;
     if (skjematypeId) {
         try {
             const entity = await tabell.getEntity(String(skjematypeId), String(skjemaId));
-            return entityTilSkjema(entity);
+            data = entityTilSkjema(entity);
         } catch (e) {
             if (e.statusCode === 404) return null;
             throw e;
         }
+    } else {
+        // Søk på tvers av partisjoner hvis skjematypeId mangler
+        const { odata } = require('@azure/data-tables');
+        const iter = tabell.listEntities({
+            queryOptions: { filter: odata`RowKey eq ${String(skjemaId)}` }
+        });
+        for await (const entity of iter) {
+            data = entityTilSkjema(entity);
+            break;
+        }
     }
-
-    // Søk på tvers av partisjoner hvis skjematypeId mangler
-    const { odata } = require('@azure/data-tables');
-    const iter = tabell.listEntities({
-        queryOptions: { filter: odata`RowKey eq ${String(skjemaId)}` }
-    });
-    for await (const entity of iter) {
-        return entityTilSkjema(entity);
-    }
-    return null;
+    // Alltid returner fullt format til kalleren
+    return await sikrFulltFormat(data);
 }
 
 async function lagreSkjema(skjemaData, erNytt = false) {
@@ -74,7 +92,7 @@ async function lagreSkjema(skjemaData, erNytt = false) {
     await tabell.upsertEntity(entity, 'Merge');
 }
 
-async function hentAlleSkjemaerForType(skjematypeId) {
+async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}) {
     const tabell = tabellKlient(TABELL);
     try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
 
@@ -87,7 +105,25 @@ async function hentAlleSkjemaerForType(skjematypeId) {
         const data = entityTilSkjema(entity);
         if (data) resultat.push(data);
     }
-    return resultat;
+
+    // For lista trenger vi som regel ikke ekspandere alle — det holder med metadata.
+    // Kalleren kan be om fullt format eksplisitt hvis nødvendig.
+    if (!fulltFormat) return resultat;
+
+    // Ekspander eventuelle kompakte skjemaer — bruker samme definisjon flere ganger
+    let def = null;
+    let harHentetDef = false;
+    const utvidet = [];
+    for (const skjema of resultat) {
+        if (!erKompaktFormat(skjema)) { utvidet.push(skjema); continue; }
+        if (!harHentetDef) {
+            const stObj = await skjemaStorage.hentSkjematype(skjematypeId);
+            def = stObj?.JSON || null;
+            harHentetDef = true;
+        }
+        utvidet.push(def ? ekspanderSkjema(skjema, def) : skjema);
+    }
+    return utvidet;
 }
 
 /**
@@ -136,5 +172,6 @@ module.exports = {
     lagreSkjema,
     hentAlleSkjemaerForType,
     hentMineMellomlagrede,
-    slettSkjema
+    slettSkjema,
+    sikrFulltFormat
 };

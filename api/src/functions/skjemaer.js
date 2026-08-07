@@ -17,6 +17,7 @@ const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
+const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -33,6 +34,48 @@ async function harEierTilgang(skjematypeId, upn) {
     const treff = await filtrerTyperPåTilgang([st], upn, 'Eiere');
     return treff.length > 0;
 }
+
+/**
+ * POST /api/skjemaer/:type/:id/komprimer — komprimer skjema til kompakt lagringsformat.
+ * Reduserer JSON-størrelsen ved arkivering. Ekspanderes transparent ved henting.
+ * Kun eier/admin. Kan gjøres når som helst (idempotent).
+ */
+app.http('komprimerSkjema', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/{skjematypeId}/{skjemaId}/komprimer',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const { skjematypeId, skjemaId } = request.params;
+            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            // Kun eier eller admin — innsender skal ikke kunne komprimere andres arkiv
+            if (!erAdmin(upn)) {
+                const erEier = await harEierTilgang(skjematypeId, upn);
+                if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever eier-tilgang' } };
+            }
+
+            if (erKompaktFormat(skjema)) {
+                return { jsonBody: { status: 'ok', allerede_kompakt: true } };
+            }
+
+            const kompakt = komprimerSkjema(skjema);
+            const førSt = JSON.stringify(skjema).length;
+            const etterSt = JSON.stringify(kompakt).length;
+            await forekomstStorage.lagreSkjema(kompakt, false);
+
+            context.log(`komprimer: ${upn} komprimerte ${skjemaId} (${førSt} → ${etterSt} bytes)`);
+            return { jsonBody: { status: 'ok', størrelse_før: førSt, størrelse_etter: etterSt } };
+        } catch (e) {
+            context.log('komprimerSkjema FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
 
 app.http('mineMellomlagrede', {
     methods: ['GET'],
