@@ -319,11 +319,27 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
             antallValgt++;
         }
         cb.addEventListener('change', () => {
-            if (cb.checked) { label.classList.add('selected'); antallValgt++; }
-            else { label.classList.remove('selected'); antallValgt--; }
+            if (cb.checked) {
+                // For Max_valg=1: automatisk uncheke andre (radio-lignende)
+                if (maks === 1) {
+                    container.querySelectorAll('.flervalg-knapp input:checked').forEach(other => {
+                        if (other !== cb) {
+                            other.checked = false;
+                            other.closest('label').classList.remove('selected');
+                        }
+                    });
+                    antallValgt = 1;
+                } else {
+                    antallValgt++;
+                }
+                label.classList.add('selected');
+            } else {
+                label.classList.remove('selected');
+                antallValgt--;
+            }
             container.querySelectorAll('.flervalg-knapp').forEach(k => {
                 const c = k.querySelector('input');
-                c.disabled = !c.checked && antallValgt >= maks;
+                c.disabled = !c.checked && antallValgt >= maks && maks > 1;
             });
         });
         const span = document.createElement('span');

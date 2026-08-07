@@ -358,15 +358,18 @@
         async function lastListe() {
             visStatus('Laster…');
             try {
-                const [typer, mellom, behandlinger] = await Promise.all([
-                    api.get('/api/skjematyper'),
-                    api.get('/api/mine-mellomlagrede').catch(() => ({})),
-                    api.get('/api/mine-behandlinger').catch(() => ({}))
-                ]);
-                alle = typer;
-                mellomlagredeMap = mellom || {};
-                behandlingerMap = behandlinger || {};
+                // Vis skjematypene så snart de er hentet — ikke vent på tilleggs-info
+                alle = await api.get('/api/skjematyper');
                 render(alle);
+                // Hent tilleggs-info i bakgrunnen og re-render når klart
+                api.get('/api/mine-mellomlagrede').catch(() => ({})).then(m => {
+                    mellomlagredeMap = m || {};
+                    render(alle);
+                });
+                api.get('/api/mine-behandlinger').catch(() => ({})).then(b => {
+                    behandlingerMap = b || {};
+                    render(alle);
+                });
             } catch (e) {
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
             }
