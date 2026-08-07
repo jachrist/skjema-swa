@@ -515,10 +515,15 @@
             const knapperEl = document.createElement('div');
             knapperEl.className = 'detalj-knapper';
             const raaLenke = `<a class="knapp sekundær" href="/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(state.valgtId)}" target="_blank" title="Åpne rå JSON i ny fane">Rå JSON</a>`;
+            const harBehandling = Array.isArray(s.Behandling) && s.Behandling.length > 0;
+            const behandleLenke = harBehandling
+                ? `<a class="knapp primær" href="/evaluering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(state.valgtId)}">Behandle</a>`
+                : '';
             knapperEl.innerHTML = state.redigerer
                 ? `<button class="knapp primær" onclick="lagreEndringer()">Lagre endringer</button>
                    <button class="knapp sekundær" onclick="avbrytRedigering()">Avbryt</button>`
-                : `<button class="knapp primær" onclick="startRedigering()">Rediger</button>
+                : `${behandleLenke}
+                   <button class="knapp sekundær" onclick="startRedigering()">Rediger</button>
                    <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>
                    ${raaLenke}`;
             hoyre.appendChild(knapperEl);

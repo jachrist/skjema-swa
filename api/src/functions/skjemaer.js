@@ -18,6 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
+const { beregnAktiveSteg, brukerErBehandler, alleStegFerdig, stegErFerdig } = require('../lib/behandling');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -72,6 +73,134 @@ app.http('komprimerSkjema', {
             return { jsonBody: { status: 'ok', størrelse_før: førSt, størrelse_etter: etterSt } };
         } catch (e) {
             context.log('komprimerSkjema FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/skjemaer/:type/:id/beslutning
+ * Body: { steg: <n>, beslutning: <n> }
+ * Kun bruker som er behandler på steget kan gjøre beslutning.
+ * Steget må være aktivt (ikke behandlet, ikke blokkert av avhengighet).
+ */
+app.http('lagreBeslutning', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/{skjematypeId}/{skjemaId}/beslutning',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const { skjematypeId, skjemaId } = request.params;
+            const body = await request.json();
+            const stegNr = Number(body.steg);
+            const beslutning = Number(body.beslutning);
+            if (!stegNr || !beslutning) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Manglet steg eller beslutning' } };
+            }
+
+            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            const stegObj = (skjema.Behandling || []).find(s => Number(s.Steg) === stegNr);
+            if (!stegObj) return { status: 404, jsonBody: { status: 'feil', melding: 'Behandlingssteg ikke funnet' } };
+
+            // Tilgangssjekk: må være behandler
+            if (!brukerErBehandler(stegObj, upn)) {
+                return { status: 403, jsonBody: { status: 'avvist', melding: 'Du er ikke behandler på dette steget' } };
+            }
+            // Tilstandssjekk: ikke allerede behandlet, ikke blokkert
+            if (stegErFerdig(stegObj)) {
+                return { status: 409, jsonBody: { status: 'feil', melding: 'Steget er allerede behandlet' } };
+            }
+            const aktive = beregnAktiveSteg(skjema);
+            if (!aktive.some(s => Number(s.Steg) === stegNr)) {
+                return { status: 409, jsonBody: { status: 'feil', melding: 'Steget er ikke aktivt ennå' } };
+            }
+
+            // Valider beslutning mot Beslutningsvalg (eller 5 = hoppet over)
+            const gyldigeNr = (stegObj.Beslutningsvalg || []).map(v => Number(v.Nummer));
+            if (beslutning !== 5 && !gyldigeNr.includes(beslutning)) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Ugyldig beslutning for dette steget' } };
+            }
+
+            // Sett beslutning
+            stegObj.Beslutning = beslutning;
+            stegObj.BehandletAv = upn;
+            stegObj.BehandletDato = new Date().toISOString();
+
+            // Oppdater skjema-status hvis alle steg ferdig
+            if (alleStegFerdig(skjema)) {
+                skjema.Skjema_status = 5; // Avsluttet
+            }
+
+            await forekomstStorage.lagreSkjema(skjema, false);
+            context.log(`beslutning: ${upn} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
+
+            return {
+                jsonBody: {
+                    status: 'ok',
+                    alleFerdig: alleStegFerdig(skjema),
+                    nyeAktive: beregnAktiveSteg(skjema).map(s => ({ Steg: s.Steg, Stegnavn: s.Stegnavn }))
+                }
+            };
+        } catch (e) {
+            context.log('beslutning FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * GET /api/mine-behandlinger — skjemaer der bruker er behandler på minst ett aktivt steg.
+ * Returnerer { [skjematypeId]: [{ Skjema_id, Innsender_Epost, Sist_endret, Aktive_steg: [...] }] }
+ *
+ * Foreløpig full scan av Skjemaer med Skjemastatus=2. Optimeres senere.
+ */
+app.http('mineBehandlinger', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'mine-behandlinger',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const { odata } = require('@azure/data-tables');
+            const { tabellKlient } = require('../lib/storage');
+            const tabell = tabellKlient('Skjemaer');
+            const iter = tabell.listEntities({
+                queryOptions: { filter: odata`Skjemastatus eq ${2}` }
+            });
+
+            const upnLower = upn.toLowerCase();
+            const gruppert = {};
+            for await (const entity of iter) {
+                if (!entity.JSON) continue;
+                let data;
+                try { data = JSON.parse(entity.JSON); } catch { continue; }
+                const skjema = await forekomstStorage.sikrFulltFormat(data);
+                if (!Array.isArray(skjema?.Behandling)) continue;
+
+                const aktive = beregnAktiveSteg(skjema);
+                const mine = aktive.filter(s => brukerErBehandler(s, upn));
+                if (mine.length === 0) continue;
+
+                const key = String(skjema.Skjematype_id || entity.partitionKey);
+                if (!gruppert[key]) gruppert[key] = [];
+                gruppert[key].push({
+                    Skjema_id: skjema.Skjema_id,
+                    Skjematype_id: skjema.Skjematype_id,
+                    Innsender_Epost: skjema.Innsender_Epost,
+                    Sist_endret: skjema.Sist_endret || entity.Oppdatert || '',
+                    Aktive_steg: mine.map(s => ({ Steg: s.Steg, Stegnavn: s.Stegnavn || `Steg ${s.Steg}` }))
+                });
+            }
+            return { jsonBody: gruppert };
+        } catch (e) {
+            context.log('mine-behandlinger FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

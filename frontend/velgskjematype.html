@@ -353,16 +353,19 @@
         }
 
         let mellomlagredeMap = {};
+        let behandlingerMap = {};
 
         async function lastListe() {
             visStatus('Laster…');
             try {
-                const [typer, mellom] = await Promise.all([
+                const [typer, mellom, behandlinger] = await Promise.all([
                     api.get('/api/skjematyper'),
-                    api.get('/api/mine-mellomlagrede').catch(() => ({}))
+                    api.get('/api/mine-mellomlagrede').catch(() => ({})),
+                    api.get('/api/mine-behandlinger').catch(() => ({}))
                 ]);
                 alle = typer;
                 mellomlagredeMap = mellom || {};
+                behandlingerMap = behandlinger || {};
                 render(alle);
             } catch (e) {
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
@@ -451,6 +454,25 @@
                 ? `<div class="knapperad">${knapper.join('')}</div>`
                 : '<div class="knapperad"><em style="color: var(--text-secondary); font-size: 13px;">Ingen tilgjengelige handlinger</em></div>';
 
+            // Behandlinger for meg på denne skjematypen (kan gjelde alle brukere som er behandler)
+            let behandlingHtml = '';
+            const mineBeh = behandlingerMap[t.Skjematype_id] || [];
+            if (mineBeh.length > 0) {
+                behandlingHtml = `
+                    <div style="margin-top: 10px; padding: 10px 12px; background: rgba(10, 132, 255, 0.08); border-left: 3px solid var(--accent); border-radius: 6px; font-size: 13px;">
+                        <div style="font-weight: 600; margin-bottom: 6px;">Til behandling (${mineBeh.length}):</div>
+                        ${mineBeh.map(b => {
+                            const dato = formaterDato(b.Sist_endret);
+                            const stegTekst = (b.Aktive_steg || []).map(s => `steg ${s.Steg}: ${s.Stegnavn}`).join(', ');
+                            return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0;">
+                                <span style="color: var(--text-secondary);">#${escapeHtml(b.Skjema_id)} · ${escapeHtml(stegTekst)} · ${escapeHtml(dato)}</span>
+                                <a class="knapp primær" style="padding: 4px 10px; font-size: 12px;" href="/evaluering.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}&skjema_id=${encodeURIComponent(b.Skjema_id)}">Behandle</a>
+                            </div>`;
+                        }).join('')}
+                    </div>
+                `;
+            }
+
             // Mellomlagrede utkast for denne skjematypen — kun hvis bruker kan fylle ut
             let mellomlagretHtml = '';
             if (t.KanFylle) {
@@ -480,6 +502,7 @@
                     ${forklaring}
                     ${periodeAdvarsel}
                     ${knapperadHtml}
+                    ${behandlingHtml}
                     ${mellomlagretHtml}
                 </div>
             `;
