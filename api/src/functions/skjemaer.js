@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, alleStegFerdig, stegErFerdig } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -130,6 +130,10 @@ app.http('lagreBeslutning', {
             stegObj.Beslutning = beslutning;
             stegObj.BehandletAv = upn;
             stegObj.BehandletDato = new Date().toISOString();
+
+            // Kaskader: marker steg som skal skippes (uoppfylt vilkår, avhengighet oppfylt) som "Hoppet over"
+            const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
+            if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
 
             // Oppdater skjema-status hvis alle steg ferdig
             if (alleStegFerdig(skjema)) {
@@ -306,6 +310,15 @@ app.http('lagreSkjema', {
             };
             if (behandlingArvet && !Array.isArray(skjemaData.Behandling)) {
                 skjemaData.Behandling = behandlingArvet;
+            }
+
+            // Ved innsending: kjør skip-logikk så steg som ikke oppfyller vilkår
+            // markeres som "Hoppet over" med én gang, og skjemaet kan lukkes hvis alt skippes.
+            if (skjemaData.Skjema_status === 2 && Array.isArray(skjemaData.Behandling)) {
+                skipStegSomIkkeSkalKjore(skjemaData);
+                if (alleStegFerdig(skjemaData)) {
+                    skjemaData.Skjema_status = 5;
+                }
             }
 
             await forekomstStorage.lagreSkjema(skjemaData, erNytt);

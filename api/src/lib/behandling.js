@@ -46,10 +46,41 @@ function alleStegFerdig(skjema) {
     return behandling.every(stegErFerdig);
 }
 
+/**
+ * Marker steg som "Hoppet over" (Beslutning=5) hvis:
+ *   - Ikke behandlet ennå
+ *   - Avhengighet er oppfylt (så vilkåret kan evalueres pålitelig)
+ *   - Vilkår finnes og er ikke oppfylt
+ *
+ * Løper fixpunkt — noen skip kan trigge nye skip via Behandling-referanser.
+ * Endrer skjemaet in-place. Returnerer antall steg som ble skippet.
+ */
+function skipStegSomIkkeSkalKjore(skjema) {
+    if (!Array.isArray(skjema?.Behandling)) return 0;
+    let totalSkippet = 0;
+    let endret = true;
+    while (endret) {
+        endret = false;
+        for (const s of skjema.Behandling) {
+            if (Number(s.Beslutning || 0) !== 0) continue;
+            if (stegErBlokkertAvAvhengighet(s, skjema.Behandling)) continue;
+            if (s.Vilkår && !evaluerVilkar(s.Vilkår, skjema.Seksjoner, skjema.Behandling)) {
+                s.Beslutning = 5;
+                s.BehandletAv = 'system';
+                s.BehandletDato = new Date().toISOString();
+                totalSkippet++;
+                endret = true;
+            }
+        }
+    }
+    return totalSkippet;
+}
+
 module.exports = {
     beregnAktiveSteg,
     brukerErBehandler,
     alleStegFerdig,
     stegErFerdig,
-    stegErBlokkertAvAvhengighet
+    stegErBlokkertAvAvhengighet,
+    skipStegSomIkkeSkalKjore
 };
