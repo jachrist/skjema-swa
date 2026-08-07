@@ -280,9 +280,11 @@
         import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting } from './js/felt-render.js';
 
         let skjematype = null;
-        let skjemaId = null; // pre-generert ved oppstart så vi kan opplaste vedlegg før submit
+        let skjemaId = null; // pre-generert (nytt) eller eksisterende (fortsett mellomlagret)
+        let eksisterendeSkjema = null; // hvis vi henter fra fortsett
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
+        const skjemaIdParam = params.get('skjema_id'); // satt hvis "Fortsett"
 
         async function init() {
             const bruker = await hentInnloggetBruker();
@@ -299,14 +301,24 @@
 
             try {
                 skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
-                // Pre-generer Skjema_id så vi kan opplaste vedlegg før submit.
-                // ID reserveres nå — går tapt (uten opprettet rad) hvis bruker forlater siden uten å sende inn.
-                try {
-                    const idRes = await api.get(`/api/ny-skjema-id/${encodeURIComponent(skjematypeId)}`);
-                    skjemaId = idRes.Skjema_id;
-                } catch (e) {
-                    // Ikke kritisk hvis skjematypen ikke har vedleggsfelter — send inn genererer ID uansett
-                    console.warn('ny-skjema-id feilet:', e.message);
+
+                if (skjemaIdParam) {
+                    // Fortsett mellomlagret: hent eksisterende skjema for å bruke svarene
+                    skjemaId = skjemaIdParam;
+                    try {
+                        eksisterendeSkjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaIdParam)}`);
+                    } catch (e) {
+                        visFeil('Kunne ikke hente mellomlagret skjema: ' + e.message);
+                        return;
+                    }
+                } else {
+                    // Ny utfylling: pre-generer Skjema_id så vedlegg kan opplastes før submit
+                    try {
+                        const idRes = await api.get(`/api/ny-skjema-id/${encodeURIComponent(skjematypeId)}`);
+                        skjemaId = idRes.Skjema_id;
+                    } catch (e) {
+                        console.warn('ny-skjema-id feilet:', e.message);
+                    }
                 }
                 rendrer();
             } catch (e) {
@@ -319,7 +331,22 @@
             document.getElementById('innhold').textContent = tekst;
         }
 
+        // Bygg lookup fra eksisterende svar (ved fortsett): "sek-felt" -> array
+        function bySvarMap() {
+            const map = new Map();
+            if (!eksisterendeSkjema?.Seksjoner) return map;
+            for (const seksjon of eksisterendeSkjema.Seksjoner) {
+                for (const felt of (seksjon.Felter || [])) {
+                    const key = `${seksjon.Nummer}-${felt.Nummer}`;
+                    map.set(key, felt.Svar || []);
+                }
+            }
+            return map;
+        }
+        let svarMap = new Map();
+
         function rendrer() {
+            svarMap = bySvarMap();
             document.getElementById('tittel').textContent = skjematype.Skjema_navn || 'Skjema';
             document.title = skjematype.Skjema_navn || 'Skjema';
 
@@ -344,6 +371,7 @@
             knapperad.className = 'knapperad';
             knapperad.innerHTML = `
                 <a class="knapp sekundær" href="/velgskjematype.html">Avbryt</a>
+                <button type="button" class="knapp sekundær" id="lagre-knapp" onclick="lagreForSenere()">Lagre for senere</button>
                 <button type="submit" class="knapp primær" id="submit-knapp">Send inn</button>
             `;
             form.appendChild(knapperad);
@@ -391,7 +419,8 @@
                 }
             }
 
-            div.appendChild(byggEditWidget(felt, feltId, []));
+            const initialSvar = svarMap.get(`${seksjonNr}-${felt.Nummer}`) || [];
+            div.appendChild(byggEditWidget(felt, feltId, initialSvar));
 
             const feil = document.createElement('div');
             feil.className = 'felt-feilmelding';
@@ -449,6 +478,63 @@
             if (førsteFeilFelt) førsteFeilFelt.scrollIntoView({ behavior: 'smooth', block: 'center' });
             return alleOk;
         }
+
+        async function lagreForSenere() {
+            // Ingen validering — bruker skal kunne pause midt i utfylling
+            const lagreKnapp = document.getElementById('lagre-knapp');
+            const submitKnapp = document.getElementById('submit-knapp');
+            lagreKnapp.disabled = true;
+            submitKnapp.disabled = true;
+            lagreKnapp.textContent = 'Laster opp vedlegg…';
+
+            if (skjemaId) {
+                try {
+                    for (const seksjon of (skjematype.Seksjoner || [])) {
+                        for (const felt of (seksjon.Felter || [])) {
+                            if (felt.Type !== 'Opplasting') continue;
+                            const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
+                            if (feltEl) await preSubmitOpplasting(feltEl, skjematypeId, skjemaId);
+                        }
+                    }
+                } catch (e) {
+                    lagreKnapp.disabled = false;
+                    submitKnapp.disabled = false;
+                    lagreKnapp.textContent = 'Lagre for senere';
+                    alert('Feil ved opplasting: ' + e.message);
+                    return;
+                }
+            }
+
+            lagreKnapp.textContent = 'Lagrer…';
+            const svar = samleSvar();
+            const body = {
+                Skjematype_id: skjematypeId,
+                Skjema_navn: skjematype.Skjema_navn,
+                Seksjoner: svar.Seksjoner,
+                Skjema_status: 1 // mellomlagret
+            };
+            if (skjemaId) body.Skjema_id = skjemaId;
+
+            try {
+                const resp = await api.post('/api/skjemaer', body);
+                // Bli på siden — bekreft med melding og legg til lenke tilbake
+                lagreKnapp.disabled = false;
+                submitKnapp.disabled = false;
+                lagreKnapp.textContent = '✓ Lagret';
+                setTimeout(() => { lagreKnapp.textContent = 'Lagre for senere'; }, 2500);
+                // Oppdater URL med skjema_id så refresh gjenopptar
+                if (resp.Skjema_id && !skjemaIdParam) {
+                    const nyUrl = `/index.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
+                    window.history.replaceState({}, '', nyUrl);
+                }
+            } catch (e) {
+                lagreKnapp.disabled = false;
+                submitKnapp.disabled = false;
+                lagreKnapp.textContent = 'Lagre for senere';
+                alert('Kunne ikke lagre: ' + e.message);
+            }
+        }
+        window.lagreForSenere = lagreForSenere;
 
         async function submitSkjema() {
             if (!validerAlle()) {

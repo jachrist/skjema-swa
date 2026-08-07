@@ -352,10 +352,17 @@
             await lastListe();
         }
 
+        let mellomlagredeMap = {};
+
         async function lastListe() {
             visStatus('Laster…');
             try {
-                alle = await api.get('/api/skjematyper');
+                const [typer, mellom] = await Promise.all([
+                    api.get('/api/skjematyper'),
+                    api.get('/api/mine-mellomlagrede').catch(() => ({}))
+                ]);
+                alle = typer;
+                mellomlagredeMap = mellom || {};
                 render(alle);
             } catch (e) {
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
@@ -437,6 +444,26 @@
                 ? `<div class="knapperad">${knapper.join('')}</div>`
                 : '<div class="knapperad"><em style="color: var(--text-secondary); font-size: 13px;">Ingen tilgjengelige handlinger</em></div>';
 
+            // Mellomlagrede utkast for denne skjematypen — kun hvis bruker kan fylle ut
+            let mellomlagretHtml = '';
+            if (t.KanFylle) {
+                const mine = mellomlagredeMap[t.Skjematype_id] || [];
+                if (mine.length > 0) {
+                    mellomlagretHtml = `
+                        <div style="margin-top: 10px; padding: 10px 12px; background: rgba(255, 149, 0, 0.08); border-left: 3px solid var(--badge-utvikling, #ff9500); border-radius: 6px; font-size: 13px;">
+                            <div style="font-weight: 600; margin-bottom: 6px;">Påbegynte utkast (${mine.length}):</div>
+                            ${mine.map(m => {
+                                const dato = formaterDato(m.Sist_endret);
+                                return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0;">
+                                    <span style="color: var(--text-secondary);">#${escapeHtml(m.Skjema_id)} · endret ${escapeHtml(dato)}</span>
+                                    <a class="knapp sekundær" style="padding: 4px 10px; font-size: 12px;" href="/index.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}&skjema_id=${encodeURIComponent(m.Skjema_id)}">Fortsett</a>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    `;
+                }
+            }
+
             return `
                 <div class="skjematype-kort">
                     <div class="kort-tittelrad">
@@ -445,8 +472,17 @@
                     </div>
                     ${forklaring}
                     ${knapperadHtml}
+                    ${mellomlagretHtml}
                 </div>
             `;
+        }
+
+        function formaterDato(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d)) return iso;
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
 
         function escapeHtml(s) {

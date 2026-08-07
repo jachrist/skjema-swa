@@ -34,6 +34,30 @@ async function harEierTilgang(skjematypeId, upn) {
     return treff.length > 0;
 }
 
+app.http('mineMellomlagrede', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'mine-mellomlagrede',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        try {
+            const mine = await forekomstStorage.hentMineMellomlagrede(upn);
+            // Grupper per skjematype: { [skjematypeId]: [skjemaer] }
+            const gruppert = {};
+            for (const s of mine) {
+                const key = String(s.Skjematype_id);
+                if (!gruppert[key]) gruppert[key] = [];
+                gruppert[key].push(s);
+            }
+            return { jsonBody: gruppert };
+        } catch (e) {
+            context.log('mine-mellomlagrede FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('nyttSkjemaId', {
     methods: ['GET'],
     authLevel: 'anonymous',

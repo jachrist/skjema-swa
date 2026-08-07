@@ -90,6 +90,36 @@ async function hentAlleSkjemaerForType(skjematypeId) {
     return resultat;
 }
 
+/**
+ * Hent alle mellomlagrede skjemaer (status=1) der brukeren er innsender.
+ * Én query mot Skjemaer-tabellen på tvers av partisjoner.
+ */
+async function hentMineMellomlagrede(upn) {
+    if (!upn) return [];
+    const tabell = tabellKlient(TABELL);
+    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+
+    const { odata } = require('@azure/data-tables');
+    const upnLower = String(upn).toLowerCase();
+    const filter = odata`InnsenderEpost eq ${upnLower} and Skjemastatus eq ${1}`;
+
+    const resultat = [];
+    const iter = tabell.listEntities({ queryOptions: { filter } });
+    for await (const entity of iter) {
+        const data = entityTilSkjema(entity);
+        if (!data) continue;
+        resultat.push({
+            Skjema_id: data.Skjema_id,
+            Skjematype_id: data.Skjematype_id || entity.partitionKey,
+            Sist_endret: data.Sist_endret || entity.Oppdatert || '',
+            Opprettet: data.Opprettet || ''
+        });
+    }
+    // Nyeste først
+    resultat.sort((a, b) => (b.Sist_endret || '').localeCompare(a.Sist_endret || ''));
+    return resultat;
+}
+
 async function slettSkjema(skjemaId, skjematypeId) {
     const tabell = tabellKlient(TABELL);
     try {
@@ -105,5 +135,6 @@ module.exports = {
     hentSkjema,
     lagreSkjema,
     hentAlleSkjemaerForType,
+    hentMineMellomlagrede,
     slettSkjema
 };
