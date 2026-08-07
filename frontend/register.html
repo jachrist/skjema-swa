@@ -382,7 +382,8 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, preSubmitOpplasting, escapeHtml as escHtml } from './js/felt-render.js';
+        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml } from './js/felt-render.js';
+        import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
@@ -520,9 +521,22 @@
                    <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>`;
             hoyre.appendChild(knapperEl);
 
+            // Bygg seksjoner-med-svar for vilkårs-evaluering (basert på lagrede svar)
+            const seksjonerMedSvar = (state.skjematype.Seksjoner || []).map(sek => ({
+                Seksjon_nummer: sek.Seksjon_nummer,
+                Nummer: sek.Seksjon_nummer,
+                Felter: (sek.Felter || []).map(f => ({
+                    Id: f.Id, Nummer: f.Nummer, Type: f.Type,
+                    Svar: svarMap.get(`${sek.Seksjon_nummer}-${f.Nummer}`) || []
+                }))
+            }));
+
             for (const seksjon of (state.skjematype.Seksjoner || [])) {
+                if (seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar)) continue;
+
                 const sDiv = document.createElement('div');
                 sDiv.className = 'seksjon';
+                sDiv.dataset.seksjonNummer = seksjon.Seksjon_nummer;
                 if (seksjon.Seksjon_overskrift) {
                     const h = document.createElement('h3');
                     h.className = 'seksjon-tittel';
@@ -531,11 +545,46 @@
                 }
                 let visningsNr = 0;
                 for (const felt of (seksjon.Felter || [])) {
+                    if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
                     const svar = svarMap.get(`${seksjon.Seksjon_nummer}-${felt.Nummer}`) || [];
                     sDiv.appendChild(byggFeltRad(felt, seksjon.Seksjon_nummer, visningsNr, svar, state.redigerer));
                 }
                 hoyre.appendChild(sDiv);
+            }
+
+            // I redigeringsmodus: re-evaluer Vises ved endringer (samme som index.html)
+            if (state.redigerer) {
+                setTimeout(() => {
+                    hoyre.addEventListener('input', oppdaterVisesReg);
+                    hoyre.addEventListener('change', oppdaterVisesReg);
+                }, 0);
+            }
+        }
+
+        function oppdaterVisesReg() {
+            if (!state.skjematype?.Seksjoner) return;
+            // Bruk edit-mode feltId-prefix
+            const seksjonerMedSvar = (state.skjematype.Seksjoner || []).map(sek => ({
+                Seksjon_nummer: sek.Seksjon_nummer,
+                Nummer: sek.Seksjon_nummer,
+                Felter: (sek.Felter || []).map(f => {
+                    const feltId = `edit-${sek.Seksjon_nummer}-${f.Nummer}`;
+                    const svar = f.Type === 'Informasjon' ? [] : hentSvarFraDom(feltId, f.Type);
+                    return { Id: f.Id, Nummer: f.Nummer, Type: f.Type, Svar: svar };
+                })
+            }));
+            for (const seksjon of state.skjematype.Seksjoner) {
+                if (seksjon.Vises) {
+                    const el = document.querySelector(`#hoyre .seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"]`);
+                    if (el) el.style.display = evaluerVilkar(seksjon.Vises, seksjonerMedSvar) ? '' : 'none';
+                }
+                for (const felt of (seksjon.Felter || [])) {
+                    if (!felt.Vises) continue;
+                    const wrapper = document.querySelector(`#hoyre .opplasting-wrapper[data-felt-id="edit-${seksjon.Seksjon_nummer}-${felt.Nummer}"], #hoyre [id="edit-${seksjon.Seksjon_nummer}-${felt.Nummer}"]`);
+                    const el = wrapper?.closest('.felt');
+                    if (el) el.style.display = evaluerVilkar(felt.Vises, seksjonerMedSvar) ? '' : 'none';
+                }
             }
         }
 

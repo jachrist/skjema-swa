@@ -228,6 +228,7 @@
         .felt.har-feil textarea {
             border-color: var(--error);
         }
+        .felt.skjult, .seksjon.skjult { display: none !important; }
 
         .knapperad {
             margin-top: 32px;
@@ -277,7 +278,8 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom } from './js/felt-render.js';
+        import { evaluerVilkar } from './js/vilkar.js';
 
         let skjematype = null;
         let skjemaId = null; // pre-generert (nytt) eller eksisterende (fortsett mellomlagret)
@@ -377,6 +379,51 @@
             form.appendChild(knapperad);
 
             innhold.appendChild(form);
+
+            // Lytt på alle endringer for å re-evaluere Vises/ObligatoriskHvis
+            form.addEventListener('input', oppdaterVises);
+            form.addEventListener('change', oppdaterVises);
+            // Første evaluering (i tilfelle skjemaet har prefilled svar fra "Fortsett")
+            oppdaterVises();
+        }
+
+        function oppdaterVises() {
+            if (!skjematype?.Seksjoner) return;
+            const seksjonerMedSvar = samleSeksjonerFraDom(skjematype.Seksjoner);
+
+            for (const seksjon of skjematype.Seksjoner) {
+                // Seksjons-Vises
+                if (seksjon.Vises) {
+                    const seksjonEl = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"]`);
+                    if (seksjonEl) {
+                        const skalVises = evaluerVilkar(seksjon.Vises, seksjonerMedSvar);
+                        seksjonEl.classList.toggle('skjult', !skalVises);
+                    }
+                }
+                // Felt-Vises
+                for (const felt of (seksjon.Felter || [])) {
+                    if (!felt.Vises) continue;
+                    const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .felt[data-felt-nummer="${felt.Nummer}"]`);
+                    if (feltEl) {
+                        feltEl.classList.toggle('skjult', !evaluerVilkar(felt.Vises, seksjonerMedSvar));
+                    }
+                }
+                // ObligatoriskHvis — toggler visning av *-markeringen
+                for (const felt of (seksjon.Felter || [])) {
+                    if (!felt.ObligatoriskHvis) continue;
+                    const markering = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .felt[data-felt-nummer="${felt.Nummer}"] .oblig-markering`);
+                    if (markering) {
+                        markering.style.display = evaluerVilkar(felt.ObligatoriskHvis, seksjonerMedSvar) ? '' : 'none';
+                    }
+                }
+            }
+        }
+
+        // Sjekk om et felt er "obligatorisk NÅ" (fast + betinget)
+        function erObligatoriskNa(felt, seksjonerMedSvar) {
+            if (felt.Obligatorisk) return true;
+            if (felt.ObligatoriskHvis) return evaluerVilkar(felt.ObligatoriskHvis, seksjonerMedSvar);
+            return false;
         }
 
         function byggSeksjon(seksjon) {
@@ -431,8 +478,11 @@
         }
 
         function samleSvar() {
+            // Bruk aktuell visnings-state til å tømme skjulte felter
+            const seksjonerMedSvar = samleSeksjonerFraDom(skjematype.Seksjoner);
             const svar = { Seksjoner: [] };
             for (const seksjon of (skjematype.Seksjoner || [])) {
+                const seksjonSkjult = seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar);
                 const seksjonUt = {
                     Nummer: seksjon.Seksjon_nummer,
                     Overskrift: seksjon.Seksjon_overskrift || '',
@@ -440,12 +490,16 @@
                 };
                 for (const felt of (seksjon.Felter || [])) {
                     if (felt.Type === 'Informasjon') continue;
+                    const feltSkjult = seksjonSkjult || (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar));
                     const feltId = `felt-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    // Skjulte felter får tomt svar — brukeren skal ikke bli bundet av gamle verdier
+                    // som ikke lenger er relevante for hoved-flyten.
+                    const svarVerdi = feltSkjult ? [] : hentSvarFraDom(feltId, felt.Type);
                     seksjonUt.Felter.push({
                         Id: felt.Id,
                         Nummer: felt.Nummer,
                         Type: felt.Type,
-                        Svar: hentSvarFraDom(feltId, felt.Type)
+                        Svar: svarVerdi
                     });
                 }
                 svar.Seksjoner.push(seksjonUt);
@@ -454,16 +508,25 @@
         }
 
         function validerAlle() {
+            const seksjonerMedSvar = samleSeksjonerFraDom(skjematype.Seksjoner);
             let alleOk = true;
             let førsteFeilFelt = null;
             for (const seksjon of (skjematype.Seksjoner || [])) {
+                const seksjonSkjult = seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar);
+                if (seksjonSkjult) continue; // ingen validering av skjulte seksjoner
                 for (const felt of (seksjon.Felter || [])) {
                     if (felt.Type === 'Informasjon') continue;
+                    const feltSkjult = felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar);
+                    if (feltSkjult) continue;
+
                     const feltId = `felt-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
                     const verdi = hentSvarFraDom(feltId, felt.Type);
-                    const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
+                    const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .felt[data-felt-nummer="${felt.Nummer}"]`);
                     const feilEl = feltEl?.querySelector('.felt-feilmelding');
-                    const res = valider(felt, verdi);
+
+                    // Bygg midlertidig felt-objekt med aktuell Obligatorisk-status
+                    const effektivFelt = { ...felt, Obligatorisk: erObligatoriskNa(felt, seksjonerMedSvar) };
+                    const res = valider(effektivFelt, verdi);
                     if (!res.ok) {
                         feltEl?.classList.add('har-feil');
                         if (feilEl) feilEl.textContent = res.feilmelding || 'Ugyldig verdi';

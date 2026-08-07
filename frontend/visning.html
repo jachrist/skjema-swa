@@ -207,6 +207,7 @@
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
         import { byggReadonlyVisning, escapeHtml } from './js/felt-render.js';
+        import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
@@ -280,7 +281,22 @@
             innhold.className = '';
             innhold.innerHTML = '';
 
+            // Bygg seksjoner-struktur for vilkårs-evaluering (basert på faktiske svar)
+            const seksjonerMedSvar = (skjematype.Seksjoner || []).map(sek => ({
+                Seksjon_nummer: sek.Seksjon_nummer,
+                Nummer: sek.Seksjon_nummer,
+                Felter: (sek.Felter || []).map(f => ({
+                    Id: f.Id,
+                    Nummer: f.Nummer,
+                    Type: f.Type,
+                    Svar: svarMap.get(`${sek.Seksjon_nummer}-${f.Nummer}`) || []
+                }))
+            }));
+
             for (const seksjon of (skjematype.Seksjoner || [])) {
+                // Hopp over seksjoner som ikke skal vises
+                if (seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar)) continue;
+
                 const div = document.createElement('div');
                 div.className = 'seksjon';
                 if (seksjon.Seksjon_overskrift) {
@@ -291,6 +307,8 @@
                 }
                 let visningsNr = 0;
                 for (const felt of (seksjon.Felter || [])) {
+                    // Hopp over felt som ikke skal vises
+                    if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
                     const key = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
                     const svar = svarMap.get(key) || [];

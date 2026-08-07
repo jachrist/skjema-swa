@@ -777,6 +777,28 @@ function _erGyldigKontonummer(s) {
     return k === parseInt(n[10], 10);
 }
 
+// ==================== SEKSJONER FRA DOM ====================
+
+/**
+ * Bygger en normalisert seksjoner-struktur fra det som er utfylt i DOM.
+ * Formatet matcher hva vilkar.evaluerVilkar forventer: hver felt har
+ * { Id, Nummer, Type, Svar }. Brukes til dynamisk Vises-evaluering.
+ *
+ * @param {object[]} seksjoner  — fra skjemadefinisjonen
+ * @returns {object[]}
+ */
+export function samleSeksjonerFraDom(seksjoner) {
+    return (seksjoner || []).map(sek => ({
+        Seksjon_nummer: sek.Seksjon_nummer,
+        Nummer: sek.Seksjon_nummer,
+        Felter: (sek.Felter || []).map(felt => {
+            const feltId = `felt-${sek.Seksjon_nummer}-${felt.Nummer}`;
+            const svar = felt.Type === 'Informasjon' ? [] : hentSvarFraDom(feltId, felt.Type);
+            return { Id: felt.Id, Nummer: felt.Nummer, Type: felt.Type, Svar: svar };
+        })
+    }));
+}
+
 // ==================== UTILITY ====================
 
 export function escapeHtml(s) {
