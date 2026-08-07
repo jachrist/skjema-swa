@@ -301,6 +301,12 @@
             <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
         </div>
 
+        <div id="admin-verktoy" style="display: none; margin-bottom: 18px; padding: 12px 16px; background: var(--forklaring-bg); border-radius: var(--radius-md); font-size: 13px;">
+            <strong style="color: var(--text-heading);">Pilot-verktøy (admin):</strong>
+            <button class="knapp sekundær" style="margin-left: 12px; padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed 3 eksempel-skjematyper</button>
+            <span id="admin-status" style="margin-left: 12px; color: var(--text-secondary);"></span>
+        </div>
+
         <div id="status" class="status-melding">Laster…</div>
         <div id="liste" class="skjematype-liste"></div>
     </div>
@@ -333,6 +339,19 @@
             document.getElementById('upn').textContent = bruker.userDetails;
             document.title = `Velg skjema — ${CONFIG.APP_TITTEL || ''}`;
 
+            // Hent admin-status via /api/whoami (basert på ADMIN_UPNS-env-var i backend)
+            try {
+                const meg = await api.get('/api/whoami');
+                if (meg.erAdmin) {
+                    document.getElementById('admin-verktoy').style.display = 'block';
+                }
+            } catch (_) { /* ikke kritisk */ }
+
+            await lastListe();
+        }
+
+        async function lastListe() {
+            visStatus('Laster…');
             try {
                 alle = await api.get('/api/skjematyper');
                 render(alle);
@@ -340,6 +359,21 @@
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
             }
         }
+
+        window.seed = async () => {
+            const statusEl = document.getElementById('admin-status');
+            statusEl.textContent = 'Seeder…';
+            statusEl.style.color = 'var(--text-secondary)';
+            try {
+                const svar = await api.post('/api/seed-eksempel', {});
+                statusEl.textContent = `Seeding OK — ${svar.antall} skjematyper (id ${svar.ider.join(', ')})`;
+                statusEl.style.color = 'var(--badge-produksjon)';
+                await lastListe();
+            } catch (e) {
+                statusEl.textContent = 'Seed feilet: ' + e.message;
+                statusEl.style.color = '#d9534f';
+            }
+        };
 
         function visStatus(tekst, klasse) {
             const el = document.getElementById('status');

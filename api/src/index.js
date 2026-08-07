@@ -4,6 +4,7 @@
  */
 require('./functions/ping');
 require('./functions/hello-storage');
+require('./functions/whoami');
 require('./functions/skjematyper');
 require('./functions/seed-eksempel');
 
