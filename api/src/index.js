@@ -10,6 +10,7 @@ require('./functions/skjemaer');
 require('./functions/vedlegg');
 require('./functions/seed-eksempel');
 require('./functions/postnumre');
+require('./functions/roller');
 
 // Etter hvert:
 // require('./functions/skjema');

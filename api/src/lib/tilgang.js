@@ -1,12 +1,12 @@
 /**
- * Tilgangskontroll — pilot-versjon.
+ * Tilgangskontroll.
  *
- * Denne modulen speiler filtrerTyperPåTilgang fra referanse-appen, men støtter
- * KUN direkte UPN-match i Personer-listen. Rolle- og team-baserte tilganger
- * kommer når vi porterer masterdata-modulen.
- *
- * Signaturen holdes lik referanse-appen så koden lett kan utvides senere.
+ * Støtter tilgang via:
+ *   - Direkte UPN-match i Personer-listen
+ *   - Rolle-basert medlemskap (via roller-storage) — fase 5a
+ *   - Team-basert medlemskap — kommer med Graph API (fase 8) / stub
  */
+const rollerStorage = require('./roller-storage');
 
 /**
  * Sjekk om upn har direkte tilgang via Personer-listen i en tilgangsstruktur.
@@ -34,6 +34,22 @@ function harPersonligTilgang(tilgang, upn) {
  * @param {string} tilgangsFelt  — "Publikum" eller "Eiere"
  * @returns {Promise<Array>}     — filtrert liste
  */
+async function harRolleTilgang(tilgang, upn) {
+    const roller = tilgang?.Roller || [];
+    if (roller.length === 0) return false;
+    for (const r of roller) {
+        try {
+            if (await rollerStorage.erMedlem(r, upn)) return true;
+        } catch (_) { /* ignorer, prøv neste */ }
+    }
+    return false;
+}
+
+// TODO (fase 8 med Graph API): implementer team-medlemskap
+async function harTeamTilgang(tilgang, upn) {
+    return false; // stub — kommer med masterdata + Graph
+}
+
 async function filtrerTyperPåTilgang(skjematyper, upn, tilgangsFelt) {
     const brukerensTyper = [];
     for (const st of skjematyper) {
@@ -44,15 +60,21 @@ async function filtrerTyperPåTilgang(skjematyper, upn, tilgangsFelt) {
             brukerensTyper.push(st);
             continue;
         }
-
-        // TODO (masterdata-modul): rolle- og team-basert medlemskap
-        // if (await harRolleTilgang(tilgang, upn)) { ... }
-        // if (await harTeamTilgang(tilgang, upn)) { ... }
+        if (await harRolleTilgang(tilgang, upn)) {
+            brukerensTyper.push(st);
+            continue;
+        }
+        if (await harTeamTilgang(tilgang, upn)) {
+            brukerensTyper.push(st);
+            continue;
+        }
     }
     return brukerensTyper;
 }
 
 module.exports = {
     harPersonligTilgang,
+    harRolleTilgang,
+    harTeamTilgang,
     filtrerTyperPåTilgang
 };

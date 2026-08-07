@@ -13,9 +13,10 @@
  */
 const postnumreStorage = require('./postnumre-storage');
 const skjemaStorage = require('./skjema-storage');
+const rollerStorage = require('./roller-storage');
 
 const IKKE_IMPLEMENTERT = new Set([
-    'Personer', 'Roller', 'Team', 'Emner', 'Studenter',
+    'Team', 'Emner', 'Studenter',
     'Avdelinger', 'Studieprogrammer'
 ]);
 
@@ -29,6 +30,10 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
             return await _hentPostnumre(filterbegrep, filterverdi);
         case 'Skjematyper':
             return await _hentSkjematyper(filterbegrep, filterverdi);
+        case 'Roller':
+            return await _hentRolleGrupper(filterbegrep, filterverdi);
+        case 'Personer':
+            return await _hentPersoner(filterbegrep, filterverdi, log);
         default:
             if (IKKE_IMPLEMENTERT.has(datakilde)) {
                 log(`oppslag: datakilde "${datakilde}" kommer med masterdata-modul (fase 5)`);
@@ -37,6 +42,36 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
             log(`oppslag: ukjent datakilde "${datakilde}"`);
             return [];
     }
+}
+
+async function _hentRolleGrupper(filterbegrep, filterverdi) {
+    // Returnerer distinkte (Rolle, Omfang) — for dropdown "velg en rolle"
+    const alle = await rollerStorage.hentAlleGrupper();
+    let filtrerte = alle;
+    if (filterbegrep === 'Omfang' && filterverdi) {
+        filtrerte = alle.filter(g => String(g.Omfang || '').toLowerCase() === String(filterverdi).toLowerCase());
+    }
+    return filtrerte.map(g => ({
+        Tekst: g.Omfang ? `${g.Rolle} (${g.Omfang})` : g.Rolle,
+        Verdi: g.Omfang ? `${g.Rolle}(${g.Omfang})` : g.Rolle,
+        Rolle: g.Rolle,
+        Omfang: g.Omfang
+    }));
+}
+
+async function _hentPersoner(filterbegrep, filterverdi, log) {
+    if (filterbegrep === 'Rolle') {
+        if (!filterverdi) return [];
+        const innehavere = await rollerStorage.hentInnehavere(filterverdi);
+        return innehavere.map(p => ({
+            Tekst: `${p.EN}, ${p.FN} (${p.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Verdi: p.EP,
+            FN: p.FN, EN: p.EN, EP: p.EP, Omfang: p.Omfang
+        }));
+    }
+    // Team/Emne/EmneLarere/EmneHovedlarere — kommer i 5b/5c
+    log(`oppslag: Personer med filterbegrep "${filterbegrep}" er ikke implementert ennå`);
+    return [];
 }
 
 async function _hentPostnumre(filterbegrep, filterverdi) {
