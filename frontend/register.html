@@ -543,6 +543,11 @@
                 hoyre.appendChild(byggBehandlingBoks(s.Behandling));
             }
 
+            // Vis dialog hvis det finnes
+            if (Array.isArray(s.Dialog) && s.Dialog.length > 0) {
+                hoyre.appendChild(byggDialogBoks(s.Dialog));
+            }
+
             for (const seksjon of (state.skjematype.Seksjoner || [])) {
                 if (seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar)) continue;
 
@@ -619,6 +624,29 @@
                     ${(steg.Personer || []).length > 0 ? `<div style="width: 100%; font-size: 11px; color: var(--text-secondary);">Behandlere: ${escHtml(steg.Personer.join(', '))}</div>` : ''}
                 `;
                 div.appendChild(rad);
+            }
+            return div;
+        }
+
+        function byggDialogBoks(dialog) {
+            const div = document.createElement('div');
+            div.className = 'seksjon';
+            const h = document.createElement('h3');
+            h.className = 'seksjon-tittel';
+            h.textContent = 'Dialog';
+            div.appendChild(h);
+            for (const i of dialog) {
+                const el = document.createElement('div');
+                const erIntern = i.Type === 'intern';
+                el.style.cssText = `padding: 10px 12px; margin: 6px 0; background: var(--bg-svar); border-left: 3px solid ${erIntern ? '#af52de' : 'var(--accent)'}; border-radius: 6px; font-size: 13px;`;
+                el.innerHTML = `
+                    <div style="color: var(--text-secondary); font-size: 11px; margin-bottom: 4px;">
+                        <span style="display: inline-block; padding: 1px 6px; border-radius: 999px; font-size: 10px; font-weight: 600; text-transform: uppercase; color: white; background: ${erIntern ? '#af52de' : 'var(--accent)'};">${erIntern ? 'Intern' : 'Til innsender'}</span>
+                        ${escHtml(i.Avsender || '')} · ${escHtml(formaterDato(i.Dato))}
+                    </div>
+                    <div style="white-space: pre-wrap; word-wrap: break-word;">${escHtml(i.Tekst || '')}</div>
+                `;
+                div.appendChild(el);
             }
             return div;
         }

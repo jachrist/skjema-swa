@@ -298,6 +298,11 @@
                 innhold.appendChild(byggBehandlingVisning(skjema.Behandling));
             }
 
+            // Vis dialog (backend filtrerer bort interne innlegg for innsender)
+            if (Array.isArray(skjema.Dialog) && skjema.Dialog.length > 0) {
+                innhold.appendChild(byggDialogVisning(skjema.Dialog));
+            }
+
             for (const seksjon of (skjematype.Seksjoner || [])) {
                 // Hopp over seksjoner som ikke skal vises
                 if (seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar)) continue;
@@ -362,6 +367,29 @@
                 }
 
                 div.appendChild(rad);
+            }
+            return div;
+        }
+
+        function byggDialogVisning(dialog) {
+            const div = document.createElement('div');
+            div.className = 'seksjon';
+            const h = document.createElement('h2');
+            h.className = 'seksjon-tittel';
+            h.textContent = 'Dialog';
+            div.appendChild(h);
+            for (const i of dialog) {
+                const el = document.createElement('div');
+                const erIntern = i.Type === 'intern';
+                el.style.cssText = `padding: 10px 14px; margin: 6px 0; background: var(--bg-svar); border-left: 3px solid ${erIntern ? '#af52de' : 'var(--accent)'}; border-radius: 6px; font-size: 14px;`;
+                el.innerHTML = `
+                    <div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 4px;">
+                        <span style="display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 10px; font-weight: 600; text-transform: uppercase; color: white; background: ${erIntern ? '#af52de' : 'var(--accent)'};">${erIntern ? 'Intern' : 'Melding'}</span>
+                        ${escapeHtml(i.Avsender || '')} · ${escapeHtml(formaterDato(i.Dato))}
+                    </div>
+                    <div style="white-space: pre-wrap; word-wrap: break-word;">${escapeHtml(i.Tekst || '')}</div>
+                `;
+                div.appendChild(el);
             }
             return div;
         }

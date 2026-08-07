@@ -163,6 +163,146 @@ app.http('lagreBeslutning', {
  *
  * Foreløpig full scan av Skjemaer med Skjemastatus=2. Optimeres senere.
  */
+/**
+ * Hjelper for dialog: sjekker om bruker har tilgang til skjemaet.
+ * Returnerer { rolle: 'innsender' | 'behandler' | 'eier' | 'admin' | null }
+ */
+async function tilgangsRolle(skjema, skjematypeId, upn) {
+    if (erAdmin(upn)) return 'admin';
+    const upnLower = upn.toLowerCase();
+    if ((skjema.Innsender_Epost || '').toLowerCase() === upnLower) return 'innsender';
+
+    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+    if (!st) return null;
+    const eier = await filtrerTyperPåTilgang([st], upn, 'Eiere');
+    if (eier.length > 0) return 'eier';
+
+    // Behandler-sjekk: er upn i noe steg.Personer
+    if (Array.isArray(skjema.Behandling)) {
+        for (const steg of skjema.Behandling) {
+            if ((steg.Personer || []).some(p => String(p).toLowerCase() === upnLower)) return 'behandler';
+        }
+    }
+    return null;
+}
+
+/**
+ * POST /api/skjemaer/:type/:id/dialog — legg til dialog-innlegg
+ * Body: { type: 'intern' | 'ekstern', tekst: '...' }
+ *
+ * Intern innlegg: krever behandler/eier/admin (ikke innsender)
+ * Ekstern innlegg: alle med tilgang
+ */
+app.http('leggTilDialog', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/{skjematypeId}/{skjemaId}/dialog',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const { skjematypeId, skjemaId } = request.params;
+            const body = await request.json();
+            const type = String(body.type || '').toLowerCase();
+            const tekst = String(body.tekst || '').trim();
+
+            if (type !== 'intern' && type !== 'ekstern') {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Type må være "intern" eller "ekstern"' } };
+            }
+            if (!tekst) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Tekst mangler' } };
+            }
+
+            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            const rolle = await tilgangsRolle(skjema, skjematypeId, upn);
+            if (!rolle) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+            if (type === 'intern' && rolle === 'innsender') {
+                return { status: 403, jsonBody: { status: 'avvist', melding: 'Innsender kan ikke skrive interne innlegg' } };
+            }
+
+            if (!Array.isArray(skjema.Dialog)) skjema.Dialog = [];
+            skjema.Dialog.push({
+                Type: type,
+                Avsender: upn,
+                Tekst: tekst,
+                Dato: new Date().toISOString()
+            });
+
+            await forekomstStorage.lagreSkjema(skjema, false);
+            return { jsonBody: { status: 'ok', antallInnlegg: skjema.Dialog.length } };
+        } catch (e) {
+            context.log('dialog POST FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/skjemaer/:type/:id/videresend
+ * Body: { steg: N, tilUpn: 'x@y.no', notat?: '...' }
+ * Legger til ny behandler på steget. Beholder opprinnelig (pilot-forenkling).
+ * Registreres som intern dialog-innlegg.
+ */
+app.http('videresend', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/{skjematypeId}/{skjemaId}/videresend',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const { skjematypeId, skjemaId } = request.params;
+            const body = await request.json();
+            const stegNr = Number(body.steg);
+            const tilUpn = String(body.tilUpn || '').trim().toLowerCase();
+            const notat = String(body.notat || '').trim();
+            if (!stegNr || !tilUpn) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Manglet steg eller tilUpn' } };
+            }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tilUpn)) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'tilUpn er ikke en gyldig e-post' } };
+            }
+
+            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            const stegObj = (skjema.Behandling || []).find(s => Number(s.Steg) === stegNr);
+            if (!stegObj) return { status: 404, jsonBody: { status: 'feil', melding: 'Behandlingssteg ikke funnet' } };
+            if (!brukerErBehandler(stegObj, upn)) {
+                return { status: 403, jsonBody: { status: 'avvist', melding: 'Du er ikke behandler på dette steget' } };
+            }
+            if (stegErFerdig(stegObj)) {
+                return { status: 409, jsonBody: { status: 'feil', melding: 'Steget er allerede behandlet' } };
+            }
+
+            // Legg til ny person hvis ikke allerede der
+            if (!Array.isArray(stegObj.Personer)) stegObj.Personer = [];
+            const alleredeThere = stegObj.Personer.some(p => String(p).toLowerCase() === tilUpn);
+            if (!alleredeThere) stegObj.Personer.push(tilUpn);
+
+            // Loggfør som intern dialog
+            if (!Array.isArray(skjema.Dialog)) skjema.Dialog = [];
+            skjema.Dialog.push({
+                Type: 'intern',
+                Avsender: upn,
+                Tekst: `Videresendt steg ${stegNr} til ${tilUpn}${notat ? '. Notat: ' + notat : ''}`,
+                Dato: new Date().toISOString()
+            });
+
+            await forekomstStorage.lagreSkjema(skjema, false);
+            context.log(`videresend: ${upn} → ${tilUpn} på steg ${stegNr} (${skjemaId})`);
+            return { jsonBody: { status: 'ok', personerNa: stegObj.Personer } };
+        } catch (e) {
+            context.log('videresend FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('mineBehandlinger', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -437,6 +577,14 @@ app.http('hentSkjema', {
             if (!erInnsender && !erAdmin(upn)) {
                 const erEier = await harEierTilgang(skjematypeId, upn);
                 if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+            }
+
+            // Filtrer interne dialog-innlegg for innsender (uten annen rolle)
+            if (Array.isArray(skjema.Dialog) && skjema.Dialog.length > 0) {
+                const rolle = await tilgangsRolle(skjema, skjematypeId, upn);
+                if (rolle === 'innsender') {
+                    skjema.Dialog = skjema.Dialog.filter(d => d.Type !== 'intern');
+                }
             }
 
             return { jsonBody: skjema };

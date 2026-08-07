@@ -152,6 +152,72 @@
 
         .laster, .feilmelding { text-align: center; padding: 40px; color: var(--text-secondary); }
         .feilmelding { color: var(--danger); }
+
+        .dialog-boks {
+            padding: 16px 18px;
+            margin: 20px 0;
+            background: var(--bg-section);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+        }
+        .dialog-tittel {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin: 0 0 10px 0;
+        }
+        .dialog-liste {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+        .dialog-innlegg {
+            padding: 10px 12px;
+            background: var(--bg-svar);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent);
+            font-size: 13px;
+        }
+        .dialog-innlegg.intern { border-left-color: var(--purple); background: rgba(175, 82, 222, 0.06); }
+        .dialog-innlegg .meta { color: var(--text-secondary); font-size: 11px; margin-bottom: 4px; }
+        .dialog-innlegg .badge {
+            display: inline-block; padding: 1px 6px; border-radius: 999px;
+            font-size: 10px; font-weight: 600; text-transform: uppercase;
+            color: white; margin-right: 4px;
+        }
+        .dialog-innlegg.intern .badge { background: var(--purple); }
+        .dialog-innlegg.ekstern .badge { background: var(--accent); }
+        .dialog-innlegg .tekst { white-space: pre-wrap; word-wrap: break-word; }
+
+        .dialog-input textarea {
+            width: 100%;
+            padding: 8px 12px;
+            font-size: 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: white;
+            color: var(--text-primary);
+            font-family: inherit;
+            min-height: 60px;
+            resize: vertical;
+        }
+        .dialog-input .knapper {
+            display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; align-items: center;
+        }
+        .dialog-input select, .dialog-input input[type="email"] {
+            padding: 6px 10px; font-size: 13px; border: 1px solid var(--border-color);
+            border-radius: 6px; background: white; color: var(--text-primary); font-family: inherit;
+        }
+        .knapp {
+            padding: 8px 16px; font-size: 13px; font-weight: 600;
+            border: 0; border-radius: 8px; cursor: pointer; font-family: inherit;
+        }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.sekundær { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+        .knapp.sekundær:hover { background: var(--accent-light); }
     </style>
 </head>
 <body>
@@ -250,6 +316,9 @@
                 innhold.appendChild(byggStegOversikt());
             }
 
+            // Dialog-panel
+            innhold.appendChild(byggDialogPanel());
+
             // 3) Skjemaet read-only
             const svarMap = new Map();
             for (const seksjon of (skjema.Seksjoner || [])) {
@@ -309,6 +378,102 @@
             if (behandling.length === 0) return false;
             return behandling.every(s => Number(s.Beslutning || 0) !== 0);
         }
+
+        function byggDialogPanel() {
+            const div = document.createElement('div');
+            div.className = 'dialog-boks';
+            const h = document.createElement('h3');
+            h.className = 'dialog-tittel';
+            h.textContent = 'Dialog';
+            div.appendChild(h);
+
+            const liste = document.createElement('div');
+            liste.className = 'dialog-liste';
+            const innlegg = skjema.Dialog || [];
+            if (innlegg.length === 0) {
+                liste.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; font-style: italic;">Ingen innlegg ennå.</div>';
+            } else {
+                for (const i of innlegg) {
+                    const ie = document.createElement('div');
+                    ie.className = 'dialog-innlegg ' + (i.Type === 'intern' ? 'intern' : 'ekstern');
+                    ie.innerHTML = `
+                        <div class="meta">
+                            <span class="badge">${i.Type === 'intern' ? 'Intern' : 'Til innsender'}</span>
+                            ${escapeHtml(i.Avsender || '')} · ${escapeHtml(formaterDato(i.Dato))}
+                        </div>
+                        <div class="tekst">${escapeHtml(i.Tekst || '')}</div>
+                    `;
+                    liste.appendChild(ie);
+                }
+            }
+            div.appendChild(liste);
+
+            // Skjemakontroll for nytt innlegg
+            const input = document.createElement('div');
+            input.className = 'dialog-input';
+            input.innerHTML = `
+                <textarea placeholder="Skriv et innlegg…" id="dialog-tekst"></textarea>
+                <div class="knapper">
+                    <select id="dialog-type">
+                        <option value="intern">Intern (til andre behandlere)</option>
+                        <option value="ekstern">Til innsender</option>
+                    </select>
+                    <button class="knapp primær" onclick="sendDialog()">Legg til innlegg</button>
+                </div>
+            `;
+            div.appendChild(input);
+
+            // Videresending — kun hvis bruker har aktive steg
+            if (beregnMineAktive().length > 0) {
+                const vd = document.createElement('div');
+                vd.style.cssText = 'margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);';
+                const aktive = beregnMineAktive();
+                const options = aktive.map(s => `<option value="${s.Steg}">Steg ${s.Steg}: ${escapeHtml(s.Stegnavn || '')}</option>`).join('');
+                vd.innerHTML = `
+                    <h3 class="dialog-tittel">Videresend</h3>
+                    <div class="dialog-input">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+                            <select id="vs-steg">${options}</select>
+                            <input type="email" id="vs-upn" placeholder="ny.behandler@epost.no">
+                        </div>
+                        <textarea id="vs-notat" placeholder="Notat (valgfritt) — legges som intern dialog"></textarea>
+                        <div class="knapper">
+                            <button class="knapp sekundær" onclick="videresend()">Videresend</button>
+                        </div>
+                    </div>
+                `;
+                div.appendChild(vd);
+            }
+
+            return div;
+        }
+
+        window.sendDialog = async () => {
+            const tekst = document.getElementById('dialog-tekst').value.trim();
+            const type = document.getElementById('dialog-type').value;
+            if (!tekst) { alert('Skriv noe tekst først'); return; }
+            try {
+                await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/dialog`, { type, tekst });
+                skjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
+                rendrer();
+            } catch (e) {
+                alert('Kunne ikke legge til: ' + e.message);
+            }
+        };
+        window.videresend = async () => {
+            const steg = Number(document.getElementById('vs-steg').value);
+            const tilUpn = document.getElementById('vs-upn').value.trim();
+            const notat = document.getElementById('vs-notat').value.trim();
+            if (!tilUpn) { alert('Skriv en e-postadresse'); return; }
+            if (!confirm(`Videresend steg ${steg} til ${tilUpn}? (du beholdes fortsatt som behandler)`)) return;
+            try {
+                await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/videresend`, { steg, tilUpn, notat });
+                skjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
+                rendrer();
+            } catch (e) {
+                alert('Kunne ikke videresende: ' + e.message);
+            }
+        };
 
         function byggBehandleBoks(steg) {
             const div = document.createElement('div');
