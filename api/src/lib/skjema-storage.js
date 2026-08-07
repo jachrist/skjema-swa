@@ -15,11 +15,37 @@ const { tabellKlient } = require('./storage');
 const TABELL = 'Skjemadefinisjoner';
 const PK = 'Def';
 
+// Azure Table Storage tillater 64 KB per property (UTF-16 = 32K tegn max).
+// Vi splitter JSON over flere properties: JSON, JSON2, JSON3, JSON4 → opptil 128K tegn.
+// Ligger godt under bounds med bevisst margin (30K per chunk).
+const CHUNK_STR = 30000;
+const MAKS_CHUNKS = 8; // gir 240K tegn — mer enn nok for enhver realistisk skjematype
+
+function splittJson(streng) {
+    const chunks = [];
+    for (let i = 0; i < streng.length; i += CHUNK_STR) {
+        chunks.push(streng.slice(i, i + CHUNK_STR));
+    }
+    return chunks;
+}
+
+function samleJson(entity) {
+    if (!entity) return '';
+    let s = String(entity.JSON || '');
+    for (let i = 2; i <= MAKS_CHUNKS; i++) {
+        const c = entity[`JSON${i}`];
+        if (c === undefined || c === null || c === '') break;
+        s += String(c);
+    }
+    return s;
+}
+
 function entityTilSkjema(entity) {
     if (!entity) return null;
     let data = null;
-    if (entity.JSON) {
-        try { data = JSON.parse(entity.JSON); }
+    const streng = samleJson(entity);
+    if (streng) {
+        try { data = JSON.parse(streng); }
         catch (_) { data = null; }
     }
     if (data && !data.Fase) data.Fase = 'Produksjon';
@@ -62,13 +88,27 @@ async function lagreSkjematype(skjemaData) {
     const skjematypeId = String(skjemaData.Skjematype_id || '');
     if (!skjematypeId) throw new Error('Skjematype_id mangler');
 
-    await tabell.upsertEntity({
+    const jsonStreng = JSON.stringify(skjemaData);
+    const chunks = splittJson(jsonStreng);
+    if (chunks.length > MAKS_CHUNKS) {
+        throw new Error(`Skjematypen er for stor (${jsonStreng.length} tegn, maks ${MAKS_CHUNKS * CHUNK_STR}). Reduser Skjemaforklaring, felttekster eller antall behandlingssteg.`);
+    }
+
+    const entity = {
         partitionKey: PK,
         rowKey: skjematypeId,
         Tittel: skjemaData.Skjema_navn || '',
         Oppdatert: new Date().toISOString(),
-        JSON: JSON.stringify(skjemaData)
-    }, 'Replace');
+        JSON: chunks[0] || ''
+    };
+    for (let i = 1; i < chunks.length; i++) {
+        entity[`JSON${i + 1}`] = chunks[i];
+    }
+    // Rydd bort tidligere chunks som ikke lenger er i bruk (Replace overskriver ikke ubrukte)
+    for (let i = chunks.length + 1; i <= MAKS_CHUNKS; i++) {
+        entity[`JSON${i}`] = null;
+    }
+    await tabell.upsertEntity(entity, 'Replace');
 }
 
 async function slettSkjematype(skjematypeId) {
