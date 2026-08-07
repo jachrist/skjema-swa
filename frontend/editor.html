@@ -300,6 +300,15 @@
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
         import { FELTTYPER } from './js/felt-render.js';
+        import { byggDNFEditor } from './js/dnf-editor.js';
+
+        // Tilgjengelige datakilder for FasteData i pilot.
+        // Kolonner (filter-navn) matcher det oppslag-dispatcheren støtter.
+        const DATAKILDER = [
+            { navn: 'Postnumre', filtre: ['Kommune', 'Poststed'] },
+            { navn: 'Skjematyper', filtre: ['Fase'] }
+            // Personer/Roller/Team/Emner kommer i fase 5
+        ];
 
         const params = new URLSearchParams(window.location.search);
         const eksisterendeId = params.get('skjematype_id');
@@ -332,6 +341,7 @@
                     data = tomSkjematype();
                     document.getElementById('tittel').textContent = 'Ny skjematype';
                 }
+                sikreFeltIder();
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste: ' + e.message);
@@ -347,6 +357,17 @@
                 Eiere: { Personer: [bruker.userDetails], Roller: [], Team: [] },
                 Seksjoner: []
             };
+        }
+
+        function sikreFeltIder() {
+            // Ved lasting: gi Id til felter som mangler den (for stabile referanser)
+            for (const seksjon of (data.Seksjoner || [])) {
+                for (const felt of (seksjon.Felter || [])) {
+                    if (felt.Type !== 'Informasjon' && !felt.Id) {
+                        felt.Id = nyId();
+                    }
+                }
+            }
         }
 
         function visFeil(tekst) {
@@ -426,6 +447,75 @@
                 const vIdx = el.dataset.valg !== undefined ? parseInt(el.dataset.valg, 10) : null;
                 el.addEventListener('click', () => håndterAksjon(act, sIdx, fIdx, vIdx));
             });
+            // Populer DNF-editorer i sine slots
+            byggAlleDNFEditorer();
+        }
+
+        function samleFelterFør(sIdx, fIdx) {
+            // Samler felter tilgjengelig som referanse: alle i tidligere seksjoner
+            // + tidligere felter i samme seksjon. Info/Opplasting hoppes over.
+            const felter = [];
+            for (let s = 0; s <= sIdx; s++) {
+                const seksjon = data.Seksjoner[s];
+                if (!seksjon) continue;
+                for (let f = 0; f < (seksjon.Felter || []).length; f++) {
+                    if (s === sIdx && fIdx >= 0 && f >= fIdx) break;
+                    const felt = seksjon.Felter[f];
+                    if (felt.Type === 'Informasjon' || felt.Type === 'Opplasting') continue;
+                    const ref = felt.Id || `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    const tekst = felt.Tekst?.Verdi || '(uten tekst)';
+                    felter.push({ ref, tekst: `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}` });
+                }
+            }
+            return felter;
+        }
+
+        function byggAlleDNFEditorer() {
+            (data.Seksjoner || []).forEach((seksjon, sIdx) => {
+                // Seksjon-Vises (referanser fra tidligere seksjoner)
+                const sSlot = document.querySelector(`.dnf-slot[data-slot="ses-vises-${sIdx}"]`);
+                if (sSlot) {
+                    byggDNFEditor(sSlot, seksjon.Vises, {
+                        modus: 'vilkår',
+                        feltOptions: samleFelterFør(sIdx - 1, -1),
+                        tittel: 'Seksjon vises kun hvis',
+                        onEndring: (ny) => { if (ny) seksjon.Vises = ny; else delete seksjon.Vises; }
+                    });
+                }
+                (seksjon.Felter || []).forEach((felt, fIdx) => {
+                    if (felt.Type === 'Informasjon') return;
+
+                    const vSlot = document.querySelector(`.dnf-slot[data-slot="felt-vises-${sIdx}-${fIdx}"]`);
+                    if (vSlot) {
+                        byggDNFEditor(vSlot, felt.Vises, {
+                            modus: 'vilkår',
+                            feltOptions: samleFelterFør(sIdx, fIdx),
+                            tittel: 'Felt vises kun hvis',
+                            onEndring: (ny) => { if (ny) felt.Vises = ny; else delete felt.Vises; }
+                        });
+                    }
+                    const oSlot = document.querySelector(`.dnf-slot[data-slot="felt-oblig-${sIdx}-${fIdx}"]`);
+                    if (oSlot) {
+                        byggDNFEditor(oSlot, felt.ObligatoriskHvis, {
+                            modus: 'vilkår',
+                            feltOptions: samleFelterFør(sIdx, fIdx),
+                            tittel: 'Obligatorisk hvis',
+                            onEndring: (ny) => { if (ny) felt.ObligatoriskHvis = ny; else delete felt.ObligatoriskHvis; }
+                        });
+                    }
+                    if (kanHaFasteData(felt.Type)) {
+                        const fdSlot = document.querySelector(`.dnf-slot[data-slot="felt-fastedata-${sIdx}-${fIdx}"]`);
+                        if (fdSlot) {
+                            byggDNFEditor(fdSlot, felt.FasteData && typeof felt.FasteData === 'object' ? felt.FasteData : null, {
+                                modus: 'faste-data',
+                                datakilder: DATAKILDER,
+                                tittel: 'Hent Valg-liste fra datakilde',
+                                onEndring: (ny) => { if (ny) felt.FasteData = ny; else delete felt.FasteData; }
+                            });
+                        }
+                    }
+                });
+            });
         }
 
         function byggSeksjonHtml(seksjon, sIdx) {
@@ -441,6 +531,7 @@
                         <button class="knapp mini sekundær" data-action="flytt-seksjon-ned" data-seksjon="${sIdx}" ${sIdx === data.Seksjoner.length - 1 ? 'disabled' : ''}>↓</button>
                         <button class="knapp mini danger" data-action="slett-seksjon" data-seksjon="${sIdx}">Slett seksjon</button>
                     </div>
+                    <div class="dnf-slot" data-slot="ses-vises-${sIdx}" style="margin-bottom: 8px;"></div>
                     ${feltHtml || '<div style="color: var(--text-secondary); font-size: 13px; padding: 8px;">Ingen felter i denne seksjonen.</div>'}
                     <div style="margin-top: 10px;">
                         <button class="knapp mini sekundær" data-action="legg-til-felt" data-seksjon="${sIdx}">+ Legg til felt</button>
@@ -475,8 +566,15 @@
                         </div>
                     </div>
                     <div class="felt-config">${config}</div>
+                    ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-vises-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
+                    ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-oblig-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
+                    ${kanHaFasteData(felt.Type) ? `<div class="dnf-slot" data-slot="felt-fastedata-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                 </div>
             `;
+        }
+
+        function kanHaFasteData(type) {
+            return type === 'Flervalg-dropdown' || type === 'Flervalg-knapper' || type === 'Skala';
         }
 
         function byggFeltConfigHtml(felt, sIdx, fIdx) {
@@ -619,11 +717,16 @@
         }
 
         // ---- Felt ----
+        function nyId() {
+            return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+        }
+
         function leggTilFelt(sIdx) {
             const seksjon = data.Seksjoner[sIdx];
             const nr = String((seksjon.Felter?.length || 0) + 1).padStart(2, '0');
             if (!seksjon.Felter) seksjon.Felter = [];
             seksjon.Felter.push({
+                Id: nyId(),
                 Nummer: nr,
                 Type: 'Tekst',
                 Tekst: { Verdi: '', Format: 'Tekst' },
