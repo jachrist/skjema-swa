@@ -3,76 +3,600 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FHS Skjema — pilot</title>
+    <title>Skjema</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
     <style>
-        body { font-family: system-ui, -apple-system, Segoe UI, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #333; }
-        h1 { color: #0078d4; }
-        .status { padding: 12px 16px; border-radius: 6px; margin: 12px 0; }
-        .status.ok { background: #d4edda; color: #155724; }
-        .status.feil { background: #f8d7da; color: #721c24; }
-        .status.laster { background: #fff3cd; color: #856404; }
-        pre { background: #f6f8fa; padding: 12px; border-radius: 6px; overflow-x: auto; }
-        button { padding: 8px 16px; font-size: 14px; margin-right: 8px; cursor: pointer; }
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.85);
+            --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-input: white;
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --text-heading: #0a84ff;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --input-border: #d1d1d6;
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --shadow-sm: 0 1px 6px rgba(0, 0, 0, 0.04);
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --glass-blur: blur(20px);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 18px;
+            --radius-xl: 24px;
+            --oblig: #ff3b30;
+            --success: #34c759;
+            --error: #ff3b30;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.85);
+            --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-input: #1c2028;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --text-heading: #64b5f6;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --input-border: #3a3a5a;
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+        }
+
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: var(--bg-container);
+            backdrop-filter: var(--glass-blur);
+            padding: 32px;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+
+        .topplinje {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        h1 {
+            font-size: 1.7em;
+            font-weight: 700;
+            margin: 0;
+            letter-spacing: -0.02em;
+        }
+        .brukerinfo {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+        .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
+
+        .status-melding {
+            padding: 14px 18px;
+            border-radius: var(--radius-md);
+            margin: 20px 0;
+            text-align: center;
+        }
+        .status-melding.info { background: var(--accent-light); color: var(--text-heading); }
+        .status-melding.feil { background: rgba(255, 59, 48, 0.1); color: var(--error); }
+
+        .seksjon {
+            margin-top: 24px;
+            padding: 20px 24px;
+            background: var(--bg-section);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border-color);
+        }
+        .seksjon-tittel {
+            font-size: 15px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            margin: 0 0 16px 0;
+        }
+
+        .felt {
+            margin-bottom: 18px;
+        }
+        .felt-label {
+            display: block;
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+        .felt-nummer {
+            display: inline-block;
+            min-width: 24px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+        .oblig-markering {
+            color: var(--oblig);
+            margin-left: 4px;
+        }
+        .felt-undertittel {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="date"],
+        select,
+        textarea {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 15px;
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-family: inherit;
+            transition: border-color 0.15s, box-shadow 0.15s;
+        }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+        textarea { min-height: 100px; resize: vertical; }
+
+        .flervalg-knapper {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .flervalg-knapp {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s;
+            font-size: 14px;
+        }
+        .flervalg-knapp:hover { background: var(--accent-light); }
+        .flervalg-knapp.selected {
+            border-color: var(--accent);
+            background: var(--accent-light);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .flervalg-knapp input { display: none; }
+
+        .skala {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .skala-valg {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 14px;
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .skala-valg:hover { background: var(--accent-light); }
+        .skala-valg input:checked + span {
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .skala-valg input { margin: 0; }
+
+        .informasjon {
+            padding: 12px 16px;
+            background: var(--accent-light);
+            border-left: 3px solid var(--accent);
+            border-radius: var(--radius-sm);
+            font-size: 14px;
+        }
+
+        .felt-feilmelding {
+            color: var(--error);
+            font-size: 13px;
+            margin-top: 4px;
+            display: none;
+        }
+        .felt.har-feil .felt-feilmelding { display: block; }
+        .felt.har-feil input,
+        .felt.har-feil select,
+        .felt.har-feil textarea {
+            border-color: var(--error);
+        }
+
+        .knapperad {
+            margin-top: 32px;
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            flex-wrap: wrap;
+        }
+        .knapp {
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            border: 0;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            font-family: inherit;
+            transition: filter 0.15s, background 0.15s;
+        }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.primær:hover { filter: brightness(1.1); }
+        .knapp.primær:disabled { opacity: 0.5; cursor: not-allowed; }
+        .knapp.sekundær {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+        .knapp.sekundær:hover { background: var(--accent-light); }
+
+        .laster {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
     </style>
 </head>
 <body>
-    <h1>FHS Skjema — pilot</h1>
-    <p>Verifikasjon av at frontend, API og storage er koblet sammen.</p>
-
-    <div>
-        <button id="test-ping">Test /api/ping</button>
-        <button id="test-storage">Test /api/hello-storage (krever login)</button>
-        <button id="logg-inn">Logg inn</button>
-        <button id="logg-ut">Logg ut</button>
+    <div class="container">
+        <div class="topplinje">
+            <h1 id="tittel">Laster skjema…</h1>
+            <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
+        </div>
+        <div id="forklaring"></div>
+        <div id="innhold" class="laster">Henter skjemadefinisjon…</div>
     </div>
-
-    <div id="bruker" class="status laster">Sjekker innlogging…</div>
-    <div id="resultat"></div>
 
     <script type="module">
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker, logInn, logUt } from './js/auth.js';
+        import { hentInnloggetBruker } from './js/auth.js';
 
-        const $ = id => document.getElementById(id);
+        let skjematype = null;
+        const params = new URLSearchParams(window.location.search);
+        const skjematypeId = params.get('skjematype_id');
 
-        function visStatus(id, klasse, tekst, data) {
-            const el = $(id);
-            el.className = 'status ' + klasse;
-            el.innerHTML = `<strong>${tekst}</strong>` + (data ? `<pre>${JSON.stringify(data, null, 2)}</pre>` : '');
-        }
-
-        async function sjekkInnlogging() {
+        async function init() {
             const bruker = await hentInnloggetBruker();
-            if (bruker) {
-                visStatus('bruker', 'ok', `Innlogget som ${bruker.userDetails}`, { roles: bruker.userRoles });
-            } else {
-                visStatus('bruker', 'laster', 'Ikke innlogget');
+            if (!bruker) {
+                window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
+                return;
+            }
+            document.getElementById('upn').textContent = bruker.userDetails;
+
+            if (!skjematypeId) {
+                visFeil('Mangler skjematype_id i URL. Åpne skjemaet fra "Velg skjema"-siden.');
+                return;
+            }
+
+            try {
+                skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
+                rendrer();
+            } catch (e) {
+                visFeil('Kunne ikke laste skjemadefinisjon: ' + e.message);
             }
         }
 
-        $('test-ping').onclick = async () => {
-            try {
-                const svar = await api.get('/api/ping');
-                visStatus('resultat', 'ok', `Ping OK (miljø: ${CONFIG.MILJO || 'ukjent'})`, svar);
-            } catch (e) {
-                visStatus('resultat', 'feil', 'Ping feilet: ' + e.message);
+        function visFeil(tekst) {
+            document.getElementById('innhold').className = 'status-melding feil';
+            document.getElementById('innhold').textContent = tekst;
+        }
+
+        function rendrer() {
+            document.getElementById('tittel').textContent = skjematype.Skjema_navn || 'Skjema';
+            document.title = skjematype.Skjema_navn || 'Skjema';
+
+            if (skjematype.Skjemaforklaring?.Innhold) {
+                document.getElementById('forklaring').innerHTML =
+                    `<div class="status-melding info">${escapeHtml(skjematype.Skjemaforklaring.Innhold)}</div>`;
             }
-        };
 
-        $('test-storage').onclick = async () => {
-            try {
-                const svar = await api.get('/api/hello-storage');
-                visStatus('resultat', 'ok', 'Storage OK', svar);
-            } catch (e) {
-                visStatus('resultat', 'feil', 'Storage feilet: ' + e.message);
+            const innhold = document.getElementById('innhold');
+            innhold.className = '';
+            innhold.innerHTML = '';
+
+            const form = document.createElement('form');
+            form.id = 'skjema-form';
+            form.onsubmit = (e) => { e.preventDefault(); submitSkjema(); };
+
+            for (const seksjon of (skjematype.Seksjoner || [])) {
+                form.appendChild(byggSeksjon(seksjon));
             }
-        };
 
-        $('logg-inn').onclick = () => logInn('/');
-        $('logg-ut').onclick = () => logUt();
+            const knapperad = document.createElement('div');
+            knapperad.className = 'knapperad';
+            knapperad.innerHTML = `
+                <a class="knapp sekundær" href="/velgskjematype.html">Avbryt</a>
+                <button type="submit" class="knapp primær" id="submit-knapp">Send inn</button>
+            `;
+            form.appendChild(knapperad);
 
-        sjekkInnlogging();
+            innhold.appendChild(form);
+        }
+
+        function byggSeksjon(seksjon) {
+            const div = document.createElement('div');
+            div.className = 'seksjon';
+            div.dataset.seksjonNummer = seksjon.Seksjon_nummer;
+            if (seksjon.Seksjon_overskrift) {
+                const h = document.createElement('h2');
+                h.className = 'seksjon-tittel';
+                h.textContent = seksjon.Seksjon_overskrift;
+                div.appendChild(h);
+            }
+            let visningsNr = 0;
+            for (const felt of (seksjon.Felter || [])) {
+                if (felt.Type !== 'Informasjon') visningsNr++;
+                div.appendChild(byggFelt(felt, seksjon.Seksjon_nummer, visningsNr));
+            }
+            return div;
+        }
+
+        function byggFelt(felt, seksjonNr, visningsNr) {
+            const div = document.createElement('div');
+            div.className = 'felt';
+            div.dataset.feltNummer = felt.Nummer;
+            const feltId = `felt-${seksjonNr}-${felt.Nummer}`;
+
+            if (felt.Type !== 'Informasjon') {
+                const label = document.createElement('label');
+                label.className = 'felt-label';
+                label.htmlFor = feltId;
+                const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
+                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}${oblig}`;
+                div.appendChild(label);
+
+                if (felt.Undertittel?.Verdi) {
+                    const u = document.createElement('div');
+                    u.className = 'felt-undertittel';
+                    u.textContent = felt.Undertittel.Verdi;
+                    div.appendChild(u);
+                }
+            }
+
+            switch (felt.Type) {
+                case 'Informasjon': div.appendChild(byggInformasjon(felt)); break;
+                case 'Tekst': div.appendChild(byggTekst(felt, feltId)); break;
+                case 'Tall': div.appendChild(byggTall(felt, feltId)); break;
+                case 'Dato': div.appendChild(byggDato(felt, feltId)); break;
+                case 'Skala': div.appendChild(byggSkala(felt, feltId)); break;
+                case 'Flervalg-knapper': div.appendChild(byggFlervalgKnapper(felt, feltId)); break;
+                case 'Flervalg-dropdown': div.appendChild(byggFlervalgDropdown(felt, feltId)); break;
+                default:
+                    const p = document.createElement('p');
+                    p.style.color = 'var(--text-secondary)';
+                    p.style.fontStyle = 'italic';
+                    p.textContent = `[Felttypen "${felt.Type}" er ikke støttet i pilot-versjonen ennå]`;
+                    div.appendChild(p);
+            }
+
+            if (felt.Obligatorisk) {
+                const feil = document.createElement('div');
+                feil.className = 'felt-feilmelding';
+                feil.textContent = 'Dette feltet er obligatorisk';
+                div.appendChild(feil);
+            }
+
+            return div;
+        }
+
+        function byggInformasjon(felt) {
+            const div = document.createElement('div');
+            div.className = 'informasjon';
+            div.innerHTML = escapeHtml(felt.Tekst?.Verdi || '');
+            return div;
+        }
+        function byggTekst(felt, feltId) {
+            const el = felt.Flerlinje
+                ? document.createElement('textarea')
+                : document.createElement('input');
+            if (!felt.Flerlinje) el.type = 'text';
+            el.id = feltId;
+            el.name = feltId;
+            return el;
+        }
+        function byggTall(felt, feltId) {
+            const el = document.createElement('input');
+            el.type = 'number';
+            el.id = feltId;
+            el.name = feltId;
+            if (felt.Min_verdi != null) el.min = felt.Min_verdi;
+            if (felt.Max_verdi != null) el.max = felt.Max_verdi;
+            return el;
+        }
+        function byggDato(felt, feltId) {
+            const el = document.createElement('input');
+            el.type = 'date';
+            el.id = feltId;
+            el.name = feltId;
+            return el;
+        }
+        function byggSkala(felt, feltId) {
+            const container = document.createElement('div');
+            container.className = 'skala';
+            for (const valg of (felt.Valg || [])) {
+                const label = document.createElement('label');
+                label.className = 'skala-valg';
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.name = feltId;
+                input.value = valg.Valg_nr ?? valg.Tekst;
+                const span = document.createElement('span');
+                span.textContent = valg.Tekst;
+                label.appendChild(input);
+                label.appendChild(span);
+                container.appendChild(label);
+            }
+            return container;
+        }
+        function byggFlervalgKnapper(felt, feltId) {
+            const container = document.createElement('div');
+            container.className = 'flervalg-knapper';
+            container.dataset.feltId = feltId;
+            const maks = felt.Max_valg || 1;
+            let antallValgt = 0;
+            for (const valg of (felt.Valg || [])) {
+                const label = document.createElement('label');
+                label.className = 'flervalg-knapp';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.name = `${feltId}[]`;
+                cb.value = valg.Tekst;
+                cb.addEventListener('change', () => {
+                    if (cb.checked) {
+                        label.classList.add('selected');
+                        antallValgt++;
+                    } else {
+                        label.classList.remove('selected');
+                        antallValgt--;
+                    }
+                    container.querySelectorAll('.flervalg-knapp').forEach(k => {
+                        const c = k.querySelector('input');
+                        c.disabled = !c.checked && antallValgt >= maks;
+                    });
+                });
+                label.appendChild(cb);
+                const span = document.createElement('span');
+                span.textContent = valg.Tekst;
+                label.appendChild(span);
+                container.appendChild(label);
+            }
+            return container;
+        }
+        function byggFlervalgDropdown(felt, feltId) {
+            const sel = document.createElement('select');
+            sel.id = feltId;
+            sel.name = feltId;
+            sel.innerHTML = '<option value="">— velg —</option>';
+            for (const valg of (felt.Valg || [])) {
+                const opt = document.createElement('option');
+                opt.value = valg.Tekst;
+                opt.textContent = valg.Tekst;
+                sel.appendChild(opt);
+            }
+            return sel;
+        }
+
+        function samleSvar() {
+            const svar = { Seksjoner: [] };
+            for (const seksjon of (skjematype.Seksjoner || [])) {
+                const seksjonUt = {
+                    Nummer: seksjon.Seksjon_nummer,
+                    Overskrift: seksjon.Seksjon_overskrift || '',
+                    Felter: []
+                };
+                for (const felt of (seksjon.Felter || [])) {
+                    if (felt.Type === 'Informasjon') continue;
+                    const feltId = `felt-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    seksjonUt.Felter.push({
+                        Id: felt.Id,
+                        Nummer: felt.Nummer,
+                        Type: felt.Type,
+                        Svar: hentFeltverdi(feltId, felt.Type)
+                    });
+                }
+                svar.Seksjoner.push(seksjonUt);
+            }
+            return svar;
+        }
+
+        function hentFeltverdi(feltId, type) {
+            if (type === 'Flervalg-knapper') {
+                const checked = document.querySelectorAll(`input[name="${feltId}[]"]:checked`);
+                return Array.from(checked).map(cb => cb.value);
+            }
+            if (type === 'Skala') {
+                const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
+                return valgt ? [valgt.value] : [];
+            }
+            const el = document.getElementById(feltId);
+            if (!el) return [];
+            const v = el.value;
+            return v === '' || v == null ? [] : [String(v)];
+        }
+
+        function validerObligatoriske() {
+            let alleOk = true;
+            for (const seksjon of (skjematype.Seksjoner || [])) {
+                for (const felt of (seksjon.Felter || [])) {
+                    if (!felt.Obligatorisk || felt.Type === 'Informasjon') continue;
+                    const feltId = `felt-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    const verdi = hentFeltverdi(feltId, felt.Type);
+                    const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
+                    if (!verdi || verdi.length === 0) {
+                        feltEl?.classList.add('har-feil');
+                        alleOk = false;
+                    } else {
+                        feltEl?.classList.remove('har-feil');
+                    }
+                }
+            }
+            return alleOk;
+        }
+
+        async function submitSkjema() {
+            if (!validerObligatoriske()) {
+                alert('Ett eller flere obligatoriske felter mangler svar.');
+                return;
+            }
+
+            const submitKnapp = document.getElementById('submit-knapp');
+            submitKnapp.disabled = true;
+            submitKnapp.textContent = 'Sender…';
+
+            const svar = samleSvar();
+            const body = {
+                Skjematype_id: skjematypeId,
+                Skjema_navn: skjematype.Skjema_navn,
+                Seksjoner: svar.Seksjoner,
+                Skjema_status: 2 // 2=innsendt
+            };
+
+            try {
+                const svar = await api.post('/api/skjemaer', body);
+                window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(svar.Skjema_id)}`;
+            } catch (e) {
+                submitKnapp.disabled = false;
+                submitKnapp.textContent = 'Send inn';
+                alert('Innsending feilet: ' + e.message);
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        init();
     </script>
 </body>
 </html>

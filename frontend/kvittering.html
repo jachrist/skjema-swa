@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kvittering</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.85);
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --success: #34c759;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --radius-md: 12px;
+            --radius-xl: 24px;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.85);
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 640px;
+            margin: 60px auto;
+            background: var(--bg-container);
+            backdrop-filter: blur(20px);
+            padding: 40px;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+        .ikon {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: var(--success);
+            color: white;
+            font-size: 40px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+        }
+        h1 { font-size: 1.8em; margin: 0 0 8px 0; letter-spacing: -0.02em; }
+        .undertittel { color: var(--text-secondary); margin: 0 0 24px 0; }
+        .kvittering-info {
+            background: var(--accent-light);
+            padding: 16px 20px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            text-align: left;
+            margin: 20px 0;
+        }
+        .kvittering-info strong { color: var(--accent); }
+        .knapperad {
+            margin-top: 24px;
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .knapp {
+            display: inline-block;
+            padding: 12px 24px;
+            font-size: 15px;
+            font-weight: 600;
+            border: 0;
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            text-decoration: none;
+        }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.primær:hover { filter: brightness(1.1); }
+        .knapp.sekundær {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+        .knapp.sekundær:hover { background: var(--accent-light); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="ikon">✓</div>
+        <h1>Skjema er sendt inn</h1>
+        <p class="undertittel">Takk for innsendingen.</p>
+        <div class="kvittering-info">
+            <div>Skjema-ID: <strong id="skjema-id">…</strong></div>
+            <div style="margin-top: 8px;">Skjematype: <strong id="skjematype-id">…</strong></div>
+        </div>
+        <div class="knapperad">
+            <a class="knapp primær" href="/velgskjematype.html">Til skjemaoversikten</a>
+            <a class="knapp sekundær" href="#" id="nytt-lignende">Fyll ut et lignende</a>
+        </div>
+    </div>
+
+    <script type="module">
+        const params = new URLSearchParams(window.location.search);
+        const skjemaId = params.get('skjema_id') || '(mangler)';
+        const skjematypeId = params.get('skjematype_id') || '(mangler)';
+        document.getElementById('skjema-id').textContent = skjemaId;
+        document.getElementById('skjematype-id').textContent = skjematypeId;
+        document.getElementById('nytt-lignende').href =
+            `/index.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
+    </script>
+</body>
+</html>
