@@ -87,6 +87,45 @@ app.http('lagreSkjema', {
     }
 });
 
+app.http('listSkjemaer', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/liste/{skjematypeId}',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const skjematypeId = request.params.skjematypeId;
+
+            // Kun eiere (eller admin) kan liste alle skjemaer for en type
+            const erEier = await harEierTilgang(skjematypeId, upn);
+            if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever eier-tilgang' } };
+
+            const alle = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId);
+
+            // Kompakt liste — kun feltene registeret trenger for kolonner
+            const liste = alle.map(s => ({
+                Skjema_id: s.Skjema_id,
+                Skjematype_id: s.Skjematype_id,
+                Skjema_navn: s.Skjema_navn || '',
+                Innsender_Epost: s.Innsender_Epost || s.Innsender_epost || '',
+                Skjema_status: s.Skjema_status || 0,
+                Opprettet: s.Opprettet || s.OpprettetDato || '',
+                Sist_endret: s.Sist_endret || s.Oppdatert || ''
+            }));
+
+            // Nyeste først
+            liste.sort((a, b) => (b.Sist_endret || '').localeCompare(a.Sist_endret || ''));
+
+            return { jsonBody: liste };
+        } catch (e) {
+            context.log('skjemaer/liste FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('hentSkjema', {
     methods: ['GET'],
     authLevel: 'anonymous',

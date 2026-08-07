@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.85);
+            --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-input: white;
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --text-heading: #0a84ff;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --input-border: #d1d1d6;
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --status-utkast: #ff9500;
+            --status-innsendt: #34c759;
+            --status-avvist: #ff3b30;
+            --status-behandling: #af52de;
+            --status-avsluttet: #8e8e93;
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 18px;
+            --radius-xl: 24px;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.85);
+            --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-input: #1c2028;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --text-heading: #64b5f6;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --input-border: #3a3a5a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: var(--bg-container);
+            backdrop-filter: blur(20px);
+            padding: 32px;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+        .topplinje {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 8px;
+        }
+        h1 { font-size: 1.7em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+        .brukerinfo { font-size: 13px; color: var(--text-secondary); }
+        .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
+        .undertittel { color: var(--text-secondary); margin: 4px 0 20px; font-size: 14px; }
+
+        .sokefelt-rad { position: relative; margin-bottom: 16px; }
+        .sokefelt {
+            width: 100%;
+            padding: 10px 14px 10px 40px;
+            font-size: 15px;
+            border: 1px solid var(--input-border);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-primary);
+        }
+        .sokefelt:focus {
+            outline: none;
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+        .sokefelt-ikon {
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+            pointer-events: none;
+        }
+
+        .status-melding {
+            padding: 14px 18px;
+            border-radius: var(--radius-md);
+            background: var(--bg-section);
+            color: var(--text-secondary);
+            text-align: center;
+            margin: 20px 0;
+        }
+        .status-melding.feil { color: #ff3b30; background: rgba(255, 59, 48, 0.1); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        thead th {
+            text-align: left;
+            padding: 10px 12px;
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+        tbody td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        tbody tr {
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        tbody tr:hover { background: var(--accent-light); }
+        .kol-id { font-family: ui-monospace, 'SF Mono', Menlo, monospace; color: var(--text-secondary); }
+        .kol-innsender { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .kol-dato { color: var(--text-secondary); white-space: nowrap; }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: white;
+            white-space: nowrap;
+        }
+        .status-badge.status-1 { background: var(--status-utkast); }
+        .status-badge.status-2 { background: var(--status-innsendt); }
+        .status-badge.status-3 { background: var(--status-avvist); }
+        .status-badge.status-4 { background: var(--status-behandling); }
+        .status-badge.status-5 { background: var(--status-avsluttet); }
+        .status-badge.status-0 { background: var(--status-avsluttet); }
+
+        .tilbake {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 14px;
+            margin-bottom: 12px;
+            display: inline-block;
+        }
+        .tilbake:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/velgskjematype.html" class="tilbake">← Til skjemaoversikten</a>
+        <div class="topplinje">
+            <h1 id="tittel">Register</h1>
+            <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
+        </div>
+        <p class="undertittel" id="undertittel">Laster…</p>
+
+        <div class="sokefelt-rad">
+            <span class="sokefelt-ikon">🔍</span>
+            <input type="text" class="sokefelt" id="sok" placeholder="Søk i innsender eller Skjema-ID…" oninput="filtrer()">
+        </div>
+
+        <div id="status" class="status-melding" style="display: none;"></div>
+        <table id="tabell" style="display: none;">
+            <thead>
+                <tr>
+                    <th style="width: 90px;">Skjema-ID</th>
+                    <th>Innsender</th>
+                    <th style="width: 130px;">Sist endret</th>
+                    <th style="width: 130px;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="tbody"></tbody>
+        </table>
+    </div>
+
+    <script type="module">
+        import { api } from './js/api-client.js';
+        import { hentInnloggetBruker } from './js/auth.js';
+
+        const params = new URLSearchParams(window.location.search);
+        const skjematypeId = params.get('skjematype_id');
+        let alle = [];
+
+        const STATUS_TEKST = {
+            0: '–',
+            1: 'Utkast',
+            2: 'Innsendt',
+            3: 'Avvist',
+            4: 'Under behandling',
+            5: 'Avsluttet'
+        };
+
+        async function init() {
+            const bruker = await hentInnloggetBruker();
+            if (!bruker) {
+                window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
+                return;
+            }
+            document.getElementById('upn').textContent = bruker.userDetails;
+
+            if (!skjematypeId) {
+                visStatus('Mangler skjematype_id i URL.', 'feil');
+                return;
+            }
+
+            try {
+                // Hent skjematype-info for tittel
+                const st = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
+                document.getElementById('tittel').textContent = `Register — ${st.Skjema_navn || 'Skjematype ' + skjematypeId}`;
+                document.title = document.getElementById('tittel').textContent;
+            } catch (_) { /* ikke kritisk */ }
+
+            try {
+                alle = await api.get(`/api/skjemaer/liste/${encodeURIComponent(skjematypeId)}`);
+                document.getElementById('undertittel').textContent =
+                    `${alle.length} skjema${alle.length === 1 ? '' : 'er'} totalt.`;
+                render(alle);
+            } catch (e) {
+                visStatus('Kunne ikke hente skjemaer: ' + e.message, 'feil');
+            }
+        }
+
+        function visStatus(tekst, klasse) {
+            const el = document.getElementById('status');
+            el.textContent = tekst;
+            el.className = 'status-melding' + (klasse ? ' ' + klasse : '');
+            el.style.display = tekst ? 'block' : 'none';
+        }
+
+        window.filtrer = () => {
+            const q = document.getElementById('sok').value.trim().toLowerCase();
+            const f = q === ''
+                ? alle
+                : alle.filter(s =>
+                    (s.Innsender_Epost || '').toLowerCase().includes(q)
+                    || (s.Skjema_id || '').toLowerCase().includes(q)
+                );
+            render(f);
+        };
+
+        function render(liste) {
+            const tbody = document.getElementById('tbody');
+            const tabell = document.getElementById('tabell');
+            if (!liste || liste.length === 0) {
+                tabell.style.display = 'none';
+                visStatus('Ingen skjemaer å vise.');
+                return;
+            }
+            visStatus('');
+            tabell.style.display = 'table';
+
+            tbody.innerHTML = liste.map(s => {
+                const status = s.Skjema_status ?? 0;
+                const dato = formaterDato(s.Sist_endret);
+                return `
+                    <tr onclick="visSkjema('${escapeAttr(s.Skjema_id)}')">
+                        <td class="kol-id">${escapeHtml(s.Skjema_id)}</td>
+                        <td class="kol-innsender">${escapeHtml(s.Innsender_Epost || '–')}</td>
+                        <td class="kol-dato">${escapeHtml(dato)}</td>
+                        <td><span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        window.visSkjema = (skjemaId) => {
+            // Foreløpig: åpne rå JSON i ny fane. Read-only-visning kommer i neste iterasjon.
+            window.open(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`, '_blank');
+        };
+
+        function formaterDato(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d)) return iso;
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+        function escapeAttr(s) {
+            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+        }
+
+        init();
+    </script>
+</body>
+</html>

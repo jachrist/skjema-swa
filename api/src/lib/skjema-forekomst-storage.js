@@ -55,6 +55,11 @@ async function lagreSkjema(skjemaData, erNytt = false) {
     if (!skjemaId) throw new Error('Skjema_id mangler');
 
     const naa = new Date().toISOString();
+    // Skjøt inn tidsstempel i selve skjemadataen slik at det følger med ved
+    // parsing (register-visning m.m. leser fra JSON).
+    if (erNytt) skjemaData.Opprettet = naa;
+    skjemaData.Sist_endret = naa;
+
     const entity = {
         partitionKey: skjematypeId,
         rowKey: skjemaId,
