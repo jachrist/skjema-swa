@@ -138,12 +138,30 @@ export function byggDNFEditor(container, initial, options) {
             }
             sel.addEventListener('change', () => {
                 state.Datakilde = sel.value;
+                state.EllerAv = []; // nullstill filtre når datakilde byttes
+                // Auto-opprett tom filter-gruppe hvis datakilden har filtre — så bruker slipper å lete etter "Legg til"
+                const dk = datakilder.find(d => d.navn === sel.value);
+                const filtre = dk?.filtre || [];
+                if (sel.value && filtre.length > 0) {
+                    const førsteFilter = typeof filtre[0] === 'string' ? filtre[0] : (filtre[0]?.navn || '');
+                    state.EllerAv.push({ OgAv: [{ Kolonne: førsteFilter, Operator: '=', Verdi: '' }] });
+                }
                 ferdig();
                 render();
             });
             rad.appendChild(sel);
             wrap.appendChild(rad);
             if (!state.Datakilde) {
+                container.appendChild(wrap);
+                return;
+            }
+            const dkValgt = datakilder.find(d => d.navn === state.Datakilde);
+            if (!dkValgt || !(dkValgt.filtre || []).length) {
+                // Datakilde uten filtre — vis hint og avslutt
+                const t = document.createElement('div');
+                t.style.cssText = 'color: var(--text-secondary, #666); font-size: 12px; font-style: italic;';
+                t.textContent = '(datakilden har ingen filtre — henter alle rader)';
+                wrap.appendChild(t);
                 container.appendChild(wrap);
                 return;
             }
@@ -165,9 +183,18 @@ export function byggDNFEditor(container, initial, options) {
         const nyOrKnapp = document.createElement('button');
         nyOrKnapp.type = 'button';
         nyOrKnapp.style.cssText = 'margin-top: 6px; padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
-        nyOrKnapp.textContent = '+ Legg til alternativ (ELLER)';
+        nyOrKnapp.textContent = modus === 'faste-data' ? '+ Legg til ELLER-alternativ' : '+ Legg til alternativ (ELLER)';
         nyOrKnapp.addEventListener('click', () => {
-            state.EllerAv.push({ OgAv: [{ Felt: '', Kolonne: '', Operator: '=', Verdi: '' }] });
+            if (modus === 'faste-data') {
+                const dk = datakilder.find(d => d.navn === state.Datakilde);
+                const filtre = dk?.filtre || [];
+                const førsteFilter = filtre.length > 0
+                    ? (typeof filtre[0] === 'string' ? filtre[0] : (filtre[0]?.navn || ''))
+                    : '';
+                state.EllerAv.push({ OgAv: [{ Kolonne: førsteFilter, Operator: '=', Verdi: '' }] });
+            } else {
+                state.EllerAv.push({ OgAv: [{ Felt: '', Kolonne: '', Operator: '=', Verdi: '' }] });
+            }
             ferdig();
             render();
         });
