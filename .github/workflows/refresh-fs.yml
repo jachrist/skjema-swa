@@ -28,4 +28,4 @@ jobs:
           echo "HTTP $RESP"
           cat response.json
           echo ""
-          if [ "$RESP" != "200" ]; then exit 1; fi
+          if [ "$RESP" != "200" ] && [ "$RESP" != "202" ]; then exit 1; fi

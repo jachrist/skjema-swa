@@ -36,26 +36,64 @@ app.http('refreshFs', {
         if (!auth.ok) {
             return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin eller service-key' } };
         }
+
+        // Fire-and-forget: SWA-proxyen har ~45 s response timeout og full FS-refresh
+        // tar 2-4 min. Vi markerer status='kjører' og starter jobben uten å await —
+        // Function-hosten holder prosessen i live til den asynkrone jobben er ferdig.
+        // Status leses via GET /api/refresh-fs/status.
+        const startTid = new Date().toISOString();
         try {
-            const log = (...a) => context.log(...a);
-            log(`refresh-fs: trigget av ${auth.kilde}`);
-            const res = await refreshFS(log);
-            return { jsonBody: { status: 'ok', ...res } };
-        } catch (e) {
-            context.log('refresh-fs FEIL:', e.message);
-            // Skriv feil-status til CacheMetadata så admin kan se det
-            try {
-                const t = tabellKlient('CacheMetadata');
-                await t.upsertEntity({
-                    partitionKey: 'Meta',
-                    rowKey: 'FS-Emner',
-                    SistOppdatert: new Date().toISOString(),
-                    Status: 'feil',
-                    SistFeil: String(e.message || e).slice(0, 500)
-                }, 'Merge');
-            } catch (_) { /* ignorer sekundærfeil */ }
-            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
-        }
+            const t = tabellKlient('CacheMetadata');
+            await t.upsertEntity({
+                partitionKey: 'Meta',
+                rowKey: 'FS-Emner',
+                Status: 'kjører',
+                Startet: startTid,
+                Kilde: auth.kilde,
+                SistFeil: ''
+            }, 'Merge');
+        } catch (_) { /* ikke-kritisk */ }
+
+        // Start jobben asynkront (ikke await!)
+        const jobbLog = (...a) => context.log(...a);
+        jobbLog(`refresh-fs: trigget av ${auth.kilde} (fire-and-forget)`);
+        refreshFS(jobbLog)
+            .then(async res => {
+                jobbLog(`refresh-fs: OK — ${JSON.stringify(res)}`);
+                try {
+                    const t = tabellKlient('CacheMetadata');
+                    await t.upsertEntity({
+                        partitionKey: 'Meta',
+                        rowKey: 'FS-Emner',
+                        Status: 'ok',
+                        Ferdig: new Date().toISOString(),
+                        VarighetSekunder: res.varighetSekunder,
+                        Terminer: (res.terminer || []).join(',')
+                    }, 'Merge');
+                } catch (_) { /* ikke-kritisk */ }
+            })
+            .catch(async e => {
+                jobbLog(`refresh-fs FEIL: ${e.message}`);
+                try {
+                    const t = tabellKlient('CacheMetadata');
+                    await t.upsertEntity({
+                        partitionKey: 'Meta',
+                        rowKey: 'FS-Emner',
+                        Status: 'feil',
+                        Ferdig: new Date().toISOString(),
+                        SistFeil: String(e.message || e).slice(0, 500)
+                    }, 'Merge');
+                } catch (_) { /* ignorer sekundærfeil */ }
+            });
+
+        return {
+            status: 202,
+            jsonBody: {
+                status: 'startet',
+                startet: startTid,
+                melding: 'Jobben kjører asynkront. Sjekk /api/refresh-fs/status om et par minutter.'
+            }
+        };
     }
 });
 
@@ -141,7 +179,12 @@ app.http('refreshFsStatus', {
                         sistOppdatert: e.SistOppdatert || null,
                         antallRader: e.AntallRader ?? 0,
                         status: e.Status || 'ukjent',
-                        sistFeil: e.SistFeil || ''
+                        sistFeil: e.SistFeil || '',
+                        startet: e.Startet || null,
+                        ferdig: e.Ferdig || null,
+                        varighetSekunder: e.VarighetSekunder ?? null,
+                        terminer: e.Terminer || null,
+                        kilde: e.Kilde || null
                     };
                 } catch (err) {
                     if (err.statusCode === 404) status[k] = { status: 'aldri kjørt' };
