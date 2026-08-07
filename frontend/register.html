@@ -231,7 +231,7 @@
             } catch (_) { /* ikke kritisk */ }
 
             try {
-                alle = await api.get(`/api/skjemaer/liste/${encodeURIComponent(skjematypeId)}`);
+                alle = await api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`);
                 document.getElementById('undertittel').textContent =
                     `${alle.length} skjema${alle.length === 1 ? '' : 'er'} totalt.`;
                 render(alle);

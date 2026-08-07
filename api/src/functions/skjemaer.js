@@ -90,7 +90,7 @@ app.http('lagreSkjema', {
 app.http('listSkjemaer', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'skjemaer/liste/{skjematypeId}',
+    route: 'skjema-liste/{skjematypeId}',
     handler: async (request, context) => {
         const upn = hentInnloggetUpn(request);
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
