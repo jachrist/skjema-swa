@@ -127,7 +127,13 @@ app.http('hentSkjematype', {
                 }
             }
 
-            // Fyll Valg-arrays for felter med FasteData (masterdata-oppslag)
+            // Rå-modus (editor): returner definisjon uten FasteData-berikelse
+            // så editor kan redigere selve datakilde/filter-oppsettet.
+            if (request.query.get('rå') === '1' || request.query.get('raw') === '1') {
+                return { jsonBody: st.JSON };
+            }
+
+            // Fyll Valg-arrays for felter med FasteData (masterdata-oppslag) — for utfylling
             const berikaSkjema = await hentOgSettFasteData(
                 st.JSON,
                 (dk, fb, fo, fv) => hentDropdownVerdier(dk, fb, fo, fv, (m) => context.log('oppslag: ' + m)),
