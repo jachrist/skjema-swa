@@ -473,15 +473,32 @@
                 `;
             }
 
-            // Mellomlagrede utkast for denne skjematypen — kun hvis bruker kan fylle ut
+            // Mellomlagrede utkast + til revidering — kun hvis bruker kan fylle ut
             let mellomlagretHtml = '';
             if (t.KanFylle) {
-                const mine = mellomlagredeMap[t.Skjematype_id] || [];
-                if (mine.length > 0) {
-                    mellomlagretHtml = `
+                const mineAlle = mellomlagredeMap[t.Skjematype_id] || [];
+                const mellom = mineAlle.filter(m => (m.Skjema_status || 1) === 1);
+                const revidering = mineAlle.filter(m => (m.Skjema_status || 0) === 3);
+
+                if (revidering.length > 0) {
+                    mellomlagretHtml += `
+                        <div style="margin-top: 10px; padding: 10px 12px; background: rgba(175, 82, 222, 0.1); border-left: 3px solid #af52de; border-radius: 6px; font-size: 13px;">
+                            <div style="font-weight: 600; margin-bottom: 6px; color: #af52de;">Til revidering (${revidering.length}):</div>
+                            ${revidering.map(m => {
+                                const dato = formaterDato(m.Sist_endret);
+                                return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0;">
+                                    <span style="color: var(--text-secondary);">#${escapeHtml(m.Skjema_id)} · ${escapeHtml(dato)}</span>
+                                    <a class="knapp primær" style="padding: 4px 10px; font-size: 12px;" href="/index.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}&skjema_id=${encodeURIComponent(m.Skjema_id)}">Revider</a>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    `;
+                }
+                if (mellom.length > 0) {
+                    mellomlagretHtml += `
                         <div style="margin-top: 10px; padding: 10px 12px; background: rgba(255, 149, 0, 0.08); border-left: 3px solid var(--badge-utvikling, #ff9500); border-radius: 6px; font-size: 13px;">
-                            <div style="font-weight: 600; margin-bottom: 6px;">Påbegynte utkast (${mine.length}):</div>
-                            ${mine.map(m => {
+                            <div style="font-weight: 600; margin-bottom: 6px;">Påbegynte utkast (${mellom.length}):</div>
+                            ${mellom.map(m => {
                                 const dato = formaterDato(m.Sist_endret);
                                 return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0;">
                                     <span style="color: var(--text-secondary);">#${escapeHtml(m.Skjema_id)} · endret ${escapeHtml(dato)}</span>

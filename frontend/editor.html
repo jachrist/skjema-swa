@@ -511,6 +511,10 @@
                         oninput="setBeslutningsvalgNr(${idx}, ${vIdx}, this.value)">
                     <input type="text" placeholder="Tekst (Godkjent, Avslått, ...)" value="${escapeAttr(v.Tekst || '')}"
                         oninput="setBeslutningsvalgTekst(${idx}, ${vIdx}, this.value)">
+                    <select onchange="setBeslutningsvalgHandling(${idx}, ${vIdx}, this.value)" style="width: 140px;" title="Spesialhandling">
+                        <option value="" ${!v.Handling ? 'selected' : ''}>Vanlig</option>
+                        <option value="ompuss" ${v.Handling === 'ompuss' ? 'selected' : ''}>Ompuss (retur)</option>
+                    </select>
                     <button class="knapp mini danger" onclick="fjernBeslutningsvalg(${idx}, ${vIdx})">✕</button>
                 </div>
             `).join('');
@@ -607,6 +611,10 @@
         };
         window.setBeslutningsvalgTekst = (sIdx, vIdx, v) => {
             data.Behandling[sIdx].Beslutningsvalg[vIdx].Tekst = v;
+        };
+        window.setBeslutningsvalgHandling = (sIdx, vIdx, v) => {
+            if (v) data.Behandling[sIdx].Beslutningsvalg[vIdx].Handling = v;
+            else delete data.Behandling[sIdx].Beslutningsvalg[vIdx].Handling;
         };
         window.leggTilBeslutningsvalg = (sIdx) => {
             const steg = data.Behandling[sIdx];

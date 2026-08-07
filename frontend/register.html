@@ -351,10 +351,14 @@
                     <select id="statusFilter" onchange="filtrer()">
                         <option value="">Alle statuser</option>
                         <option value="1">Utkast</option>
-                        <option value="2">Innsendt</option>
-                        <option value="3">Avvist</option>
-                        <option value="4">Under behandling</option>
+                        <option value="2">Innsendt / under behandling</option>
+                        <option value="3">Til revidering</option>
+                        <option value="5">Avsluttet</option>
                     </select>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary);">
+                        <input type="checkbox" id="mineFilter" onchange="filtrer()">
+                        Kun mine aktive
+                    </label>
                 </div>
                 <div class="venstre-liste" id="liste">
                     <div class="tom-melding">Laster…</div>
@@ -417,7 +421,12 @@
             } catch (_) { /* ikke kritisk */ }
 
             try {
-                state.alle = await api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`);
+                const [alle, minB] = await Promise.all([
+                    api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`),
+                    api.get('/api/mine-behandlinger').catch(() => ({}))
+                ]);
+                state.alle = alle;
+                state.mineIder = new Set((minB[skjematypeId] || []).map(b => b.Skjema_id));
                 document.getElementById('undertittel').textContent =
                     `${state.alle.length} skjema${state.alle.length === 1 ? '' : 'er'} totalt.`;
                 filtrer();
@@ -433,11 +442,16 @@
         window.filtrer = () => {
             const sok = document.getElementById('sok').value.trim().toLowerCase();
             const status = document.getElementById('statusFilter').value;
+            const kunMineAktive = document.getElementById('mineFilter')?.checked;
             state.filtrert = state.alle.filter(s => {
                 if (status !== '' && String(s.Skjema_status || 0) !== status) return false;
                 if (sok) {
                     const t = ((s.Innsender_Epost || '') + ' ' + (s.Skjema_id || '')).toLowerCase();
                     if (!t.includes(sok)) return false;
+                }
+                if (kunMineAktive) {
+                    // Kun skjemaer der bruker har aktive behandlingssteg (fra mine-behandlinger-map hvis tilgjengelig)
+                    if (!state.mineIder || !state.mineIder.has(s.Skjema_id)) return false;
                 }
                 return true;
             });

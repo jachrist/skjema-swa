@@ -127,8 +127,11 @@ async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}
 }
 
 /**
- * Hent alle mellomlagrede skjemaer (status=1) der brukeren er innsender.
+ * Hent skjemaer der brukeren er innsender og skjemaet er i en av statusene
+ * som venter på handling fra innsender: mellomlagret (1) eller til revidering (3).
  * Én query mot Skjemaer-tabellen på tvers av partisjoner.
+ *
+ * Returnerer array med Status-felt så kalleren kan skille dem.
  */
 async function hentMineMellomlagrede(upn) {
     if (!upn) return [];
@@ -137,7 +140,7 @@ async function hentMineMellomlagrede(upn) {
 
     const { odata } = require('@azure/data-tables');
     const upnLower = String(upn).toLowerCase();
-    const filter = odata`InnsenderEpost eq ${upnLower} and Skjemastatus eq ${1}`;
+    const filter = odata`InnsenderEpost eq ${upnLower} and (Skjemastatus eq ${1} or Skjemastatus eq ${3})`;
 
     const resultat = [];
     const iter = tabell.listEntities({ queryOptions: { filter } });
@@ -147,11 +150,11 @@ async function hentMineMellomlagrede(upn) {
         resultat.push({
             Skjema_id: data.Skjema_id,
             Skjematype_id: data.Skjematype_id || entity.partitionKey,
+            Skjema_status: data.Skjema_status || entity.Skjemastatus || 1,
             Sist_endret: data.Sist_endret || entity.Oppdatert || '',
             Opprettet: data.Opprettet || ''
         });
     }
-    // Nyeste først
     resultat.sort((a, b) => (b.Sist_endret || '').localeCompare(a.Sist_endret || ''));
     return resultat;
 }

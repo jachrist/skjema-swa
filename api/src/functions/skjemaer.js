@@ -121,23 +121,47 @@ app.http('lagreBeslutning', {
             }
 
             // Valider beslutning mot Beslutningsvalg (eller 5 = hoppet over)
-            const gyldigeNr = (stegObj.Beslutningsvalg || []).map(v => Number(v.Nummer));
-            if (beslutning !== 5 && !gyldigeNr.includes(beslutning)) {
+            const valgtValg = (stegObj.Beslutningsvalg || []).find(v => Number(v.Nummer) === beslutning);
+            if (beslutning !== 5 && !valgtValg) {
                 return { status: 400, jsonBody: { status: 'feil', melding: 'Ugyldig beslutning for dette steget' } };
             }
 
-            // Sett beslutning
-            stegObj.Beslutning = beslutning;
-            stegObj.BehandletAv = upn;
-            stegObj.BehandletDato = new Date().toISOString();
+            const erOmpuss = valgtValg?.Handling === 'ompuss';
 
-            // Kaskader: marker steg som skal skippes (uoppfylt vilkår, avhengighet oppfylt) som "Hoppet over"
-            const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
-            if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
+            if (erOmpuss) {
+                // Ompuss: skjemaet sendes tilbake til innsender for revidering.
+                // Steget nullstilles så det kan re-behandles etter re-innsending.
+                // Loggfør beslutningen som dialog-innlegg (så historikken bevares).
+                const notat = valgtValg?.Tekst || 'Ompuss';
+                if (!Array.isArray(skjema.Dialog)) skjema.Dialog = [];
+                skjema.Dialog.push({
+                    Type: 'ekstern',
+                    Avsender: upn,
+                    Tekst: `Sendt til revidering fra steg ${stegNr} (${stegObj.Stegnavn || ''}). Beslutning: ${notat}. Vennligst oppdater og send inn på nytt.`,
+                    Dato: new Date().toISOString()
+                });
+                // Nullstill steget (så det er "aktivt" igjen etter re-innsending)
+                delete stegObj.Beslutning;
+                stegObj.Beslutning = 0;
+                delete stegObj.BehandletAv;
+                delete stegObj.BehandletDato;
+                // Skjemaet: status=3 (Til revidering)
+                skjema.Skjema_status = 3;
+                context.log(`beslutning: ${upn} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
+            } else {
+                // Vanlig beslutning
+                stegObj.Beslutning = beslutning;
+                stegObj.BehandletAv = upn;
+                stegObj.BehandletDato = new Date().toISOString();
 
-            // Oppdater skjema-status hvis alle steg ferdig
-            if (alleStegFerdig(skjema)) {
-                skjema.Skjema_status = 5; // Avsluttet
+                // Kaskader: marker steg som skal skippes som "Hoppet over"
+                const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
+                if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
+
+                // Oppdater skjema-status hvis alle steg ferdig
+                if (alleStegFerdig(skjema)) {
+                    skjema.Skjema_status = 5; // Avsluttet
+                }
             }
 
             await forekomstStorage.lagreSkjema(skjema, false);
