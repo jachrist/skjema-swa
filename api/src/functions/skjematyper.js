@@ -11,6 +11,8 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
+const { hentOgSettFasteData } = require('../lib/faste-data');
+const { hentDropdownVerdier } = require('../lib/oppslag');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -120,7 +122,15 @@ app.http('hentSkjematype', {
                 }
             }
 
-            return { jsonBody: st.JSON };
+            // Fyll Valg-arrays for felter med FasteData (masterdata-oppslag)
+            const berikaSkjema = await hentOgSettFasteData(
+                st.JSON,
+                (dk, fb, fo, fv) => hentDropdownVerdier(dk, fb, fo, fv, (m) => context.log('oppslag: ' + m)),
+                upn,
+                (m) => context.log('faste-data: ' + m)
+            );
+
+            return { jsonBody: berikaSkjema };
         } catch (e) {
             context.log('skjematyper GET :id FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
