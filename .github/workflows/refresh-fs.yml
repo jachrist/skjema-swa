@@ -21,6 +21,11 @@ jobs:
             echo "SWA_URL eller SCHEDULER_KEY mangler — kjør workflow_dispatch etter oppsett."
             exit 1
           fi
-          curl -fsS -X POST "$SWA_URL/api/refresh-fs" \
+          echo "Kaller $SWA_URL/api/refresh-fs …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/refresh-fs" \
             -H "x-scheduler-key: $SCHEDULER_KEY" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json")
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          if [ "$RESP" != "200" ]; then exit 1; fi

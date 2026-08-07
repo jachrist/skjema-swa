@@ -66,6 +66,33 @@ app.http('rollerLeggTil', {
     }
 });
 
+app.http('rollerSeed', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'roller/seed',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin-tilgang' } };
+        try {
+            // Legger inn eksempler med admin sin UPN som innehaver — enkelt for demo
+            const eksempler = [
+                { Rolle: 'Emneansvarlig', Omfang: 'CBU2501', UPN: upn, FN: 'Test', EN: 'Innehaver' },
+                { Rolle: 'Emneansvarlig', Omfang: 'CBU2502', UPN: upn, FN: 'Test', EN: 'Innehaver' },
+                { Rolle: 'Sjef',           Omfang: 'Befalsskolen', UPN: upn, FN: 'Test', EN: 'Innehaver' },
+                { Rolle: 'Administrativ godkjenner', Omfang: 'Fagstab', UPN: upn, FN: 'Test', EN: 'Innehaver' },
+                { Rolle: 'Kvalitetsmedarbeider', Omfang: 'Kvalitetsarbeid', UPN: upn, FN: 'Test', EN: 'Innehaver' }
+            ];
+            for (const e of eksempler) await rollerStorage.leggTilInnehaver({ ...e, Kilde: 'seed' });
+            context.log(`roller/seed: ${upn} seedet ${eksempler.length} eksempelroller`);
+            return { jsonBody: { status: 'ok', antall: eksempler.length } };
+        } catch (e) {
+            context.log('roller/seed FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('rollerFjern', {
     methods: ['POST'],
     authLevel: 'anonymous',

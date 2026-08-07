@@ -11,6 +11,7 @@ require('./functions/vedlegg');
 require('./functions/seed-eksempel');
 require('./functions/postnumre');
 require('./functions/roller');
+require('./functions/refresh-fs');
 
 // Etter hvert:
 // require('./functions/skjema');

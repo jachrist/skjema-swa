@@ -14,10 +14,10 @@
 const postnumreStorage = require('./postnumre-storage');
 const skjemaStorage = require('./skjema-storage');
 const rollerStorage = require('./roller-storage');
+const emnerStorage = require('./emner-storage');
 
 const IKKE_IMPLEMENTERT = new Set([
-    'Team', 'Emner', 'Studenter',
-    'Avdelinger', 'Studieprogrammer'
+    'Team', 'Avdelinger'
 ]);
 
 /**
@@ -34,6 +34,12 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
             return await _hentRolleGrupper(filterbegrep, filterverdi);
         case 'Personer':
             return await _hentPersoner(filterbegrep, filterverdi, log);
+        case 'Emner':
+            return await _hentEmner(filterbegrep, filterverdi);
+        case 'Studenter':
+            return await _hentStudenter(filterbegrep, filterverdi);
+        case 'Studieprogrammer':
+            return await _hentStudieprogrammer();
         default:
             if (IKKE_IMPLEMENTERT.has(datakilde)) {
                 log(`oppslag: datakilde "${datakilde}" kommer med masterdata-modul (fase 5)`);
@@ -69,9 +75,64 @@ async function _hentPersoner(filterbegrep, filterverdi, log) {
             FN: p.FN, EN: p.EN, EP: p.EP, Omfang: p.Omfang
         }));
     }
-    // Team/Emne/EmneLarere/EmneHovedlarere — kommer i 5b/5c
+    if (filterbegrep === 'EmneLarere' || filterbegrep === 'EmneHovedlarere') {
+        if (!filterverdi) return [];
+        const emne = await emnerStorage.hentEmne(null, filterverdi);
+        if (!emne) return [];
+        const kilde = filterbegrep === 'EmneLarere' ? emne.Larere : emne.Hovedlarere;
+        return (kilde || []).map(p => ({
+            Tekst: `${p.EN}, ${p.FN} (${p.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Verdi: p.EP,
+            FN: p.FN, EN: p.EN, EP: p.EP
+        }));
+    }
+    if (filterbegrep === 'EmneStudenter') {
+        if (!filterverdi) return [];
+        const studenter = await emnerStorage.hentStudenterForEmne(filterverdi);
+        return studenter.map(s => ({
+            Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Verdi: s.EP,
+            FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
+        }));
+    }
     log(`oppslag: Personer med filterbegrep "${filterbegrep}" er ikke implementert ennå`);
     return [];
+}
+
+async function _hentEmner(filterbegrep, filterverdi) {
+    // Filter: Termin=X (26H/26V/25H), Campus=X, eller ingen filter
+    const opts = {};
+    if (filterbegrep === 'Termin' && filterverdi) opts.termin = String(filterverdi);
+    if (filterbegrep === 'Campus' && filterverdi) opts.campus = String(filterverdi);
+    const alle = await emnerStorage.hentAlleEmner(opts);
+    return alle.map(e => {
+        const emneId = `${e.EK}-${e.VK}`;
+        return {
+            Tekst: `${e.EK} — ${e.EN} (${e.Termin})`,
+            Verdi: emneId,
+            EK: e.EK, VK: e.VK, EN: e.EN,
+            SK: e.SK, SN: e.SN, C: e.C,
+            Termin: e.Termin
+        };
+    });
+}
+
+async function _hentStudenter(filterbegrep, filterverdi) {
+    // Filter: Emne={EK}-{VK} — obligatorisk
+    if (filterbegrep === 'Emne' && filterverdi) {
+        const studenter = await emnerStorage.hentStudenterForEmne(String(filterverdi));
+        return studenter.map(s => ({
+            Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Verdi: s.EP,
+            FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
+        }));
+    }
+    return [];
+}
+
+async function _hentStudieprogrammer() {
+    const alle = await emnerStorage.hentAlleStudieprogrammer();
+    return alle.map(s => ({ Tekst: `${s.SK} — ${s.SN}`, Verdi: s.SK, SK: s.SK, SN: s.SN }));
 }
 
 async function _hentPostnumre(filterbegrep, filterverdi) {

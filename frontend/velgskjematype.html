@@ -307,6 +307,7 @@
             <a class="knapp sekundær" style="padding: 6px 12px; font-size: 13px; text-decoration: none;" href="/rolleadmin.html">Rolle-admin</a>
             <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed eksempler</button>
             <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seedPostnumre()">Seed postnumre</button>
+            <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seedRoller()">Seed roller</button>
             <span id="admin-status" style="color: var(--text-secondary);"></span>
         </div>
 
@@ -375,6 +376,20 @@
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
             }
         }
+
+        window.seedRoller = async () => {
+            const statusEl = document.getElementById('admin-status');
+            statusEl.textContent = 'Seeder roller…';
+            statusEl.style.color = 'var(--text-secondary)';
+            try {
+                const svar = await api.post('/api/roller/seed', {});
+                statusEl.textContent = `${svar.antall} eksempel-roller lagt inn med deg som innehaver`;
+                statusEl.style.color = 'var(--badge-produksjon)';
+            } catch (e) {
+                statusEl.textContent = 'Feil: ' + e.message;
+                statusEl.style.color = '#d9534f';
+            }
+        };
 
         window.seedPostnumre = async () => {
             const statusEl = document.getElementById('admin-status');
