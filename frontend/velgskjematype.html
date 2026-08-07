@@ -301,10 +301,11 @@
             <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
         </div>
 
-        <div id="admin-verktoy" style="display: none; margin-bottom: 18px; padding: 12px 16px; background: var(--forklaring-bg); border-radius: var(--radius-md); font-size: 13px;">
-            <strong style="color: var(--text-heading);">Pilot-verktøy (admin):</strong>
-            <button class="knapp sekundær" style="margin-left: 12px; padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed 3 eksempel-skjematyper</button>
-            <span id="admin-status" style="margin-left: 12px; color: var(--text-secondary);"></span>
+        <div id="admin-verktoy" style="display: none; margin-bottom: 18px; padding: 12px 16px; background: var(--forklaring-bg); border-radius: var(--radius-md); font-size: 13px; display: none; flex-wrap: wrap; gap: 10px; align-items: center;">
+            <strong style="color: var(--text-heading);">Admin:</strong>
+            <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
+            <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed eksempler</button>
+            <span id="admin-status" style="color: var(--text-secondary);"></span>
         </div>
 
         <div id="status" class="status-melding">Laster…</div>
@@ -415,6 +416,7 @@
             }
             if (t.ErEier) {
                 knapper.push(`<a class="knapp sekundær" href="/register.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}">Register</a>`);
+                knapper.push(`<a class="knapp sekundær" href="/editor.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}">Rediger</a>`);
             }
             const knapperadHtml = knapper.length
                 ? `<div class="knapperad">${knapper.join('')}</div>`

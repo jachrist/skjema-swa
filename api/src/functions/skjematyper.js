@@ -12,6 +12,24 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 
+async function nesteSkjematypeId() {
+    const alle = await skjemaStorage.hentAlleSkjematyper();
+    let max = 0;
+    for (const st of alle) {
+        const n = parseInt(st.id, 10);
+        if (!isNaN(n) && n > max) max = n;
+    }
+    return String(max + 1);
+}
+
+async function harEierPåType(skjematypeId, upn) {
+    if (erAdmin(upn)) return true;
+    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+    if (!st) return false;
+    const treff = await filtrerTyperPåTilgang([st], upn, 'Eiere');
+    return treff.length > 0;
+}
+
 /**
  * Mapping fra intern representasjon til frontend-vennlig format.
  * ErEier og KanFylle indikerer hvilke handlingsknapper som skal vises.
@@ -117,18 +135,51 @@ app.http('lagreSkjematype', {
     handler: async (request, context) => {
         const upn = hentInnloggetUpn(request);
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin-tilgang' } };
 
         try {
             const body = await request.json();
+
+            // Ny skjematype: generer id og krev admin. Eksisterende: krev admin eller eier.
+            let erNy = false;
             if (!body.Skjematype_id) {
-                return { status: 400, jsonBody: { status: 'feil', melding: 'Skjematype_id mangler' } };
+                if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin-tilgang for å opprette ny skjematype' } };
+                body.Skjematype_id = await nesteSkjematypeId();
+                erNy = true;
+            } else {
+                const tillatt = await harEierPåType(body.Skjematype_id, upn);
+                if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin kan endre denne skjematypen' } };
             }
+
             await skjemaStorage.lagreSkjematype(body);
-            context.log(`skjematyper: ${upn} lagret skjematype ${body.Skjematype_id}`);
-            return { jsonBody: { status: 'ok', Skjematype_id: body.Skjematype_id } };
+            context.log(`skjematyper: ${upn} ${erNy ? 'opprettet' : 'oppdaterte'} skjematype ${body.Skjematype_id}`);
+            return { jsonBody: { status: 'ok', Skjematype_id: body.Skjematype_id, erNy } };
         } catch (e) {
             context.log('skjematyper POST FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+app.http('slettSkjematype', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/{id}',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const id = request.params.id;
+            const tillatt = await harEierPåType(id, upn);
+            if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin kan slette denne skjematypen' } };
+
+            const slettet = await skjemaStorage.slettSkjematype(id);
+            if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
+
+            context.log(`skjematyper DELETE: ${upn} slettet skjematype ${id}`);
+            return { jsonBody: { status: 'ok' } };
+        } catch (e) {
+            context.log('skjematyper DELETE FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }
