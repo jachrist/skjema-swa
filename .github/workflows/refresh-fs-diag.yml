@@ -1,0 +1,21 @@
+name: Refresh FS-data — diag
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kall refresh-fs/diag
+        env:
+          SWA_URL: ${{ vars.SWA_URL }}
+          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+        run: |
+          echo "Kaller $SWA_URL/api/refresh-fs/diag …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/refresh-fs/diag" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json")
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
