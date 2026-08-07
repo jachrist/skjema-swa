@@ -58,17 +58,19 @@ app.http('helloStorage', {
         } catch (e) {
             context.log('hello-storage FEIL:', e.message, e.stack);
             const cs = process.env.STORAGE_CONNECTION_STRING || '';
+            const diag = [
+                `lengde=${cs.length}`,
+                `start="${cs.substring(0, 40)}"`,
+                `accountKey=${cs.includes('AccountKey=')}`,
+                `endpointSuffix=${cs.includes('EndpointSuffix=')}`,
+                `sas=${cs.includes('SharedAccessSignature=')}`,
+                `kvRef=${cs.startsWith('@Microsoft.KeyVault')}`
+            ].join(' | ');
             return {
                 status: 500,
                 jsonBody: {
                     status: 'feil',
-                    melding: e.message,
-                    debug_cs_lengde: cs.length,
-                    debug_cs_start: cs.substring(0, 40),
-                    debug_cs_har_accountkey: cs.includes('AccountKey='),
-                    debug_cs_har_endpointsuffix: cs.includes('EndpointSuffix='),
-                    debug_cs_har_sas: cs.includes('SharedAccessSignature='),
-                    debug_cs_ser_kv_ut: cs.startsWith('@Microsoft.KeyVault')
+                    melding: `${e.message} || DEBUG: ${diag}`
                 }
             };
         }
