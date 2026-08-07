@@ -405,9 +405,24 @@
                         </select>
                     </div>
                     <div class="rad">
-                        <label>Skjemaforklaring <small>(vises som informasjon på utfyllingssiden)</small></label>
-                        <textarea id="f-forklaring" oninput="setForklaring(this.value)">${escapeHtml(data.Skjemaforklaring?.Innhold || '')}</textarea>
+                        <label>Skjemaforklaring
+                            <small>(vises som informasjon på utfyllingssiden)</small>
+                        </label>
+                        <textarea id="f-forklaring" style="min-height: 90px;" oninput="setForklaring(this.value)">${escapeHtml(data.Skjemaforklaring?.Innhold || '')}</textarea>
+                        <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px; font-size: 12px;">
+                            <span>Format:</span>
+                            <label class="checkbox-rad"><input type="radio" name="fklar-format" value="Tekst" ${(data.Skjemaforklaring?.Format || 'Tekst') === 'Tekst' ? 'checked' : ''} onchange="setForklaringFormat('Tekst')"> Ren tekst</label>
+                            <label class="checkbox-rad"><input type="radio" name="fklar-format" value="Markdown" ${data.Skjemaforklaring?.Format === 'Markdown' ? 'checked' : ''} onchange="setForklaringFormat('Markdown')"> Markdown</label>
+                            <span style="color: var(--text-secondary); font-size: 11px;">**bold**, *italic*, [tekst](url), - lister, # overskrifter</span>
+                        </div>
                     </div>
+                </div>
+
+                <div class="panel">
+                    <h2>Tilgjengelighetsperioder <small style="font-weight: 400; text-transform: none;">— når utfylling er tillatt (utenfor perioden er skjemaet kun synlig for eiere)</small></h2>
+                    <div id="perioder-container"></div>
+                    <button class="knapp mini sekundær" onclick="leggTilPeriode()" style="margin-top: 6px;">+ Legg til periode</button>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">Ingen perioder = alltid tilgjengelig.</div>
                 </div>
 
                 <div class="panel">
@@ -430,7 +445,44 @@
             `;
 
             rendrerSeksjoner();
+            rendrerPerioder();
         }
+
+        function rendrerPerioder() {
+            const el = document.getElementById('perioder-container');
+            if (!el) return;
+            const perioder = data.Tilgjengelighetsperioder || [];
+            if (perioder.length === 0) {
+                el.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px; font-style: italic;">Ingen perioder — skjematypen er alltid tilgjengelig.</div>';
+                return;
+            }
+            el.innerHTML = perioder.map((p, i) => `
+                <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                    <input type="date" value="${escapeAttr(p.Fra || '')}" oninput="setPeriode(${i}, 'Fra', this.value)" style="max-width: 160px;">
+                    <span>–</span>
+                    <input type="date" value="${escapeAttr(p.Til || '')}" oninput="setPeriode(${i}, 'Til', this.value)" style="max-width: 160px;">
+                    <button class="knapp mini danger" onclick="fjernPeriode(${i})">Fjern</button>
+                </div>
+            `).join('');
+        }
+
+        window.leggTilPeriode = () => {
+            if (!data.Tilgjengelighetsperioder) data.Tilgjengelighetsperioder = [];
+            data.Tilgjengelighetsperioder.push({ Fra: '', Til: '' });
+            rendrerPerioder();
+        };
+        window.setPeriode = (i, felt, verdi) => {
+            if (!data.Tilgjengelighetsperioder) return;
+            data.Tilgjengelighetsperioder[i][felt] = verdi;
+        };
+        window.fjernPeriode = (i) => {
+            data.Tilgjengelighetsperioder.splice(i, 1);
+            rendrerPerioder();
+        };
+        window.setForklaringFormat = (f) => {
+            if (!data.Skjemaforklaring) data.Skjemaforklaring = { Innhold: '' };
+            data.Skjemaforklaring.Format = f;
+        };
 
         function rendrerSeksjoner() {
             const container = document.getElementById('seksjoner-container');
@@ -562,6 +614,7 @@
                         <div style="display: flex; gap: 4px;">
                             <button class="knapp mini sekundær" data-action="flytt-felt-opp" data-seksjon="${sIdx}" data-felt="${fIdx}" ${fIdx === 0 ? 'disabled' : ''}>↑</button>
                             <button class="knapp mini sekundær" data-action="flytt-felt-ned" data-seksjon="${sIdx}" data-felt="${fIdx}" ${fIdx === antall - 1 ? 'disabled' : ''}>↓</button>
+                            <button class="knapp mini sekundær" data-action="kopier-felt" data-seksjon="${sIdx}" data-felt="${fIdx}" title="Kopier felt">⧉</button>
                             <button class="knapp mini danger" data-action="slett-felt" data-seksjon="${sIdx}" data-felt="${fIdx}">✕</button>
                         </div>
                     </div>
@@ -578,11 +631,25 @@
         }
 
         function byggFeltConfigHtml(felt, sIdx, fIdx) {
+            const undertittel = felt.Type === 'Informasjon' ? '' : `
+                <div class="rad">
+                    <label>Undertittel <small>(vises under spørsmålet — valgfritt)</small></label>
+                    <input type="text" value="${escapeAttr(felt.Undertittel?.Verdi || '')}"
+                        placeholder="Hjelpetekst / presisering"
+                        oninput="setUndertittel(${sIdx}, ${fIdx}, this.value)">
+                </div>
+            `;
+
             const oblig = felt.Type === 'Informasjon' ? '' : `
                 <label class="checkbox-rad" style="margin-top: 6px;">
                     <input type="checkbox" ${felt.Obligatorisk ? 'checked' : ''}
                         onchange="setFeltObligatorisk(${sIdx}, ${fIdx}, this.checked)">
                     Obligatorisk
+                </label>
+                <label class="checkbox-rad" style="margin-top: 4px;">
+                    <input type="checkbox" ${felt.Filtrerbar_i_register ? 'checked' : ''}
+                        onchange="setFeltProp(${sIdx}, ${fIdx}, 'Filtrerbar_i_register', this.checked)">
+                    Filtrerbar i register/datauttrekk
                 </label>
             `;
 
@@ -652,8 +719,14 @@
                     break;
             }
 
-            return oblig + (typeConfig ? '<div style="margin-top: 8px;">' + typeConfig + '</div>' : '');
+            return undertittel + oblig + (typeConfig ? '<div style="margin-top: 8px;">' + typeConfig + '</div>' : '');
         }
+
+        window.setUndertittel = (sIdx, fIdx, v) => {
+            const felt = data.Seksjoner[sIdx].Felter[fIdx];
+            if (!felt.Undertittel) felt.Undertittel = { Format: 'Tekst' };
+            felt.Undertittel.Verdi = v;
+        };
 
         function håndterAksjon(action, sIdx, fIdx, vIdx) {
             switch (action) {
@@ -665,6 +738,7 @@
                 case 'legg-til-felt': leggTilFelt(sIdx); break;
                 case 'flytt-felt-opp': flyttFelt(sIdx, fIdx, -1); break;
                 case 'flytt-felt-ned': flyttFelt(sIdx, fIdx, 1); break;
+                case 'kopier-felt': kopierFelt(sIdx, fIdx); break;
                 case 'slett-felt':
                     if (confirm('Slett feltet?')) slettFelt(sIdx, fIdx);
                     break;
@@ -767,6 +841,18 @@
             if (til < 0 || til >= felter.length) return;
             const [f] = felter.splice(fIdx, 1);
             felter.splice(til, 0, f);
+            renummererFelter(sIdx);
+            rendrerSeksjoner();
+        }
+
+        function kopierFelt(sIdx, fIdx) {
+            const felter = data.Seksjoner[sIdx].Felter;
+            const original = felter[fIdx];
+            const kopi = JSON.parse(JSON.stringify(original));
+            kopi.Id = nyId(); // ny stabile referanse-id
+            const opprinneligTekst = kopi.Tekst?.Verdi || '';
+            if (kopi.Tekst) kopi.Tekst.Verdi = opprinneligTekst + ' (kopi)';
+            felter.splice(fIdx + 1, 0, kopi);
             renummererFelter(sIdx);
             rendrerSeksjoner();
         }

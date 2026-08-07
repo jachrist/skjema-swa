@@ -429,8 +429,15 @@
 
         function kortHtml(t) {
             const fase = (t.Fase || 'Produksjon').toLowerCase();
+            const forklaringHtml = t.Skjema_forklaring?.Format === 'Markdown'
+                ? parseMdSimpel(t.Skjema_forklaring.Verdi || '')
+                : escapeHtml(t.Skjema_forklaring?.Verdi || '');
             const forklaring = t.Skjema_forklaring?.Verdi
-                ? `<div class="forklaring">${escapeHtml(t.Skjema_forklaring.Verdi)}</div>`
+                ? `<div class="forklaring">${forklaringHtml}</div>`
+                : '';
+            const utenforPeriode = (t.KanFylle === false && t.ErIPeriode === false);
+            const periodeAdvarsel = utenforPeriode && !t.ErEier
+                ? '<div style="margin-top: 8px; padding: 8px 12px; background: rgba(255,149,0,0.1); border-radius: 6px; font-size: 13px; color: #cc7a00;">Utenfor tilgjengelighetsperioden — kan ikke fylles ut nå.</div>'
                 : '';
             const knapper = [];
             if (t.KanFylle) {
@@ -471,6 +478,7 @@
                         <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
                     </div>
                     ${forklaring}
+                    ${periodeAdvarsel}
                     ${knapperadHtml}
                     ${mellomlagretHtml}
                 </div>
@@ -491,6 +499,16 @@
                 .replace(/</g, '&lt;')
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;');
+        }
+
+        // Minimal Markdown for kortvisning — bare bold/italic/lenker
+        function parseMdSimpel(t) {
+            let s = escapeHtml(t);
+            s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+            s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+            s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+            s = s.replace(/\n/g, '<br>');
+            return s;
         }
 
         init();

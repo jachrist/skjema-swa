@@ -278,7 +278,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         let skjematype = null;
@@ -354,7 +354,7 @@
 
             if (skjematype.Skjemaforklaring?.Innhold) {
                 document.getElementById('forklaring').innerHTML =
-                    `<div class="status-melding info">${escapeHtml(skjematype.Skjemaforklaring.Innhold)}</div>`;
+                    `<div class="status-melding info">${renderTekst(skjematype.Skjemaforklaring)}</div>`;
             }
 
             const innhold = document.getElementById('innhold');

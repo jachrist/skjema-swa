@@ -13,6 +13,7 @@ const skjemaStorage = require('../lib/skjema-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
+const { erTilgjengeligNaa } = require('../lib/periode');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -39,6 +40,7 @@ async function harEierPåType(skjematypeId, upn) {
  */
 function tilKortformat(st, erEier, kanFylle) {
     const data = st.JSON || {};
+    const iPeriode = erTilgjengeligNaa(data.Tilgjengelighetsperioder);
     return {
         Skjematype_id: st.id,
         Skjema_navn: st.navn || data.Skjema_navn || '',
@@ -48,7 +50,10 @@ function tilKortformat(st, erEier, kanFylle) {
         Logo_url: data.Logo_url || '',
         Fase: data.Fase || 'Produksjon',
         ErEier: erEier,
-        KanFylle: kanFylle
+        // Utfylling blokkeres utenfor tilgjengelighetsperioden — eier ser kortet uansett
+        KanFylle: kanFylle && iPeriode,
+        ErIPeriode: iPeriode,
+        Tilgjengelighetsperioder: data.Tilgjengelighetsperioder || []
     };
 }
 

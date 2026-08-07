@@ -597,6 +597,12 @@
                 const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
                 label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escHtml(felt.Tekst?.Verdi || '')}${oblig}`;
                 div.appendChild(label);
+                if (felt.Undertittel?.Verdi) {
+                    const u = document.createElement('div');
+                    u.style.cssText = 'font-size: 13px; color: var(--text-secondary); margin: 2px 0 6px;';
+                    u.textContent = felt.Undertittel.Verdi;
+                    div.appendChild(u);
+                }
             }
             if (redigerer) {
                 const feltId = `edit-${seksjonNr}-${felt.Nummer}`;
