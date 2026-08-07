@@ -439,38 +439,39 @@ app.http('lagreSkjema', {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang til denne skjematypen' } };
             }
 
-            // Generer nytt Skjema_id hvis ikke oppgitt. Hvis oppgitt (f.eks. pre-generert
-            // av ny-skjema-id-endpoint), sjekk om det allerede finnes for å avgjøre erNytt.
+            // Hent eksisterende for å avgjøre erNytt og bevare metadata (Behandling, Dialog)
             let skjemaId = body.Skjema_id ? String(body.Skjema_id) : null;
-            let erNytt;
+            let eksisterende = null;
+            if (skjemaId) {
+                eksisterende = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            }
+            const erNytt = !eksisterende;
             if (!skjemaId) {
                 skjemaId = await genererSkjemaId(skjematypeId);
-                erNytt = true;
-            } else {
-                const eksisterer = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
-                erNytt = !eksisterer;
             }
 
-            // Bygg skjemadata. Ved opprettelse: arv Behandling-struktur fra skjematypen
-            // (dyp kopi, alle Beslutning nullstilles til 0 = ikke behandlet).
+            // Ved nytt skjema: arv Behandling-struktur fra skjematypen
             let behandlingArvet = null;
             if (erNytt) {
                 const st = await skjemaStorage.hentSkjematype(skjematypeId);
                 if (Array.isArray(st?.JSON?.Behandling)) {
                     behandlingArvet = JSON.parse(JSON.stringify(st.JSON.Behandling)).map(steg => ({
                         ...steg,
-                        Beslutning: 0,
-                        Dialog: []
+                        Beslutning: 0
                     }));
                 }
             }
 
+            // Bygg skjemadata. Ved oppdatering: start med eksisterende (bevar Behandling,
+            // Dialog, vedlegg-refs) og la body overstyre med nye svar/status.
             const skjemaData = {
+                ...(eksisterende || {}),
                 ...body,
                 Skjema_id: skjemaId,
                 Skjematype_id: skjematypeId,
-                Innsender_Epost: upn,
-                Skjema_status: body.Skjema_status || 2 // 1=mellomlagret, 2=innsendt
+                // Bevar original innsender ved oppdatering
+                Innsender_Epost: eksisterende?.Innsender_Epost || upn,
+                Skjema_status: body.Skjema_status || eksisterende?.Skjema_status || 2
             };
             if (behandlingArvet && !Array.isArray(skjemaData.Behandling)) {
                 skjemaData.Behandling = behandlingArvet;
