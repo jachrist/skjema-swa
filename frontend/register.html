@@ -514,11 +514,13 @@
 
             const knapperEl = document.createElement('div');
             knapperEl.className = 'detalj-knapper';
+            const raaLenke = `<a class="knapp sekundær" href="/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(state.valgtId)}" target="_blank" title="Åpne rå JSON i ny fane">Rå JSON</a>`;
             knapperEl.innerHTML = state.redigerer
                 ? `<button class="knapp primær" onclick="lagreEndringer()">Lagre endringer</button>
                    <button class="knapp sekundær" onclick="avbrytRedigering()">Avbryt</button>`
                 : `<button class="knapp primær" onclick="startRedigering()">Rediger</button>
-                   <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>`;
+                   <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>
+                   ${raaLenke}`;
             hoyre.appendChild(knapperEl);
 
             // Bygg seksjoner-med-svar for vilkårs-evaluering (basert på lagrede svar)

@@ -293,6 +293,11 @@
                 }))
             }));
 
+            // Vis behandlingsstatus hvis skjema har Behandling-array
+            if (Array.isArray(skjema.Behandling) && skjema.Behandling.length > 0) {
+                innhold.appendChild(byggBehandlingVisning(skjema.Behandling));
+            }
+
             for (const seksjon of (skjematype.Seksjoner || [])) {
                 // Hopp over seksjoner som ikke skal vises
                 if (seksjon.Vises && !evaluerVilkar(seksjon.Vises, seksjonerMedSvar)) continue;
@@ -318,6 +323,60 @@
             }
 
             document.getElementById('knapperad').style.display = 'flex';
+        }
+
+        function byggBehandlingVisning(behandling) {
+            const div = document.createElement('div');
+            div.className = 'seksjon';
+            const h = document.createElement('h2');
+            h.className = 'seksjon-tittel';
+            h.textContent = 'Behandling';
+            div.appendChild(h);
+
+            for (const steg of behandling) {
+                const rad = document.createElement('div');
+                rad.style.cssText = 'padding: 10px 12px; margin: 6px 0; background: var(--bg-svar); border-left: 3px solid var(--border-color); border-radius: 8px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;';
+                const status = tolkStatus(steg);
+                rad.style.borderLeftColor = status.farge;
+
+                const nrEl = document.createElement('span');
+                nrEl.style.cssText = 'background: ' + status.farge + '; color: white; border-radius: 999px; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;';
+                nrEl.textContent = steg.Steg;
+                rad.appendChild(nrEl);
+
+                const navnEl = document.createElement('span');
+                navnEl.style.cssText = 'font-weight: 600; flex: 1;';
+                navnEl.textContent = steg.Stegnavn || `Steg ${steg.Steg}`;
+                rad.appendChild(navnEl);
+
+                const statusEl = document.createElement('span');
+                statusEl.style.cssText = 'color: ' + status.farge + '; font-weight: 600; font-size: 13px;';
+                statusEl.textContent = status.tekst;
+                rad.appendChild(statusEl);
+
+                if ((steg.Personer || []).length > 0) {
+                    const beh = document.createElement('div');
+                    beh.style.cssText = 'width: 100%; font-size: 12px; color: var(--text-secondary); margin-top: 4px;';
+                    beh.textContent = 'Behandlere: ' + steg.Personer.join(', ');
+                    rad.appendChild(beh);
+                }
+
+                div.appendChild(rad);
+            }
+            return div;
+        }
+
+        function tolkStatus(steg) {
+            const b = Number(steg.Beslutning || 0);
+            if (b === 0) return { tekst: 'Venter', farge: '#ff9500' };
+            if (b === 5) return { tekst: 'Hoppet over', farge: '#8e8e93' };
+            const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === b);
+            const tekst = valg?.Tekst || `Beslutning ${b}`;
+            // Enkel heuristikk for fargekoding
+            const t = tekst.toLowerCase();
+            if (t.includes('avslå') || t.includes('avvis')) return { tekst, farge: '#ff3b30' };
+            if (t.includes('ompuss') || t.includes('revid')) return { tekst, farge: '#af52de' };
+            return { tekst, farge: '#34c759' };
         }
 
         function byggFelt(felt, visningsNr, svar, skjematypeId, skjemaId) {
