@@ -59,6 +59,70 @@ app.http('refreshFs', {
     }
 });
 
+app.http('refreshFsDiag', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'refresh-fs/diag',
+    handler: async (request, context) => {
+        const auth = autorisert(request);
+        if (!auth.ok) return { status: 403, jsonBody: { status: 'avvist' } };
+
+        const startTid = Date.now();
+        const trinn = [];
+        const merk = (navn) => trinn.push({ trinn: navn, ms: Date.now() - startTid });
+
+        try {
+            const env = {
+                FS_API_URL: process.env.FS_API_URL ? 'satt' : 'MANGLER',
+                FS_API_USER: process.env.FS_API_USER ? 'satt' : 'MANGLER',
+                FS_API_PASSWORD: process.env.FS_API_PASSWORD ? 'satt' : 'MANGLER',
+                FS_EIER_ORG_KODE: process.env.FS_EIER_ORG_KODE || 'default 1627'
+            };
+            merk('env sjekket');
+
+            const terminer = require('../lib/terminer');
+            const fs = require('../lib/fs-client');
+            const aktive = terminer.aktiveTerminer();
+            merk('aktive terminer beregnet');
+
+            const idMap = await fs.hentTerminer(aktive.map(t => ({ arstall: t.arstall, betegnelse: t.betegnelse })));
+            merk('hentTerminer OK');
+
+            const terminIder = [];
+            for (const t of aktive) {
+                const id = idMap.get(`${t.arstall}-${t.betegnelse}`);
+                if (id) terminIder.push(id);
+            }
+
+            // Ett lite GraphQL-kall — 5 enheter, uten LU
+            const enheter = await fs.hentUndervisningsenheter(terminIder.slice(0, 1), 5, null);
+            merk('hentUndervisningsenheter (5 enheter, 1 termin) OK');
+
+            return {
+                jsonBody: {
+                    status: 'ok',
+                    env,
+                    aktiveTerminer: aktive.map(t => t.kort),
+                    terminIder,
+                    antallEnheter: enheter.length,
+                    første: enheter[0]?.emne?.kode || null,
+                    trinn
+                }
+            };
+        } catch (e) {
+            return {
+                status: 500,
+                jsonBody: {
+                    status: 'feil',
+                    melding: String(e.message || e),
+                    stack: (e.stack || '').split('\n').slice(0, 6),
+                    trinn
+                }
+            };
+        }
+    }
+});
+
 app.http('refreshFsStatus', {
     methods: ['GET'],
     authLevel: 'anonymous',
