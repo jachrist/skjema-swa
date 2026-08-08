@@ -86,10 +86,17 @@ app.http('mineSkjematyper', {
                 aktuelle = [...map.values()];
             }
 
-            // Vanlige brukere ser kun Produksjon-fase; admin ser alt
-            const filtrertPåFase = erAdmin(upn)
-                ? aktuelle
-                : aktuelle.filter(t => (t.JSON?.Fase || 'Produksjon') === 'Produksjon');
+            // Fase-filter:
+            //   Utvikling  — kun admin (bruker ikke i lista i det hele tatt)
+            //   Test       — admin + eiere (skjult for Publikum-brukere som ikke også er eier)
+            //   Produksjon — alle med tilgang
+            const filtrertPåFase = aktuelle.filter(t => {
+                const fase = t.JSON?.Fase || 'Produksjon';
+                if (fase === 'Produksjon') return true;
+                if (erAdmin(upn)) return true;
+                if (fase === 'Test' && eierIder.has(String(t.id))) return true;
+                return false;
+            });
 
             const resultat = filtrertPåFase
                 .map(t => tilKortformat(t, eierIder.has(String(t.id)), publikumsIder.has(String(t.id))))
