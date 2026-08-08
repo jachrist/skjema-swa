@@ -174,14 +174,12 @@ app.http('lagreBeslutning', {
             const nyeAktive = beregnAktiveSteg(skjema);
             const alleFerdig = alleStegFerdig(skjema);
             const beslutningTekst = valgtValg?.Tekst || '';
-            const log = (m) => context.log(m);
+            const varslOpts = { log: (m) => context.log(m), request };
             const varslinger = [
-                // Melding til innsender om denne beslutningen
-                varsling.sendBeslutningVarsling(skjema, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', log)
+                varsling.sendBeslutningVarsling(skjema, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', varslOpts)
             ];
             if (!alleFerdig) {
-                // Varsle behandlere på nye aktive steg
-                varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, nyeAktive, log));
+                varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, nyeAktive, varslOpts));
             }
             Promise.all(varslinger).catch(e => context.log(`varsling FEIL (beslutning): ${e.message}`));
 
@@ -343,8 +341,8 @@ app.http('videresend', {
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             const skjematype = st?.JSON || {};
             const nyMottakerSteg = { ...stegObj, Personer: [tilUpn], Roller: [], Varsling: ['epost'] };
-            const log = (m) => context.log(m);
-            varsling.sendBehandlerVarsling(skjema, skjematype, nyMottakerSteg, log)
+            const varslOpts = { log: (m) => context.log(m), request };
+            varsling.sendBehandlerVarsling(skjema, skjematype, nyMottakerSteg, varslOpts)
                 .catch(e => context.log(`varsling FEIL (videresend): ${e.message}`));
 
             return { jsonBody: { status: 'ok', personerNa: stegObj.Personer } };
@@ -527,10 +525,10 @@ app.http('lagreSkjema', {
                 const st = await skjemaStorage.hentSkjematype(skjematypeId);
                 const skjematype = st?.JSON || {};
                 const aktive = beregnAktiveSteg(skjemaData);
-                const log = (m) => context.log(m);
+                const varslOpts = { log: (m) => context.log(m), request };
                 Promise.all([
-                    varsling.sendInnsenderKvittering(skjemaData, skjematype, log),
-                    varsling.sendVarslingAktiveSteg(skjemaData, skjematype, aktive, log)
+                    varsling.sendInnsenderKvittering(skjemaData, skjematype, varslOpts),
+                    varsling.sendVarslingAktiveSteg(skjemaData, skjematype, aktive, varslOpts)
                 ]).catch(e => context.log(`varsling FEIL (innsending): ${e.message}`));
             }
 

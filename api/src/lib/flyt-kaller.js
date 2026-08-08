@@ -21,8 +21,17 @@
  *   }
  */
 
-function baseUrl() {
-    return String(process.env.SWA_URL || '').replace(/\/+$/, '');
+function baseUrl(request) {
+    const fra_env = String(process.env.SWA_URL || '').replace(/\/+$/, '');
+    if (fra_env) return fra_env;
+    // Fallback: utled fra request-headers hvis env-var ikke er satt.
+    // SWA-fronten setter x-forwarded-host + x-forwarded-proto.
+    if (request?.headers?.get) {
+        const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+        const proto = request.headers.get('x-forwarded-proto') || 'https';
+        if (host) return `${proto}://${host}`;
+    }
+    return '';
 }
 
 async function kallVarslingFlyt(payload, log = () => {}) {
@@ -79,6 +88,7 @@ async function sendEpostViaFlyt(args, log = () => {}) {
         ? args.lenker
         : mottakere.map(m => ({ epost: m.epost, url: felleslenke }));
 
+    const base = baseUrl(args.request);
     const payload = {
         handling: 'sendBehandlingsVarsling',
         mottakere: mottakere.map(m => ({ epost: m.epost, navn: m.navn || '' })),
@@ -88,12 +98,13 @@ async function sendEpostViaFlyt(args, log = () => {}) {
         skjema_navn: args.skjemaNavn || '',
         stegnavn: args.stegnavn || '',
         lenker,
-        base_url: baseUrl(),
+        base_url: base,
         epost_og_teams: {
             emne: args.emne || '',
             html: args.html || ''
         }
     };
+    log(`flyt payload: base_url=${base || '(TOM!)'} lenke=${felleslenke || '(TOM!)'} mottakere=${payload.mottakere.length}`);
     return await kallVarslingFlyt(payload, log);
 }
 

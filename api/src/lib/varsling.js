@@ -48,8 +48,8 @@ function standardFraBehandler() {
     };
 }
 
-function skjemaLenke(skjematypeId, skjemaId) {
-    const base = baseUrl();
+function skjemaLenke(skjematypeId, skjemaId, request) {
+    const base = baseUrl(request);
     if (!base) return '';
     // Query-param-navn må matche evaluering.html (som leser skjematype_id/skjema_id)
     return `${base}/evaluering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
@@ -88,8 +88,10 @@ async function samleBehandlerMottakere(steg) {
 
 /**
  * Send innsender-kvittering. Kalles ved innsending.
+ * opts: { log, request } — request brukes for base_url-fallback.
  */
-async function sendInnsenderKvittering(skjema, skjematype, log = () => {}) {
+async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
+    const log = opts.log || (() => {});
     const kv = skjematype?.Innsenderkvittering || {};
     if (kv.Aktiv === false) {
         log('varsling: Innsenderkvittering deaktivert — hopper over');
@@ -101,7 +103,7 @@ async function sendInnsenderKvittering(skjema, skjematype, log = () => {}) {
         return { status: 'hoppet-over' };
     }
     const mal = kv.Aktiv === true || kv.Emne || kv.Tekst ? kv : standardKvittering();
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id);
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request);
     const kontekst = byggKontekst({ skjema, skjematype, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardKvittering().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardKvittering().Tekst, kontekst);
@@ -110,14 +112,13 @@ async function sendInnsenderKvittering(skjema, skjematype, log = () => {}) {
         emne, html, lenke,
         skjemaId: skjema.Skjema_id,
         skjematypeId: skjema.Skjematype_id,
-        skjemaNavn: kontekst.skjemanavn
+        skjemaNavn: kontekst.skjemanavn,
+        request: opts.request
     }, log);
 }
 
-/**
- * Send varsling til behandlere for et gitt aktivt steg.
- */
-async function sendBehandlerVarsling(skjema, skjematype, steg, log = () => {}) {
+async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
+    const log = opts.log || (() => {});
     if (!steg) return { status: 'hoppet-over', melding: 'Ingen steg' };
     if (!harEpostVarsling(steg)) {
         log(`varsling: steg ${steg.Steg} har ikke epost i Varsling — hopper over`);
@@ -129,7 +130,7 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, log = () => {}) {
         return { status: 'hoppet-over' };
     }
     const mal = (steg.TilBehandler?.Emne || steg.TilBehandler?.Tekst) ? steg.TilBehandler : standardTilBehandler();
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id);
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request);
     const kontekst = byggKontekst({ skjema, skjematype, steg, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardTilBehandler().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardTilBehandler().Tekst, kontekst);
@@ -139,18 +140,17 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, log = () => {}) {
         skjemaId: skjema.Skjema_id,
         skjematypeId: skjema.Skjematype_id,
         skjemaNavn: kontekst.skjemanavn,
-        stegnavn: kontekst.stegnavn
+        stegnavn: kontekst.stegnavn,
+        request: opts.request
     }, log);
 }
 
-/**
- * Send varsling for alle aktive steg (som har e-post skrudd på).
- */
-async function sendVarslingAktiveSteg(skjema, skjematype, aktiveSteg, log = () => {}) {
+async function sendVarslingAktiveSteg(skjema, skjematype, aktiveSteg, opts = {}) {
+    const log = opts.log || (() => {});
     const resultater = [];
     for (const s of aktiveSteg || []) {
         try {
-            resultater.push(await sendBehandlerVarsling(skjema, skjematype, s, log));
+            resultater.push(await sendBehandlerVarsling(skjema, skjematype, s, opts));
         } catch (e) {
             log(`varsling: FEIL for steg ${s?.Steg}: ${e.message}`);
             resultater.push({ status: 'feil', melding: e.message });
@@ -159,10 +159,8 @@ async function sendVarslingAktiveSteg(skjema, skjematype, aktiveSteg, log = () =
     return resultater;
 }
 
-/**
- * Send tilbakemelding til innsender etter en beslutning (per-steg-mal FraBehandler).
- */
-async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, beslutningTekst, kommentar, log = () => {}) {
+async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, beslutningTekst, kommentar, opts = {}) {
+    const log = opts.log || (() => {});
     const til = skjema?.Innsender_Epost || skjema?.Innsender_epost || '';
     if (!til) return { status: 'hoppet-over', melding: 'Ingen innsender-epost' };
 
@@ -170,7 +168,7 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
     const treff = fraBehandler.find(f => Number(f.BeslutningNr) === Number(beslutningNr));
     const mal = treff && (treff.Emne || treff.Tekst) ? treff : standardFraBehandler();
 
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id);
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request);
     const kontekst = byggKontekst({
         skjema, skjematype, steg,
         beslutningTekst,
@@ -185,7 +183,8 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
         skjemaId: skjema.Skjema_id,
         skjematypeId: skjema.Skjematype_id,
         skjemaNavn: kontekst.skjemanavn,
-        stegnavn: kontekst.stegnavn
+        stegnavn: kontekst.stegnavn,
+        request: opts.request
     }, log);
 }
 
