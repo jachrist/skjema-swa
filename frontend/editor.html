@@ -320,6 +320,121 @@
         .modal h3 { margin: 0 0 8px 0; font-size: 1.2em; }
         .modal p { margin: 0 0 20px 0; color: var(--text-secondary); }
         .modal-knapper { display: flex; gap: 10px; justify-content: flex-end; }
+        /* ===== Modal-knapp (delt) ===== */
+        .modal-knapp {
+            padding: 8px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--input-border);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 14px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        .modal-knapp.primær { background: var(--accent); color: white; border-color: var(--accent); }
+        .modal-knapp.primær:hover { filter: brightness(1.1); }
+        .modal-knapp:hover { background: var(--accent-light); }
+
+        /* ===== Melding-editor-modal ===== */
+        .meldingsmodal-bakgrunn {
+            position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; padding: 20px;
+        }
+        .meldingsmodal-boks {
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px 24px;
+            width: 100%;
+            max-width: 720px;
+            max-height: 92vh;
+            overflow-y: auto;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+        }
+        .meldingsmodal-topp {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 12px;
+        }
+        .meldingsmodal-tittel { margin: 0; font-size: 17px; font-weight: 600; }
+        .meldingsmodal-lukk {
+            background: transparent; border: none; font-size: 20px; cursor: pointer;
+            color: var(--text-secondary); padding: 0 6px;
+        }
+        .meldingsmodal-label { display: block; font-size: 12px; font-weight: 600; margin: 8px 0 4px; }
+        .meldingsmodal-label small { font-weight: 400; color: var(--text-secondary); margin-left: 6px; }
+        .meldingsmodal-emne {
+            width: 100%; padding: 8px 10px; font-size: 14px;
+            border: 1px solid var(--input-border); border-radius: 6px;
+            background: var(--bg-input); color: var(--text-primary);
+        }
+        .meldingsmodal-toolbar {
+            display: flex; gap: 4px; padding: 4px; background: rgba(0,0,0,0.03);
+            border: 1px solid var(--input-border); border-bottom: none;
+            border-radius: 6px 6px 0 0;
+        }
+        .meldingsmodal-toolbar button {
+            padding: 4px 10px; font-size: 13px; border: 1px solid transparent;
+            background: transparent; cursor: pointer; border-radius: 4px; min-width: 30px;
+        }
+        .meldingsmodal-toolbar button:hover { background: var(--accent-light); border-color: var(--accent); }
+        .meldingsmodal-sep {
+            display: inline-block; width: 1px; background: var(--border-color); margin: 2px 4px;
+        }
+        .meldingsmodal-body, .meldingsmodal-html {
+            width: 100%; min-height: 180px;
+            padding: 10px 12px; font-size: 14px; line-height: 1.5;
+            border: 1px solid var(--input-border); border-radius: 0 0 6px 6px;
+            background: var(--bg-input); color: var(--text-primary);
+            box-sizing: border-box;
+        }
+        .meldingsmodal-html { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
+        .meldingsmodal-body:focus, .meldingsmodal-html:focus, .meldingsmodal-emne:focus {
+            outline: none; border-color: var(--accent);
+        }
+        .meldingsmodal-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+        .meldingsmodal-chip {
+            padding: 3px 10px; font-size: 12px; font-family: 'SF Mono', Menlo, monospace;
+            border: 1px solid var(--accent); background: var(--accent-light);
+            color: var(--accent); border-radius: 999px; cursor: pointer;
+        }
+        .meldingsmodal-chip:hover { background: var(--accent); color: white; }
+        .meldingsmodal-feltdropdown {
+            width: 100%; padding: 6px 10px; font-size: 13px;
+            border: 1px solid var(--input-border); border-radius: 6px;
+            background: var(--bg-input); color: var(--text-primary);
+        }
+        .meldingsmodal-knapper {
+            display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
+        }
+
+        /* ===== Varsling-checkbokser ===== */
+        .varsling-kanaler {
+            display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;
+        }
+        .varsling-kanal {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 4px 10px; font-size: 12px;
+            border: 1px solid var(--border-color); border-radius: 999px;
+            background: var(--bg-input); cursor: pointer;
+        }
+        .varsling-kanal.aktiv { background: var(--accent-light); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+        .varsling-kanal input[type="checkbox"] { margin: 0; }
+        .varsling-kanal input:disabled + span { color: var(--text-secondary); }
+        .varsling-kanal.disabled { opacity: 0.55; cursor: not-allowed; }
+
+        .melding-oppsummering {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            padding: 6px 10px; margin-top: 6px;
+            border: 1px dashed var(--border-color); border-radius: 6px;
+            background: rgba(0,0,0,0.02); font-size: 12px;
+        }
+        .melding-oppsummering .emne-forhandsvis {
+            flex: 1; min-width: 0; color: var(--text-secondary);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .melding-oppsummering .emne-forhandsvis.standard { font-style: italic; }
     </style>
 </head>
 <body>
@@ -352,6 +467,7 @@
         import { FELTTYPER } from './js/felt-render.js';
         import { byggDNFEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, invaliderRolleCache } from './js/tilgang-editor.js';
+        import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
 
         let rolleGrupper = []; // populeres i init()
 
@@ -484,6 +600,17 @@
                             <span style="color: var(--text-secondary); font-size: 11px;">**bold**, *italic*, [tekst](url), - lister, # overskrifter</span>
                         </div>
                     </div>
+                    <div class="rad">
+                        <label>Innsenderkvittering <small>(e-post til innsender ved innsending)</small></label>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                            <label class="checkbox-rad" style="margin: 0;">
+                                <input type="checkbox" id="kv-aktiv" ${data.Innsenderkvittering?.Aktiv !== false ? 'checked' : ''} onchange="setKvitteringAktiv(this.checked)">
+                                Send kvittering
+                            </label>
+                            <button class="knapp mini sekundær" onclick="apneKvitteringEditor()" id="kv-rediger">Rediger melding…</button>
+                        </div>
+                        <div class="melding-oppsummering" id="kv-oppsummering"></div>
+                    </div>
                 </div>
 
                 <div class="panel" data-panel-id="tilgjengelighet">
@@ -529,6 +656,7 @@
             rendrerBehandling();
             rendrerPerioder();
             rendrerTilgang();
+            oppdaterKvitteringOppsummering();
             appliserKollapsState();
         }
 
@@ -686,19 +814,50 @@
                 `<option value="${s.Steg}" ${steg.AvhengigAv === s.Steg ? 'selected' : ''}>Steg ${s.Steg}: ${escapeHtml(s.Stegnavn || '')}</option>`
             ).join('');
 
-            const valgHtml = (steg.Beslutningsvalg || []).map((v, vIdx) => `
+            const valgHtml = (steg.Beslutningsvalg || []).map((v, vIdx) => {
+                const nr = Number(v.Nummer ?? vIdx + 1);
+                const fbTreff = (steg.FraBehandler || []).find(f => Number(f.BeslutningNr) === nr);
+                const fbTekst = fbTreff?.Emne ? '✏️ Egen melding' : 'Standardmelding';
+                return `
                 <div class="valg-rad">
                     <input type="number" value="${v.Nummer ?? vIdx + 1}" min="1" style="width: 60px;"
                         oninput="setBeslutningsvalgNr(${idx}, ${vIdx}, this.value)">
                     <input type="text" placeholder="Tekst (Godkjent, Avslått, ...)" value="${escapeAttr(v.Tekst || '')}"
                         oninput="setBeslutningsvalgTekst(${idx}, ${vIdx}, this.value)">
-                    <select onchange="setBeslutningsvalgHandling(${idx}, ${vIdx}, this.value)" style="width: 140px;" title="Spesialhandling">
+                    <select onchange="setBeslutningsvalgHandling(${idx}, ${vIdx}, this.value)" style="width: 130px;" title="Spesialhandling">
                         <option value="" ${!v.Handling ? 'selected' : ''}>Vanlig</option>
                         <option value="ompuss" ${v.Handling === 'ompuss' ? 'selected' : ''}>Ompuss (retur)</option>
                     </select>
+                    <button class="knapp mini sekundær" onclick="apneFraBehandlerEditor(${idx}, ${nr})" title="Redigér tilbakemelding til innsender for denne beslutningen">${fbTekst}</button>
                     <button class="knapp mini danger" onclick="fjernBeslutningsvalg(${idx}, ${vIdx})">✕</button>
                 </div>
-            `).join('');
+            `;}).join('');
+
+            const varsling = Array.isArray(steg.Varsling) ? steg.Varsling : ['epost'];
+            const tbTekst = steg.TilBehandler?.Emne ? '✏️ Egen melding' : 'Standardmelding';
+            const varslingHtml = `
+                <div class="rad">
+                    <label>Varsling <small>(kanaler ved aktivering av steget)</small></label>
+                    <div class="varsling-kanaler">
+                        <label class="varsling-kanal ${varsling.includes('epost') ? 'aktiv' : ''}">
+                            <input type="checkbox" ${varsling.includes('epost') ? 'checked' : ''}
+                                onchange="setVarslingKanal(${idx}, 'epost', this.checked)"> <span>E-post</span>
+                        </label>
+                        <label class="varsling-kanal disabled" title="Kommer i fase 6c">
+                            <input type="checkbox" disabled> <span>Teams-melding</span>
+                        </label>
+                        <label class="varsling-kanal disabled" title="Kommer i fase 6d">
+                            <input type="checkbox" disabled> <span>Planner-oppgave</span>
+                        </label>
+                        <label class="varsling-kanal disabled" title="Kommer i fase 6c">
+                            <input type="checkbox" disabled> <span>Teams-kanal</span>
+                        </label>
+                    </div>
+                    <div style="margin-top: 6px;">
+                        <button class="knapp mini sekundær" onclick="apneTilBehandlerEditor(${idx})">${tbTekst} — til behandler</button>
+                    </div>
+                </div>
+            `;
 
             div.innerHTML = `
                 <div class="seksjon-topp">
@@ -717,10 +876,12 @@
                 </div>
 
                 <div class="rad">
-                    <label>Beslutningsvalg <small>(hva behandleren kan velge)</small></label>
+                    <label>Beslutningsvalg <small>(hva behandleren kan velge — melding-knapp per valg gir egen tilbakemelding til innsender)</small></label>
                     <div class="valg-liste">${valgHtml || '<div style="color: var(--text-secondary); font-size: 12px; font-style: italic;">Ingen valg — legg til under.</div>'}</div>
                     <button class="knapp mini sekundær" onclick="leggTilBeslutningsvalg(${idx})" style="margin-top: 6px;">+ Legg til valg</button>
                 </div>
+
+                ${varslingHtml}
 
                 ${forrigeSteg.length > 0 ? `
                     <div class="rad">
@@ -781,6 +942,67 @@
         }
         window.setStegNavn = (idx, v) => { data.Behandling[idx].Stegnavn = v; };
         // Behandlere håndteres av tilgang-editor (i rendrerBehandling)
+
+        window.setVarslingKanal = (stegIdx, kanal, aktivert) => {
+            const steg = data.Behandling[stegIdx];
+            if (!steg) return;
+            const naa = new Set(Array.isArray(steg.Varsling) ? steg.Varsling : ['epost']);
+            if (aktivert) naa.add(kanal); else naa.delete(kanal);
+            steg.Varsling = [...naa];
+            rendrerBehandling();
+        };
+
+        window.apneTilBehandlerEditor = async (stegIdx) => {
+            const steg = data.Behandling[stegIdx];
+            if (!steg) return;
+            const mal = steg.TilBehandler || {};
+            const ny = await apneMeldingModal({ Emne: mal.Emne || '', Tekst: mal.Tekst || '' }, {
+                tittel: `Melding til behandler — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
+                forslag: {
+                    Emne: 'Skjema til behandling: "$skjemanavn"',
+                    Tekst: '<p>Hei,</p>\n<p>Du har fått et skjema til behandling: "<b>$skjemanavn</b>" ($skjema_id) — steg: $stegnavn.</p>\n<p>Åpne saken her: <a href="$lenke">$lenke</a></p>'
+                },
+                feltreferanser: samleFeltreferanser(data)
+            });
+            if (ny === null) return;
+            if (!ny.Emne && !ny.Tekst) {
+                delete steg.TilBehandler; // bruk standard
+            } else {
+                steg.TilBehandler = { Emne: ny.Emne, Tekst: ny.Tekst, Format: ny.Format || 'HTML' };
+            }
+            rendrerBehandling();
+        };
+
+        window.apneFraBehandlerEditor = async (stegIdx, beslutningNr) => {
+            const steg = data.Behandling[stegIdx];
+            if (!steg) return;
+            if (!Array.isArray(steg.FraBehandler)) steg.FraBehandler = [];
+            const eksisterende = steg.FraBehandler.find(f => Number(f.BeslutningNr) === Number(beslutningNr)) || {};
+            const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(beslutningNr));
+            const valgtekst = valg?.Tekst || `Valg ${beslutningNr}`;
+            const ny = await apneMeldingModal({ Emne: eksisterende.Emne || '', Tekst: eksisterende.Tekst || '' }, {
+                tittel: `Tilbakemelding til innsender — beslutning: ${valgtekst}`,
+                forslag: {
+                    Emne: `Skjemaet "$skjemanavn" er behandlet`,
+                    Tekst: `<p>Hei,</p>\n<p>Skjemaet "<b>$skjemanavn</b>" ($skjema_id) er behandlet på steg $stegnavn.</p>\n<p>Beslutning: <b>$beslutning</b></p>\n<p><a href="$lenke">Åpne skjemaet</a></p>`
+                },
+                feltreferanser: samleFeltreferanser(data)
+            });
+            if (ny === null) return;
+            // Fjern eksisterende for denne BeslutningNr
+            steg.FraBehandler = steg.FraBehandler.filter(f => Number(f.BeslutningNr) !== Number(beslutningNr));
+            // Legg tilbake kun hvis noe er fylt inn
+            if (ny.Emne || ny.Tekst) {
+                steg.FraBehandler.push({
+                    BeslutningNr: Number(beslutningNr),
+                    Emne: ny.Emne,
+                    Tekst: ny.Tekst,
+                    Format: ny.Format || 'HTML'
+                });
+            }
+            rendrerBehandling();
+        };
+
         window.setStegAvhengig = (idx, v) => {
             if (v === '') delete data.Behandling[idx].AvhengigAv;
             else data.Behandling[idx].AvhengigAv = Number(v);
@@ -843,6 +1065,57 @@
         window.setForklaringFormat = (f) => {
             if (!data.Skjemaforklaring) data.Skjemaforklaring = { Innhold: '' };
             data.Skjemaforklaring.Format = f;
+        };
+
+        // ==================== VARSLING (fase 6b) ====================
+        function oppsummerMelding(mal, standardTekst) {
+            const emne = (mal?.Emne || '').trim();
+            if (!emne) return { tekst: `Standardmal: "${standardTekst}"`, standard: true };
+            return { tekst: `Emne: ${emne}`, standard: false };
+        }
+
+        function oppdaterKvitteringOppsummering() {
+            const el = document.getElementById('kv-oppsummering');
+            if (!el) return;
+            const kv = data.Innsenderkvittering || {};
+            const rediger = document.getElementById('kv-rediger');
+            if (kv.Aktiv === false) {
+                el.textContent = 'Ikke aktiv — ingen kvittering sendes.';
+                el.classList.add('standard');
+                if (rediger) rediger.disabled = true;
+                return;
+            }
+            if (rediger) rediger.disabled = false;
+            const o = oppsummerMelding(kv, 'Kvittering: "$skjemanavn" er sendt inn');
+            el.innerHTML = '';
+            const span = document.createElement('span');
+            span.className = 'emne-forhandsvis' + (o.standard ? ' standard' : '');
+            span.textContent = o.tekst;
+            el.appendChild(span);
+        }
+
+        window.setKvitteringAktiv = (v) => {
+            if (!data.Innsenderkvittering) data.Innsenderkvittering = {};
+            data.Innsenderkvittering.Aktiv = v;
+            oppdaterKvitteringOppsummering();
+        };
+
+        window.apneKvitteringEditor = async () => {
+            const kv = data.Innsenderkvittering || {};
+            const ny = await apneMeldingModal({ Emne: kv.Emne || '', Tekst: kv.Tekst || '' }, {
+                tittel: 'Innsenderkvittering',
+                forslag: {
+                    Emne: 'Kvittering: "$skjemanavn" er sendt inn',
+                    Tekst: '<p>Hei,</p>\n<p>Vi har mottatt skjemaet "<b>$skjemanavn</b>" ($skjema_id).</p>\n<p>Du kan følge saken her: <a href="$lenke">$lenke</a></p>'
+                },
+                feltreferanser: samleFeltreferanser(data)
+            });
+            if (ny === null) return; // avbrutt
+            if (!data.Innsenderkvittering) data.Innsenderkvittering = { Aktiv: true };
+            data.Innsenderkvittering.Emne = ny.Emne;
+            data.Innsenderkvittering.Tekst = ny.Tekst;
+            data.Innsenderkvittering.Format = ny.Format || 'HTML';
+            oppdaterKvitteringOppsummering();
         };
 
         function rendrerSeksjoner() {
