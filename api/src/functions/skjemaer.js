@@ -19,6 +19,7 @@ const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
+const varsling = require('../lib/varsling');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -167,11 +168,28 @@ app.http('lagreBeslutning', {
             await forekomstStorage.lagreSkjema(skjema, false);
             context.log(`beslutning: ${upn} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
 
+            // Varsling (fire-and-forget) — kalles etter lagring
+            const st = await skjemaStorage.hentSkjematype(skjematypeId);
+            const skjematype = st?.JSON || {};
+            const nyeAktive = beregnAktiveSteg(skjema);
+            const alleFerdig = alleStegFerdig(skjema);
+            const beslutningTekst = valgtValg?.Tekst || '';
+            const log = (m) => context.log(m);
+            const varslinger = [
+                // Melding til innsender om denne beslutningen
+                varsling.sendBeslutningVarsling(skjema, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', log)
+            ];
+            if (!alleFerdig) {
+                // Varsle behandlere på nye aktive steg
+                varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, nyeAktive, log));
+            }
+            Promise.all(varslinger).catch(e => context.log(`varsling FEIL (beslutning): ${e.message}`));
+
             return {
                 jsonBody: {
                     status: 'ok',
-                    alleFerdig: alleStegFerdig(skjema),
-                    nyeAktive: beregnAktiveSteg(skjema).map(s => ({ Steg: s.Steg, Stegnavn: s.Stegnavn }))
+                    alleFerdig,
+                    nyeAktive: nyeAktive.map(s => ({ Steg: s.Steg, Stegnavn: s.Stegnavn }))
                 }
             };
         } catch (e) {
@@ -319,6 +337,16 @@ app.http('videresend', {
 
             await forekomstStorage.lagreSkjema(skjema, false);
             context.log(`videresend: ${upn} → ${tilUpn} på steg ${stegNr} (${skjemaId})`);
+
+            // Varsle den nye behandleren (fire-and-forget)
+            // Bygg midlertidig steg-objekt med kun den nye mottakeren så mail ikke går til alle igjen
+            const st = await skjemaStorage.hentSkjematype(skjematypeId);
+            const skjematype = st?.JSON || {};
+            const nyMottakerSteg = { ...stegObj, Personer: [tilUpn], Roller: [], Varsling: ['epost'] };
+            const log = (m) => context.log(m);
+            varsling.sendBehandlerVarsling(skjema, skjematype, nyMottakerSteg, log)
+                .catch(e => context.log(`varsling FEIL (videresend): ${e.message}`));
+
             return { jsonBody: { status: 'ok', personerNa: stegObj.Personer } };
         } catch (e) {
             context.log('videresend FEIL:', e.message, e.stack);
@@ -491,6 +519,20 @@ app.http('lagreSkjema', {
 
             await forekomstStorage.lagreSkjema(skjemaData, erNytt);
             context.log(`skjemaer: ${upn} ${erNytt ? 'opprettet' : 'oppdaterte'} ${skjemaId} (type ${skjematypeId})`);
+
+            // Varsling ved innsending (status 2 = Innsendt, ellers mellomlagring)
+            // Fire-and-forget så feil i SMTP ikke feiler hovedhandlingen.
+            const bleInnsendt = skjemaData.Skjema_status === 2 && (erNytt || (eksisterende?.Skjema_status || 0) !== 2);
+            if (bleInnsendt) {
+                const st = await skjemaStorage.hentSkjematype(skjematypeId);
+                const skjematype = st?.JSON || {};
+                const aktive = beregnAktiveSteg(skjemaData);
+                const log = (m) => context.log(m);
+                Promise.all([
+                    varsling.sendInnsenderKvittering(skjemaData, skjematype, log),
+                    varsling.sendVarslingAktiveSteg(skjemaData, skjematype, aktive, log)
+                ]).catch(e => context.log(`varsling FEIL (innsending): ${e.message}`));
+            }
 
             return {
                 jsonBody: {
