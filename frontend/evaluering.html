@@ -357,6 +357,12 @@
         function beregnMineAktive() {
             const aktive = beregnAktive();
             const upnLower = bruker.userDetails.toLowerCase();
+            // Backend beriker skjemaet med _mineStegNumre (dekker Personer + Roller).
+            // Fall tilbake til Personer-sjekk hvis feltet mangler (bakoverkompatibelt).
+            if (Array.isArray(skjema?._mineStegNumre)) {
+                const mineSet = new Set(skjema._mineStegNumre.map(Number));
+                return aktive.filter(s => mineSet.has(Number(s.Steg)));
+            }
             return aktive.filter(s => (s.Personer || []).map(p => p.toLowerCase()).includes(upnLower));
         }
 

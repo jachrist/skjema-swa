@@ -201,10 +201,10 @@ async function tilgangsRolle(skjema, skjematypeId, upn) {
     const eier = await filtrerTyperPåTilgang([st], upn, 'Eiere');
     if (eier.length > 0) return 'eier';
 
-    // Behandler-sjekk: er upn i noe steg.Personer
+    // Behandler-sjekk: er upn i noe steg.Personer eller i steg.Roller
     if (Array.isArray(skjema.Behandling)) {
         for (const steg of skjema.Behandling) {
-            if ((steg.Personer || []).some(p => String(p).toLowerCase() === upnLower)) return 'behandler';
+            if (await brukerErBehandlerAsync(steg, upn)) return 'behandler';
         }
     }
     return null;
@@ -599,11 +599,24 @@ app.http('hentSkjema', {
             const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
 
-            // Tilgang: admin, eier eller innsender selv
+            // Tilgang: admin, eier, innsender selv, ELLER behandler (Personer/Roller)
+            //   på et aktivt steg.
             const upnLower = upn.toLowerCase();
             const erInnsender = (skjema.Innsender_Epost || '').toLowerCase() === upnLower;
-            if (!erInnsender && !erAdmin(upn)) {
-                const erEier = await harEierTilgang(skjematypeId, upn);
+            const aktive = beregnAktiveSteg(skjema);
+
+            // Bygg liste over hvilke aktive steg brukeren er behandler for (via
+            // Personer eller Roller). Brukes både til tilgangsvurdering og som
+            // beriket felt i responsen (_mineStegNumre) så frontend slipper
+            // rolle-oppslag på sin side.
+            const mineStegNumre = [];
+            for (const s of aktive) {
+                if (await brukerErBehandlerAsync(s, upn)) mineStegNumre.push(Number(s.Steg));
+            }
+
+            let erEier = false;
+            if (!erInnsender && !erAdmin(upn) && mineStegNumre.length === 0) {
+                erEier = await harEierTilgang(skjematypeId, upn);
                 if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
             }
 
@@ -615,6 +628,7 @@ app.http('hentSkjema', {
                 }
             }
 
+            skjema._mineStegNumre = mineStegNumre;
             return { jsonBody: skjema };
         } catch (e) {
             context.log('skjemaer GET FEIL:', e.message, e.stack);
