@@ -189,24 +189,33 @@
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            align-items: flex-start;
         }
         .skala-valg {
             display: inline-flex;
+            flex-direction: column;
             align-items: center;
-            gap: 6px;
-            padding: 8px 14px;
+            gap: 4px;
+            padding: 8px 12px;
+            min-width: 56px;
             border: 1px solid var(--input-border);
             border-radius: var(--radius-sm);
             background: var(--bg-input);
             cursor: pointer;
             font-size: 14px;
+            text-align: center;
         }
         .skala-valg:hover { background: var(--accent-light); }
-        .skala-valg input:checked + span {
+        .skala-valg:has(input:checked) {
+            border-color: var(--accent);
+            background: var(--accent-light);
             color: var(--accent);
             font-weight: 600;
         }
         .skala-valg input { margin: 0; }
+        .skala-nummer { font-weight: 600; font-size: 15px; }
+        .skala-tekst { font-size: 12px; color: var(--text-secondary); line-height: 1.2; }
+        .skala-valg:has(input:checked) .skala-tekst { color: var(--accent); }
 
         .informasjon {
             padding: 12px 16px;

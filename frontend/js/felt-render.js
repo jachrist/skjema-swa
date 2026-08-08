@@ -284,18 +284,39 @@ function _lagTimeInput(feltId, verdi) {
 function _lagSkala(felt, feltId, valgtVerdi) {
     const container = document.createElement('div');
     container.className = 'skala';
-    for (const valg of (felt.Valg || [])) {
-        const label = document.createElement('label');
-        label.className = 'skala-valg';
+    const valg = (felt.Valg || []).filter(v => v.Valg_nr != null && !isNaN(Number(v.Valg_nr)));
+    if (valg.length === 0) return container;
+
+    // Legacy-mønster: rendre ALLE heltall fra min til max — også de uten eksplisitt Tekst.
+    // Tekst vises kun for de Valg_nr som har det (typisk endepunkter).
+    const nummer = valg.map(v => Number(v.Valg_nr));
+    const min = Math.min(...nummer);
+    const max = Math.max(...nummer);
+    const tekstMap = {};
+    for (const v of valg) tekstMap[Number(v.Valg_nr)] = v.Tekst || '';
+
+    for (let i = min; i <= max; i++) {
+        const item = document.createElement('label');
+        item.className = 'skala-valg';
+        const nr = document.createElement('span');
+        nr.className = 'skala-nummer';
+        nr.textContent = i;
+        item.appendChild(nr);
+
         const input = document.createElement('input');
         input.type = 'radio';
         input.name = feltId;
-        input.value = String(valg.Valg_nr ?? valg.Tekst);
-        if (String(valgtVerdi) === input.value) input.checked = true;
-        const span = document.createElement('span');
-        span.textContent = valg.Tekst;
-        label.append(input, span);
-        container.appendChild(label);
+        input.value = String(i);
+        if (String(valgtVerdi) === String(i)) input.checked = true;
+        item.appendChild(input);
+
+        if (tekstMap[i]) {
+            const t = document.createElement('span');
+            t.className = 'skala-tekst';
+            t.textContent = tekstMap[i];
+            item.appendChild(t);
+        }
+        container.appendChild(item);
     }
     return container;
 }
