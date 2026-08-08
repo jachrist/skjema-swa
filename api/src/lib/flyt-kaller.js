@@ -25,11 +25,15 @@ function baseUrl(request) {
     const fra_env = String(process.env.SWA_URL || '').replace(/\/+$/, '');
     if (fra_env) return fra_env;
     // Fallback: utled fra request-headers hvis env-var ikke er satt.
-    // SWA-fronten setter x-forwarded-host + x-forwarded-proto.
+    // SWA-fronten SKAL sette x-forwarded-host til den offentlige *.azurestaticapps.net,
+    // men i praksis får vi ofte den interne *.azurewebsites.net-hosten. Filtrer bort
+    // interne Function-adresser — de gir dødlenker.
     if (request?.headers?.get) {
-        const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+        const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
         const proto = request.headers.get('x-forwarded-proto') || 'https';
-        if (host) return `${proto}://${host}`;
+        if (host && !host.includes('.azurewebsites.net')) {
+            return `${proto}://${host}`;
+        }
     }
     return '';
 }
