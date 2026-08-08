@@ -167,12 +167,18 @@ app.http('lagreSkjematype', {
         try {
             const body = await request.json();
 
-            // Ny skjematype: generer id og krev admin. Eksisterende: krev admin eller eier.
+            // Ny skjematype: alle innloggede kan opprette — legges automatisk som eier.
+            // Eksisterende: krev admin eller eier.
             let erNy = false;
             if (!body.Skjematype_id) {
-                if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin-tilgang for å opprette ny skjematype' } };
                 body.Skjematype_id = await nesteSkjematypeId();
                 erNy = true;
+                // Sikre at oppretter blir eier (defensivt — frontend gjør dette allerede)
+                if (!body.Eiere || typeof body.Eiere !== 'object') body.Eiere = { Personer: [], Roller: [], Team: [] };
+                if (!Array.isArray(body.Eiere.Personer)) body.Eiere.Personer = [];
+                const upnLower = upn.toLowerCase();
+                const finnes = body.Eiere.Personer.some(p => String(p).toLowerCase() === upnLower);
+                if (!finnes) body.Eiere.Personer.push(upn);
             } else {
                 const tillatt = await harEierPåType(body.Skjematype_id, upn);
                 if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin kan endre denne skjematypen' } };

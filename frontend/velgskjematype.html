@@ -147,6 +147,38 @@
             margin: 16px 0 20px;
         }
 
+        .fase-filter-rad {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+        }
+        .fase-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            font-size: 13px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: var(--bg-input);
+            color: var(--text-primary);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .fase-toggle input[type="checkbox"] { margin: 0; cursor: pointer; }
+        .fase-toggle:hover { border-color: var(--accent); }
+        .fase-toggle.aktiv {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+
         .sokefelt-rad {
             position: relative;
             margin-bottom: 18px;
@@ -296,14 +328,30 @@
 
         <p class="undertittel">Skjematyper du har tilgang til.</p>
 
+        <div id="fase-filter-rad" class="fase-filter-rad" style="display: none;">
+            <span>Vis:</span>
+            <label class="fase-toggle aktiv" data-fase="Produksjon" id="fase-toggle-Produksjon" style="display: none;">
+                <input type="checkbox" value="Produksjon" checked onchange="onFaseEndret()"> Produksjon
+            </label>
+            <label class="fase-toggle" data-fase="Test" id="fase-toggle-Test" style="display: none;">
+                <input type="checkbox" value="Test" onchange="onFaseEndret()"> Test
+            </label>
+            <label class="fase-toggle" data-fase="Utvikling" id="fase-toggle-Utvikling" style="display: none;">
+                <input type="checkbox" value="Utvikling" onchange="onFaseEndret()"> Utvikling
+            </label>
+        </div>
+
         <div class="sokefelt-rad">
             <span class="sokefelt-ikon">🔍</span>
             <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
         </div>
 
+        <div style="margin-bottom: 14px; display: flex; gap: 10px; align-items: center;">
+            <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
+        </div>
+
         <div id="admin-verktoy" style="display: none; margin-bottom: 18px; padding: 12px 16px; background: var(--forklaring-bg); border-radius: var(--radius-md); font-size: 13px; display: none; flex-wrap: wrap; gap: 10px; align-items: center;">
             <strong style="color: var(--text-heading);">Admin:</strong>
-            <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
             <a class="knapp sekundær" style="padding: 6px 12px; font-size: 13px; text-decoration: none;" href="/rolleadmin.html">Rolle-admin</a>
             <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed eksempler</button>
             <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seedPostnumre()">Seed postnumre</button>
@@ -362,19 +410,59 @@
             try {
                 // Vis skjematypene så snart de er hentet — ikke vent på tilleggs-info
                 alle = await api.get('/api/skjematyper');
-                render(alle);
+                oppdaterFaseFilter();
+                filtrer();
                 // Hent tilleggs-info i bakgrunnen og re-render når klart
                 api.get('/api/mine-mellomlagrede').catch(() => ({})).then(m => {
                     mellomlagredeMap = m || {};
-                    render(alle);
+                    filtrer();
                 });
                 api.get('/api/mine-behandlinger').catch(() => ({})).then(b => {
                     behandlingerMap = b || {};
-                    render(alle);
+                    filtrer();
                 });
             } catch (e) {
                 visStatus('Kunne ikke hente skjematyper: ' + e.message, 'feil');
             }
+        }
+
+        function oppdaterFaseFilter() {
+            // Vis kun toggler for faser bruker faktisk har skjematyper i.
+            // Skjul hele raden hvis bare Produksjon finnes.
+            const faserSomFinnes = new Set(alle.map(t => t.Fase || 'Produksjon'));
+            const harFlereFaser = faserSomFinnes.size > 1
+                || faserSomFinnes.has('Test')
+                || faserSomFinnes.has('Utvikling');
+            if (!harFlereFaser) {
+                document.getElementById('fase-filter-rad').style.display = 'none';
+                return;
+            }
+            document.getElementById('fase-filter-rad').style.display = '';
+            ['Produksjon', 'Test', 'Utvikling'].forEach(fase => {
+                const t = document.getElementById(`fase-toggle-${fase}`);
+                if (t) t.style.display = faserSomFinnes.has(fase) ? '' : 'none';
+            });
+            // Gjenopprett lagret valg — men bare for faser som faktisk finnes
+            try {
+                const raw = localStorage.getItem(FASER_LS_NOKKEL);
+                if (raw) {
+                    const lagret = JSON.parse(raw);
+                    if (Array.isArray(lagret)) {
+                        const gyldige = lagret.filter(f => faserSomFinnes.has(f));
+                        if (gyldige.length > 0) {
+                            ['Produksjon', 'Test', 'Utvikling'].forEach(fase => {
+                                const cb = document.querySelector(`#fase-toggle-${fase} input[type="checkbox"]`);
+                                if (cb) cb.checked = gyldige.includes(fase);
+                            });
+                        }
+                    }
+                }
+            } catch { /* Safari private mode etc. */ }
+            // Synk visuell aktiv-tilstand
+            document.querySelectorAll('.fase-toggle').forEach(t => {
+                const cb = t.querySelector('input[type="checkbox"]');
+                t.classList.toggle('aktiv', cb && cb.checked);
+            });
         }
 
         window.seedRoller = async () => {
@@ -427,14 +515,38 @@
             el.style.display = tekst ? 'block' : 'none';
         }
 
+        const FASER_LS_NOKKEL = 'velgskjema-faser';
+
+        function lesValgteFaser() {
+            const valgte = [...document.querySelectorAll('#fase-filter-rad input[type="checkbox"]:checked')].map(cb => cb.value);
+            // Ingen valgt → default Produksjon så lista ikke blir tom
+            return valgte.length > 0 ? valgte : ['Produksjon'];
+        }
+
+        window.onFaseEndret = () => {
+            // Synk visuell aktiv-tilstand på togglene
+            document.querySelectorAll('.fase-toggle').forEach(t => {
+                const cb = t.querySelector('input[type="checkbox"]');
+                t.classList.toggle('aktiv', cb && cb.checked);
+            });
+            // Lagre i localStorage
+            try {
+                const valgte = [...document.querySelectorAll('#fase-filter-rad input[type="checkbox"]:checked')].map(cb => cb.value);
+                localStorage.setItem(FASER_LS_NOKKEL, JSON.stringify(valgte));
+            } catch { /* Safari private mode etc. */ }
+            filtrer();
+        };
+
         window.filtrer = () => {
             const q = document.getElementById('sok').value.trim().toLowerCase();
-            const filtrert = q === ''
-                ? alle
-                : alle.filter(t =>
-                    (t.Skjema_navn || '').toLowerCase().includes(q)
-                    || (t.Skjema_forklaring?.Verdi || '').toLowerCase().includes(q)
-                );
+            const valgteFaser = lesValgteFaser();
+            const filtrert = alle.filter(t => {
+                const fase = t.Fase || 'Produksjon';
+                if (!valgteFaser.includes(fase)) return false;
+                if (q === '') return true;
+                return (t.Skjema_navn || '').toLowerCase().includes(q)
+                    || (t.Skjema_forklaring?.Verdi || '').toLowerCase().includes(q);
+            });
             render(filtrert);
         };
 
