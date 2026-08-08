@@ -960,7 +960,7 @@
                 tittel: `Melding til behandler — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
                 forslag: {
                     Emne: 'Skjema til behandling: "$skjemanavn"',
-                    Tekst: '<p>Hei,</p>\n<p>Du har fått et skjema til behandling: "<b>$skjemanavn</b>" ($skjema_id) — steg: $stegnavn.</p>\n<p>Åpne saken her: <a href="$lenke">$lenke</a></p>'
+                    Tekst: '<p>Hei,</p>\n<p>Du har fått et skjema til behandling: "<b>$skjemanavn</b>" ($skjema_id) — steg: $stegnavn.</p>\n<p><a href="$lenke">Åpne skjemaet</a></p>'
                 },
                 feltreferanser: samleFeltreferanser(data)
             });
@@ -1106,7 +1106,7 @@
                 tittel: 'Innsenderkvittering',
                 forslag: {
                     Emne: 'Kvittering: "$skjemanavn" er sendt inn',
-                    Tekst: '<p>Hei,</p>\n<p>Vi har mottatt skjemaet "<b>$skjemanavn</b>" ($skjema_id).</p>\n<p>Du kan følge saken her: <a href="$lenke">$lenke</a></p>'
+                    Tekst: '<p>Hei,</p>\n<p>Vi har mottatt skjemaet "<b>$skjemanavn</b>" ($skjema_id).</p>\n<p><a href="$lenke">Åpne skjemaet</a></p>'
                 },
                 feltreferanser: samleFeltreferanser(data)
             });

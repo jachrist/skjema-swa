@@ -22,7 +22,7 @@ function standardKvittering() {
         Tekst:
             '<p>Hei,</p>' +
             '<p>Vi har mottatt skjemaet "<b>$skjemanavn</b>" ($skjema_id).</p>' +
-            '<p>Du kan følge saken her: <a href="$lenke">$lenke</a></p>' +
+            '<p><a href="$lenke">Åpne skjemaet</a></p>' +
             '<p>Med vennlig hilsen<br>FHS</p>'
     };
 }
@@ -33,7 +33,7 @@ function standardTilBehandler() {
         Tekst:
             '<p>Hei,</p>' +
             '<p>Du har fått et skjema til behandling: "<b>$skjemanavn</b>" ($skjema_id) — steg: $stegnavn.</p>' +
-            '<p>Åpne saken her: <a href="$lenke">$lenke</a></p>'
+            '<p><a href="$lenke">Åpne skjemaet</a></p>'
     };
 }
 
