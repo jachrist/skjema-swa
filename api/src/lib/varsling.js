@@ -51,7 +51,8 @@ function standardFraBehandler() {
 function skjemaLenke(skjematypeId, skjemaId) {
     const base = baseUrl();
     if (!base) return '';
-    return `${base}/evaluering.html?skjematypeId=${encodeURIComponent(skjematypeId)}&skjemaId=${encodeURIComponent(skjemaId)}`;
+    // Query-param-navn må matche evaluering.html (som leser skjematype_id/skjema_id)
+    return `${base}/evaluering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
 }
 
 function harEpostVarsling(steg) {
