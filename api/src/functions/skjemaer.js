@@ -20,6 +20,8 @@ const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
 const varsling = require('../lib/varsling');
+const { kallEksternFlyt } = require('../lib/ekstern-flyt');
+const { oppdaterSPListe } = require('../lib/sp-liste');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -90,8 +92,16 @@ app.http('lagreBeslutning', {
     authLevel: 'anonymous',
     route: 'skjemaer/{skjematypeId}/{skjemaId}/beslutning',
     handler: async (request, context) => {
+        // Auth: enten SWA-innlogget bruker (som må være behandler), ELLER
+        // ekstern flyt-callback via x-flow-key-header som matcher FLOW_CALLBACK_KEY.
+        // Flyt-callback tillater å sette Beslutning på ekstern-flyt-steg uten
+        // brukerkontekst (det er PA-flyten som sier "steget er fullført").
+        const flowKey = request.headers.get('x-flow-key');
+        const configuredFlowKey = process.env.FLOW_CALLBACK_KEY;
+        const erFlowCallback = flowKey && configuredFlowKey && flowKey === configuredFlowKey;
+
         const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erFlowCallback && !upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
 
         try {
             const { skjematypeId, skjemaId } = request.params;
@@ -108,8 +118,13 @@ app.http('lagreBeslutning', {
             const stegObj = (skjema.Behandling || []).find(s => Number(s.Steg) === stegNr);
             if (!stegObj) return { status: 404, jsonBody: { status: 'feil', melding: 'Behandlingssteg ikke funnet' } };
 
-            // Tilgangssjekk: må være behandler (Personer eller rolle-innehaver)
-            if (!(await brukerErBehandlerAsync(stegObj, upn))) {
+            // Flow-callback får kun fullføre steg som faktisk har Flyt_url — så nøkkelen
+            // ikke kan misbrukes til å avgjøre menneske-behandlede steg.
+            if (erFlowCallback) {
+                if (!(stegObj.Flyt_url || '').trim()) {
+                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Flow-callback tillatt kun for steg med Flyt_url' } };
+                }
+            } else if (!(await brukerErBehandlerAsync(stegObj, upn))) {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Du er ikke behandler på dette steget' } };
             }
             // Tilstandssjekk: ikke allerede behandlet, ikke blokkert
@@ -148,11 +163,11 @@ app.http('lagreBeslutning', {
                 delete stegObj.BehandletDato;
                 // Skjemaet: status=3 (Til revidering)
                 skjema.Skjema_status = 3;
-                context.log(`beslutning: ${upn} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
+                context.log(`beslutning: ${upn || 'ekstern-flyt'} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
             } else {
                 // Vanlig beslutning
                 stegObj.Beslutning = beslutning;
-                stegObj.BehandletAv = upn;
+                stegObj.BehandletAv = upn || 'ekstern-flyt';
                 stegObj.BehandletDato = new Date().toISOString();
 
                 // Kaskader: marker steg som skal skippes som "Hoppet over"
@@ -166,7 +181,7 @@ app.http('lagreBeslutning', {
             }
 
             await forekomstStorage.lagreSkjema(skjema, false);
-            context.log(`beslutning: ${upn} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
+            context.log(`beslutning: ${upn || 'ekstern-flyt'} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
 
             // Varsling (fire-and-forget) — kalles etter lagring
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
@@ -175,13 +190,17 @@ app.http('lagreBeslutning', {
             const alleFerdig = alleStegFerdig(skjema);
             const beslutningTekst = valgtValg?.Tekst || '';
             const varslOpts = { log: (m) => context.log(m), request };
+            const log = (m) => context.log(m);
             const varslinger = [
                 varsling.sendBeslutningVarsling(skjema, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', varslOpts)
             ];
             if (!alleFerdig) {
-                varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, nyeAktive, varslOpts));
+                const flytSteg = nyeAktive.filter(s => (s.Flyt_url || '').trim());
+                const vanligeSteg = nyeAktive.filter(s => !(s.Flyt_url || '').trim());
+                varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, vanligeSteg, varslOpts));
+                for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjema, log));
             }
-            Promise.all(varslinger).catch(e => context.log(`varsling FEIL (beslutning): ${e.message}`));
+            Promise.all(varslinger).catch(e => context.log(`varsling/ekstern-flyt FEIL (beslutning): ${e.message}`));
 
             return {
                 jsonBody: {
@@ -526,10 +545,18 @@ app.http('lagreSkjema', {
                 const skjematype = st?.JSON || {};
                 const aktive = beregnAktiveSteg(skjemaData);
                 const varslOpts = { log: (m) => context.log(m), request };
+
+                // Splitt aktive: eksterne flyt-steg vs vanlige (som får varsling)
+                const flytSteg = aktive.filter(s => (s.Flyt_url || '').trim());
+                const vanligeSteg = aktive.filter(s => !(s.Flyt_url || '').trim());
+
+                const log = (m) => context.log(m);
                 Promise.all([
                     varsling.sendInnsenderKvittering(skjemaData, skjematype, varslOpts),
-                    varsling.sendVarslingAktiveSteg(skjemaData, skjematype, aktive, varslOpts)
-                ]).catch(e => context.log(`varsling FEIL (innsending): ${e.message}`));
+                    varsling.sendVarslingAktiveSteg(skjemaData, skjematype, vanligeSteg, varslOpts),
+                    ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaData, log)),
+                    oppdaterSPListe(skjemaData, skjematype, log)
+                ]).catch(e => context.log(`varsling/ekstern-flyt/sp FEIL (innsending): ${e.message}`));
             }
 
             return {

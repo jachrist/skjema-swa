@@ -424,6 +424,19 @@
         .varsling-kanal input:disabled + span { color: var(--text-secondary); }
         .varsling-kanal.disabled { opacity: 0.55; cursor: not-allowed; }
 
+        .flyt-boks {
+            padding: 10px 12px;
+            border: 1px dashed var(--accent);
+            border-radius: 8px;
+            background: rgba(10, 132, 255, 0.04);
+        }
+        .flyt-boks input, .flyt-boks textarea { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; }
+        .steg-vanlig.dempet {
+            opacity: 0.4;
+            pointer-events: none;
+            filter: grayscale(0.5);
+        }
+
         .melding-oppsummering {
             display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
             padding: 6px 10px; margin-top: 6px;
@@ -632,6 +645,36 @@
                     </div>
                 </div>
 
+                <div class="panel" data-panel-id="sharepoint">
+                    <h2 onclick="togglePanel('sharepoint')"><span class="kollaps-pil">▼</span>SharePoint-integrasjon <small style="font-weight: 400; text-transform: none;">— skriv innsendte skjemaer til SP-liste</small></h2>
+                    <div class="rad">
+                        <label>Liste-adresse (site-URL) <small>(tom = SP-integrasjon deaktivert)</small></label>
+                        <input type="url" id="sp-listeadresse" placeholder="https://tenant.sharepoint.com/sites/mittsite"
+                            value="${escapeAttr(data.SPListeadresse || '')}" oninput="setSPListeadresse(this.value)">
+                    </div>
+                    <div class="rad">
+                        <label>Liste-navn</label>
+                        <input type="text" id="sp-listenavn" placeholder="Mitt listenavn"
+                            value="${escapeAttr(data.SPListenavn || '')}" oninput="setSPListenavn(this.value)">
+                    </div>
+                    <div class="rad" id="sp-metadata-rad">
+                        <label>Metadata-kolonner <small>(plassholder → SP-kolonne)</small></label>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                            <button class="knapp mini sekundær" onclick="apneSPMetadataEditor()">Rediger metadata…</button>
+                            <span id="sp-metadata-oppsummering" style="color: var(--text-secondary); font-size: 12px;"></span>
+                        </div>
+                    </div>
+                    <div class="rad" id="sp-vedlegg-rad">
+                        <label class="checkbox-rad">
+                            <input type="checkbox" id="sp-lagre-vedlegg" ${data.SPLagreVedlegg ? 'checked' : ''} onchange="setSPLagreVedlegg(this.checked)">
+                            Legg ved opplastede filer på SP-raden
+                        </label>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">
+                        Enkeltfelter markeres for SP-kolonne under hver seksjon. Innsender-navn og -e-post skrives alltid til <code>Innsender_Navn</code>/<code>Innsender_Epost</code>.
+                    </div>
+                </div>
+
                 <div class="panel" data-panel-id="seksjoner">
                     <h2 onclick="togglePanel('seksjoner')"><span class="kollaps-pil">▼</span>Seksjoner og felter</h2>
                     <div class="kollaps-verktoy" style="margin-top: -4px;">
@@ -657,6 +700,7 @@
             rendrerPerioder();
             rendrerTilgang();
             oppdaterKvitteringOppsummering();
+            oppdaterSPOppsummering();
             appliserKollapsState();
         }
 
@@ -680,7 +724,7 @@
         // ==================== KOLLAPS ====================
         // Paneler: globalt (samme for alle skjematyper)
         // Seksjoner + felter: per skjematype (bruker skjematypeId eller "ny")
-        const PANEL_IDER = ['grunnleggende', 'tilgjengelighet', 'tilgang', 'seksjoner', 'behandling'];
+        const PANEL_IDER = ['grunnleggende', 'tilgjengelighet', 'tilgang', 'sharepoint', 'seksjoner', 'behandling'];
         const NOKKEL_PANELER = 'editor-paneler-kollapset';
         function nokkelSeksjoner() { return `editor-seksjoner-kollapset-${eksisterendeId || 'ny'}`; }
         function nokkelFelter() { return `editor-felter-kollapset-${eksisterendeId || 'ny'}`; }
@@ -833,6 +877,19 @@
                 </div>
             `;}).join('');
 
+            const flytAktiv = !!(steg.Flyt_url || '').trim();
+            const flytHtml = `
+                <div class="rad flyt-boks">
+                    <label>Ekstern PA-flyt <small>(om satt, kalles i stedet for at behandler tar beslutning)</small></label>
+                    <input type="url" placeholder="https://prod-XX.westeurope.logic.azure.com/workflows/..."
+                        value="${escapeAttr(steg.Flyt_url || '')}"
+                        oninput="setStegFlytUrl(${idx}, this.value)">
+                    <label style="margin-top: 6px;">Notat om flytens parametere <small>(kun for admin — sendes ikke)</small></label>
+                    <textarea style="min-height: 40px;" placeholder="Beskriv hva flyten forventer og hvordan den svarer"
+                        oninput="setStegFlytParametere(${idx}, this.value)">${escapeHtml(steg.Flyt_parametere || '')}</textarea>
+                </div>
+            `;
+
             const varsling = Array.isArray(steg.Varsling) ? steg.Varsling : ['epost'];
             const tbTekst = steg.TilBehandler?.Emne ? '✏️ Egen melding' : 'Standardmelding';
             const varslingHtml = `
@@ -870,18 +927,22 @@
                     <button class="knapp mini danger" onclick="slettSteg(${idx})">Slett steg</button>
                 </div>
 
-                <div class="rad">
-                    <label>Behandlere</label>
-                    <div class="tilgang-slot" data-slot="steg-tilgang-${idx}"></div>
-                </div>
+                ${flytHtml}
 
-                <div class="rad">
-                    <label>Beslutningsvalg <small>(hva behandleren kan velge — melding-knapp per valg gir egen tilbakemelding til innsender)</small></label>
-                    <div class="valg-liste">${valgHtml || '<div style="color: var(--text-secondary); font-size: 12px; font-style: italic;">Ingen valg — legg til under.</div>'}</div>
-                    <button class="knapp mini sekundær" onclick="leggTilBeslutningsvalg(${idx})" style="margin-top: 6px;">+ Legg til valg</button>
-                </div>
+                <div class="steg-vanlig ${flytAktiv ? 'dempet' : ''}" ${flytAktiv ? 'title="Skjult fordi ekstern flyt er aktiv"' : ''}>
+                    <div class="rad">
+                        <label>Behandlere</label>
+                        <div class="tilgang-slot" data-slot="steg-tilgang-${idx}"></div>
+                    </div>
 
-                ${varslingHtml}
+                    <div class="rad">
+                        <label>Beslutningsvalg <small>(hva behandleren kan velge — melding-knapp per valg gir egen tilbakemelding til innsender)</small></label>
+                        <div class="valg-liste">${valgHtml || '<div style="color: var(--text-secondary); font-size: 12px; font-style: italic;">Ingen valg — legg til under.</div>'}</div>
+                        <button class="knapp mini sekundær" onclick="leggTilBeslutningsvalg(${idx})" style="margin-top: 6px;">+ Legg til valg</button>
+                    </div>
+
+                    ${varslingHtml}
+                </div>
 
                 ${forrigeSteg.length > 0 ? `
                     <div class="rad">
@@ -942,6 +1003,14 @@
         }
         window.setStegNavn = (idx, v) => { data.Behandling[idx].Stegnavn = v; };
         // Behandlere håndteres av tilgang-editor (i rendrerBehandling)
+
+        window.setStegFlytUrl = (idx, v) => {
+            data.Behandling[idx].Flyt_url = String(v || '').trim();
+            rendrerBehandling();
+        };
+        window.setStegFlytParametere = (idx, v) => {
+            data.Behandling[idx].Flyt_parametere = String(v || '');
+        };
 
         window.setVarslingKanal = (stegIdx, kanal, aktivert) => {
             const steg = data.Behandling[stegIdx];
@@ -1098,6 +1167,114 @@
             if (!data.Innsenderkvittering) data.Innsenderkvittering = {};
             data.Innsenderkvittering.Aktiv = v;
             oppdaterKvitteringOppsummering();
+        };
+
+        // ==================== SHAREPOINT ====================
+        const SP_PLASSHOLDERE = [
+            { navn: '$skjema_id',           tekst: 'Skjema-ID' },
+            { navn: '$skjemanavn',          tekst: 'Skjematype-navn' },
+            { navn: '$innsender',           tekst: 'Innsender e-post' },
+            { navn: '$innsender_navn',      tekst: 'Innsender-navn' },
+            { navn: '$tidspunkt_innsendt',  tekst: 'Innsendings-tidspunkt' }
+        ];
+
+        window.setSPListeadresse = (v) => { data.SPListeadresse = String(v || '').trim(); oppdaterSPOppsummering(); };
+        window.setSPListenavn = (v) => { data.SPListenavn = String(v || '').trim(); oppdaterSPOppsummering(); };
+        window.setSPLagreVedlegg = (v) => { data.SPLagreVedlegg = !!v; };
+
+        function oppdaterSPOppsummering() {
+            const el = document.getElementById('sp-metadata-oppsummering');
+            if (!el) return;
+            const meta = Array.isArray(data.SPMetadata) ? data.SPMetadata.filter(m => m.Plassholder && m.SPKolonne) : [];
+            el.textContent = meta.length === 0 ? '(ingen metadata konfigurert)' : `${meta.length} mapping${meta.length === 1 ? '' : 'er'}`;
+        }
+
+        window.apneSPMetadataEditor = () => {
+            const bakgrunn = document.createElement('div');
+            bakgrunn.className = 'meldingsmodal-bakgrunn';
+            bakgrunn.innerHTML = `
+                <div class="meldingsmodal-boks">
+                    <div class="meldingsmodal-topp">
+                        <h3 class="meldingsmodal-tittel">SharePoint metadata-mapping</h3>
+                        <button class="meldingsmodal-lukk" title="Avbryt (Esc)">✕</button>
+                    </div>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 10px;">
+                        Kobler plassholdere til SP-kolonner. Hver rad sender en verdi ved innsending.
+                    </p>
+                    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                        <thead>
+                            <tr style="text-align: left; color: var(--text-secondary);">
+                                <th style="padding: 4px 6px;">Plassholder</th>
+                                <th style="padding: 4px 6px;">SP-kolonne</th>
+                                <th style="width: 40px;"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="sp-meta-body"></tbody>
+                    </table>
+                    <button class="knapp mini sekundær" style="margin-top: 8px;" id="sp-meta-legg-til">+ Legg til rad</button>
+                    <div class="meldingsmodal-knapper">
+                        <button class="modal-knapp" data-svar="avbryt">Avbryt</button>
+                        <button class="modal-knapp primær" data-svar="lagre">Lagre</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(bakgrunn);
+            const boks = bakgrunn.querySelector('.meldingsmodal-boks');
+            const body = boks.querySelector('#sp-meta-body');
+
+            let rader = Array.isArray(data.SPMetadata) ? JSON.parse(JSON.stringify(data.SPMetadata)) : [];
+
+            function render() {
+                body.innerHTML = '';
+                rader.forEach((r, i) => {
+                    const tr = document.createElement('tr');
+                    const plassOptions = SP_PLASSHOLDERE.map(p =>
+                        `<option value="${p.navn}" ${r.Plassholder === p.navn ? 'selected' : ''}>${p.navn} — ${p.tekst}</option>`
+                    ).join('');
+                    tr.innerHTML = `
+                        <td style="padding: 4px 6px;"><select style="width: 100%;">
+                            <option value="">— velg —</option>${plassOptions}
+                        </select></td>
+                        <td style="padding: 4px 6px;"><input type="text" placeholder="SP-kolonnenavn" value="${escapeAttr(r.SPKolonne || '')}" style="width: 100%;"></td>
+                        <td><button class="knapp mini danger">✕</button></td>
+                    `;
+                    const sel = tr.querySelector('select');
+                    const inp = tr.querySelector('input');
+                    const fjern = tr.querySelector('button');
+                    sel.addEventListener('change', () => { rader[i].Plassholder = sel.value; });
+                    inp.addEventListener('input', () => { rader[i].SPKolonne = inp.value; });
+                    fjern.addEventListener('click', () => { rader.splice(i, 1); render(); });
+                    body.appendChild(tr);
+                });
+                if (rader.length === 0) {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = '<td colspan="3" style="padding: 8px; color: var(--text-secondary); font-style: italic;">(ingen mappings — klikk "Legg til rad")</td>';
+                    body.appendChild(tr);
+                }
+            }
+            render();
+
+            boks.querySelector('#sp-meta-legg-til').addEventListener('click', () => {
+                rader.push({ Plassholder: '', SPKolonne: '' });
+                render();
+            });
+            const lukk = (svar) => {
+                document.body.removeChild(bakgrunn);
+                if (svar === 'lagre') {
+                    data.SPMetadata = rader.filter(r => r.Plassholder && r.SPKolonne);
+                    oppdaterSPOppsummering();
+                    rendrerSeksjoner(); // så per-felt SP-kolonne-input vises/skjules
+                }
+            };
+            boks.querySelectorAll('button[data-svar]').forEach(b => {
+                b.addEventListener('click', () => lukk(b.dataset.svar));
+            });
+            boks.querySelector('.meldingsmodal-lukk').addEventListener('click', () => lukk('avbryt'));
+            bakgrunn.addEventListener('click', (e) => { if (e.target === bakgrunn) lukk('avbryt'); });
+        };
+
+        window.setFeltSPListefelt = (sIdx, fIdx, v) => {
+            data.Seksjoner[sIdx].Felter[fIdx].SPListefelt = String(v || '').trim();
         };
 
         window.apneKvitteringEditor = async () => {
@@ -1262,6 +1439,13 @@
                     ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-vises-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-oblig-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${kanHaFasteData(felt.Type) ? `<div class="dnf-slot" data-slot="felt-fastedata-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
+                    ${data.SPListeadresse && felt.Type !== 'Informasjon' ? `
+                        <div class="rad" style="margin-top: 8px;">
+                            <label style="font-size: 11px;">SP-kolonne <small>(tom = ikke send til SP)</small></label>
+                            <input type="text" placeholder="SP-kolonnenavn" value="${escapeAttr(felt.SPListefelt || '')}"
+                                oninput="setFeltSPListefelt(${sIdx}, ${fIdx}, this.value)" style="font-size: 12px;">
+                        </div>
+                    ` : ''}
                 </div>
             `;
         }
