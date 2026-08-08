@@ -1,37 +1,55 @@
-# Fase 6a — E-post-varsling
+# Fase 6a — E-post-varsling via Power Automate
 
-Automatisk e-post ved innsending, behandling og videresending. Bruker SMTP
-via `nodemailer` — MS-uavhengig valg som passer inn i exit-strategien.
+Automatisk e-post ved innsending, behandling og videresending. Bruker eksisterende
+`VARSLING_FLOW_URL` Power Automate-flyt (samme som legacy).
+
+**Hvorfor PA-flyt og ikke SMTP:** Varslingssystemet er MS-sentrisk uansett
+(Teams-varsler, Planner-oppgaver kommer senere). PA-flyten sender via M365-brukerens
+egne rettigheter — ingen SMTP AUTH-oppsett, ingen app-passord, ingen KV-hemmelighet.
+Ved evt. exit fra Microsoft må hele varslingslaget uansett skiftes ut, så SMTP-porting
+gir ingen langsiktig gevinst.
 
 ## Env-vars som må settes i SWA
 
 I Azure Portal → SWA → Configuration:
 
 ```
-SMTP_HOST         = smtp.office365.com          (eller egen SMTP-server)
-SMTP_PORT         = 587                          (STARTTLS) — evt. 465 for SSL
-SMTP_USER         = <full e-postadresse>
-SMTP_PASS         = <app-passord>                (via @Microsoft.KeyVault(...) anbefalt)
-SMTP_FROM         = <avsenderadresse>            (valgfritt, default = SMTP_USER)
-SMTP_FROM_NAVN    = FHS Skjema                   (valgfritt, visningsnavn)
-SMTP_SECURE       = false                        (true for port 465, false for 587)
-SWA_URL           = https://ashy-meadow-...      (base-URL for $lenke)
-VARSLING_DEAKTIVERT = true                        (valgfritt — kjør uten å sende)
+VARSLING_FLOW_URL     = https://prod-XX.northeurope.logic.azure.com/workflows/.../triggers/manual/paths/invoke?...
+SWA_URL               = https://ashy-meadow-0f2a44503.7.azurestaticapps.net
+VARSLING_DEAKTIVERT   = true    (valgfritt — kjør uten faktisk utsending, alt logges)
 ```
 
-`SWA_URL` er allerede satt i GitHub-vars for FS-cron. Hvis den ikke ligger som
-env i selve SWA-en, sett den også der (uten trailing slash).
+`VARSLING_FLOW_URL` er samme URL som legacy — kan gjenbrukes direkte fra
+prod-miljøet så lenge pilot-brukerne har rett til å kalle den. For pilot i egen
+tenant må enten:
+- Bruke legacy-flyten (deler samme URL/nøkkel), eller
+- Kopiere flyten til pilot-tenant og bruke den nye URL-en
 
-## Office 365-oppsett (anbefalt for pilot)
+## Payload-kontrakt (mot VARSLING_FLOW_URL)
 
-1. **App-passord**: Krever at brukerens konto har MFA aktivert. Generer app-passord
-   under Microsoft Konto → Sikkerhet → App-passord.
-2. **Alternativ — service-konto**: Opprett en dedikert brukerkonto (f.eks.
-   `noreply@dinorg.no`), aktiver SMTP AUTH på den (Exchange-admin), lag app-passord.
-3. **SMTP AUTH i tenant**: Kan være deaktivert som default i M365 — må aktiveres
-   per postboks via `Set-CASMailbox -Identity <user> -SmtpClientAuthenticationDisabled $false`.
+Fase 6a sender alltid `varslinger: ['epost']`. Fase 6c/d utvider med
+`'teams'`, `'planner'`, `'teamskanal'` — flyten støtter det allerede.
 
-**Dokumentasjon**: <https://learn.microsoft.com/exchange/clients-and-mobile-in-exchange-online/authenticated-client-smtp-submission>
+```json
+{
+  "handling": "sendBehandlingsVarsling",
+  "mottakere": [{ "epost": "ola@fhs.no", "navn": "Nordmann, Ola" }],
+  "varslinger": ["epost"],
+  "skjema_id": "1",
+  "skjematype_id": "108",
+  "skjema_navn": "Test fase 5c",
+  "stegnavn": "Godkjenning",
+  "lenker": [{ "epost": "ola@fhs.no", "url": "https://.../evaluering.html?..." }],
+  "base_url": "https://ashy-meadow-....azurestaticapps.net",
+  "epost_og_teams": {
+    "emne": "Skjema til behandling: \"Test fase 5c\"",
+    "html": "<p>Du har fått ...</p>"
+  }
+}
+```
+
+Plassholdere i emne+html er ferdig-substituert av backend før kallet — flyten
+gjør ingen fletting.
 
 ## Datamodell — skjematype-utvidelse
 
@@ -83,7 +101,7 @@ Alle støttede plassholdere:
 | `$beslutning` | Beslutning-tekst (kun i FraBehandler) |
 | `$kommentar` | Behandler-kommentar |
 | `$stegnavn` | Steg-navn |
-| `$rolle` | Rolle-streng (fra Roller-array) |
+| `$rolle` | Rolle-streng |
 | `$tidspunkt` | Nåværende dato/tid (Europe/Oslo) |
 | `$navn` | Mottaker-navn (per-mottaker) |
 | `$frist` | Frist-dato (hvis satt) |
@@ -94,23 +112,23 @@ Alle støttede plassholdere:
 ## Kall-flyt
 
 **Ved innsending** (`POST /api/skjemaer` med Skjema_status=2):
-- `sendInnsenderKvittering` — én e-post til innsender
-- `sendVarslingAktiveSteg` — én e-post til hver behandler-liste per aktive steg
+- `sendInnsenderKvittering` — kall til innsender
+- `sendVarslingAktiveSteg` — kall per aktive steg (én mottaker-batch per steg)
 
 **Ved beslutning** (`POST /api/skjemaer/.../beslutning`):
-- `sendBeslutningVarsling` — én e-post til innsender med utfall
+- `sendBeslutningVarsling` — kall til innsender med utfall
 - `sendVarslingAktiveSteg` for nye aktive steg (etter skip-kaskade)
 
 **Ved videresending** (`POST /api/skjemaer/.../videresend`):
-- `sendBehandlerVarsling` — kun til den nye mottakeren (ikke hele lista)
+- `sendBehandlerVarsling` — kun til den nye mottakeren
 
-Alle kall er **fire-and-forget** — feil i SMTP feiler ikke selve handlingen.
+Alle kall er **fire-and-forget** — feil i flyten feiler ikke selve handlingen.
 Feil logges i Application Insights via `context.log`.
 
 ## Test
 
-Sett `VARSLING_DEAKTIVERT=true` for å kjøre uten faktisk utsending — hver ville-vært-send
-logges til Application Insights som `epost DRY-RUN: ...`.
+Sett `VARSLING_DEAKTIVERT=true` for å kjøre uten faktisk kall — hvert kall
+logges som `flyt DRY-RUN: ...` i Application Insights.
 
 Full test: send inn et skjema med behandlingssteg. Sjekk at:
 1. Innsender får kvittering
@@ -119,4 +137,6 @@ Full test: send inn et skjema med behandlingssteg. Sjekk at:
 
 ## Neste
 
-Fase 6b: HTML-editor for tilpasning av melding-maler.
+Fase 6b: HTML-editor for tilpasning av melding-maler.  
+Fase 6c: Teams-varsler (utvid `varslinger: ['epost','teams']`).  
+Fase 6d: Planner-oppgaver (utvid med Planner-payload).

@@ -1,19 +1,17 @@
 /**
  * Varsling-koordinator.
  *
- * Bruker epost-sender + placeholder-substitusjon. Bygger mottakerliste basert
- * på skjematype/steg-config og skjemadata.
+ * Kaller VARSLING_FLOW_URL (Power Automate) med ferdig-substituerte tekster.
+ * Fase 6a: kun 'epost' som kanal. Teams/Planner/Teamskanal kommer i 6c/d
+ * ved å utvide `varslinger`-arrayet i payload — flyten støtter det allerede.
  *
- * Skjematype-strukturer (samme som legacy, per fase 6a):
+ * Skjematype-strukturer (samme som legacy):
  *   Innsenderkvittering: { Aktiv, Emne, Tekst, Format }
  *   Behandling[]: { ..., Varsling: ['epost'], TilBehandler: { Emne, Tekst, Format },
  *                    FraBehandler: [{ BeslutningNr, Emne, Tekst, Format }] }
- *
- * $lenke bakes til felles URL (SWA-URL + /evaluering.html?...) — hver behandler
- * må logge inn via SWA-auth. Ingen engangs-token i pilot.
  */
 
-const epost = require('./epost-sender');
+const { sendEpostViaFlyt, baseUrl } = require('./flyt-kaller');
 const { erstattPlassholdere, byggKontekst } = require('./placeholder');
 const rollerStorage = require('./roller-storage');
 
@@ -51,7 +49,7 @@ function standardFraBehandler() {
 }
 
 function skjemaLenke(skjematypeId, skjemaId) {
-    const base = String(process.env.SWA_URL || '').replace(/\/+$/, '');
+    const base = baseUrl();
     if (!base) return '';
     return `${base}/evaluering.html?skjematypeId=${encodeURIComponent(skjematypeId)}&skjemaId=${encodeURIComponent(skjemaId)}`;
 }
@@ -65,21 +63,26 @@ function harEpostVarsling(steg) {
 }
 
 async function samleBehandlerMottakere(steg) {
-    const upns = new Set();
+    // Returnerer array av { epost, navn }
+    const seen = new Set();
+    const out = [];
     for (const p of (steg?.Personer || [])) {
         const s = String(p || '').trim().toLowerCase();
-        if (s) upns.add(s);
+        if (s && !seen.has(s)) { seen.add(s); out.push({ epost: s, navn: '' }); }
     }
     for (const r of (steg?.Roller || [])) {
         try {
             const innehavere = await rollerStorage.hentInnehavere(r);
             for (const i of innehavere) {
                 const ep = String(i.EP || i.UPN || '').trim().toLowerCase();
-                if (ep) upns.add(ep);
+                if (!ep || seen.has(ep)) continue;
+                seen.add(ep);
+                const navn = [i.EN, i.FN].filter(Boolean).join(', ');
+                out.push({ epost: ep, navn });
             }
         } catch (_) { /* prøv neste */ }
     }
-    return [...upns];
+    return out;
 }
 
 /**
@@ -97,10 +100,17 @@ async function sendInnsenderKvittering(skjema, skjematype, log = () => {}) {
         return { status: 'hoppet-over' };
     }
     const mal = kv.Aktiv === true || kv.Emne || kv.Tekst ? kv : standardKvittering();
-    const kontekst = byggKontekst({ skjema, skjematype, lenke: skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id) });
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id);
+    const kontekst = byggKontekst({ skjema, skjematype, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardKvittering().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardKvittering().Tekst, kontekst);
-    return await epost.send({ til, emne, html }, log);
+    return await sendEpostViaFlyt({
+        mottakere: [{ epost: til, navn: skjema?.Innsender_Navn || '' }],
+        emne, html, lenke,
+        skjemaId: skjema.Skjema_id,
+        skjematypeId: skjema.Skjematype_id,
+        skjemaNavn: kontekst.skjemanavn
+    }, log);
 }
 
 /**
@@ -118,15 +128,22 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, log = () => {}) {
         return { status: 'hoppet-over' };
     }
     const mal = (steg.TilBehandler?.Emne || steg.TilBehandler?.Tekst) ? steg.TilBehandler : standardTilBehandler();
-    const kontekst = byggKontekst({ skjema, skjematype, steg, lenke: skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id) });
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id);
+    const kontekst = byggKontekst({ skjema, skjematype, steg, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardTilBehandler().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardTilBehandler().Tekst, kontekst);
-    return await epost.send({ til: mottakere, emne, html }, log);
+    return await sendEpostViaFlyt({
+        mottakere,
+        emne, html, lenke,
+        skjemaId: skjema.Skjema_id,
+        skjematypeId: skjema.Skjematype_id,
+        skjemaNavn: kontekst.skjemanavn,
+        stegnavn: kontekst.stegnavn
+    }, log);
 }
 
 /**
  * Send varsling for alle aktive steg (som har e-post skrudd på).
- * Kalles ved innsending og etter beslutning.
  */
 async function sendVarslingAktiveSteg(skjema, skjematype, aktiveSteg, log = () => {}) {
     const resultater = [];
@@ -148,20 +165,27 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
     const til = skjema?.Innsender_Epost || skjema?.Innsender_epost || '';
     if (!til) return { status: 'hoppet-over', melding: 'Ingen innsender-epost' };
 
-    // Finn mal for denne beslutningen — eller falltilbake til standard
     const fraBehandler = Array.isArray(steg?.FraBehandler) ? steg.FraBehandler : [];
     const treff = fraBehandler.find(f => Number(f.BeslutningNr) === Number(beslutningNr));
     const mal = treff && (treff.Emne || treff.Tekst) ? treff : standardFraBehandler();
 
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id);
     const kontekst = byggKontekst({
         skjema, skjematype, steg,
         beslutningTekst,
         kommentar,
-        lenke: skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id)
+        lenke
     });
     const emne = erstattPlassholdere(mal.Emne || standardFraBehandler().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardFraBehandler().Tekst, kontekst);
-    return await epost.send({ til, emne, html }, log);
+    return await sendEpostViaFlyt({
+        mottakere: [{ epost: til, navn: skjema?.Innsender_Navn || '' }],
+        emne, html, lenke,
+        skjemaId: skjema.Skjema_id,
+        skjematypeId: skjema.Skjematype_id,
+        skjemaNavn: kontekst.skjemanavn,
+        stegnavn: kontekst.stegnavn
+    }, log);
 }
 
 module.exports = {
@@ -169,7 +193,6 @@ module.exports = {
     sendBehandlerVarsling,
     sendVarslingAktiveSteg,
     sendBeslutningVarsling,
-    // eksponert for test/debug
     _samleBehandlerMottakere: samleBehandlerMottakere,
     _skjemaLenke: skjemaLenke
 };
