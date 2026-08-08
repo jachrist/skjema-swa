@@ -351,6 +351,9 @@
         import { hentInnloggetBruker } from './js/auth.js';
         import { FELTTYPER } from './js/felt-render.js';
         import { byggDNFEditor } from './js/dnf-editor.js';
+        import { byggTilgangEditor, hentRolleGrupper, invaliderRolleCache } from './js/tilgang-editor.js';
+
+        let rolleGrupper = []; // populeres i init()
 
         // Tilgjengelige datakilder for FasteData i pilot.
         // Kolonner (filter-navn) matcher det oppslag-dispatcheren støtter.
@@ -379,6 +382,9 @@
                 return;
             }
             document.getElementById('upn').textContent = bruker.userDetails;
+
+            // Hent rolle-grupper i bakgrunnen — brukes av tilgang-editor
+            hentRolleGrupper(api).then(g => { rolleGrupper = g || []; });
 
             try {
                 if (eksisterendeId) {
@@ -490,12 +496,12 @@
                 <div class="panel" data-panel-id="tilgang">
                     <h2 onclick="togglePanel('tilgang')"><span class="kollaps-pil">▼</span>Tilgang</h2>
                     <div class="rad">
-                        <label>Publikum <small>(kan fylle ut skjemaet — e-postadresser, kommaseparert)</small></label>
-                        <textarea id="f-publikum" oninput="setPublikum(this.value)">${escapeHtml((data.Publikum?.Personer || []).join(', '))}</textarea>
+                        <label>Publikum <small>(kan fylle ut skjemaet)</small></label>
+                        <div id="publikum-editor"></div>
                     </div>
                     <div class="rad">
-                        <label>Eiere <small>(kan se register + redigere skjematype — e-postadresser, kommaseparert)</small></label>
-                        <textarea id="f-eiere" oninput="setEiere(this.value)">${escapeHtml((data.Eiere?.Personer || []).join(', '))}</textarea>
+                        <label>Eiere <small>(kan se register + redigere skjematype)</small></label>
+                        <div id="eiere-editor"></div>
                     </div>
                 </div>
 
@@ -522,7 +528,25 @@
             rendrerSeksjoner();
             rendrerBehandling();
             rendrerPerioder();
+            rendrerTilgang();
             appliserKollapsState();
+        }
+
+        function rendrerTilgang() {
+            const pubEl = document.getElementById('publikum-editor');
+            if (pubEl) {
+                byggTilgangEditor(pubEl, data.Publikum, {
+                    rolleGrupper,
+                    onEndring: (ny) => { data.Publikum = ny; }
+                });
+            }
+            const eiEl = document.getElementById('eiere-editor');
+            if (eiEl) {
+                byggTilgangEditor(eiEl, data.Eiere, {
+                    rolleGrupper,
+                    onEndring: (ny) => { data.Eiere = ny; }
+                });
+            }
         }
 
         // ==================== KOLLAPS ====================
@@ -609,7 +633,7 @@
             }
             el.innerHTML = '';
             behandling.forEach((steg, i) => el.appendChild(byggStegElement(steg, i, behandling.length)));
-            // Bygg DNF-editorer for hvert stegs Vilkår
+            // Bygg DNF-editorer for hvert stegs Vilkår + tilgang-editor for behandlere
             behandling.forEach((steg, i) => {
                 const slot = document.querySelector(`.dnf-slot[data-slot="steg-vilkar-${i}"]`);
                 if (slot) {
@@ -618,6 +642,24 @@
                         feltOptions: samleReferanserForSteg(i),
                         tittel: 'Steget kjøres kun hvis',
                         onEndring: (ny) => { if (ny) steg.Vilkår = ny; else delete steg.Vilkår; }
+                    });
+                }
+                const tSlot = document.querySelector(`.tilgang-slot[data-slot="steg-tilgang-${i}"]`);
+                if (tSlot) {
+                    // Steg-tilgang har flat Personer-liste historisk — presenter som {Personer, Roller, Team}
+                    const tilgang = {
+                        Personer: steg.Personer || [],
+                        Roller: steg.Roller || [],
+                        Team: steg.Team || []
+                    };
+                    byggTilgangEditor(tSlot, tilgang, {
+                        kompakt: true,
+                        rolleGrupper,
+                        onEndring: (ny) => {
+                            steg.Personer = ny.Personer;
+                            steg.Roller = ny.Roller;
+                            steg.Team = ny.Team;
+                        }
                     });
                 }
             });
@@ -670,8 +712,8 @@
                 </div>
 
                 <div class="rad">
-                    <label>Behandlere <small>(e-postadresser, kommaseparert)</small></label>
-                    <textarea style="min-height: 50px;" oninput="setStegPersoner(${idx}, this.value)">${escapeHtml((steg.Personer || []).join(', '))}</textarea>
+                    <label>Behandlere</label>
+                    <div class="tilgang-slot" data-slot="steg-tilgang-${idx}"></div>
                 </div>
 
                 <div class="rad">
@@ -738,9 +780,7 @@
             });
         }
         window.setStegNavn = (idx, v) => { data.Behandling[idx].Stegnavn = v; };
-        window.setStegPersoner = (idx, v) => {
-            data.Behandling[idx].Personer = v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
-        };
+        // Behandlere håndteres av tilgang-editor (i rendrerBehandling)
         window.setStegAvhengig = (idx, v) => {
             if (v === '') delete data.Behandling[idx].AvhengigAv;
             else data.Behandling[idx].AvhengigAv = Number(v);
@@ -1081,14 +1121,8 @@
             if (!data.Skjemaforklaring) data.Skjemaforklaring = { Format: 'Tekst' };
             data.Skjemaforklaring.Innhold = v;
         };
-        window.setPublikum = v => {
-            if (!data.Publikum) data.Publikum = { Roller: [], Team: [] };
-            data.Publikum.Personer = v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
-        };
-        window.setEiere = v => {
-            if (!data.Eiere) data.Eiere = { Roller: [], Team: [] };
-            data.Eiere.Personer = v.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
-        };
+        // Publikum og Eiere håndteres av tilgang-editor (frontend/js/tilgang-editor.js)
+        // — mutasjoner skjer via onEndring-callback i rendrerTilgang().
 
         // ---- Seksjon ----
         window.leggTilSeksjon = () => {

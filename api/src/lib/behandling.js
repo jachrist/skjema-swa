@@ -6,10 +6,13 @@
  *   - AvhengigAv-steget er behandlet (eller ingen avhengighet)
  *   - Vilkår er oppfylt (eller ingen vilkår)
  *
- * En bruker er "behandler" for et steg hvis UPN finnes i steg.Personer.
- * Roller/Team-basert behandling kommer med masterdata-fasen.
+ * En bruker er "behandler" for et steg hvis:
+ *   - UPN finnes i steg.Personer, ELLER
+ *   - UPN er innehaver av en rolle i steg.Roller (via roller-storage)
+ *   - Team-basert behandling kommer med Graph API (fase 8)
  */
 const { evaluerVilkar } = require('./vilkar');
+const rollerStorage = require('./roller-storage');
 
 function stegErFerdig(steg) {
     return Number(steg?.Beslutning || 0) !== 0;
@@ -38,6 +41,22 @@ function brukerErBehandler(steg, upn) {
     if (!upn) return false;
     const upnLower = String(upn).toLowerCase();
     return (steg?.Personer || []).map(p => String(p).toLowerCase()).includes(upnLower);
+}
+
+/**
+ * Utvidet variant som også sjekker Roller. Krever async pga rolle-oppslag.
+ * Bruk denne der behandler-sjekken skjer i request-håndtering.
+ */
+async function brukerErBehandlerAsync(steg, upn) {
+    if (brukerErBehandler(steg, upn)) return true;
+    const roller = steg?.Roller || [];
+    for (const r of roller) {
+        try {
+            if (await rollerStorage.erMedlem(r, upn)) return true;
+        } catch (_) { /* prøv neste */ }
+    }
+    // Team: kommer med Graph API (fase 8)
+    return false;
 }
 
 function alleStegFerdig(skjema) {
@@ -79,6 +98,7 @@ function skipStegSomIkkeSkalKjore(skjema) {
 module.exports = {
     beregnAktiveSteg,
     brukerErBehandler,
+    brukerErBehandlerAsync,
     alleStegFerdig,
     stegErFerdig,
     stegErBlokkertAvAvhengighet,

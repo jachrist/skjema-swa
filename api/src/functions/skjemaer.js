@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -107,8 +107,8 @@ app.http('lagreBeslutning', {
             const stegObj = (skjema.Behandling || []).find(s => Number(s.Steg) === stegNr);
             if (!stegObj) return { status: 404, jsonBody: { status: 'feil', melding: 'Behandlingssteg ikke funnet' } };
 
-            // Tilgangssjekk: må være behandler
-            if (!brukerErBehandler(stegObj, upn)) {
+            // Tilgangssjekk: må være behandler (Personer eller rolle-innehaver)
+            if (!(await brukerErBehandlerAsync(stegObj, upn))) {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Du er ikke behandler på dette steget' } };
             }
             // Tilstandssjekk: ikke allerede behandlet, ikke blokkert
@@ -296,7 +296,7 @@ app.http('videresend', {
 
             const stegObj = (skjema.Behandling || []).find(s => Number(s.Steg) === stegNr);
             if (!stegObj) return { status: 404, jsonBody: { status: 'feil', melding: 'Behandlingssteg ikke funnet' } };
-            if (!brukerErBehandler(stegObj, upn)) {
+            if (!(await brukerErBehandlerAsync(stegObj, upn))) {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Du er ikke behandler på dette steget' } };
             }
             if (stegErFerdig(stegObj)) {
@@ -353,7 +353,10 @@ app.http('mineBehandlinger', {
                 if (!Array.isArray(skjema?.Behandling)) continue;
 
                 const aktive = beregnAktiveSteg(skjema);
-                const mine = aktive.filter(s => brukerErBehandler(s, upn));
+                const mine = [];
+                for (const s of aktive) {
+                    if (await brukerErBehandlerAsync(s, upn)) mine.push(s);
+                }
                 if (mine.length === 0) continue;
 
                 const key = String(skjema.Skjematype_id || entity.partitionKey);
