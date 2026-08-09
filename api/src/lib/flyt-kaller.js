@@ -112,8 +112,51 @@ async function sendEpostViaFlyt(args, log = () => {}) {
     return await kallVarslingFlyt(payload, log);
 }
 
+/**
+ * Send OTP-kode via PA-flyt. Kanal = 'epost' eller 'sms'. Mottaker = e-post
+ * eller mobilnummer (E.164-format for SMS anbefales, f.eks. +4741234567).
+ *
+ * Env: OTP_FLOW_URL — PA-flyt som håndterer begge kanaler via handling.
+ * Payload:
+ *   { handling: 'sendOtp', kanal, mottaker, kode, gyldig_minutter }
+ *
+ * PA-flyten forventes å inneholde en switch på kanal:
+ *   epost → Office 365 Send an email
+ *   sms   → HTTP/connector mot SMS-leverandør (Twilio/Sveve/LinkMobility/ACS)
+ */
+async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, log = () => {}) {
+    const url = process.env.OTP_FLOW_URL;
+    if (!url) {
+        log('otp-flyt: OTP_FLOW_URL ikke satt — hopper over (kode logges NOT for sikkerhet)');
+        return { status: 'hoppet-over', melding: 'OTP_FLOW_URL ikke satt' };
+    }
+    if (String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() === 'true') {
+        // I dry-run logger vi KODE for enkel test — akseptert i pilot.
+        log(`otp-flyt DRY-RUN: kanal=${kanal} mottaker=${mottaker} kode=${kode}`);
+        return { status: 'deaktivert' };
+    }
+    try {
+        const respons = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ handling: 'sendOtp', kanal, mottaker, kode, gyldig_minutter: gyldigMinutter })
+        });
+        if (!respons.ok) {
+            const tekst = await respons.text().catch(() => '');
+            log(`otp-flyt FEIL: HTTP ${respons.status} — ${tekst.slice(0, 300)}`);
+            return { status: 'feil', melding: `HTTP ${respons.status}` };
+        }
+        log(`otp-flyt OK: kanal=${kanal} mottaker=${mottaker.slice(0, 3)}...`);
+        return { status: 'ok' };
+    } catch (e) {
+        log(`otp-flyt EXCEPTION: ${e.message}`);
+        return { status: 'feil', melding: e.message };
+    }
+}
+
 module.exports = {
     kallVarslingFlyt,
     sendEpostViaFlyt,
+    sendOtpViaFlyt,
     baseUrl
 };

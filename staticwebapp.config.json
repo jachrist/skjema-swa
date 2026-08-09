@@ -13,6 +13,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/otp/*",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },
