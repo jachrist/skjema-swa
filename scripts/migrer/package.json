@@ -1,0 +1,18 @@
+{
+    "name": "skjema-swa-migrer",
+    "version": "0.1.0",
+    "private": true,
+    "description": "Standalone migreringsscript: kopierer alle Table Storage-tabeller + Blob-vedlegg fra en Azure storage-konto til en annen. Ikke deployet — kjøres lokalt av admin.",
+    "main": "migrer.js",
+    "type": "commonjs",
+    "engines": {
+        "node": ">=22.0.0"
+    },
+    "scripts": {
+        "start": "node migrer.js"
+    },
+    "dependencies": {
+        "@azure/data-tables": "^13.3.0",
+        "@azure/storage-blob": "^12.26.0"
+    }
+}
