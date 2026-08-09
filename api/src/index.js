@@ -15,6 +15,8 @@ require('./functions/refresh-fs');
 require('./functions/varsling-diag');
 require('./functions/datauttrekk');
 require('./functions/pdf');
+require('./functions/pb-token');
+require('./functions/power-bi');
 
 // Etter hvert:
 // require('./functions/skjema');

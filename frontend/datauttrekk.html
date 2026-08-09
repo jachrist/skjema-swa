@@ -194,6 +194,26 @@
             </div>
             <div id="status" class="status-melding" style="display: none;"></div>
         </div>
+
+        <div class="panel" id="pb-panel" style="display: none;">
+            <h2>Power BI-kobling <small style="font-weight: 400; text-transform: none;">— live data-URL for Power BI Desktop (Web-connector)</small></h2>
+            <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;">
+                Genererer en URL som gir Power BI direkte tilgang til alle innsendte skjemaer for denne skjematypen (som JSON).
+                Tokenet er gyldig i 1 år. Filtre påvirker <em>ikke</em> PB — alle innsendte skjemaer eksponeres.
+            </div>
+            <div style="display: flex; gap: 10px; align-items: center; margin-bottom: 10px;">
+                <button class="knapp" onclick="lagPbKobling()" id="btn-pb">🔗 Lag eller forny Power BI-kobling</button>
+                <span id="pb-status" style="font-size: 12px; color: var(--text-secondary);"></span>
+            </div>
+            <div id="pb-url-boks" style="display: none;">
+                <label>Power BI Web-connector URL <small>(kopier og lim inn i Power BI Desktop → Hent data → Web)</small></label>
+                <div style="display: flex; gap: 8px;">
+                    <input type="text" id="pb-url" readonly style="font-family: 'SF Mono', Menlo, monospace; font-size: 11px;">
+                    <button class="knapp" onclick="kopierPbUrl()" style="white-space: nowrap;">📋 Kopier</button>
+                </div>
+                <div id="pb-utloper" style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;"></div>
+            </div>
+        </div>
     </div>
 
     <script type="module">
@@ -260,6 +280,10 @@
                 rendrerFiltre();
                 document.getElementById('filter-panel').style.display = '';
                 document.getElementById('uttrekk-panel').style.display = '';
+                document.getElementById('pb-panel').style.display = '';
+                // Nullstill PB-URL-visning når skjematype byttes
+                document.getElementById('pb-url-boks').style.display = 'none';
+                document.getElementById('pb-status').textContent = '';
             } catch (e) {
                 visStatus('Kunne ikke laste filtre: ' + e.message, 'feil');
             }
@@ -358,6 +382,40 @@
             document.body.removeChild(a);
             setTimeout(() => URL.revokeObjectURL(url), 5000);
         }
+
+        window.lagPbKobling = async () => {
+            const btn = document.getElementById('btn-pb');
+            const statusEl = document.getElementById('pb-status');
+            btn.disabled = true;
+            statusEl.textContent = 'Genererer token…';
+            try {
+                const res = await api.post('/api/pb-token', { skjematypeId: valgtSkjematypeId });
+                document.getElementById('pb-url').value = res.url;
+                document.getElementById('pb-url-boks').style.display = '';
+                const dato = new Date(res.utloper).toLocaleDateString('no-NO', { day: 'numeric', month: 'long', year: 'numeric' });
+                document.getElementById('pb-utloper').textContent = `Utløper: ${dato}`;
+                statusEl.textContent = '✓ URL klar';
+                statusEl.style.color = 'var(--success)';
+            } catch (e) {
+                statusEl.textContent = 'Feil: ' + e.message;
+                statusEl.style.color = 'var(--danger)';
+            } finally {
+                btn.disabled = false;
+            }
+        };
+
+        window.kopierPbUrl = async () => {
+            const inp = document.getElementById('pb-url');
+            try {
+                await navigator.clipboard.writeText(inp.value);
+                const statusEl = document.getElementById('pb-status');
+                statusEl.textContent = '✓ Kopiert til utklippstavle';
+                statusEl.style.color = 'var(--success)';
+            } catch (_) {
+                inp.select();
+                document.execCommand('copy');
+            }
+        };
 
         function visStatus(tekst, klasse) {
             const el = document.getElementById('status');

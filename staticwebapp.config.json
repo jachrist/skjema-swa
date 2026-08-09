@@ -9,6 +9,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/power-bi",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },
