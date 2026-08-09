@@ -106,6 +106,23 @@
             padding-bottom: 10px;
             border-bottom: 1px solid var(--border-color);
         }
+        .felt-pille {
+            display: inline-block;
+            padding: 3px 10px;
+            font-size: 11px;
+            border: 1px solid var(--border-color);
+            border-radius: 999px;
+            background: var(--bg-input);
+            cursor: pointer;
+            user-select: none;
+        }
+        .felt-pille:hover { border-color: var(--accent); }
+        .felt-pille.aktiv {
+            background: var(--accent-light);
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
         .venstre-liste {
             overflow-y: auto;
             display: flex;
@@ -362,6 +379,7 @@
                         <input type="checkbox" id="mineFilter" onchange="filtrer()">
                         Kun mine aktive
                     </label>
+                    <div id="felt-filtre"></div>
                 </div>
                 <div class="venstre-liste" id="liste">
                     <div class="tom-melding">Laster…</div>
@@ -426,6 +444,7 @@
                     lenke.href = `/datauttrekk.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
                     lenke.style.display = '';
                 }
+                bygFeltFiltre();
             } catch (_) { /* ikke kritisk */ }
 
             try {
@@ -447,6 +466,92 @@
             document.getElementById('liste').innerHTML = `<div class="tom-melding">${escHtml(tekst)}</div>`;
         }
 
+        // Filtrerbare felter fra skjematypen — populeres via bygFeltFiltre()
+        state.filtrerbare = [];      // [{Navn, Seksjon, Felt, Verdier}]
+        state.valgteFeltVerdier = {}; // { "sek-felt": Set(verdier) }
+
+        function bygFeltFiltre() {
+            const def = state.skjematype;
+            state.filtrerbare = [];
+            const container = document.getElementById('felt-filtre');
+            container.innerHTML = '';
+            if (!def) return;
+
+            for (const s of (def.Seksjoner || [])) {
+                const sekNr = s.Seksjon_nummer;
+                for (const f of (s.Felter || [])) {
+                    if (!f.Filtrerbar) continue;
+                    if (f.Type === 'Informasjon') continue;
+                    const feltNrPadded = String(f.Nummer).padStart(2, '0');
+                    state.filtrerbare.push({
+                        Navn: f.Tekst?.Verdi || `${sekNr}-${feltNrPadded}`,
+                        Seksjon: sekNr,
+                        Felt: feltNrPadded,
+                        Verdier: Array.isArray(f.Valg) ? f.Valg.map(v => v.Tekst).filter(Boolean) : []
+                    });
+                }
+            }
+            if (state.filtrerbare.length === 0) return;
+
+            container.innerHTML = state.filtrerbare.map(f => {
+                const nokkel = `${f.Seksjon}-${f.Felt}`;
+                if (f.Verdier.length === 0) {
+                    // Fritt-tekst-felt: enkel input for delvis match
+                    return `<div style="margin-top: 8px;">
+                        <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 2px;">${escHtml(f.Navn)}</label>
+                        <input type="text" placeholder="Filtrer på tekst…" data-nokkel="${nokkel}" data-fritekst="1" oninput="settFeltFilter('${nokkel}', this.value)" style="width: 100%; padding: 5px 8px; font-size: 12px;">
+                    </div>`;
+                }
+                const verdiHtml = f.Verdier.map(v => `
+                    <span class="felt-pille" data-nokkel="${nokkel}" data-verdi="${escapeAttr(v)}" onclick="toggleFeltVerdi('${nokkel}', ${JSON.stringify(v)})">${escHtml(v)}</span>
+                `).join('');
+                return `<div style="margin-top: 8px;">
+                    <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 2px;">${escHtml(f.Navn)}</label>
+                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">${verdiHtml}</div>
+                </div>`;
+            }).join('');
+        }
+
+        window.toggleFeltVerdi = (nokkel, verdi) => {
+            if (!state.valgteFeltVerdier[nokkel]) state.valgteFeltVerdier[nokkel] = new Set();
+            const s = state.valgteFeltVerdier[nokkel];
+            if (s.has(verdi)) s.delete(verdi); else s.add(verdi);
+            const el = document.querySelector(`.felt-pille[data-nokkel="${nokkel}"][data-verdi="${escapeAttr(verdi)}"]`);
+            if (el) el.classList.toggle('aktiv', s.has(verdi));
+            filtrer();
+        };
+
+        window.settFeltFilter = (nokkel, tekst) => {
+            const trimmet = String(tekst || '').trim().toLowerCase();
+            if (!trimmet) delete state.valgteFeltVerdier[nokkel];
+            else state.valgteFeltVerdier[nokkel] = { fritekst: trimmet };
+            filtrer();
+        };
+
+        function hentSvarFraSkjema(s, sek, felt) {
+            const feltNrPadded = String(felt).padStart(2, '0');
+            const sekNr = String(sek);
+            // Fullt format
+            if (Array.isArray(s.Seksjoner)) {
+                for (const sekObj of s.Seksjoner) {
+                    if (String(sekObj.Seksjon_nummer || sekObj.Nummer || '') !== sekNr) continue;
+                    for (const f of (sekObj.Felter || [])) {
+                        if (String(f.Nummer).padStart(2, '0') !== feltNrPadded) continue;
+                        return Array.isArray(f.Svar) ? f.Svar.map(String) : [];
+                    }
+                }
+            }
+            // Kompakt format
+            if (Array.isArray(s.Svar)) {
+                for (const svar of s.Svar) {
+                    if (String(svar.sek) === sekNr && String(svar.spm).padStart(2, '0') === feltNrPadded) {
+                        return Array.isArray(svar.sva) ? svar.sva.map(String) : [];
+                    }
+                }
+            }
+            return [];
+        }
+
         window.filtrer = () => {
             const sok = document.getElementById('sok').value.trim().toLowerCase();
             const status = document.getElementById('statusFilter').value;
@@ -458,8 +563,19 @@
                     if (!t.includes(sok)) return false;
                 }
                 if (kunMineAktive) {
-                    // Kun skjemaer der bruker har aktive behandlingssteg (fra mine-behandlinger-map hvis tilgjengelig)
                     if (!state.mineIder || !state.mineIder.has(s.Skjema_id)) return false;
+                }
+                // Felt-filtre
+                for (const [nokkel, valg] of Object.entries(state.valgteFeltVerdier)) {
+                    const [sek, felt] = nokkel.split('-');
+                    const svar = hentSvarFraSkjema(s, sek, felt);
+                    if (valg && valg.fritekst) {
+                        // Fritekst-match: minst ett svar må inneholde søket
+                        if (!svar.some(v => String(v).toLowerCase().includes(valg.fritekst))) return false;
+                    } else if (valg instanceof Set && valg.size > 0) {
+                        // Verdi-match: minst én valgt verdi må matche ett svar
+                        if (![...valg].some(v => svar.includes(v))) return false;
+                    }
                 }
                 return true;
             });
