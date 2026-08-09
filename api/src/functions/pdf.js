@@ -104,7 +104,10 @@ app.http('genererPdf', {
 
             const log = (m) => context.log(m);
             const vedlegg = await hentAlleVedlegg(skjematypeId, skjemaId, log);
-            const buffer = await genererOppsummeringPdf(skjema, vedlegg);
+            // Send skjematype-definisjonen som tredje arg — så PDF-generatoren
+            // kan slå opp spm-tekst når skjemaet ikke har egen Tekst-egenskap
+            // (innsendt fullt format har KUN Nummer/Type/Svar per felt).
+            const buffer = await genererOppsummeringPdf(skjema, vedlegg, st?.JSON || null);
             const filnavn = byggFilnavn(skjemaId);
 
             // Query-param eller body kan overstyre format

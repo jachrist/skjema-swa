@@ -1,7 +1,6 @@
 /**
  * PDF-generator for oppsummering av innsendt skjema.
- * Bygger på pdf-lib. Portert fra legacy azure-function-skjema/src/pdf-generator.js
- * med minimale tilpasninger til SWA-pilot (ingen kryptering ennå).
+ * Bygger på pdf-lib. Portert fra legacy azure-function-skjema/src/pdf-generator.js.
  *
  * Innhold:
  *   - Header + metadata (skjema-navn, id, innsender, datoer)
@@ -19,21 +18,35 @@ const TEKST = rgb(0.2, 0.2, 0.2);
 const MUTED = rgb(0.5, 0.5, 0.5);
 const HVIT = rgb(1, 1, 1);
 
-// Saniter tekst for WinAnsi (StandardFonts). Konverterer smarte anførselstegn,
-// diverse streker, ellipsis osv. til Latin-1-ekvivalenter. Kontroll-tegn strippes.
+// Saniter tekst for WinAnsi (StandardFonts). Bruker \uXXXX-escape overalt
+// for å unngå at redigerings-verktøy normaliserer usynlige tegn og lager
+// utilsiktede regex-ranges (tidligere versjon fikk NBSP → SPACE ved kopiering,
+// noe som gjorde [0x20-0x200B] og fanget alle ASCII-tegn).
 function san(s) {
     if (s === null || s === undefined) return '';
     return String(s)
         .replace(/\r\n?/g, '\n')
-        .replace(/[‐-―−]/g, '-')
-        .replace(/[‘’‚‛′]/g, "'")
-        .replace(/[“”„‟″]/g, '"')
-        .replace(/…/g, '...')
-        .replace(/[  -​  　﻿]/g, ' ')
-        .replace(/[•‣◦⁃]/g, '-')
-        .replace(/™/g, '(TM)')
-        .replace(/[®©]/g, '')
+        // Diverse streker/minus -> bindestrek (U+2010..U+2015, U+2212)
+        .replace(/[\u2010-\u2015\u2212]/g, '-')
+        // Smarte enkle anfoerselstegn + prime (U+2018,2019,201A,201B,2032)
+        .replace(/[\u2018\u2019\u201a\u201b\u2032]/g, "'")
+        // Smarte doble anfoerselstegn + double-prime (U+201C..U+201F,2033)
+        .replace(/[\u201c-\u201f\u2033]/g, '"')
+        // Ellipsis (U+2026)
+        .replace(/\u2026/g, '...')
+        // NBSP + Unicode-mellomrom -> vanlig space
+        .replace(/[\u00a0\u2000-\u200a\u202f\u205f\u3000]/g, ' ')
+        // Zero-width space / word joiner / BOM/ZWNBSP -> fjern
+        .replace(/[\u200b\u2060\ufeff]/g, '')
+        // Line/paragraph separator -> space
+        .replace(/[\u2028\u2029]/g, ' ')
+        // Punktmarkoerer -> bindestrek (U+2022,2023,25E6,2043)
+        .replace(/[\u2022\u2023\u25e6\u2043]/g, '-')
+        .replace(/\u2122/g, '(TM)')
+        .replace(/[\u00ae\u00a9]/g, '')
+        // Kontroll-tegn unntatt LF (0x0A)
         .replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, '')
+        // Alt annet utenfor WinAnsi (LF + 0x20-0x7E + 0xA1-0xFF) -> '?'
         .replace(/[^\x0A\x20-\x7E\xA1-\xFF]/g, '?');
 }
 
@@ -57,9 +70,6 @@ function formatKortDato(iso) {
     } catch { return String(iso); }
 }
 
-/**
- * Utled ferdigbehandlet-dato som nyeste BehandletDato hvis alle steg er ferdig.
- */
 function utledFerdigDato(skjema) {
     const b = skjema?.Behandling;
     if (!Array.isArray(b) || b.length === 0) return '';
@@ -73,13 +83,30 @@ function utledFerdigDato(skjema) {
 }
 
 /**
+ * Slå opp spm-tekst fra skjematype-definisjon når skjemaet ikke har egen Tekst.
+ */
+function byggTekstMap(skjematype) {
+    const map = {};
+    if (!skjematype) return map;
+    for (const s of (skjematype.Seksjoner || [])) {
+        const sekNr = String(s.Seksjon_nummer);
+        for (const f of (s.Felter || [])) {
+            const nokkel = `${sekNr}-${String(f.Nummer).padStart(2, '0')}`;
+            map[nokkel] = f.Tekst?.Verdi || '';
+        }
+    }
+    return map;
+}
+
+/**
  * Generer oppsummerings-PDF.
  *
  * @param {Object} skjema - fullt format med Seksjoner/Felter/Svar + Behandling + Dialog
  * @param {Array}  vedleggData - [{ name, data (base64) }]
+ * @param {Object} [skjematype] - definisjon for oppslag av spm-tekst
  * @returns {Promise<Buffer>}
  */
-async function genererOppsummeringPdf(skjema, vedleggData = []) {
+async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = null) {
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
     const fontBold = await doc.embedFont(StandardFonts.HelveticaBold);
@@ -91,6 +118,8 @@ async function genererOppsummeringPdf(skjema, vedleggData = []) {
 
     let page = doc.addPage(PageSizes.A4);
     let y = pageH - margin;
+
+    const tekstMap = byggTekstMap(skjematype);
 
     function nyLinje(høyde) {
         y -= høyde;
@@ -184,10 +213,12 @@ async function genererOppsummeringPdf(skjema, vedleggData = []) {
         );
         if (!harSvar) continue;
 
+        const sekNr = String(seksjon.Seksjon_nummer || seksjon.Nummer || '');
+
         nyLinje(10);
         page.drawRectangle({ x: margin, y: y - 2, width: contentW, height: 14, color: BLAA });
         page.drawText(
-            flatLinje(seksjon.Seksjon_overskrift || seksjon.Overskrift || 'Seksjon ' + (seksjon.Seksjon_nummer || seksjon.Nummer)),
+            flatLinje(seksjon.Seksjon_overskrift || seksjon.Overskrift || 'Seksjon ' + sekNr),
             { x: margin + 5, y: y + 1, size: 9, font: fontBold, color: HVIT }
         );
         nyLinje(18);
@@ -198,7 +229,8 @@ async function genererOppsummeringPdf(skjema, vedleggData = []) {
             const svar = Array.isArray(felt.Svar) ? felt.Svar.filter(s => s !== '') : [];
             if (svar.length === 0) continue;
 
-            const spørsmål = felt.Tekst?.Verdi || 'Felt ' + visningsTeller;
+            const nokkel = `${sekNr}-${String(felt.Nummer).padStart(2, '0')}`;
+            const spørsmål = felt.Tekst?.Verdi || tekstMap[nokkel] || 'Felt ' + visningsTeller;
             const svarTekst = svar.join(', ');
 
             const spLinjer = wrapTekst(visningsTeller + '. ' + spørsmål, 7, fontBold, contentW / 2 - 5);
@@ -252,7 +284,6 @@ async function genererOppsummeringPdf(skjema, vedleggData = []) {
             const ext = (v.name || '').split('.').pop().toLowerCase();
             const buffer = Buffer.from(v.data, 'base64');
 
-            // Forside
             page = doc.addPage(PageSizes.A4);
             y = pageH / 2 + 20;
             const tittelBredde = fontBold.widthOfTextAtSize(`Vedlegg ${vi + 1}`, 28);
