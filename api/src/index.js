@@ -13,6 +13,7 @@ require('./functions/postnumre');
 require('./functions/roller');
 require('./functions/refresh-fs');
 require('./functions/varsling-diag');
+require('./functions/datauttrekk');
 
 // Etter hvert:
 // require('./functions/skjema');
