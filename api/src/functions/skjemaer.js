@@ -620,7 +620,49 @@ app.http('listSkjemaer', {
 
             const alle = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId);
 
-            // Kompakt liste — kun feltene registeret trenger for kolonner
+            // Finn hvilke felter som er filtrerbare i skjematypen — kun disse
+            // trenger svar-verdi i lista (register-filtre + kolonne-fremvisning).
+            const st = await skjemaStorage.hentSkjematype(skjematypeId);
+            const filterFelt = []; // [{sekNr, feltNrPadded}]
+            for (const s of (st?.JSON?.Seksjoner || [])) {
+                for (const f of (s.Felter || [])) {
+                    if ((f.Filtrerbar || f.Filtrerbar_i_register) && f.Type !== 'Informasjon') {
+                        filterFelt.push({
+                            sekNr: String(s.Seksjon_nummer),
+                            feltNrPadded: String(f.Nummer).padStart(2, '0')
+                        });
+                    }
+                }
+            }
+
+            function hentFilterSvar(sk) {
+                const ut = {};
+                for (const { sekNr, feltNrPadded } of filterFelt) {
+                    const nokkel = `${sekNr}-${feltNrPadded}`;
+                    // Fullt format
+                    if (Array.isArray(sk?.Seksjoner)) {
+                        for (const s of sk.Seksjoner) {
+                            if (String(s.Seksjon_nummer || s.Nummer || '') !== sekNr) continue;
+                            for (const f of (s.Felter || [])) {
+                                if (String(f.Nummer).padStart(2, '0') !== feltNrPadded) continue;
+                                ut[nokkel] = Array.isArray(f.Svar) ? f.Svar : [];
+                            }
+                        }
+                    }
+                    // Kompakt format
+                    if (ut[nokkel] === undefined && Array.isArray(sk?.Svar)) {
+                        for (const s of sk.Svar) {
+                            if (String(s.sek) !== sekNr) continue;
+                            if (String(s.spm).padStart(2, '0') !== feltNrPadded) continue;
+                            ut[nokkel] = Array.isArray(s.sva) ? s.sva : [];
+                        }
+                    }
+                    if (ut[nokkel] === undefined) ut[nokkel] = [];
+                }
+                return ut;
+            }
+
+            // Kompakt liste — feltene registeret trenger for kolonner + filter-svar
             const liste = alle.map(s => ({
                 Skjema_id: s.Skjema_id,
                 Skjematype_id: s.Skjematype_id,
@@ -628,7 +670,8 @@ app.http('listSkjemaer', {
                 Innsender_Epost: s.Innsender_Epost || s.Innsender_epost || '',
                 Skjema_status: s.Skjema_status || 0,
                 Opprettet: s.Opprettet || s.OpprettetDato || '',
-                Sist_endret: s.Sist_endret || s.Oppdatert || ''
+                Sist_endret: s.Sist_endret || s.Oppdatert || '',
+                FilterSvar: filterFelt.length > 0 ? hentFilterSvar(s) : undefined
             }));
 
             // Nyeste først

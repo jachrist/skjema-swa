@@ -304,36 +304,34 @@
             ingen.style.display = 'none';
             innhold.innerHTML = filtrerbareFelter.map((f, idx) => {
                 const nokkel = `${f.Seksjon}-${f.Felt}`;
-                const verdiHtml = (f.Verdier || []).map(v => `
-                    <label class="filter-verdi" data-nokkel="${nokkel}" data-verdi="${escapeAttr(v)}">
-                        <input type="checkbox">
-                        <span>${escapeHtml(v)}</span>
-                    </label>
-                `).join('');
+                const verdier = f.Verdier || [];
+                if (verdier.length === 0) {
+                    return `
+                        <div class="rad">
+                            <label>${escapeHtml(f.Navn)}</label>
+                            <div style="color: var(--text-secondary); font-size: 12px; font-style: italic;">(ingen svar registrert ennå)</div>
+                        </div>
+                    `;
+                }
+                const options = verdier.map(v => `<option value="${escapeAttr(v)}">${escapeHtml(v)}</option>`).join('');
                 return `
                     <div class="rad">
-                        <label>${escapeHtml(f.Navn)} <small>${f.Verdier?.length ? '' : '(ingen forhåndsdefinerte verdier — fritt-tekst støttes ikke enda)'}</small></label>
-                        <div class="filter-verdier">${verdiHtml || '<em style="color: var(--text-secondary); font-size: 12px;">(ingen verdier å velge)</em>'}</div>
+                        <label>${escapeHtml(f.Navn)} <small>(${verdier.length} verdi${verdier.length === 1 ? '' : 'er'} i innsendte skjemaer)</small></label>
+                        <select data-nokkel="${nokkel}" onchange="onFilterEndret(this)">
+                            <option value="">— alle —</option>
+                            ${options}
+                        </select>
                     </div>
                 `;
             }).join('');
-
-            // Wire up click-handlers
-            innhold.querySelectorAll('.filter-verdi').forEach(el => {
-                el.addEventListener('click', () => {
-                    const nokkel = el.dataset.nokkel;
-                    const verdi = el.dataset.verdi;
-                    if (!valgteFiltre[nokkel]) valgteFiltre[nokkel] = new Set();
-                    if (valgteFiltre[nokkel].has(verdi)) {
-                        valgteFiltre[nokkel].delete(verdi);
-                        el.classList.remove('aktiv');
-                    } else {
-                        valgteFiltre[nokkel].add(verdi);
-                        el.classList.add('aktiv');
-                    }
-                });
-            });
         }
+
+        window.onFilterEndret = (sel) => {
+            const nokkel = sel.dataset.nokkel;
+            const verdi = sel.value;
+            if (!verdi) delete valgteFiltre[nokkel];
+            else valgteFiltre[nokkel] = new Set([verdi]);
+        };
 
         function samleFiltrePayload() {
             const filtere = [];

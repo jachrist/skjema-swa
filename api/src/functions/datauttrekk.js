@@ -30,28 +30,56 @@ async function harEierTilgang(skjematypeId, upn) {
 
 /**
  * Trekk ut filtrerbare felter fra en skjematype-definisjon.
- * For hvert felt med Filtrerbar=true, returner metadata + valg-liste.
+ * For hvert felt med Filtrerbar=true, returner metadata + faktiske
+ * forekommende svar-verdier i innsendte skjemaer.
  */
-function samleFiltrerbareFelter(definisjon) {
+function samleFiltrerbareFelter(definisjon, skjemaer) {
     const filtre = [];
     for (const s of (definisjon?.Seksjoner || [])) {
         const sekNr = s.Seksjon_nummer;
         for (const f of (s.Felter || [])) {
             if (!(f.Filtrerbar || f.Filtrerbar_i_register)) continue;
             if (f.Type === 'Informasjon') continue;
-            const verdier = Array.isArray(f.Valg)
-                ? f.Valg.map(v => v.Tekst).filter(Boolean)
-                : [];
+            const feltNrPadded = String(f.Nummer).padStart(2, '0');
             filtre.push({
-                Navn: f.Tekst?.Verdi || `${sekNr}-${f.Nummer}`,
+                Navn: f.Tekst?.Verdi || `${sekNr}-${feltNrPadded}`,
                 Seksjon: sekNr,
-                Felt: String(f.Nummer).padStart(2, '0'),
+                Felt: feltNrPadded,
                 Type: f.Type,
-                Verdier: verdier
+                Verdier: samleForekommendeVerdier(skjemaer, sekNr, feltNrPadded)
             });
         }
     }
     return filtre;
+}
+
+function samleForekommendeVerdier(skjemaer, sekNr, feltNrPadded) {
+    const sett = new Set();
+    for (const s of (skjemaer || [])) {
+        // Fullt format
+        if (Array.isArray(s?.Seksjoner)) {
+            for (const sek of s.Seksjoner) {
+                if (String(sek.Seksjon_nummer || sek.Nummer || '') !== String(sekNr)) continue;
+                for (const f of (sek.Felter || [])) {
+                    if (String(f.Nummer).padStart(2, '0') !== feltNrPadded) continue;
+                    for (const v of (Array.isArray(f.Svar) ? f.Svar : [])) {
+                        if (v != null && v !== '') sett.add(String(v));
+                    }
+                }
+            }
+        }
+        // Kompakt format
+        if (Array.isArray(s?.Svar)) {
+            for (const svar of s.Svar) {
+                if (String(svar.sek) !== String(sekNr)) continue;
+                if (String(svar.spm).padStart(2, '0') !== feltNrPadded) continue;
+                for (const v of (Array.isArray(svar.sva) ? svar.sva : [])) {
+                    if (v != null && v !== '') sett.add(String(v));
+                }
+            }
+        }
+    }
+    return [...sett].sort((a, b) => a.localeCompare(b, 'nb'));
 }
 
 app.http('datauttrekkFiltre', {
@@ -69,9 +97,11 @@ app.http('datauttrekkFiltre', {
             }
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             if (!st) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
+            // Hent alle skjemaer for å utlede faktisk forekommende verdier per filterfelt
+            const skjemaer = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId, { fulltFormat: true });
             return { jsonBody: {
                 skjemaNavn: st.JSON?.Skjema_navn || st.navn || '',
-                filtere: samleFiltrerbareFelter(st.JSON || {})
+                filtere: samleFiltrerbareFelter(st.JSON || {}, skjemaer)
             }};
         } catch (e) {
             context.log('datauttrekk/filtre FEIL:', e.message, e.stack);

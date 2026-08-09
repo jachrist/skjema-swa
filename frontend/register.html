@@ -444,7 +444,7 @@
                     lenke.href = `/datauttrekk.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
                     lenke.style.display = '';
                 }
-                bygFeltFiltre();
+                // bygFeltFiltre() kalles etter state.alle er hentet — trenger data for å utlede verdier
             } catch (_) { /* ikke kritisk */ }
 
             try {
@@ -456,6 +456,7 @@
                 state.mineIder = new Set((minB[skjematypeId] || []).map(b => b.Skjema_id));
                 document.getElementById('undertittel').textContent =
                     `${state.alle.length} skjema${state.alle.length === 1 ? '' : 'er'} totalt.`;
+                bygFeltFiltre();
                 filtrer();
             } catch (e) {
                 visListeMelding('Kunne ikke hente skjemaer: ' + e.message);
@@ -469,6 +470,15 @@
         // Filtrerbare felter fra skjematypen — populeres via bygFeltFiltre()
         state.filtrerbare = [];      // [{Navn, Seksjon, Felt, Verdier}]
         state.valgteFeltVerdier = {}; // { "sek-felt": Set(verdier) }
+
+        function samleFeltForekommendeVerdier(sekNr, feltNrPadded) {
+            const sett = new Set();
+            for (const s of (state.alle || [])) {
+                const svar = hentSvarFraSkjema(s, sekNr, feltNrPadded);
+                for (const v of svar) if (v != null && v !== '') sett.add(String(v));
+            }
+            return [...sett].sort((a, b) => a.localeCompare(b, 'nb'));
+        }
 
         function bygFeltFiltre() {
             const def = state.skjematype;
@@ -486,8 +496,7 @@
                     state.filtrerbare.push({
                         Navn: f.Tekst?.Verdi || `${sekNr}-${feltNrPadded}`,
                         Seksjon: sekNr,
-                        Felt: feltNrPadded,
-                        Verdier: Array.isArray(f.Valg) ? f.Valg.map(v => v.Tekst).filter(Boolean) : []
+                        Felt: feltNrPadded
                     });
                 }
             }
@@ -495,57 +504,42 @@
 
             container.innerHTML = state.filtrerbare.map(f => {
                 const nokkel = `${f.Seksjon}-${f.Felt}`;
-                if (f.Verdier.length === 0) {
-                    // Fritt-tekst-felt: enkel input for delvis match
-                    return `<div style="margin-top: 8px;">
-                        <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 2px;">${escHtml(f.Navn)}</label>
-                        <input type="text" placeholder="Filtrer på tekst…" data-nokkel="${nokkel}" data-fritekst="1" oninput="settFeltFilter('${nokkel}', this.value)" style="width: 100%; padding: 5px 8px; font-size: 12px;">
-                    </div>`;
-                }
-                const verdiHtml = f.Verdier.map(v => `
-                    <span class="felt-pille" data-nokkel="${nokkel}" data-verdi="${escapeAttr(v)}" onclick="toggleFeltVerdi('${nokkel}', ${JSON.stringify(v)})">${escHtml(v)}</span>
-                `).join('');
-                return `<div style="margin-top: 8px;">
+                const forekommende = samleFeltForekommendeVerdier(f.Seksjon, f.Felt);
+                if (forekommende.length === 0) return '';
+                const options = forekommende.map(v => `<option value="${escapeAttr(v)}">${escHtml(v)}</option>`).join('');
+                return `<div style="margin-top: 6px;">
                     <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 2px;">${escHtml(f.Navn)}</label>
-                    <div style="display: flex; flex-wrap: wrap; gap: 4px;">${verdiHtml}</div>
+                    <select data-nokkel="${nokkel}" onchange="onFeltFilterEndret(this)" style="width: 100%; padding: 5px 8px; font-size: 12px;">
+                        <option value="">— alle —</option>
+                        ${options}
+                    </select>
                 </div>`;
             }).join('');
         }
 
-        window.toggleFeltVerdi = (nokkel, verdi) => {
-            if (!state.valgteFeltVerdier[nokkel]) state.valgteFeltVerdier[nokkel] = new Set();
-            const s = state.valgteFeltVerdier[nokkel];
-            if (s.has(verdi)) s.delete(verdi); else s.add(verdi);
-            const el = document.querySelector(`.felt-pille[data-nokkel="${nokkel}"][data-verdi="${escapeAttr(verdi)}"]`);
-            if (el) el.classList.toggle('aktiv', s.has(verdi));
-            filtrer();
-        };
-
-        window.settFeltFilter = (nokkel, tekst) => {
-            const trimmet = String(tekst || '').trim().toLowerCase();
-            if (!trimmet) delete state.valgteFeltVerdier[nokkel];
-            else state.valgteFeltVerdier[nokkel] = { fritekst: trimmet };
+        window.onFeltFilterEndret = (sel) => {
+            const nokkel = sel.dataset.nokkel;
+            const verdi = sel.value;
+            if (!verdi) delete state.valgteFeltVerdier[nokkel];
+            else state.valgteFeltVerdier[nokkel] = new Set([verdi]);
             filtrer();
         };
 
         function hentSvarFraSkjema(s, sek, felt) {
             const feltNrPadded = String(felt).padStart(2, '0');
             const sekNr = String(sek);
-            // Fullt format
+            const nokkel = `${sekNr}-${feltNrPadded}`;
+            // Bruk FilterSvar-map fra liste-endepunktet (populert kun for Filtrerbar-felter)
+            if (s.FilterSvar && Array.isArray(s.FilterSvar[nokkel])) {
+                return s.FilterSvar[nokkel].map(String);
+            }
+            // Fallback: fullt format hvis skjema ble hentet ellers
             if (Array.isArray(s.Seksjoner)) {
                 for (const sekObj of s.Seksjoner) {
                     if (String(sekObj.Seksjon_nummer || sekObj.Nummer || '') !== sekNr) continue;
                     for (const f of (sekObj.Felter || [])) {
                         if (String(f.Nummer).padStart(2, '0') !== feltNrPadded) continue;
                         return Array.isArray(f.Svar) ? f.Svar.map(String) : [];
-                    }
-                }
-            }
-            // Kompakt format
-            if (Array.isArray(s.Svar)) {
-                for (const svar of s.Svar) {
-                    if (String(svar.sek) === sekNr && String(svar.spm).padStart(2, '0') === feltNrPadded) {
-                        return Array.isArray(svar.sva) ? svar.sva.map(String) : [];
                     }
                 }
             }
