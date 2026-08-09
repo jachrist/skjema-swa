@@ -14,6 +14,7 @@ require('./functions/roller');
 require('./functions/refresh-fs');
 require('./functions/varsling-diag');
 require('./functions/datauttrekk');
+require('./functions/pdf');
 
 // Etter hvert:
 // require('./functions/skjema');

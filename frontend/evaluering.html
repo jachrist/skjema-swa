@@ -263,7 +263,10 @@
         <a href="/velgskjematype.html" class="tilbake">← Til skjemaoversikten</a>
         <div class="topplinje">
             <h1 id="tittel">Behandle skjema</h1>
-            <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
+            <div class="brukerinfo">
+                <button id="pdf-knapp" class="modal-knapp" style="margin-right: 12px; display: none;" onclick="lastNedPdf()">📄 Last ned PDF</button>
+                <span class="upn" id="upn">…</span>
+            </div>
         </div>
         <div class="meta" id="meta"></div>
         <div id="innhold" class="laster">Laster skjema…</div>
@@ -315,6 +318,8 @@
         function rendrer() {
             document.getElementById('tittel').textContent = `Behandle: ${skjematype.Skjema_navn || 'Skjema'}`;
             document.title = document.getElementById('tittel').textContent;
+            const pdfKnapp = document.getElementById('pdf-knapp');
+            if (pdfKnapp) pdfKnapp.style.display = '';
 
             const status = skjema.Skjema_status ?? 0;
             const statusTekst = status === 5 ? 'Avsluttet' : (status === 2 ? 'Under behandling' : 'Innsendt');
@@ -554,6 +559,36 @@
             div.appendChild(knapper);
             return div;
         }
+
+        window.lastNedPdf = async () => {
+            const knapp = document.getElementById('pdf-knapp');
+            const originalTekst = knapp.textContent;
+            knapp.disabled = true;
+            knapp.textContent = 'Genererer…';
+            try {
+                const res = await api.post(
+                    `/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/pdf`,
+                    { format: 'base64' }
+                );
+                const bin = atob(res.innhold);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                const blob = new Blob([bytes], { type: res.contentType || 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = res.filnavn;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (e) {
+                alert('Kunne ikke laste ned PDF: ' + e.message);
+            } finally {
+                knapp.disabled = false;
+                knapp.textContent = originalTekst;
+            }
+        };
 
         function bekreftModal({ tittel, tekst, bekreftTekst = 'Bekreft', bekreftStil = 'primær' }) {
             return new Promise(resolve => {

@@ -16,6 +16,7 @@
         "@azure/data-tables": "^13.3.0",
         "@azure/storage-blob": "^12.26.0",
         "@azure/keyvault-secrets": "^4.9.0",
-        "xlsx": "^0.18.5"
+        "xlsx": "^0.18.5",
+        "pdf-lib": "^1.17.1"
     }
 }

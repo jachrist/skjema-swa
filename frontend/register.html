@@ -545,6 +545,7 @@
                 ? `<button class="knapp primær" onclick="lagreEndringer()">Lagre endringer</button>
                    <button class="knapp sekundær" onclick="avbrytRedigering()">Avbryt</button>`
                 : `${behandleLenke}
+                   <button class="knapp sekundær" onclick="lastNedPdfDetalj()">📄 PDF</button>
                    <button class="knapp sekundær" onclick="startRedigering()">Rediger</button>
                    <button class="knapp danger" onclick="aapneSlettModal()">Slett</button>
                    ${raaLenke}`;
@@ -718,6 +719,30 @@
         window.startRedigering = () => {
             state.redigerer = true;
             renderDetalj();
+        };
+
+        window.lastNedPdfDetalj = async () => {
+            if (!state.valgtId) return;
+            try {
+                const res = await api.post(
+                    `/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(state.valgtId)}/pdf`,
+                    { format: 'base64' }
+                );
+                const bin = atob(res.innhold);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                const blob = new Blob([bytes], { type: res.contentType || 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = res.filnavn;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (e) {
+                alert('Kunne ikke laste ned PDF: ' + e.message);
+            }
         };
         window.avbrytRedigering = () => {
             state.redigerer = false;
