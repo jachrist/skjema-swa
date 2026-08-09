@@ -480,7 +480,7 @@
             for (const s of (def.Seksjoner || [])) {
                 const sekNr = s.Seksjon_nummer;
                 for (const f of (s.Felter || [])) {
-                    if (!f.Filtrerbar) continue;
+                    if (!(f.Filtrerbar || f.Filtrerbar_i_register)) continue;
                     if (f.Type === 'Informasjon') continue;
                     const feltNrPadded = String(f.Nummer).padStart(2, '0');
                     state.filtrerbare.push({

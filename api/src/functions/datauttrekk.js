@@ -37,7 +37,7 @@ function samleFiltrerbareFelter(definisjon) {
     for (const s of (definisjon?.Seksjoner || [])) {
         const sekNr = s.Seksjon_nummer;
         for (const f of (s.Felter || [])) {
-            if (!f.Filtrerbar) continue;
+            if (!(f.Filtrerbar || f.Filtrerbar_i_register)) continue;
             if (f.Type === 'Informasjon') continue;
             const verdier = Array.isArray(f.Valg)
                 ? f.Valg.map(v => v.Tekst).filter(Boolean)

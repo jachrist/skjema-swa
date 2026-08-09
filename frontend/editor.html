@@ -1495,7 +1495,7 @@
                     Obligatorisk
                 </label>
                 <label class="checkbox-rad" style="margin-top: 4px;">
-                    <input type="checkbox" ${felt.Filtrerbar ? 'checked' : ''}
+                    <input type="checkbox" ${(felt.Filtrerbar || felt.Filtrerbar_i_register) ? 'checked' : ''}
                         onchange="setFeltProp(${sIdx}, ${fIdx}, 'Filtrerbar', this.checked)">
                     Filtrerbar i register/datauttrekk
                 </label>
