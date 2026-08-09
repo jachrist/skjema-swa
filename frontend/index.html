@@ -289,15 +289,29 @@
         import { hentInnloggetBruker } from './js/auth.js';
         import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
+        import { apneOtpModal } from './js/otp-widget.js';
 
         let skjematype = null;
         let skjemaId = null; // pre-generert (nytt) eller eksisterende (fortsett mellomlagret)
         let eksisterendeSkjema = null; // hvis vi henter fra fortsett
+        let otpMottaker = null; // e-post eller mobilnr (for ekstern-modus)
+        let otpKanal = null; // 'epost' | 'sms'
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
         const skjemaIdParam = params.get('skjema_id'); // satt hvis "Fortsett"
+        const eksternModus = params.get('ekstern') === '1';
 
         async function init() {
+            if (!skjematypeId) {
+                visFeil('Mangler skjematype_id i URL. Åpne skjemaet fra "Velg skjema"-siden.');
+                return;
+            }
+
+            if (eksternModus) {
+                await initEkstern();
+                return;
+            }
+
             const bruker = await hentInnloggetBruker();
             if (!bruker) {
                 window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
@@ -305,35 +319,57 @@
             }
             document.getElementById('upn').textContent = bruker.userDetails;
 
-            if (!skjematypeId) {
-                visFeil('Mangler skjematype_id i URL. Åpne skjemaet fra "Velg skjema"-siden.');
-                return;
-            }
-
             try {
                 skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
-
-                if (skjemaIdParam) {
-                    // Fortsett mellomlagret: hent eksisterende skjema for å bruke svarene
-                    skjemaId = skjemaIdParam;
-                    try {
-                        eksisterendeSkjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaIdParam)}`);
-                    } catch (e) {
-                        visFeil('Kunne ikke hente mellomlagret skjema: ' + e.message);
-                        return;
-                    }
-                } else {
-                    // Ny utfylling: pre-generer Skjema_id så vedlegg kan opplastes før submit
-                    try {
-                        const idRes = await api.get(`/api/ny-skjema-id/${encodeURIComponent(skjematypeId)}`);
-                        skjemaId = idRes.Skjema_id;
-                    } catch (e) {
-                        console.warn('ny-skjema-id feilet:', e.message);
-                    }
-                }
+                await forbereedSkjemaId();
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste skjemadefinisjon: ' + e.message);
+            }
+        }
+
+        async function initEkstern() {
+            // Anonymt: hent publikum-visning av skjematypen (fungerer bare hvis EksternTilgang=true)
+            try {
+                skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}/publikum`);
+            } catch (e) {
+                visFeil('Denne skjematypen er ikke tilgjengelig for ekstern innsender.');
+                return;
+            }
+            // Kjør OTP-widget for å verifisere kontakt
+            const res = await apneOtpModal({
+                tittel: `Verifiser deg for "${skjematype.Skjema_navn || 'skjema'}"`,
+                tekst: 'Skriv inn mobilnummer eller e-post — vi sender en 6-sifret kode du bekrefter.',
+                kanaler: ['sms', 'epost']
+            });
+            if (!res) {
+                visFeil('Verifisering avbrutt. Åpne lenka på nytt for å prøve igjen.');
+                return;
+            }
+            api.settHeader('x-otp-token', res.verifikasjonstoken);
+            otpMottaker = res.mottaker;
+            otpKanal = res.kanal;
+            document.getElementById('upn').textContent = otpMottaker + ' (ekstern)';
+
+            try {
+                await forbereedSkjemaId();
+                rendrer();
+            } catch (e) {
+                visFeil('Kunne ikke laste skjema: ' + e.message);
+            }
+        }
+
+        async function forbereedSkjemaId() {
+            if (skjemaIdParam) {
+                skjemaId = skjemaIdParam;
+                eksisterendeSkjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaIdParam)}`);
+            } else {
+                try {
+                    const idRes = await api.get(`/api/ny-skjema-id/${encodeURIComponent(skjematypeId)}`);
+                    skjemaId = idRes.Skjema_id;
+                } catch (e) {
+                    console.warn('ny-skjema-id feilet:', e.message);
+                }
             }
         }
 

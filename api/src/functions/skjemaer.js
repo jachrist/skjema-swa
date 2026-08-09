@@ -24,6 +24,29 @@ const { kallEksternFlyt } = require('../lib/ekstern-flyt');
 const { oppdaterSPListe } = require('../lib/sp-liste');
 const kryptering = require('../lib/kryptering');
 const nokkelStorage = require('../lib/nokkel-storage');
+const otpToken = require('../lib/otp-token');
+
+/**
+ * Autentisering for ekstern-innsender-flyten.
+ * Sjekker om request har gyldig x-otp-token og at skjematypen tillater ekstern.
+ * Returnerer { ok, mottaker, kanal } eller { ok: false, melding }.
+ */
+async function autentiserEkstern(request, skjematypeId) {
+    const token = request.headers.get('x-otp-token');
+    if (!token) return { ok: false };
+    const v = otpToken.valider(token);
+    if (!v.gyldig) return { ok: false, melding: v.melding };
+    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+    if (!st?.JSON?.EksternTilgang) return { ok: false, melding: 'Skjematype tillater ikke ekstern innsender' };
+    return { ok: true, mottaker: v.mottaker, kanal: v.kanal };
+}
+
+function eksternInnsenderUpn(mottaker, kanal) {
+    // Bruker mottaker som "identitet" i innsender-feltet.
+    // E-post går i Innsender_Epost; mobilnr merkes med prefiks for å unngå
+    // forvirring med reelle e-poster i register/PDF.
+    return kanal === 'sms' ? `mobil:${mottaker}` : String(mottaker).toLowerCase();
+}
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -481,12 +504,19 @@ app.http('nyttSkjemaId', {
     authLevel: 'anonymous',
     route: 'ny-skjema-id/{skjematypeId}',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
         try {
             const skjematypeId = request.params.skjematypeId;
-            const tillatt = await harPublikumTilgang(skjematypeId, upn);
-            if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+            const upn = hentInnloggetUpn(request);
+            if (!upn) {
+                // Ekstern-flyt: krev gyldig OTP-token + EksternTilgang=true
+                const eksternAuth = await autentiserEkstern(request, skjematypeId);
+                if (!eksternAuth.ok) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
+                }
+            } else {
+                const tillatt = await harPublikumTilgang(skjematypeId, upn);
+                if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+            }
             const skjemaId = await genererSkjemaId(skjematypeId);
             return { jsonBody: { Skjema_id: skjemaId } };
         } catch (e) {
@@ -501,9 +531,6 @@ app.http('lagreSkjema', {
     authLevel: 'anonymous',
     route: 'skjemaer',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-
         try {
             const body = await request.json();
             const skjematypeId = String(body.Skjematype_id || '');
@@ -511,11 +538,22 @@ app.http('lagreSkjema', {
                 return { status: 400, jsonBody: { status: 'feil', melding: 'Skjematype_id mangler' } };
             }
 
-            // Tilgangskontroll: må være publikum eller eier for å lagre
-            const tillatt = await harPublikumTilgang(skjematypeId, upn);
-            if (!tillatt) {
-                return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang til denne skjematypen' } };
+            // Auth: SWA-innlogget bruker ELLER ekstern via x-otp-token
+            const upn = hentInnloggetUpn(request);
+            let eksternAuth = null;
+            if (!upn) {
+                eksternAuth = await autentiserEkstern(request, skjematypeId);
+                if (!eksternAuth.ok) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
+                }
+            } else {
+                // Innlogget: standard publikum/eier-sjekk
+                const tillatt = await harPublikumTilgang(skjematypeId, upn);
+                if (!tillatt) {
+                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang til denne skjematypen' } };
+                }
             }
+            const innsenderId = eksternAuth ? eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal) : upn;
 
             // Hent eksisterende for å avgjøre erNytt og bevare metadata (Behandling, Dialog)
             let skjemaId = body.Skjema_id ? String(body.Skjema_id) : null;
@@ -540,6 +578,15 @@ app.http('lagreSkjema', {
                 }
             }
 
+            // Ved oppdatering: krev at innsender-ID matcher (ekstern kan bare
+            // endre EGET mellomlagret skjema)
+            if (eksisterende && eksternAuth) {
+                const eksistInns = (eksisterende.Innsender_Epost || eksisterende.Innsender_epost || '').toLowerCase();
+                if (eksistInns !== innsenderId.toLowerCase()) {
+                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Ikke ditt skjema' } };
+                }
+            }
+
             // Bygg skjemadata. Ved oppdatering: start med eksisterende (bevar Behandling,
             // Dialog, vedlegg-refs) og la body overstyre med nye svar/status.
             const skjemaData = {
@@ -548,9 +595,13 @@ app.http('lagreSkjema', {
                 Skjema_id: skjemaId,
                 Skjematype_id: skjematypeId,
                 // Bevar original innsender ved oppdatering
-                Innsender_Epost: eksisterende?.Innsender_Epost || upn,
+                Innsender_Epost: eksisterende?.Innsender_Epost || innsenderId,
                 Skjema_status: body.Skjema_status || eksisterende?.Skjema_status || 2
             };
+            if (eksternAuth) {
+                skjemaData.EksternInnsender = true;
+                skjemaData.Innsender_Kanal = eksternAuth.kanal;
+            }
             if (behandlingArvet && !Array.isArray(skjemaData.Behandling)) {
                 skjemaData.Behandling = behandlingArvet;
             }
@@ -565,7 +616,7 @@ app.http('lagreSkjema', {
             }
 
             await forekomstStorage.lagreSkjema(skjemaData, erNytt);
-            context.log(`skjemaer: ${upn} ${erNytt ? 'opprettet' : 'oppdaterte'} ${skjemaId} (type ${skjematypeId})`);
+            context.log(`skjemaer: ${innsenderId}${eksternAuth ? ' (ekstern)' : ''} ${erNytt ? 'opprettet' : 'oppdaterte'} ${skjemaId} (type ${skjematypeId})`);
 
             // Varsling ved innsending (status 2 = Innsendt, ellers mellomlagring)
             // Fire-and-forget så feil i SMTP ikke feiler hovedhandlingen.
@@ -731,13 +782,27 @@ app.http('hentSkjema', {
     authLevel: 'anonymous',
     route: 'skjemaer/{skjematypeId}/{skjemaId}',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-
         try {
             const { skjematypeId, skjemaId } = request.params;
             const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            const upn = hentInnloggetUpn(request);
+
+            // Ekstern-tilgang via OTP-token
+            if (!upn) {
+                const eksternAuth = await autentiserEkstern(request, skjematypeId);
+                if (!eksternAuth.ok) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
+                }
+                const innsenderId = eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal);
+                const eksistInns = (skjema.Innsender_Epost || skjema.Innsender_epost || '').toLowerCase();
+                if (eksistInns !== innsenderId.toLowerCase()) {
+                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Ikke ditt skjema' } };
+                }
+                // Ekstern får skjemaet uten behandler-info-berikelse
+                return { jsonBody: skjema };
+            }
 
             // Tilgang: admin, eier, innsender selv, ELLER behandler (Personer/Roller)
             //   på et aktivt steg.

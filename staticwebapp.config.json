@@ -17,6 +17,26 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/skjematyper/*/publikum",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/skjemaer",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/skjemaer/*",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/ny-skjema-id/*",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/vedlegg/*",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },

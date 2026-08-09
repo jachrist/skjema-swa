@@ -8,9 +8,14 @@ async function les(response) {
     return await response.text();
 }
 
-async function utfør(path, options = {}) {
-    const r = await fetch(path, options);
-    if (r.status === 401) {
+// Default-headers som følger med hvert API-kall (f.eks. x-otp-token for
+// ekstern-innsender-flyten). Sett via api.settHeader / fjernHeader.
+const defaultHeaders = {};
+
+async function utfør(path, options = {}, { hopperOver401 = false } = {}) {
+    const headers = { ...defaultHeaders, ...(options.headers || {}) };
+    const r = await fetch(path, { ...options, headers });
+    if (r.status === 401 && !hopperOver401) {
         // SWA gjør redirect via responseOverrides — dette bør sjelden trigge
         window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
         return null;
@@ -23,16 +28,18 @@ async function utfør(path, options = {}) {
 }
 
 export const api = {
-    get: (path) => utfør(path),
-    post: (path, body) => utfør(path, {
+    get: (path, opts) => utfør(path, {}, opts),
+    post: (path, body, opts) => utfør(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-    }),
-    put: (path, body) => utfør(path, {
+    }, opts),
+    put: (path, body, opts) => utfør(path, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
-    }),
-    del: (path) => utfør(path, { method: 'DELETE' })
+    }, opts),
+    del: (path, opts) => utfør(path, { method: 'DELETE' }, opts),
+    settHeader: (navn, verdi) => { defaultHeaders[navn] = verdi; },
+    fjernHeader: (navn) => { delete defaultHeaders[navn]; }
 };

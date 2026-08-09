@@ -110,6 +110,37 @@ app.http('mineSkjematyper', {
     }
 });
 
+/**
+ * Anonymt endepunkt for ekstern-innsender-flyten. Returnerer skjematypen
+ * KUN hvis EksternTilgang=true. Innhold beriket med FasteData som vanlig.
+ * Ingen SWA-cookie kreves.
+ */
+app.http('hentSkjematypeEkstern', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/{id}/publikum',
+    handler: async (request, context) => {
+        try {
+            const id = request.params.id;
+            const st = await skjemaStorage.hentSkjematype(id);
+            if (!st) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
+            if (!st.JSON?.EksternTilgang) {
+                return { status: 403, jsonBody: { status: 'avvist', melding: 'Ikke tilgjengelig for eksterne' } };
+            }
+            const berikaSkjema = await hentOgSettFasteData(
+                st.JSON,
+                (dk, fb, fo, fv) => hentDropdownVerdier(dk, fb, fo, fv, (m) => context.log('oppslag: ' + m)),
+                null,
+                (m) => context.log('faste-data: ' + m)
+            );
+            return { jsonBody: berikaSkjema };
+        } catch (e) {
+            context.log('skjematyper/publikum FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('hentSkjematype', {
     methods: ['GET'],
     authLevel: 'anonymous',

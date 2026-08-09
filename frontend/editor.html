@@ -664,6 +664,20 @@
                         <label>Eiere <small>(kan se register + redigere skjematype)</small></label>
                         <div id="eiere-editor"></div>
                     </div>
+                    <div class="rad">
+                        <label>Ekstern innsender <small>(uten Entra-pålogging — verifiseres via OTP)</small></label>
+                        <label class="checkbox-rad" style="margin: 4px 0;">
+                            <input type="checkbox" ${data.EksternTilgang ? 'checked' : ''} onchange="setEksternTilgang(this.checked)">
+                            Tillat innsending fra eksterne via engangskode
+                        </label>
+                        <div id="ekstern-lenke-boks" style="display: ${data.EksternTilgang && eksisterendeId ? 'block' : 'none'}; margin-top: 8px; padding: 10px 12px; background: var(--accent-light); border-radius: 6px;">
+                            <label style="font-size: 11px; margin-bottom: 4px;">Ekstern tilgangs-URL <small>(kopier og distribuer via e-post, SMS eller nettside)</small></label>
+                            <div style="display: flex; gap: 6px;">
+                                <input type="text" id="ekstern-lenke" readonly style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;" value="${eksisterendeId ? window.location.origin + '/index.html?skjematype_id=' + encodeURIComponent(eksisterendeId) + '&ekstern=1' : ''}">
+                                <button class="knapp mini sekundær" onclick="kopierEksternLenke()">📋 Kopier</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="panel" data-panel-id="sharepoint">
@@ -1159,6 +1173,16 @@
 
         window.setKrypteres = (v) => { data.Krypteres = v || 'Nei'; };
         window.setAnonymiseres = (v) => { data.Anonymiseres = !!v; };
+        window.setEksternTilgang = (v) => {
+            data.EksternTilgang = !!v;
+            const boks = document.getElementById('ekstern-lenke-boks');
+            if (boks) boks.style.display = (v && eksisterendeId) ? 'block' : 'none';
+        };
+        window.kopierEksternLenke = async () => {
+            const inp = document.getElementById('ekstern-lenke');
+            try { await navigator.clipboard.writeText(inp.value); }
+            catch (_) { inp.select(); document.execCommand('copy'); }
+        };
 
         // ==================== VARSLING (fase 6b) ====================
         function oppsummerMelding(mal, standardTekst) {
