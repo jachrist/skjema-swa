@@ -18,6 +18,7 @@ require('./functions/pdf');
 require('./functions/pb-token');
 require('./functions/power-bi');
 require('./functions/otp');
+require('./functions/nokkel');
 
 // Etter hvert:
 // require('./functions/skjema');

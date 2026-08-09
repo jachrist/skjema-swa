@@ -30,7 +30,7 @@
         },
         {
             "route": "/nokkeladmin.html",
-            "allowedRoles": ["admin"]
+            "allowedRoles": ["authenticated"]
         },
         {
             "route": "/rolleadmin.html",

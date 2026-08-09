@@ -71,6 +71,8 @@ function trekkUtSvar(skjema, definisjon) {
 
 function svarTilStreng(sva) {
     if (sva == null) return '';
+    // Kryptert svar (ikke-array streng med iv:tag:ciphertext-format) — vis som markør
+    if (typeof sva === 'string' && sva.split(':').length === 3) return '[Kryptert]';
     if (Array.isArray(sva)) return sva.filter(v => v != null && v !== '').join('; ');
     return String(sva);
 }

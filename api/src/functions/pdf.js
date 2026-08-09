@@ -14,6 +14,8 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { beregnAktiveSteg, brukerErBehandlerAsync } = require('../lib/behandling');
 const { genererOppsummeringPdf } = require('../lib/pdf-generator');
+const kryptering = require('../lib/kryptering');
+const nokkelStorage = require('../lib/nokkel-storage');
 
 async function harTilgang(skjema, skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -76,11 +78,28 @@ app.http('genererPdf', {
             }
 
             // Bruk Skjema_navn fra definisjonen for header hvis skjemaet ikke har det
-            if (!skjema.Skjema_navn && !skjema.Overskrift) {
+            let st;
+            try {
+                st = await skjemaStorage.hentSkjematype(skjematypeId);
+                if (!skjema.Skjema_navn && !skjema.Overskrift && st?.JSON?.Skjema_navn) {
+                    skjema.Skjema_navn = st.JSON.Skjema_navn;
+                }
+            } catch (_) { /* ikke kritisk */ }
+
+            // Auto-dekryptering hvis skjemaet er kryptert
+            const erKryptert = skjema?.Kryptert === true || (typeof skjema?.Kryptert === 'string' && skjema.Kryptert.length > 0);
+            if (erKryptert) {
                 try {
-                    const st = await skjemaStorage.hentSkjematype(skjematypeId);
-                    if (st?.JSON?.Skjema_navn) skjema.Skjema_navn = st.JSON.Skjema_navn;
-                } catch (_) { /* ikke kritisk */ }
+                    const nokkel = await nokkelStorage.hentNokkel(skjematypeId);
+                    if (nokkel) {
+                        skjema = kryptering.dekrypterSkjema(skjema, nokkel);
+                        context.log(`pdf: dekrypterte skjema ${skjemaId}`);
+                    } else {
+                        context.log(`pdf: skjema ${skjemaId} er kryptert men nøkkel mangler — genererer med [Kryptert]-verdier`);
+                    }
+                } catch (e) {
+                    context.log(`pdf: dekryptering feilet — ${e.message}`);
+                }
             }
 
             const log = (m) => context.log(m);

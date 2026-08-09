@@ -22,6 +22,8 @@ const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFer
 const varsling = require('../lib/varsling');
 const { kallEksternFlyt } = require('../lib/ekstern-flyt');
 const { oppdaterSPListe } = require('../lib/sp-liste');
+const kryptering = require('../lib/kryptering');
+const nokkelStorage = require('../lib/nokkel-storage');
 
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -177,6 +179,34 @@ app.http('lagreBeslutning', {
                 // Oppdater skjema-status hvis alle steg ferdig
                 if (alleStegFerdig(skjema)) {
                     skjema.Skjema_status = 5; // Avsluttet
+                }
+            }
+
+            // Ved siste ferdig-status: anonymiser + krypter før lagring
+            // (rekkefølge må være anonymiser → krypter, ellers krypteres den
+            // ekte innsender-eposten i Alt-mode)
+            if (skjema.Skjema_status === 5) {
+                try {
+                    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+                    const def = st?.JSON || {};
+                    if (def.Anonymiseres) {
+                        skjema = kryptering.anonymiserInnsender(skjema, process.env.HASH_SALT || '');
+                        context.log(`beslutning: anonymiserte innsender for skjema ${skjemaId}`);
+                    }
+                    const omfang = def.Krypteres;
+                    if (omfang === 'Svar' || omfang === 'Alt') {
+                        const nokkel = await nokkelStorage.hentNokkel(skjematypeId);
+                        if (nokkel) {
+                            skjema = kryptering.krypterSkjema(skjema, nokkel, omfang);
+                            // Bevar meta i klartekst for Svar-mode så register/liste fortsatt fungerer
+                            context.log(`beslutning: krypterte skjema ${skjemaId} (${omfang})`);
+                        } else {
+                            context.log(`beslutning: Krypteres=${omfang} men mangler nøkkel for skjematype ${skjematypeId} — hoppes over`);
+                        }
+                    }
+                } catch (e) {
+                    // Ikke-blokkerende: lagre alt uansett i klartekst hvis kryptering feiler
+                    context.log(`beslutning: kryptering/anonymisering feilet — ${e.message}`);
                 }
             }
 

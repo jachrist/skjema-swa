@@ -17,6 +17,8 @@ const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const datauttrekk = require('../lib/datauttrekk');
+const kryptering = require('../lib/kryptering');
+const nokkelStorage = require('../lib/nokkel-storage');
 
 async function harEierTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -101,7 +103,26 @@ app.http('datauttrekkBygg', {
             const definisjon = st.JSON || {};
 
             const skjemaer = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId, { fulltFormat: true });
-            const fil = datauttrekk.bygg(skjemaer, definisjon, filtere, type);
+
+            // Kryptering-håndtering:
+            //   - Brukers manuelt oppgitte Nokkel har prioritet
+            //   - Ellers hentes nøkkelen automatisk fra Kryptonokler-tabellen
+            //   - Uten nøkkel: krypterte verdier vises som [Kryptert] i output
+            let nokkel = body.Nokkel ? String(body.Nokkel).trim() : null;
+            const noenKryptert = skjemaer.some(s => s?.Kryptert);
+            if (noenKryptert && !nokkel) {
+                nokkel = await nokkelStorage.hentNokkel(skjematypeId);
+                if (!nokkel) context.log(`datauttrekk: krypterte skjemaer men nøkkel mangler for type ${skjematypeId}`);
+            }
+            const dekrypterte = nokkel
+                ? skjemaer.map(s => {
+                    if (!s?.Kryptert) return s;
+                    try { return kryptering.dekrypterSkjema(s, nokkel); }
+                    catch (_) { return s; }
+                })
+                : skjemaer;
+
+            const fil = datauttrekk.bygg(dekrypterte, definisjon, filtere, type);
 
             context.log(`datauttrekk: ${upn} genererte ${type} for type ${skjematypeId} — ${skjemaer.length} skjemaer inn, ${fil.filnavn}`);
             return { jsonBody: fil };

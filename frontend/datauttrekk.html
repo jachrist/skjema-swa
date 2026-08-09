@@ -187,6 +187,10 @@
 
         <div class="panel" id="uttrekk-panel" style="display: none;">
             <h2>Generer uttrekk</h2>
+            <div class="rad" style="margin-bottom: 12px;">
+                <label>Krypteringsnøkkel <small>(kun hvis skjematypen er kryptert — server henter automatisk hvis feltet er tomt)</small></label>
+                <input type="text" id="nokkel-input" placeholder="base64-nøkkel (valgfritt)" style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">
+            </div>
             <div class="knapp-rad">
                 <button class="knapp primær" onclick="lastNed('excel')" id="btn-excel">📊 Excel</button>
                 <button class="knapp" onclick="lastNed('csv')" id="btn-csv">📄 CSV (langform)</button>
@@ -354,10 +358,13 @@
             visStatus('Genererer uttrekk…', 'info');
             try {
                 const filtere = samleFiltrePayload();
+                const nokkelInput = document.getElementById('nokkel-input');
+                const nokkel = nokkelInput ? nokkelInput.value.trim() : '';
                 const res = await api.post('/api/datauttrekk', {
                     skjematypeId: valgtSkjematypeId,
                     type,
-                    filtere
+                    filtere,
+                    Nokkel: nokkel || undefined
                 });
                 triggerNedlasting(res.filnavn, res.innhold, res.contentType);
                 visStatus(`✓ ${res.filnavn} lastet ned`, 'suksess');

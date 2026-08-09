@@ -17,6 +17,8 @@ const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const { validerPbToken } = require('../lib/pb-token-storage');
 const { trekkUtSvar } = require('../lib/datauttrekk');
+const kryptering = require('../lib/kryptering');
+const nokkelStorage = require('../lib/nokkel-storage');
 
 app.http('powerBi', {
     methods: ['GET'],
@@ -43,7 +45,22 @@ app.http('powerBi', {
             const definisjon = st.JSON || {};
 
             const skjemaer = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId, { fulltFormat: true });
-            const dataRader = skjemaer.map(s => trekkUtSvar(s, definisjon));
+
+            // Auto-dekryptering: hent nøkkel én gang, dekrypter alle krypterte skjemaer
+            let nokkel = null;
+            if (skjemaer.some(s => s?.Kryptert)) {
+                nokkel = await nokkelStorage.hentNokkel(skjematypeId);
+                if (!nokkel) context.log(`power-bi: krypterte skjemaer men nøkkel mangler — verdier vises som [Kryptert]`);
+            }
+            const dekrypterte = nokkel
+                ? skjemaer.map(s => {
+                    if (!s?.Kryptert) return s;
+                    try { return kryptering.dekrypterSkjema(s, nokkel); }
+                    catch (_) { return s; }
+                })
+                : skjemaer;
+
+            const dataRader = dekrypterte.map(s => trekkUtSvar(s, definisjon));
 
             context.log(`power-bi: ${upn} hentet ${dataRader.length} skjemaer for type ${skjematypeId}`);
             return { jsonBody: dataRader };
