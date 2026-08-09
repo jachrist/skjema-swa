@@ -26,6 +26,23 @@ function blobNavn(skjematypeId, skjemaId, filnavn) {
     return `${String(skjematypeId)}/${String(skjemaId)}/${saneretFilnavn(filnavn)}`;
 }
 
+/**
+ * Bygg Content-Disposition som er gyldig for HTTP-headers.
+ * Kombinerer ASCII-safe filename (fallback for gamle klienter) og
+ * RFC 5987 filename* (Unicode-støtte for moderne klienter).
+ */
+function contentDispositionHeader(filnavn) {
+    const trygg = saneretFilnavn(filnavn);
+    // ASCII-fallback: erstatt æøåÆØÅ og alt annet non-ASCII
+    const ascii = trygg
+        .replace(/[æÆ]/g, 'ae').replace(/[øØ]/g, 'oe').replace(/[åÅ]/g, 'aa')
+        // eslint-disable-next-line no-control-regex
+        .replace(/[^\x20-\x7E]/g, '_')
+        .replace(/"/g, '_');
+    const encoded = encodeURIComponent(trygg);
+    return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
+}
+
 async function opplastVedlegg({ skjematypeId, skjemaId, filnavn, contentType, buffer, opplasterUpn }) {
     const container = containerKlient(CONTAINER);
     await container.createIfNotExists();
@@ -35,12 +52,15 @@ async function opplastVedlegg({ skjematypeId, skjemaId, filnavn, contentType, bu
     await blob.upload(buffer, buffer.length, {
         blobHTTPHeaders: {
             blobContentType: contentType || 'application/octet-stream',
-            blobContentDisposition: `attachment; filename="${saneretFilnavn(filnavn)}"`
+            blobContentDisposition: contentDispositionHeader(filnavn)
         },
         metadata: {
+            // Azure Blob metadata må være HTTP-token-safe: ASCII, ingen kolon,
+            // ingen mellomrom. encodeURIComponent gir kun ASCII + %XX-escape.
+            // upload_tid: bruker ISO uten kolon (kolon er ugyldig i header-verdi).
             originalfilnavn: encodeURIComponent(filnavn),
             opplaster: encodeURIComponent(opplasterUpn || ''),
-            upload_tid: new Date().toISOString()
+            upload_tid: new Date().toISOString().replace(/:/g, '-')
         }
     });
     return { filnavn: saneretFilnavn(filnavn), storrelse: buffer.length };
