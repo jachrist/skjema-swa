@@ -1,7 +1,5 @@
-// Manuelt vedlikeholdt for pilot — hold i sync med config/env.production.json
-// (kun oppføringer med "public": true).
-// TODO: automatiser via app_build_command når Oryx-signalet for Node er på plass.
+// GENERERT av scripts/build-config.js — ikke rediger manuelt.
 export const CONFIG = {
-    MILJO: 'production',
-    APP_TITTEL: 'FHS Skjema'
+    "MILJO": "production",
+    "APP_TITTEL": "FHS Skjema"
 };

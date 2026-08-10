@@ -1,0 +1,52 @@
+name: Deploy prod
+
+# Manuell deploy til prod-tenanten. Kjøres kun etter godkjent test på pilot.
+# Krever GitHub Environment "prod" med required reviewer for ekstra sikkerhet.
+#
+# Forutsetning:
+#   1. Prod-tenant SWA er opprettet med env-vars satt i Configuration
+#   2. AZURE_STATIC_WEB_APPS_API_TOKEN_PROD er lagt til som repo secret
+#   3. config/env.prod.json er fylt ut med prod-verdier
+#
+# Trigges fra Actions-fanen i GitHub: velg denne workflowen → Run workflow.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bekreft:
+        description: "Skriv 'DEPLOY-PROD' for å bekrefte deploy til produksjon"
+        required: true
+        type: string
+
+jobs:
+  valider:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sjekk bekreftelse
+        run: |
+          if [ "${{ inputs.bekreft }}" != "DEPLOY-PROD" ]; then
+            echo "::error::Bekreftelse må være 'DEPLOY-PROD'. Fikk: '${{ inputs.bekreft }}'"
+            exit 1
+          fi
+
+  build_and_deploy_job:
+    needs: valider
+    runs-on: ubuntu-latest
+    name: Build and Deploy to Prod
+    environment: prod
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          lfs: false
+      - name: Build And Deploy
+        id: builddeploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "./frontend"
+          api_location: "api"
+          output_location: ""
+          app_build_command: "node ../scripts/build-config.js prod"

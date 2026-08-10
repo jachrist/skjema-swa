@@ -10,12 +10,20 @@ const fs = require('fs');
 const path = require('path');
 
 const miljo = process.argv[2];
-if (!['development', 'production', 'lokal'].includes(miljo)) {
-    console.error('Bruk: node scripts/build-config.js <development|production|lokal>');
+if (!['development', 'production', 'pilot', 'prod', 'lokal'].includes(miljo)) {
+    console.error('Bruk: node scripts/build-config.js <pilot|prod|development|lokal>');
+    console.error('(production er alias for pilot — beholdt for bakoverkompatibilitet)');
     process.exit(1);
 }
 
-const envFil = path.join(__dirname, '..', 'config', `env.${miljo}.json`);
+// Bakoverkompatibilitet: production → pilot hvis env.pilot.json finnes
+let effektivtMiljo = miljo;
+if (miljo === 'production' && fs.existsSync(path.join(__dirname, '..', 'config', 'env.pilot.json'))) {
+    effektivtMiljo = 'pilot';
+    console.log('(alias production → pilot)');
+}
+
+const envFil = path.join(__dirname, '..', 'config', `env.${effektivtMiljo}.json`);
 if (!fs.existsSync(envFil)) {
     console.error(`Fant ikke ${envFil}`);
     process.exit(1);

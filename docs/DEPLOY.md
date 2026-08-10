@@ -108,3 +108,70 @@ Hvis den feiler med "STORAGE_ACCOUNT_NAME mangler" → env-var er ikke satt i SW
 
 - Under SWA → Role management: tildel `admin`-rolle til admin-brukere
 - Andre brukere er automatisk `authenticated` etter innlogging
+
+## Dual-tenant-oppsett (pilot + prod)
+
+Under utviklings- og testperioden kjører **pilot-tenanten** som
+test/utviklingsmiljø. Prod-tenanten opprettes separat og deployes
+manuelt når bruker- og aksepansetest er godkjent på pilot.
+
+### Workflows
+
+- **`.github/workflows/deploy-pilot.yml`** — deployer automatisk til pilot
+  ved push til `main`. Bygger med `env.pilot.json`.
+- **`.github/workflows/deploy-prod.yml`** — trigges kun manuelt fra
+  Actions-fanen (`workflow_dispatch`). Krever at operatøren skriver
+  `DEPLOY-PROD` som bekreftelse. Bygger med `env.prod.json`.
+
+Samme koden deployes til begge tenanter. Kun `config/env.<miljø>.json`
+og GitHub secret for deployment-token skiller dem.
+
+### Sette opp prod-tenant
+
+1. **Repeter Azure-oppsett** (steg 1–5 over) med prod-navn:
+   - Ressursgruppe: `FHS-skjema-prod`
+   - Storage: `stfhsskjemaprod`
+   - Key Vault: `kv-fhsskjema-prod`
+   - Application Insights: `ai-fhsskjema-prod`
+   - SWA (Standard-plan): `swa-fhsskjema-prod`
+2. **Managed Identity + rolletildelinger** — samme som pilot.
+3. **Entra app-registrering** for prod (kan være egen, eller gjenbruke
+   pilot-appen hvis både pilot og prod aksepteres som redirect URIs).
+4. **Sett env-vars i prod-SWA Configuration** — samme sett som pilot,
+   men med prod-verdier:
+   - `STORAGE_CONNECTION_STRING`
+   - `AAD_CLIENT_ID` / `AAD_CLIENT_SECRET`
+   - `ADMIN_UPNS`
+   - `SWA_URL` (viktig for varsling-lenker!)
+   - `FS_*`, `VARSLING_FLOW_URL`, `OTP_FLOW_URL`, `SP_LISTE_FLOW_URL`
+   - `OTP_HMAC_KEY`, `FLOW_CALLBACK_KEY`, `SCHEDULER_KEY`, `HASH_SALT`
+5. **Kopier deployment-token** fra prod-SWA Overview → Manage
+   deployment token → legg som GitHub repo secret
+   `AZURE_STATIC_WEB_APPS_API_TOKEN_PROD`.
+6. **Fyll ut `config/env.prod.json`** med prod-verdier (STORAGE_ACCOUNT_NAME,
+   KEYVAULT_NAME, ADMIN_UPNS).
+7. **Opprett GitHub Environment "prod"** (repo Settings → Environments)
+   med required reviewer for ekstra godkjenning før deploy kjører.
+8. **Trigger prod-deploy** fra Actions-fanen → "Deploy prod" → Run workflow
+   → skriv `DEPLOY-PROD` som bekreftelse.
+
+### Cutover fra legacy
+
+Når prod-tenanten er oppe og bruker-/aksepansetestet:
+
+1. Kjør migreringsscript (`scripts/migrer/`) fra legacy-storage til
+   prod-storage (Skjemadefinisjoner, Skjemaer, Kryptonokler, vedlegg-blobs).
+2. Verifiser at PA-flyter (varsling, OTP, SP-liste) peker riktig for prod.
+3. Kommuniser ny URL til brukere.
+4. Behold legacy-appen i lese-modus en periode som fallback.
+5. Etter stabiliseringsperiode: dekommisjoner legacy.
+
+### Miljø-alias
+
+`build-config.js` godtar disse miljø-navnene:
+
+- `pilot` — leser `env.pilot.json` (samme som gammel `production`)
+- `prod` — leser `env.prod.json` (ny)
+- `production` — bakoverkompatibelt alias for `pilot`
+- `development` / `lokal` — for lokal utvikling
+
