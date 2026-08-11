@@ -600,7 +600,7 @@
                     for (const seksjon of (skjematype.Seksjoner || [])) {
                         for (const felt of (seksjon.Felter || [])) {
                             if (felt.Type !== 'Opplasting') continue;
-                            const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
+                            const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .felt[data-felt-nummer="${felt.Nummer}"]`);
                             if (feltEl) await preSubmitOpplasting(feltEl, skjematypeId, skjemaId);
                         }
                     }
@@ -659,7 +659,7 @@
                     for (const seksjon of (skjematype.Seksjoner || [])) {
                         for (const felt of (seksjon.Felter || [])) {
                             if (felt.Type !== 'Opplasting') continue;
-                            const feltEl = document.querySelector(`.felt[data-felt-nummer="${felt.Nummer}"]`);
+                            const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .felt[data-felt-nummer="${felt.Nummer}"]`);
                             if (feltEl) {
                                 await preSubmitOpplasting(feltEl, skjematypeId, skjemaId);
                             }
