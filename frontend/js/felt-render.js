@@ -478,7 +478,14 @@ function _lagOpplasting(felt, feltId, initialSvar) {
     fileInput.accept = tillatte.ext.join(',');
     fileInput.id = feltId;
     fileInput.name = feltId;
-    fileInput.style.cssText = 'font-size: 13px;';
+    fileInput.style.cssText = 'position: absolute; left: -9999px; opacity: 0;';
+
+    const velgKnapp = document.createElement('button');
+    velgKnapp.type = 'button';
+    velgKnapp.className = 'knapp sekundær';
+    velgKnapp.style.cssText = 'padding: 6px 14px; font-size: 13px;';
+    velgKnapp.textContent = maxValg > 1 ? 'Velg filer…' : 'Velg fil…';
+    velgKnapp.addEventListener('click', () => fileInput.click());
 
     const beskrivelse = document.createElement('small');
     beskrivelse.style.cssText = 'color: var(--text-secondary);';
@@ -508,6 +515,7 @@ function _lagOpplasting(felt, feltId, initialSvar) {
         _renderOpplastingListe(wrapper);
     });
 
+    knapperad.appendChild(velgKnapp);
     knapperad.appendChild(fileInput);
     knapperad.appendChild(beskrivelse);
     wrapper.appendChild(knapperad);
@@ -784,10 +792,13 @@ export function hentSvarFraDom(feltId, type) {
         return pnr ? [pnr, pst] : [];
     }
     if (type === 'Opplasting') {
-        // Etter preSubmitOpplasting inneholder wrapper._eksisterende endelig filnavn-liste
+        // Union: allerede opplastede (minus slettede) + nyvalgte (ikke opplastet ennå).
+        // Nødvendig for validering FØR preSubmitOpplasting kjører (obligatorisk-sjekk).
         const wrapper = document.querySelector(`.opplasting-wrapper[data-felt-id="${feltId}"]`);
         if (!wrapper) return [];
-        return [...(wrapper._eksisterende || [])];
+        const eksist = (wrapper._eksisterende || []).filter(n => !(wrapper._slettede || new Set()).has(n));
+        const nye = wrapper._nyeFiler ? [...wrapper._nyeFiler.keys()] : [];
+        return [...eksist, ...nye];
     }
     const el = document.getElementById(feltId);
     if (!el) return [];

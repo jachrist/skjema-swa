@@ -127,6 +127,22 @@
         <div class="to-spalter">
             <div class="venstre">
                 <input type="text" id="sok" placeholder="🔍 Søk rolle eller omfang…" oninput="filtrer()">
+                <div id="ny-rolle-knapperad" style="display: none; margin-bottom: 8px;">
+                    <button class="knapp sekundær" style="font-size: 13px; padding: 6px 12px;" onclick="visNyRolleSkjema()">+ Ny rolle</button>
+                </div>
+                <div id="ny-rolle-skjema" style="display: none; margin-bottom: 10px; padding: 10px; border: 1px solid var(--border); border-radius: 6px;">
+                    <div style="font-weight: 600; margin-bottom: 6px;">Ny rolle</div>
+                    <div class="rad"><label>Rolle:</label><input type="text" id="nr-rolle" placeholder="Skjemaskaper"></div>
+                    <div class="rad"><label>Omfang:</label><input type="text" id="nr-omfang" placeholder="(valgfritt)"></div>
+                    <div style="border-top: 1px solid var(--border); margin: 8px 0; padding-top: 8px; font-size: 12px; color: var(--text-secondary);">Første innehaver:</div>
+                    <div class="rad"><label>UPN:</label><input type="email" id="nr-upn" placeholder="navn@domene.no"></div>
+                    <div class="rad"><label>Fornavn:</label><input type="text" id="nr-fn" placeholder="(valgfritt)"></div>
+                    <div class="rad"><label>Etternavn:</label><input type="text" id="nr-en" placeholder="(valgfritt)"></div>
+                    <div style="margin-top: 8px; display: flex; gap: 6px;">
+                        <button class="knapp primær" style="font-size: 13px; padding: 6px 12px;" onclick="opprettRolle()">Opprett</button>
+                        <button class="knapp" style="font-size: 13px; padding: 6px 12px;" onclick="skjulNyRolleSkjema()">Avbryt</button>
+                    </div>
+                </div>
                 <div class="rolle-liste" id="grupper">
                     <div class="tom-melding">Laster…</div>
                 </div>
@@ -159,6 +175,8 @@
                 erAdmin = !!w.erAdmin;
                 if (!erAdmin) {
                     document.getElementById('undertittel').textContent = 'Kun lese-tilgang (du er ikke admin).';
+                } else {
+                    document.getElementById('ny-rolle-knapperad').style.display = 'block';
                 }
             } catch (_) { /* ikke kritisk */ }
             await lastGrupper();
@@ -244,6 +262,44 @@
 
             hoyre.innerHTML = tittel + under + tabell + nyBoks;
         }
+
+        window.visNyRolleSkjema = () => {
+            document.getElementById('ny-rolle-skjema').style.display = 'block';
+            document.getElementById('nr-rolle').focus();
+        };
+        window.skjulNyRolleSkjema = () => {
+            document.getElementById('ny-rolle-skjema').style.display = 'none';
+            for (const id of ['nr-rolle', 'nr-omfang', 'nr-upn', 'nr-fn', 'nr-en']) {
+                document.getElementById(id).value = '';
+            }
+        };
+        window.opprettRolle = async () => {
+            const rolle = document.getElementById('nr-rolle').value.trim();
+            const omfang = document.getElementById('nr-omfang').value.trim();
+            const upn = document.getElementById('nr-upn').value.trim();
+            const fn = document.getElementById('nr-fn').value.trim();
+            const en = document.getElementById('nr-en').value.trim();
+            if (!rolle) { alert('Rolle-navn er påkrevd'); return; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upn)) {
+                alert('Første innehaver må ha gyldig UPN (e-postadresse)');
+                return;
+            }
+            try {
+                // Backend oppretter (Rolle, Omfang)-gruppen automatisk når første innehaver legges til
+                await api.post('/api/roller/leggtil', { Rolle: rolle, Omfang: omfang, UPN: upn, FN: fn, EN: en });
+                skjulNyRolleSkjema();
+                await lastGrupper();
+                // Velg den nye rollen automatisk
+                const idx = grupper.findIndex(g => g.Rolle === rolle && (g.Omfang || '') === omfang);
+                if (idx >= 0) {
+                    valgt = grupper[idx];
+                    filtrer();
+                    velgGruppe(filtrerte.findIndex(g => g.Rolle === rolle && (g.Omfang || '') === omfang));
+                }
+            } catch (e) {
+                alert('Kunne ikke opprette rolle: ' + e.message);
+            }
+        };
 
         window.leggTil = async () => {
             const upn = document.getElementById('ny-upn').value.trim();
