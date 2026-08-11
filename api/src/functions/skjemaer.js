@@ -48,6 +48,26 @@ function eksternInnsenderUpn(mottaker, kanal) {
     return kanal === 'sms' ? `mobil:${mottaker}` : String(mottaker).toLowerCase();
 }
 
+/**
+ * Dekrypter skjema hvis det er kryptert (Kryptert=true/string). Best-effort:
+ * hvis nøkkel mangler eller dekryptering feiler, returneres skjemaet uendret
+ * (frontend viser da rå kryptert data, men det er tryggere enn å blokkere).
+ */
+async function dekrypterHvisKryptert(skjema, skjematypeId, context) {
+    if (!skjema?.Kryptert) return skjema;
+    try {
+        const nokkel = await nokkelStorage.hentNokkel(skjematypeId);
+        if (!nokkel) {
+            context?.log(`dekrypterHvisKryptert: mangler nøkkel for skjematype ${skjematypeId}`);
+            return skjema;
+        }
+        return kryptering.dekrypterSkjema(skjema, nokkel);
+    } catch (e) {
+        context?.log(`dekrypterHvisKryptert: feilet — ${e.message}`);
+        return skjema;
+    }
+}
+
 async function harPublikumTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
     const st = await skjemaStorage.hentSkjematype(skjematypeId);
@@ -743,17 +763,30 @@ app.http('listSkjemaer', {
                 return ut;
             }
 
+            // Dekrypter kun hvis lista trenger FilterSvar (unngår kostnad når ingen filter-felt)
+            // og bare for skjemaer som faktisk er krypterte.
+            const trengerDekrypt = filterFelt.length > 0 && alle.some(s => s?.Kryptert);
+            const nokkelForType = trengerDekrypt ? await nokkelStorage.hentNokkel(skjematypeId) : null;
+            function dekrypterIList(s) {
+                if (!s?.Kryptert || !nokkelForType) return s;
+                try { return kryptering.dekrypterSkjema(s, nokkelForType); }
+                catch (_) { return s; }
+            }
+
             // Kompakt liste — feltene registeret trenger for kolonner + filter-svar
-            const liste = alle.map(s => ({
-                Skjema_id: s.Skjema_id,
-                Skjematype_id: s.Skjematype_id,
-                Skjema_navn: s.Skjema_navn || '',
-                Innsender_Epost: s.Innsender_Epost || s.Innsender_epost || '',
-                Skjema_status: s.Skjema_status || 0,
-                Opprettet: s.Opprettet || s.OpprettetDato || '',
-                Sist_endret: s.Sist_endret || s.Oppdatert || '',
-                FilterSvar: filterFelt.length > 0 ? hentFilterSvar(s) : undefined
-            }));
+            const liste = alle.map(sRå => {
+                const s = filterFelt.length > 0 ? dekrypterIList(sRå) : sRå;
+                return {
+                    Skjema_id: s.Skjema_id,
+                    Skjematype_id: s.Skjematype_id,
+                    Skjema_navn: s.Skjema_navn || '',
+                    Innsender_Epost: s.Innsender_Epost || s.Innsender_epost || '',
+                    Skjema_status: s.Skjema_status || 0,
+                    Opprettet: s.Opprettet || s.OpprettetDato || '',
+                    Sist_endret: s.Sist_endret || s.Oppdatert || '',
+                    FilterSvar: filterFelt.length > 0 ? hentFilterSvar(s) : undefined
+                };
+            });
 
             // Nyeste først
             liste.sort((a, b) => (b.Sist_endret || '').localeCompare(a.Sist_endret || ''));
@@ -814,7 +847,7 @@ app.http('hentSkjema', {
     handler: async (request, context) => {
         try {
             const { skjematypeId, skjemaId } = request.params;
-            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            let skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
 
             const upn = hentInnloggetUpn(request);
@@ -830,7 +863,8 @@ app.http('hentSkjema', {
                 if (eksistInns !== innsenderId.toLowerCase()) {
                     return { status: 403, jsonBody: { status: 'avvist', melding: 'Ikke ditt skjema' } };
                 }
-                // Ekstern får skjemaet uten behandler-info-berikelse
+                // Ekstern får skjemaet dekryptert (uten behandler-info-berikelse)
+                skjema = await dekrypterHvisKryptert(skjema, skjematypeId, context);
                 return { jsonBody: skjema };
             }
 
@@ -854,6 +888,9 @@ app.http('hentSkjema', {
                 erEier = await harEierTilgang(skjematypeId, upn);
                 if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
             }
+
+            // Dekrypter for autorisert bruker (admin/eier/innsender/behandler)
+            skjema = await dekrypterHvisKryptert(skjema, skjematypeId, context);
 
             // Filtrer interne dialog-innlegg for innsender (uten annen rolle)
             if (Array.isArray(skjema.Dialog) && skjema.Dialog.length > 0) {
