@@ -134,9 +134,12 @@ og GitHub secret for deployment-token skiller dem.
    - Key Vault: `kv-fhsskjema-prod`
    - Application Insights: `ai-fhsskjema-prod`
    - SWA (Standard-plan): `swa-fhsskjema-prod`
-2. **Managed Identity + rolletildelinger** — samme som pilot.
-3. **Entra app-registrering** for prod (kan være egen, eller gjenbruke
-   pilot-appen hvis både pilot og prod aksepteres som redirect URIs).
+2. **Managed Identity + rolletildelinger** — samme som pilot,
+   pluss **`Key Vault Certificate User`** og **`Key Vault Secrets User`**
+   for sertifikat-basert AAD-auth (se «Sertifikat-oppsett for prod» under).
+3. **Entra app-registrering** for prod — kan levere sertifikat-basert
+   client credential (ingen ClientSecret nødvendig). Se
+   «Sertifikat-oppsett for prod» under.
 4. **Sett env-vars i prod-SWA Configuration** — samme sett som pilot,
    men med prod-verdier:
    - `STORAGE_CONNECTION_STRING`
@@ -174,4 +177,69 @@ Når prod-tenanten er oppe og bruker-/aksepansetestet:
 - `prod` — leser `env.prod.json` (ny)
 - `production` — bakoverkompatibelt alias for `pilot`
 - `development` / `lokal` — for lokal utvikling
+
+Ved hvert bygg kopieres også `staticwebapp.config.<miljø>.json` →
+`staticwebapp.config.json` slik at riktig auth-konfig følger med i
+deploy. Pilot bruker ClientSecret, prod bruker sertifikat-referanse.
+
+## Sertifikat-oppsett for prod
+
+Prod-tenanten bruker **sertifikat-basert AAD-auth** i stedet for
+ClientSecret. Dette matcher sikkerhetsprofilen til app-registreringen
+`fhs-adminskjema-api` og krever ingen roterende passord.
+
+Referanse:
+[Custom certificate for Azure AD in SWA](https://learn.microsoft.com/en-us/azure/static-web-apps/authentication-custom?tabs=aad#custom-certificate)
+
+### Forutsetning
+
+- App-registrering i prod-tenanten med sertifikat-basert client credential
+  (thumbprint registrert som Certificate på app-en i Entra ID)
+- Sertifikat-filen (PFX med private key) tilgjengelig, eller admin
+  laster opp direkte til vår prod-KV
+
+### Steg-for-steg
+
+1. **Last opp sertifikatet til prod-KV som Certificate** (ikke Secret).
+   Bruker portal-UI eller CLI:
+   ```
+   az keyvault certificate import \
+     --vault-name kv-fhsskjema-prod \
+     --name fhs-adminskjema-cert \
+     --file <sti>/certificate.pfx \
+     --password <pfx-passord>
+   ```
+2. **Aktiver system-assigned Managed Identity på SWA** (kan gjøres via
+   portal → Identity → System assigned → On).
+3. **Tildel MI følgende KV-roller:**
+   - `Key Vault Certificate User` — for å lese sertifikatet
+   - `Key Vault Secrets User` — for å lese secret-representasjonen KV
+     lager automatisk for hvert sertifikat
+4. **Sett env-var `AAD_CLIENT_ID`** i SWA Configuration = Client ID fra
+   app-registreringen.
+5. **Fyll ut `staticwebapp.config.prod.json`** i repo — bytt ut
+   placeholderene:
+   - `<PROD_TENANT_ID>` → prod-tenant sin ID (fra app-registrering-info)
+   - `<PROD_KV_NAME>` → f.eks. `kv-fhsskjema-prod`
+   - `<CERT_NAME>` → f.eks. `fhs-adminskjema-cert`
+6. **Commit og push** — pilot-deploy trigges automatisk (ingen effekt
+   siden pilot-config er separat).
+7. **Trigger prod-deploy** manuelt fra Actions-fanen.
+
+### Verifikasjon
+
+- Åpne prod-SWA-URL i inkognito
+- Skal redirecte til Entra-login på prod-tenant
+- Etter innlogging: `.auth/me` skal returnere `identityProvider: "aad"`
+  med `userDetails` = UPN
+
+### Feilsøking
+
+Hvis auth feiler:
+- Sjekk at MI har begge KV-roller (Certificate User + Secrets User)
+- Sjekk at sertifikatet i KV har private key (må importeres som PFX,
+  ikke bare public-cert)
+- Sjekk at thumbprint i app-registreringen matcher sertifikatet i KV
+- Sjekk at Application ID URI matcher redirect URI konfigurert på
+  app-registreringen: `https://<swa-url>/.auth/login/aad/callback`
 

@@ -44,3 +44,14 @@ const utFil = path.join(__dirname, '..', 'frontend', 'js', 'config.js');
 fs.writeFileSync(utFil, ut);
 console.log(`Skrev ${utFil} for miljø=${miljo}`);
 console.log(`Publiserte ${Object.keys(publicVerdier).length} public-verdier: ${Object.keys(publicVerdier).join(', ')}`);
+
+// Kopier riktig staticwebapp.config.<miljø>.json → staticwebapp.config.json
+// Pilot og prod har ulik auth-konfig (ClientSecret vs sertifikat via KV).
+const swaConfigKilde = path.join(__dirname, '..', `staticwebapp.config.${effektivtMiljo}.json`);
+if (fs.existsSync(swaConfigKilde)) {
+    const swaConfigMal = path.join(__dirname, '..', 'staticwebapp.config.json');
+    fs.copyFileSync(swaConfigKilde, swaConfigMal);
+    console.log(`Kopierte staticwebapp.config.${effektivtMiljo}.json → staticwebapp.config.json`);
+} else if (effektivtMiljo !== 'lokal' && effektivtMiljo !== 'development') {
+    console.warn(`ADVARSEL: ${swaConfigKilde} finnes ikke — beholder eksisterende staticwebapp.config.json`);
+}

@@ -1,0 +1,50 @@
+{
+    "_kommentar": "Prod-tenant. Bruker sertifikat-basert AAD-auth via Key Vault-referanse. Fyll ut PROD_TENANT_ID, PROD_KV_NAME og CERT_NAME før første deploy.",
+    "routes": [
+        { "route": "/api/ping",                       "allowedRoles": ["anonymous"] },
+        { "route": "/api/refresh-fs",                 "allowedRoles": ["anonymous"] },
+        { "route": "/api/power-bi",                   "allowedRoles": ["anonymous"] },
+        { "route": "/api/otp/*",                      "allowedRoles": ["anonymous"] },
+        { "route": "/api/skjematyper/*/publikum",     "allowedRoles": ["anonymous"] },
+        { "route": "/api/skjemaer",                   "allowedRoles": ["anonymous"] },
+        { "route": "/api/skjemaer/*",                 "allowedRoles": ["anonymous"] },
+        { "route": "/api/ny-skjema-id/*",             "allowedRoles": ["anonymous"] },
+        { "route": "/api/vedlegg/*",                  "allowedRoles": ["anonymous"] },
+        { "route": "/api/*",                          "allowedRoles": ["authenticated"] },
+        { "route": "/admin.html",                     "allowedRoles": ["admin"] },
+        { "route": "/migrer.html",                    "allowedRoles": ["admin"] },
+        { "route": "/nokkeladmin.html",               "allowedRoles": ["authenticated"] },
+        { "route": "/rolleadmin.html",                "allowedRoles": ["admin"] },
+        { "route": "/editor.html",                    "allowedRoles": ["authenticated"] },
+        { "route": "/login",                          "redirect": "/.auth/login/aad?post_login_redirect_uri=/" },
+        { "route": "/logout",                         "redirect": "/.auth/logout" }
+    ],
+    "navigationFallback": {
+        "rewrite": "/index.html",
+        "exclude": ["/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"]
+    },
+    "auth": {
+        "identityProviders": {
+            "azureActiveDirectory": {
+                "registration": {
+                    "openIdIssuer": "https://login.microsoftonline.com/<PROD_TENANT_ID>/v2.0",
+                    "clientIdSettingName": "AAD_CLIENT_ID",
+                    "clientSecretCertificateKeyVaultReference": "@Microsoft.KeyVault(SecretUri=https://<PROD_KV_NAME>.vault.azure.net/certificates/<CERT_NAME>/)",
+                    "clientSecretCertificateThumbprint": "*"
+                }
+            }
+        }
+    },
+    "responseOverrides": {
+        "401": {
+            "statusCode": 302,
+            "redirect": "/.auth/login/aad?post_login_redirect_uri=.referrer"
+        }
+    },
+    "globalHeaders": {
+        "Cache-Control": "no-store, must-revalidate",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Referrer-Policy": "strict-origin-when-cross-origin"
+    }
+}
