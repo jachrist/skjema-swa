@@ -639,7 +639,7 @@
                                 <input type="checkbox" ${data.Anonymiseres ? 'checked' : ''} onchange="setAnonymiseres(this.checked)">
                                 Anonymiser innsender
                             </label>
-                            ${eksisterendeId ? `<a class="knapp mini sekundær" style="padding: 4px 10px; text-decoration: none;" href="/nokkeladmin.html?skjematype_id=${encodeURIComponent(eksisterendeId)}">Administrer nøkkel</a>` : ''}
+                            ${eksisterendeId ? `<a class="knapp mini sekundær" style="padding: 4px 10px; text-decoration: none;" href="/admin.html#nokler">Administrer nøkkel</a>` : ''}
                         </div>
                         <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
                             Anonymisering erstatter innsender-info med et pseudonym. Kryptering krever at det finnes en lagret nøkkel.

@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administrasjon</title>
+    <script>
+        (function () {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.85);
+            --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-input: white;
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --text-heading: #0a84ff;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --input-border: #d1d1d6;
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --success: #34c759;
+            --success-light: rgba(52, 199, 89, 0.15);
+            --warning: #ff9500;
+            --warning-light: rgba(255, 149, 0, 0.15);
+            --danger: #ff3b30;
+            --danger-light: rgba(255, 59, 48, 0.12);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 18px;
+            --radius-xl: 24px;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.85);
+            --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-input: #1c2028;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --text-heading: #64b5f6;
+            --border-color: rgba(255, 255, 255, 0.1);
+            --input-border: #3a3a5a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-page); color: var(--text-primary);
+            margin: 0; padding: 20px; -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 1400px; margin: 0 auto;
+            background: var(--bg-container); backdrop-filter: blur(20px);
+            padding: 24px; border-radius: var(--radius-xl); box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+        .tilbake { color: var(--accent); text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 8px; }
+        .topplinje { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 4px; }
+        h1 { font-size: 1.5em; font-weight: 700; margin: 0; }
+        .brukerinfo { font-size: 13px; color: var(--text-secondary); }
+        .undertittel { color: var(--text-secondary); margin: 4px 0 20px; font-size: 13px; }
+
+        .layout {
+            display: grid; grid-template-columns: 220px 1fr; gap: 20px;
+            min-height: 500px;
+        }
+        .sidebar {
+            background: var(--bg-section); border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg); padding: 10px;
+        }
+        .sidebar .fane {
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 12px; font-size: 14px; font-weight: 500;
+            border-radius: var(--radius-sm); cursor: pointer;
+            color: var(--text-primary); text-decoration: none;
+            border: 1px solid transparent;
+        }
+        .sidebar .fane:hover { background: var(--accent-light); }
+        .sidebar .fane.aktiv { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
+        .sidebar .fane .badge {
+            font-size: 10px; color: var(--warning);
+            border: 1px solid var(--warning); border-radius: 4px;
+            padding: 1px 5px; margin-left: auto;
+        }
+        .sidebar .skille { height: 1px; background: var(--border-color); margin: 8px 4px; }
+
+        .innhold {
+            background: var(--bg-section); border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg); padding: 20px; min-height: 500px;
+        }
+
+        .panel { padding: 16px 18px; margin-bottom: 14px; background: var(--bg-container); border: 1px solid var(--border-color); border-radius: var(--radius-md); }
+        .panel h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); margin: 0 0 12px 0; }
+
+        input[type="text"], input[type="email"], select {
+            width: 100%; padding: 8px 12px; font-size: 14px;
+            border: 1px solid var(--input-border); border-radius: var(--radius-sm);
+            background: var(--bg-input); color: var(--text-primary); font-family: inherit;
+        }
+        .rad { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+        .rad label { font-size: 12px; color: var(--text-secondary); min-width: 90px; }
+
+        .knapp {
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 6px 12px; font-size: 13px; font-weight: 600;
+            border: 1px solid var(--accent); background: transparent; color: var(--accent);
+            border-radius: 6px; cursor: pointer; font-family: inherit; text-decoration: none;
+        }
+        .knapp:hover { background: var(--accent-light); }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.primær:hover { opacity: 0.9; background: var(--accent); }
+        .knapp.danger { border-color: var(--danger); color: var(--danger); }
+        .knapp.danger:hover { background: var(--danger-light); }
+        .knapp.mini { padding: 3px 8px; font-size: 12px; }
+        .knapp:disabled { opacity: 0.5; cursor: not-allowed; }
+        .knapp-rad { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        .banner {
+            padding: 10px 14px; margin-bottom: 12px; border-radius: 8px;
+            font-size: 13px; line-height: 1.5;
+        }
+        .banner.info { background: var(--accent-light); color: var(--accent); }
+        .banner.suksess { background: var(--success-light); color: var(--success); }
+        .banner.advarsel { background: var(--warning-light); color: var(--warning); }
+        .banner.feil { background: var(--danger-light); color: var(--danger); }
+
+        /* Roller-fane */
+        .to-spalter { display: grid; grid-template-columns: 340px 1fr; gap: 16px; }
+        .kolonne { background: var(--bg-container); border: 1px solid var(--border-color); border-radius: var(--radius-md); padding: 14px; }
+        .rolle-liste { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+        .rolle-element {
+            padding: 8px 10px; background: var(--bg-section); border-radius: 6px;
+            border: 1px solid var(--border-color); cursor: pointer;
+        }
+        .rolle-element:hover { background: var(--accent-light); }
+        .rolle-element.aktiv { border-color: var(--accent); background: var(--accent-light); }
+        .rolle-element .navn { font-weight: 600; font-size: 13px; }
+        .rolle-element .omfang { font-size: 11px; color: var(--text-secondary); }
+        .rolle-element .antall { font-size: 10px; color: var(--text-secondary); margin-top: 2px; }
+        .innehaver-header, .innehaver-rad {
+            display: grid; grid-template-columns: 1fr 1fr 90px 70px; gap: 10px;
+            padding: 8px 10px; align-items: center; font-size: 13px;
+        }
+        .innehaver-header { font-weight: 600; color: var(--text-secondary); border-bottom: 1px solid var(--border-color); }
+        .innehaver-rad { border-bottom: 1px solid var(--border-color); }
+        .innehaver-rad:last-child { border-bottom: 0; }
+        .tom-melding, .laster, .feilmelding { text-align: center; padding: 30px; color: var(--text-secondary); font-size: 13px; }
+        .feilmelding { color: var(--danger); }
+
+        /* Nøkler-fane */
+        .nokkel-vis {
+            font-family: 'SF Mono', Menlo, monospace; font-size: 12px;
+            padding: 10px 12px; background: var(--bg-input);
+            border: 1px solid var(--input-border); border-radius: 6px;
+            word-break: break-all;
+        }
+
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            .to-spalter { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/velgskjematype.html" class="tilbake">← Til skjemaoversikten</a>
+        <div class="topplinje">
+            <h1>Administrasjon</h1>
+            <div class="brukerinfo"><span id="upn">…</span></div>
+        </div>
+        <p class="undertittel">Sentralisert admin-panel. Krever admin-rolle.</p>
+
+        <div class="layout">
+            <nav class="sidebar" id="sidebar">
+                <a class="fane" data-fane="roller" href="#roller">👥 Roller</a>
+                <a class="fane" data-fane="nokler" href="#nokler">🔐 Nøkler</a>
+                <div class="skille"></div>
+                <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="masterdata" href="#masterdata">🗂 Masterdata <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="system" href="#system">⚙️ System <span class="badge">Snart</span></a>
+            </nav>
+            <div class="innhold" id="innhold">
+                <div class="laster">Laster…</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { api } from './js/api-client.js';
+        import { hentInnloggetBruker } from './js/auth.js';
+
+        let bruker = null;
+        let erAdmin = false;
+
+        async function init() {
+            bruker = await hentInnloggetBruker();
+            if (!bruker) {
+                window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.hash);
+                return;
+            }
+            document.getElementById('upn').textContent = bruker.userDetails;
+            try {
+                const w = await api.get('/api/whoami');
+                erAdmin = !!w.erAdmin;
+            } catch (_) { /* ikke kritisk */ }
+            if (!erAdmin) {
+                document.getElementById('innhold').innerHTML = '<div class="banner feil">Krever admin-rolle. Kontakt en administrator.</div>';
+                return;
+            }
+            window.addEventListener('hashchange', rutHash);
+            rutHash();
+        }
+
+        function rutHash() {
+            const h = (window.location.hash || '#roller').replace(/^#/, '');
+            markerFane(h);
+            switch (h) {
+                case 'roller':      rendrRoller(); break;
+                case 'nokler':      rendrNokler(); break;
+                case 'hendelser':   rendrPlaceholder('Hendelser', 'Audit-logg over hvem gjorde hva når. Kommer i egen commit — krever ny Hendelser-tabell + logging i mutasjons-endpoints.'); break;
+                case 'masterdata':  rendrPlaceholder('Masterdata', 'Faste_data og oppslagslister (Emner, Fakulteter, osv.). Redigerbar tabell.'); break;
+                case 'postnumre-fs':rendrPlaceholder('Postnumre / FS', 'Seed postnumre-tabell. Trigg refresh av FS-data (emner, personer).'); break;
+                case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
+                case 'logoer':      rendrPlaceholder('Logoer', 'Opplasting og administrasjon av logoer brukt i skjema-headere. Blob-basert.'); break;
+                case 'system':      rendrPlaceholder('System', 'Miljø-info, /api/whoami-dump, varsling-diag, seed-eksempler. Kanskje også migrering-verktøy.'); break;
+                default: rendrRoller();
+            }
+        }
+
+        function markerFane(f) {
+            for (const el of document.querySelectorAll('.sidebar .fane')) {
+                el.classList.toggle('aktiv', el.dataset.fane === f);
+            }
+        }
+
+        function rendrPlaceholder(navn, beskr) {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>${escHtml(navn)}</h2>
+                    <div style="color: var(--text-secondary); font-size: 14px; line-height: 1.5;">${escHtml(beskr)}</div>
+                    <div style="margin-top: 12px; font-size: 12px; color: var(--text-secondary);">
+                        <em>Ikke implementert ennå.</em>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== ROLLER-FANE ====================
+        let rollerState = { grupper: [], filtrerte: [], valgt: null };
+
+        function rendrRoller() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="to-spalter">
+                    <div class="kolonne">
+                        <input type="text" id="roller-sok" placeholder="🔍 Søk rolle eller omfang…" oninput="rollerFiltrer()">
+                        <div style="margin-top: 8px;">
+                            <button class="knapp sekundær mini" onclick="rollerVisNyForm()">+ Ny rolle</button>
+                        </div>
+                        <div id="roller-ny-form" style="display: none; margin-top: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-section);">
+                            <div style="font-weight: 600; margin-bottom: 6px; font-size: 13px;">Ny rolle</div>
+                            <div class="rad"><label>Rolle:</label><input type="text" id="nr-rolle" placeholder="Skjemaskaper"></div>
+                            <div class="rad"><label>Omfang:</label><input type="text" id="nr-omfang" placeholder="(valgfritt)"></div>
+                            <div style="border-top: 1px solid var(--border-color); margin: 8px 0; padding-top: 8px; font-size: 12px; color: var(--text-secondary);">Første innehaver:</div>
+                            <div class="rad"><label>UPN:</label><input type="email" id="nr-upn" placeholder="navn@domene.no"></div>
+                            <div class="rad"><label>Fornavn:</label><input type="text" id="nr-fn"></div>
+                            <div class="rad"><label>Etternavn:</label><input type="text" id="nr-en"></div>
+                            <div class="knapp-rad" style="margin-top: 8px;">
+                                <button class="knapp primær mini" onclick="rollerOpprett()">Opprett</button>
+                                <button class="knapp mini" onclick="rollerSkjulNyForm()">Avbryt</button>
+                            </div>
+                        </div>
+                        <div class="rolle-liste" id="roller-grupper"><div class="laster">Laster…</div></div>
+                    </div>
+                    <div class="kolonne" id="roller-hoyre">
+                        <div class="tom-melding">Velg en rolle fra listen.</div>
+                    </div>
+                </div>
+            `;
+            rollerLast();
+        }
+
+        async function rollerLast() {
+            try {
+                rollerState.grupper = await api.get('/api/roller/grupper');
+                rollerFiltrer();
+            } catch (e) {
+                document.getElementById('roller-grupper').innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        }
+
+        window.rollerFiltrer = () => {
+            const q = (document.getElementById('roller-sok')?.value || '').trim().toLowerCase();
+            rollerState.filtrerte = q === ''
+                ? rollerState.grupper
+                : rollerState.grupper.filter(g => g.Rolle.toLowerCase().includes(q) || (g.Omfang || '').toLowerCase().includes(q));
+            rollerRenderGrupper();
+        };
+
+        function rollerRenderGrupper() {
+            const el = document.getElementById('roller-grupper');
+            if (rollerState.filtrerte.length === 0) {
+                el.innerHTML = '<div class="tom-melding">Ingen roller.</div>';
+                return;
+            }
+            el.innerHTML = rollerState.filtrerte.map((g, i) => `
+                <div class="rolle-element${rollerState.valgt && rollerState.valgt.Rolle === g.Rolle && rollerState.valgt.Omfang === g.Omfang ? ' aktiv' : ''}"
+                    onclick="rollerVelgGruppe(${i})">
+                    <div class="navn">${escHtml(g.Rolle)}</div>
+                    ${g.Omfang ? `<div class="omfang">${escHtml(g.Omfang)}</div>` : ''}
+                    <div class="antall">${g.Antall} innehaver${g.Antall === 1 ? '' : 'e'}</div>
+                </div>
+            `).join('');
+        }
+
+        window.rollerVelgGruppe = async (i) => {
+            rollerState.valgt = rollerState.filtrerte[i];
+            rollerRenderGrupper();
+            const hoyre = document.getElementById('roller-hoyre');
+            hoyre.innerHTML = '<div class="laster">Henter innehavere…</div>';
+            try {
+                const g = rollerState.valgt;
+                const rolleStreng = g.Omfang ? `${g.Rolle}(${g.Omfang})` : g.Rolle;
+                const innehavere = await api.get(`/api/roller/innehavere?rolle=${encodeURIComponent(rolleStreng)}`);
+                rollerRenderInnehavere(innehavere);
+            } catch (e) {
+                hoyre.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        function rollerRenderInnehavere(innehavere) {
+            const g = rollerState.valgt;
+            const hoyre = document.getElementById('roller-hoyre');
+            const tittel = `<h2 style="margin: 0 0 6px 0; font-size: 1.2em;">${escHtml(g.Rolle)}${g.Omfang ? ` <span style="color: var(--text-secondary); font-weight: 400;">(${escHtml(g.Omfang)})</span>` : ''}</h2>`;
+            const under = `<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 14px;">${innehavere.length} innehaver${innehavere.length === 1 ? '' : 'e'}</div>`;
+            const tabell = innehavere.length === 0
+                ? '<div class="tom-melding">Ingen innehavere ennå.</div>'
+                : `
+                    <div class="innehaver-header"><div>Navn</div><div>UPN</div><div>Kilde</div><div></div></div>
+                    ${innehavere.map(i => `
+                        <div class="innehaver-rad">
+                            <div>${escHtml(`${i.EN || ''}${i.FN ? ', ' + i.FN : ''}`.trim() || '-')}</div>
+                            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(i.UPN)}</div>
+                            <div style="color: var(--text-secondary); font-size: 11px;">${escHtml(i.Kilde || 'manuell')}</div>
+                            <div><button class="knapp mini danger" onclick="rollerFjern('${escAttr(i.UPN)}')">Fjern</button></div>
+                        </div>
+                    `).join('')}
+                `;
+            const nyBoks = `
+                <div class="panel" style="margin-top: 16px;">
+                    <h2>Legg til ny innehaver</h2>
+                    <div class="rad"><label>UPN:</label><input type="email" id="ny-upn" placeholder="navn@domene.no"></div>
+                    <div class="rad"><label>Fornavn:</label><input type="text" id="ny-fn"></div>
+                    <div class="rad"><label>Etternavn:</label><input type="text" id="ny-en"></div>
+                    <div style="margin-top: 8px;"><button class="knapp primær" onclick="rollerLeggTil()">Legg til</button></div>
+                </div>
+            `;
+            hoyre.innerHTML = tittel + under + tabell + nyBoks;
+        }
+
+        window.rollerVisNyForm = () => {
+            document.getElementById('roller-ny-form').style.display = 'block';
+            document.getElementById('nr-rolle').focus();
+        };
+        window.rollerSkjulNyForm = () => {
+            document.getElementById('roller-ny-form').style.display = 'none';
+            for (const id of ['nr-rolle', 'nr-omfang', 'nr-upn', 'nr-fn', 'nr-en']) {
+                document.getElementById(id).value = '';
+            }
+        };
+        window.rollerOpprett = async () => {
+            const rolle = document.getElementById('nr-rolle').value.trim();
+            const omfang = document.getElementById('nr-omfang').value.trim();
+            const upn = document.getElementById('nr-upn').value.trim();
+            const fn = document.getElementById('nr-fn').value.trim();
+            const en = document.getElementById('nr-en').value.trim();
+            if (!rolle) { alert('Rolle-navn er påkrevd'); return; }
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upn)) { alert('Første innehaver må ha gyldig UPN'); return; }
+            try {
+                await api.post('/api/roller/leggtil', { Rolle: rolle, Omfang: omfang, UPN: upn, FN: fn, EN: en });
+                rollerSkjulNyForm();
+                await rollerLast();
+                const idx = rollerState.grupper.findIndex(g => g.Rolle === rolle && (g.Omfang || '') === omfang);
+                if (idx >= 0) {
+                    rollerState.valgt = rollerState.grupper[idx];
+                    rollerFiltrer();
+                    rollerVelgGruppe(rollerState.filtrerte.findIndex(g => g.Rolle === rolle && (g.Omfang || '') === omfang));
+                }
+            } catch (e) { alert('Kunne ikke opprette: ' + e.message); }
+        };
+        window.rollerLeggTil = async () => {
+            const g = rollerState.valgt;
+            const upn = document.getElementById('ny-upn').value.trim();
+            const fn = document.getElementById('ny-fn').value.trim();
+            const en = document.getElementById('ny-en').value.trim();
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upn)) { alert('UPN må være e-postadresse'); return; }
+            try {
+                await api.post('/api/roller/leggtil', { Rolle: g.Rolle, Omfang: g.Omfang || '', UPN: upn, FN: fn, EN: en });
+                await rollerLast();
+                const idx = rollerState.grupper.findIndex(x => x.Rolle === g.Rolle && x.Omfang === g.Omfang);
+                if (idx >= 0) {
+                    rollerState.valgt = rollerState.grupper[idx];
+                    rollerVelgGruppe(rollerState.filtrerte.findIndex(x => x.Rolle === g.Rolle && x.Omfang === g.Omfang));
+                }
+            } catch (e) { alert('Feil: ' + e.message); }
+        };
+        window.rollerFjern = async (upn) => {
+            const g = rollerState.valgt;
+            if (!confirm(`Fjern ${upn} fra ${g.Rolle}${g.Omfang ? '(' + g.Omfang + ')' : ''}?`)) return;
+            try {
+                await api.post('/api/roller/fjern', { Rolle: g.Rolle, Omfang: g.Omfang || '', UPN: upn });
+                await rollerLast();
+                const idx = rollerState.grupper.findIndex(x => x.Rolle === g.Rolle && x.Omfang === g.Omfang);
+                if (idx >= 0) {
+                    rollerState.valgt = rollerState.grupper[idx];
+                    rollerVelgGruppe(rollerState.filtrerte.findIndex(x => x.Rolle === g.Rolle && x.Omfang === g.Omfang));
+                } else {
+                    rollerState.valgt = null;
+                    document.getElementById('roller-hoyre').innerHTML = '<div class="tom-melding">Velg en rolle fra listen.</div>';
+                    rollerFiltrer();
+                }
+            } catch (e) { alert('Kunne ikke fjerne: ' + e.message); }
+        };
+
+        // ==================== NØKLER-FANE ====================
+        let noklerState = { valgtId: null, alleTyper: [] };
+
+        function rendrNokler() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="banner advarsel">
+                    <strong>⚠️ Viktig:</strong> Nøkkelen er den ENESTE kopien i systemet. Skriv den ned og lagre trygt.
+                    Uten nøkkel kan krypterte skjemaer aldri leses igjen. Bytt nøkkel med varsomhet — feil bytte gjør data uopprettelig.
+                </div>
+                <div class="panel">
+                    <h2>Velg skjematype</h2>
+                    <select id="nokler-velger" onchange="noklerOnEndret()">
+                        <option value="">Laster…</option>
+                    </select>
+                </div>
+                <div class="panel" id="nokler-status-panel" style="display: none;">
+                    <h2>Status</h2>
+                    <div id="nokler-status"></div>
+                    <div id="nokler-konfig" style="margin-top: 10px; font-size: 13px; color: var(--text-secondary);"></div>
+                </div>
+                <div class="panel" id="nokler-handling-panel" style="display: none;">
+                    <h2>Handlinger</h2>
+                    <div id="nokler-ingen" style="display: none;">
+                        <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 10px;">Ingen nøkkel lagret. Generer én — den lages med kryptografisk sikker random.</p>
+                        <button class="knapp primær" onclick="noklerGenerer()">🔐 Generer ny nøkkel</button>
+                    </div>
+                    <div id="nokler-har" style="display: none;">
+                        <label style="font-size: 13px; font-weight: 600;">Nåværende nøkkel <small style="font-weight: 400; color: var(--text-secondary);">(base64, 256-bit)</small></label>
+                        <div class="nokkel-vis" id="nokler-verdi" style="margin-top: 6px;"></div>
+                        <div class="knapp-rad" style="margin-top: 10px;">
+                            <button class="knapp" onclick="noklerKopier()">📋 Kopier</button>
+                            <button class="knapp danger" onclick="noklerApneRekrypt()">🔄 Bytt nøkkel (rekrypter alle skjemaer)</button>
+                        </div>
+                    </div>
+                    <div id="nokler-rekrypt" style="display: none; margin-top: 20px; padding: 12px; background: var(--warning-light); border-radius: 8px;">
+                        <label style="font-size: 13px; font-weight: 600;">Bekreft nåværende nøkkel <small style="font-weight: 400; color: var(--text-secondary);">(må skrives på nytt)</small></label>
+                        <input type="text" id="nokler-bekreft" placeholder="base64-nøkkel" style="margin-top: 6px;">
+                        <div class="knapp-rad" style="margin-top: 10px;">
+                            <button class="knapp danger" onclick="noklerRekrypter()">Bytt nøkkel nå</button>
+                            <button class="knapp" onclick="noklerAvbrytRekrypt()">Avbryt</button>
+                        </div>
+                    </div>
+                    <div id="nokler-melding" class="banner" style="display: none; margin-top: 12px;"></div>
+                </div>
+            `;
+            noklerLast();
+        }
+
+        async function noklerLast() {
+            try {
+                noklerState.alleTyper = await api.get('/api/skjematyper');
+                const velger = document.getElementById('nokler-velger');
+                if (noklerState.alleTyper.length === 0) {
+                    velger.innerHTML = '<option value="">(ingen skjematyper)</option>';
+                    return;
+                }
+                velger.innerHTML = '<option value="">— velg skjematype —</option>' +
+                    noklerState.alleTyper.map(t => `<option value="${t.Skjematype_id}">${escHtml(t.Skjema_navn)} (ID ${t.Skjematype_id})</option>`).join('');
+            } catch (e) {
+                noklerMelding('Kunne ikke laste skjematyper: ' + e.message, 'feil');
+            }
+        }
+
+        window.noklerOnEndret = async () => {
+            noklerState.valgtId = document.getElementById('nokler-velger').value;
+            document.getElementById('nokler-melding').style.display = 'none';
+            document.getElementById('nokler-rekrypt').style.display = 'none';
+            if (!noklerState.valgtId) {
+                document.getElementById('nokler-status-panel').style.display = 'none';
+                document.getElementById('nokler-handling-panel').style.display = 'none';
+                return;
+            }
+            await noklerRefresh();
+        };
+
+        async function noklerRefresh() {
+            try {
+                const [n, def] = await Promise.all([
+                    api.get(`/api/nokkel/${encodeURIComponent(noklerState.valgtId)}`),
+                    api.get(`/api/skjematyper/${encodeURIComponent(noklerState.valgtId)}?rå=1`)
+                ]);
+                document.getElementById('nokler-status-panel').style.display = '';
+                document.getElementById('nokler-handling-panel').style.display = '';
+                const status = document.getElementById('nokler-status');
+                if (n.finnes) {
+                    status.innerHTML = '<span style="color: var(--success);">✓ Nøkkel er lagret</span>';
+                    document.getElementById('nokler-verdi').textContent = n.nokkel;
+                    document.getElementById('nokler-ingen').style.display = 'none';
+                    document.getElementById('nokler-har').style.display = '';
+                } else {
+                    status.innerHTML = '<span style="color: var(--text-secondary);">Ingen nøkkel lagret ennå</span>';
+                    document.getElementById('nokler-ingen').style.display = '';
+                    document.getElementById('nokler-har').style.display = 'none';
+                }
+                const konfig = document.getElementById('nokler-konfig');
+                const kryp = def.Krypteres || 'Nei';
+                const anon = def.Anonymiseres ? 'Ja' : 'Nei';
+                konfig.innerHTML = `Krypteres: <b>${escHtml(kryp)}</b> &nbsp;·&nbsp; Anonymiseres: <b>${escHtml(anon)}</b>`;
+                if (kryp !== 'Nei' && !n.finnes) {
+                    konfig.innerHTML += ' <span style="color: var(--warning);">⚠ Kryptering valgt men nøkkel mangler — hoppes over ved siste ferdig-behandling</span>';
+                }
+            } catch (e) {
+                noklerMelding('Kunne ikke hente status: ' + e.message, 'feil');
+            }
+        }
+
+        window.noklerGenerer = async () => {
+            if (!confirm('Generere en NY nøkkel? Må lagres trygt — kan ikke gjenskapes hvis den mistes.')) return;
+            try {
+                await api.post(`/api/nokkel/${encodeURIComponent(noklerState.valgtId)}/generer`, {});
+                noklerMelding('✓ Ny nøkkel generert. Kopier og lagre den trygt nå.', 'suksess');
+                await noklerRefresh();
+            } catch (e) { noklerMelding('Feil: ' + e.message, 'feil'); }
+        };
+        window.noklerKopier = async () => {
+            try {
+                await navigator.clipboard.writeText(document.getElementById('nokler-verdi').textContent);
+                noklerMelding('✓ Kopiert', 'suksess');
+            } catch (_) { noklerMelding('Klipp manuelt fra feltet', 'info'); }
+        };
+        window.noklerApneRekrypt = () => {
+            document.getElementById('nokler-rekrypt').style.display = '';
+            document.getElementById('nokler-bekreft').value = '';
+        };
+        window.noklerAvbrytRekrypt = () => {
+            document.getElementById('nokler-rekrypt').style.display = 'none';
+        };
+        window.noklerRekrypter = async () => {
+            const gammel = document.getElementById('nokler-bekreft').value.trim();
+            if (!gammel) { noklerMelding('Bekreft nåværende nøkkel', 'feil'); return; }
+            if (!confirm('Bytt nøkkel? Alle eksisterende krypterte skjemaer dekrypteres og re-krypteres. Kan ikke angres.')) return;
+            try {
+                const res = await api.post(`/api/nokkel/${encodeURIComponent(noklerState.valgtId)}/rekrypter`, { gammelNokkel: gammel });
+                noklerMelding(`✓ Rekrypterte ${res.antallRekryptert} skjemaer${res.antallFeilet ? ` (${res.antallFeilet} feilet)` : ''}. Kopier ny nøkkel NÅ.`, 'suksess');
+                document.getElementById('nokler-rekrypt').style.display = 'none';
+                await noklerRefresh();
+            } catch (e) { noklerMelding('Rekryptering feilet: ' + e.message, 'feil'); }
+        };
+        function noklerMelding(tekst, klasse) {
+            const el = document.getElementById('nokler-melding');
+            el.className = 'banner ' + klasse;
+            el.textContent = tekst;
+            el.style.display = '';
+        }
+
+        // ==================== Hjelpere ====================
+        function escHtml(s) {
+            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        }
+        function escAttr(s) {
+            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+        }
+
+        init();
+    </script>
+</body>
+</html>

@@ -49,14 +49,6 @@
             "allowedRoles": ["admin"]
         },
         {
-            "route": "/nokkeladmin.html",
-            "allowedRoles": ["authenticated"]
-        },
-        {
-            "route": "/rolleadmin.html",
-            "allowedRoles": ["admin"]
-        },
-        {
             "route": "/editor.html",
             "allowedRoles": ["authenticated"]
         },
