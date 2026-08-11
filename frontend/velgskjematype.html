@@ -346,7 +346,7 @@
             <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
         </div>
 
-        <div style="margin-bottom: 14px; display: flex; gap: 10px; align-items: center;">
+        <div id="ny-skjematype-rad" style="margin-bottom: 14px; display: none; gap: 10px; align-items: center;">
             <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
         </div>
 
@@ -391,11 +391,14 @@
             document.getElementById('upn').textContent = bruker.userDetails;
             document.title = `Velg skjema — ${CONFIG.APP_TITTEL || ''}`;
 
-            // Hent admin-status via /api/whoami (basert på ADMIN_UPNS-env-var i backend)
+            // Hent admin-status + skjemaskaper-tilgang via /api/whoami
             try {
                 const meg = await api.get('/api/whoami');
                 if (meg.erAdmin) {
                     document.getElementById('admin-verktoy').style.display = 'block';
+                }
+                if (meg.kanOppretteSkjematype) {
+                    document.getElementById('ny-skjematype-rad').style.display = 'flex';
                 }
             } catch (_) { /* ikke kritisk */ }
 

@@ -1589,6 +1589,40 @@
                 case 'Dato':
                     typeConfig = '';
                     break;
+                case 'Opplasting': {
+                    const valgte = Array.isArray(felt.Tillatte_filtyper) && felt.Tillatte_filtyper.length > 0
+                        ? felt.Tillatte_filtyper
+                        : ['Office', 'PDF', 'Bilder'];
+                    const check = k => valgte.includes(k) ? 'checked' : '';
+                    typeConfig = `
+                        <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                            <label>Maks antall filer
+                                <input type="number" min="1" value="${Number(felt.Max_valg) || 1}"
+                                    oninput="setFeltProp(${sIdx}, ${fIdx}, 'Max_valg', Number(this.value) || 1)"
+                                    style="width: 80px; margin-left: 6px;">
+                            </label>
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <label style="display: block; margin-bottom: 4px;">Tillatte filtyper</label>
+                            <label style="margin-right: 12px;">
+                                <input type="checkbox" value="Office" ${check('Office')}
+                                    onchange="toggleFiltype(${sIdx}, ${fIdx}, 'Office', this.checked)">
+                                Office (.docx/.xlsx/.pptx)
+                            </label>
+                            <label style="margin-right: 12px;">
+                                <input type="checkbox" value="PDF" ${check('PDF')}
+                                    onchange="toggleFiltype(${sIdx}, ${fIdx}, 'PDF', this.checked)">
+                                PDF
+                            </label>
+                            <label>
+                                <input type="checkbox" value="Bilder" ${check('Bilder')}
+                                    onchange="toggleFiltype(${sIdx}, ${fIdx}, 'Bilder', this.checked)">
+                                Bilder (jpg/png/gif/…)
+                            </label>
+                        </div>
+                    `;
+                    break;
+                }
             }
 
             return undertittel + oblig + (typeConfig ? '<div style="margin-top: 8px;">' + typeConfig + '</div>' : '');
@@ -1695,6 +1729,15 @@
         };
         window.setFeltProp = (sIdx, fIdx, prop, v) => {
             data.Seksjoner[sIdx].Felter[fIdx][prop] = v;
+        };
+        window.toggleFiltype = (sIdx, fIdx, filtype, valgt) => {
+            const felt = data.Seksjoner[sIdx].Felter[fIdx];
+            let liste = Array.isArray(felt.Tillatte_filtyper) && felt.Tillatte_filtyper.length > 0
+                ? [...felt.Tillatte_filtyper]
+                : ['Office', 'PDF', 'Bilder'];
+            if (valgt && !liste.includes(filtype)) liste.push(filtype);
+            if (!valgt) liste = liste.filter(k => k !== filtype);
+            felt.Tillatte_filtyper = liste;
         };
         function slettFelt(sIdx, fIdx) {
             data.Seksjoner[sIdx].Felter.splice(fIdx, 1);

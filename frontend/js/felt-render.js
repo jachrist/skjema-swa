@@ -34,6 +34,52 @@ export const FELTTYPER = [
 // Maks fil-størrelse (må matche backend-grensen)
 const MAX_FIL_STORRELSE = 4 * 1024 * 1024;
 
+// Filtyper som kan velges per Opplasting-felt (Tillatte_filtyper).
+// Standard: alle tre grupper hvis feltet ikke spesifiserer noe.
+const FILTYPER = {
+    Office: {
+        ext: ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'],
+        mime: [
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/vnd.ms-powerpoint',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        ],
+        tekst: 'Office-filer'
+    },
+    PDF: { ext: ['.pdf'], mime: ['application/pdf'], tekst: 'PDF' },
+    Bilder: {
+        ext: ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'],
+        mime: ['image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp', 'image/svg+xml'],
+        tekst: 'bilder'
+    }
+};
+
+function tillatteFiltyperFor(felt) {
+    const valgte = Array.isArray(felt?.Tillatte_filtyper) && felt.Tillatte_filtyper.length > 0
+        ? felt.Tillatte_filtyper
+        : ['Office', 'PDF', 'Bilder'];
+    const ext = [], mime = [], tekstDeler = [];
+    for (const k of valgte) {
+        if (FILTYPER[k]) {
+            ext.push(...FILTYPER[k].ext);
+            mime.push(...FILTYPER[k].mime);
+            tekstDeler.push(FILTYPER[k].tekst);
+        }
+    }
+    return { ext, mime, tekst: tekstDeler.join(', ') };
+}
+
+function filErTillatt(fil, tillatte) {
+    const navn = String(fil.name || '').toLowerCase();
+    const extOk = tillatte.ext.some(e => navn.endsWith(e.toLowerCase()));
+    // MIME kan være tom fra noen nettlesere; fall tilbake til extension
+    const mimeOk = !fil.type || tillatte.mime.includes(fil.type);
+    return extOk && mimeOk;
+}
+
 // ==================== EDIT WIDGETS ====================
 
 /**
@@ -408,11 +454,15 @@ function _lagOpplasting(felt, feltId, initialSvar) {
     wrapper.dataset.feltId = feltId;
     wrapper.style.cssText = 'display: flex; flex-direction: column; gap: 8px;';
 
+    const maxValg = Math.max(1, Number(felt.Max_valg) || 1);
+    const tillatte = tillatteFiltyperFor(felt);
+
     // Init state
     const eksisterende = Array.isArray(initialSvar) ? initialSvar.filter(s => s && typeof s === 'string') : [];
     wrapper._eksisterende = [...eksisterende];
     wrapper._nyeFiler = new Map();
     wrapper._slettede = new Set();
+    wrapper._maxValg = maxValg;
 
     const liste = document.createElement('div');
     liste.className = 'opplasting-liste';
@@ -420,20 +470,36 @@ function _lagOpplasting(felt, feltId, initialSvar) {
     wrapper.appendChild(liste);
 
     const knapperad = document.createElement('div');
-    knapperad.style.cssText = 'display: flex; gap: 8px; align-items: center;';
+    knapperad.style.cssText = 'display: flex; gap: 8px; align-items: center; flex-wrap: wrap;';
 
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.multiple = true;
+    fileInput.multiple = maxValg > 1;
+    fileInput.accept = tillatte.ext.join(',');
     fileInput.id = feltId;
     fileInput.name = feltId;
     fileInput.style.cssText = 'font-size: 13px;';
 
+    const beskrivelse = document.createElement('small');
+    beskrivelse.style.cssText = 'color: var(--text-secondary);';
+    beskrivelse.textContent = `${tillatte.tekst || 'Ingen filtyper tillatt'} (maks ${maxValg} ${maxValg === 1 ? 'fil' : 'filer'})`;
+
     fileInput.addEventListener('change', () => {
         for (const fil of fileInput.files) {
+            if (!filErTillatt(fil, tillatte)) {
+                alert(`"${fil.name}" er ikke en tillatt filtype (${tillatte.tekst}).`);
+                continue;
+            }
             if (fil.size > MAX_FIL_STORRELSE) {
                 alert(`"${fil.name}" er for stor (maks ${MAX_FIL_STORRELSE / 1024 / 1024} MB)`);
                 continue;
+            }
+            // Håndhev antall: eksisterende (ikke-slettede) + valgte nye ≤ maxValg
+            const nåværende = wrapper._eksisterende.filter(n => !wrapper._slettede.has(n)).length
+                + wrapper._nyeFiler.size;
+            if (nåværende >= maxValg) {
+                alert(`Maks ${maxValg} ${maxValg === 1 ? 'fil' : 'filer'} tillatt for dette feltet.`);
+                break;
             }
             wrapper._nyeFiler.set(fil.name, fil);
             wrapper._slettede.delete(fil.name); // hvis re-lagt til
@@ -443,6 +509,7 @@ function _lagOpplasting(felt, feltId, initialSvar) {
     });
 
     knapperad.appendChild(fileInput);
+    knapperad.appendChild(beskrivelse);
     wrapper.appendChild(knapperad);
 
     _renderOpplastingListe(wrapper);

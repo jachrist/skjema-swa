@@ -14,6 +14,7 @@ const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 const { erTilgjengeligNaa } = require('../lib/periode');
+const rollerStorage = require('../lib/roller-storage');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -198,10 +199,15 @@ app.http('lagreSkjematype', {
         try {
             const body = await request.json();
 
-            // Ny skjematype: alle innloggede kan opprette — legges automatisk som eier.
-            // Eksisterende: krev admin eller eier.
+            // Ny skjematype: admin eller medlem av rollen "Skjemaskaper" kan opprette.
+            // Oppretter legges automatisk som eier. Eksisterende: krev admin eller eier.
             let erNy = false;
             if (!body.Skjematype_id) {
+                const admin = erAdmin(upn);
+                const skjemaskaper = admin || await rollerStorage.erMedlem('Skjemaskaper', upn);
+                if (!skjemaskaper) {
+                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin eller rollen "Skjemaskaper" for å opprette ny skjematype' } };
+                }
                 body.Skjematype_id = await nesteSkjematypeId();
                 erNy = true;
                 // Sikre at oppretter blir eier (defensivt — frontend gjør dette allerede)
