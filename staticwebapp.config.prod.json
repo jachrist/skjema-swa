@@ -27,9 +27,9 @@
         "identityProviders": {
             "azureActiveDirectory": {
                 "registration": {
-                    "openIdIssuer": "https://login.microsoftonline.com/<PROD_TENANT_ID>/v2.0",
+                    "openIdIssuer": "https://login.microsoftonline.com/1e0e6195-b5ec-427a-9cc1-db95904592f9/v2.0",
                     "clientIdSettingName": "AAD_CLIENT_ID",
-                    "clientSecretCertificateKeyVaultReference": "@Microsoft.KeyVault(SecretUri=https://<PROD_KV_NAME>.vault.azure.net/certificates/<CERT_NAME>/)",
+                    "clientSecretCertificateKeyVaultReference": "@Microsoft.KeyVault(SecretUri=https://fhs-kv-01.vault.azure.net/certificates/authapi/)",
                     "clientSecretCertificateThumbprint": "*"
                 }
             }
