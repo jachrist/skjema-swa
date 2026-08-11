@@ -26,6 +26,8 @@ const kryptering = require('../lib/kryptering');
 const nokkelStorage = require('../lib/nokkel-storage');
 const otpToken = require('../lib/otp-token');
 const hendelser = require('../lib/hendelser-storage');
+const utsendingToken = require('../lib/utsending-token');
+const utsendingStorage = require('../lib/utsending-storage');
 
 /**
  * Autentisering for ekstern-innsender-flyten.
@@ -566,10 +568,25 @@ app.http('lagreSkjema', {
                 return { status: 400, jsonBody: { status: 'feil', melding: 'Skjematype_id mangler' } };
             }
 
-            // Auth: SWA-innlogget bruker ELLER ekstern via x-otp-token
+            // Auth: SWA-innlogget bruker, ekstern OTP, ELLER utsendings-token
             const upn = hentInnloggetUpn(request);
             let eksternAuth = null;
-            if (!upn) {
+            let utsendingAuth = null; // { batchId, mottaker, prefilled }
+            const utsendingHeader = request.headers.get('x-utsending-token');
+            if (utsendingHeader) {
+                const v = utsendingToken.valider(utsendingHeader);
+                if (!v.gyldig || v.skjematypeId !== skjematypeId) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: v.melding || 'Ugyldig utsendings-token' } };
+                }
+                const post = await utsendingStorage.hent(v.batchId, v.mottaker);
+                if (!post || post.Jti !== v.jti) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: 'Utsending ikke funnet eller token erstattet' } };
+                }
+                if (post.SvarSkjemaId) {
+                    return { status: 409, jsonBody: { status: 'feil', melding: 'Denne lenken er allerede besvart' } };
+                }
+                utsendingAuth = { batchId: v.batchId, mottaker: v.mottaker, prefilled: post.Prefilled || null };
+            } else if (!upn) {
                 eksternAuth = await autentiserEkstern(request, skjematypeId);
                 if (!eksternAuth.ok) {
                     return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
@@ -581,7 +598,8 @@ app.http('lagreSkjema', {
                     return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang til denne skjematypen' } };
                 }
             }
-            const innsenderId = eksternAuth ? eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal) : upn;
+            const innsenderId = utsendingAuth ? utsendingAuth.mottaker
+                : (eksternAuth ? eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal) : upn);
 
             // Hent eksisterende for å avgjøre erNytt og bevare metadata (Behandling, Dialog)
             let skjemaId = body.Skjema_id ? String(body.Skjema_id) : null;
@@ -629,6 +647,25 @@ app.http('lagreSkjema', {
             if (eksternAuth) {
                 skjemaData.EksternInnsender = true;
                 skjemaData.Innsender_Kanal = eksternAuth.kanal;
+            }
+            if (utsendingAuth) {
+                skjemaData.Utsending_BatchId = utsendingAuth.batchId;
+                // Overstyr prefilled felter — bruker skal ikke kunne endre dem.
+                // Prefilled er format { "sek-felt-padded": [verdi(er)] }.
+                if (utsendingAuth.prefilled && Array.isArray(skjemaData.Seksjoner)) {
+                    for (const [nokkel, sva] of Object.entries(utsendingAuth.prefilled)) {
+                        const m = /^(\d+)-(\d+)$/.exec(nokkel);
+                        if (!m) continue;
+                        const sekNr = Number(m[1]), feltNr = m[2].padStart(2, '0');
+                        for (const s of skjemaData.Seksjoner) {
+                            if (Number(s.Seksjon_nummer || s.Nummer) !== sekNr) continue;
+                            for (const f of (s.Felter || [])) {
+                                if (String(f.Nummer).padStart(2, '0') !== feltNr) continue;
+                                f.Svar = Array.isArray(sva) ? sva : [sva];
+                            }
+                        }
+                    }
+                }
             }
             if (behandlingArvet && !Array.isArray(skjemaData.Behandling)) {
                 skjemaData.Behandling = behandlingArvet;
@@ -680,8 +717,17 @@ app.http('lagreSkjema', {
                 Aktor: innsenderId,
                 ObjektType: 'skjema', ObjektId: skjemaId,
                 Melding: `${erNytt ? 'Opprettet' : 'Oppdaterte'} skjema (status ${skjemaData.Skjema_status})`,
-                Detaljer: { skjematypeId, status: skjemaData.Skjema_status, ekstern: !!eksternAuth }
+                Detaljer: { skjematypeId, status: skjemaData.Skjema_status, ekstern: !!eksternAuth, utsending: utsendingAuth?.batchId || null }
             });
+
+            // Marker utsending som besvart når skjemaet er sendt inn (status ≥ 2)
+            if (utsendingAuth && skjemaData.Skjema_status >= 2) {
+                try {
+                    await utsendingStorage.markerBesvart(utsendingAuth.batchId, utsendingAuth.mottaker, skjemaId);
+                } catch (e) {
+                    context.log(`utsending: kunne ikke markere besvart — ${e.message}`);
+                }
+            }
 
             // Varsling ved innsending (status 2 = Innsendt, ellers mellomlagring)
             // Fire-and-forget så feil i SMTP ikke feiler hovedhandlingen.

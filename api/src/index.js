@@ -20,6 +20,7 @@ require('./functions/power-bi');
 require('./functions/otp');
 require('./functions/nokkel');
 require('./functions/hendelser');
+require('./functions/utsending');
 
 // Etter hvert:
 // require('./functions/skjema');
