@@ -589,7 +589,7 @@ app.http('lagreSkjema', {
 
             // Bygg skjemadata. Ved oppdatering: start med eksisterende (bevar Behandling,
             // Dialog, vedlegg-refs) og la body overstyre med nye svar/status.
-            const skjemaData = {
+            let skjemaData = {
                 ...(eksisterende || {}),
                 ...body,
                 Skjema_id: skjemaId,
