@@ -19,6 +19,7 @@ require('./functions/pb-token');
 require('./functions/power-bi');
 require('./functions/otp');
 require('./functions/nokkel');
+require('./functions/hendelser');
 
 // Etter hvert:
 // require('./functions/skjema');

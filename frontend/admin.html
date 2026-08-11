@@ -179,7 +179,7 @@
                 <a class="fane" data-fane="roller" href="#roller">👥 Roller</a>
                 <a class="fane" data-fane="nokler" href="#nokler">🔐 Nøkler</a>
                 <div class="skille"></div>
-                <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser</a>
                 <a class="fane" data-fane="masterdata" href="#masterdata">🗂 Masterdata <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
@@ -224,7 +224,7 @@
             switch (h) {
                 case 'roller':      rendrRoller(); break;
                 case 'nokler':      rendrNokler(); break;
-                case 'hendelser':   rendrPlaceholder('Hendelser', 'Audit-logg over hvem gjorde hva når. Kommer i egen commit — krever ny Hendelser-tabell + logging i mutasjons-endpoints.'); break;
+                case 'hendelser':   rendrHendelser(); break;
                 case 'masterdata':  rendrPlaceholder('Masterdata', 'Faste_data og oppslagslister (Emner, Fakulteter, osv.). Redigerbar tabell.'); break;
                 case 'postnumre-fs':rendrPlaceholder('Postnumre / FS', 'Seed postnumre-tabell. Trigg refresh av FS-data (emner, personer).'); break;
                 case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
@@ -571,6 +571,123 @@
             el.className = 'banner ' + klasse;
             el.textContent = tekst;
             el.style.display = '';
+        }
+
+        // ==================== HENDELSER-FANE ====================
+
+        const TYPE_LABELS = {
+            'skjema.opprett': 'Skjema opprettet',
+            'skjema.mellomlagre': 'Skjema mellomlagret',
+            'skjema.innsend': 'Skjema innsendt',
+            'skjema.beslutning': 'Behandling: beslutning',
+            'skjema.slett': 'Skjema slettet',
+            'skjematype.opprett': 'Skjematype opprettet',
+            'skjematype.oppdater': 'Skjematype oppdatert',
+            'skjematype.slett': 'Skjematype slettet',
+            'nokkel.generer': 'Nøkkel generert',
+            'nokkel.rekrypter': 'Nøkkel byttet (rekryptert)',
+            'rolle.leggtil': 'Rolle: innehaver lagt til',
+            'rolle.fjern': 'Rolle: innehaver fjernet'
+        };
+
+        function rendrHendelser() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Filtrer</h2>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: end;">
+                        <div style="flex: 1; min-width: 140px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Fra dato</label>
+                            <input type="date" id="h-fra">
+                        </div>
+                        <div style="flex: 1; min-width: 140px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Til dato</label>
+                            <input type="date" id="h-til">
+                        </div>
+                        <div style="flex: 1; min-width: 160px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Type</label>
+                            <select id="h-type">
+                                <option value="">Alle</option>
+                                ${Object.entries(TYPE_LABELS).map(([k, v]) => `<option value="${k}">${escHtml(v)}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div style="flex: 1; min-width: 180px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Aktør (UPN)</label>
+                            <input type="text" id="h-aktor" placeholder="navn@domene.no">
+                        </div>
+                        <div style="flex: 1; min-width: 130px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Objekt-ID</label>
+                            <input type="text" id="h-objekt" placeholder="(valgfritt)">
+                        </div>
+                        <div style="min-width: 90px;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Antall</label>
+                            <input type="number" id="h-antall" value="100" min="1" max="500">
+                        </div>
+                        <button class="knapp primær" onclick="hendelserLast()">Søk</button>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">
+                        Uten dato-filter: viser siste 3 måneder. Sortert nyeste først.
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Resultater <span id="h-teller" style="font-weight: 400; color: var(--text-secondary); text-transform: none; letter-spacing: 0; margin-left: 8px;"></span></h2>
+                    <div id="h-liste"><div class="laster">Laster…</div></div>
+                </div>
+            `;
+            hendelserLast();
+        }
+
+        window.hendelserLast = async () => {
+            const params = new URLSearchParams();
+            const fra = document.getElementById('h-fra')?.value;
+            const til = document.getElementById('h-til')?.value;
+            const type = document.getElementById('h-type')?.value;
+            const aktor = document.getElementById('h-aktor')?.value.trim();
+            const objekt = document.getElementById('h-objekt')?.value.trim();
+            const antall = document.getElementById('h-antall')?.value;
+            if (fra) params.set('fraDato', fra);
+            if (til) params.set('tilDato', til + 'T23:59:59Z');
+            if (type) params.set('type', type);
+            if (aktor) params.set('aktor', aktor);
+            if (objekt) params.set('objektId', objekt);
+            if (antall) params.set('antall', antall);
+            const liste = document.getElementById('h-liste');
+            liste.innerHTML = '<div class="laster">Laster…</div>';
+            try {
+                const data = await api.get('/api/hendelser?' + params.toString());
+                document.getElementById('h-teller').textContent = `— ${data.length} hendelse${data.length === 1 ? '' : 'r'}`;
+                if (data.length === 0) {
+                    liste.innerHTML = '<div class="tom-melding">Ingen hendelser matcher filteret.</div>';
+                    return;
+                }
+                liste.innerHTML = `
+                    <div class="innehaver-header" style="grid-template-columns: 145px 180px 200px 1fr; gap: 12px;">
+                        <div>Tid</div><div>Type</div><div>Aktør</div><div>Melding</div>
+                    </div>
+                    ${data.map((h, i) => `
+                        <div class="innehaver-rad" style="grid-template-columns: 145px 180px 200px 1fr; gap: 12px; cursor: pointer;" onclick="hendelserToggleDetalj(${i})">
+                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${formatTid(h.Tid)}</div>
+                            <div>${escHtml(TYPE_LABELS[h.Type] || h.Type)}</div>
+                            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(h.Aktor || '-')}</div>
+                            <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(h.Melding || '')}${h.ObjektId ? ` <small style="color: var(--text-secondary);">(${escHtml(h.ObjektId)})</small>` : ''}</div>
+                        </div>
+                        <div id="h-detalj-${i}" style="display: none; padding: 8px 14px; background: var(--bg-input); font-family: 'SF Mono', Menlo, monospace; font-size: 11px; white-space: pre-wrap; border-radius: 6px; margin: 4px 0;">${escHtml(JSON.stringify(h.Detaljer, null, 2) || '(ingen detaljer)')}</div>
+                    `).join('')}
+                `;
+            } catch (e) {
+                liste.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.hendelserToggleDetalj = (i) => {
+            const el = document.getElementById(`h-detalj-${i}`);
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        };
+
+        function formatTid(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
         }
 
         // ==================== Hjelpere ====================

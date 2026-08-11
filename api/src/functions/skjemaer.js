@@ -25,6 +25,7 @@ const { oppdaterSPListe } = require('../lib/sp-liste');
 const kryptering = require('../lib/kryptering');
 const nokkelStorage = require('../lib/nokkel-storage');
 const otpToken = require('../lib/otp-token');
+const hendelser = require('../lib/hendelser-storage');
 
 /**
  * Autentisering for ekstern-innsender-flyten.
@@ -255,6 +256,13 @@ app.http('lagreBeslutning', {
 
             await forekomstStorage.lagreSkjema(skjema, false);
             context.log(`beslutning: ${upn || 'ekstern-flyt'} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
+            hendelser.logg({
+                Type: 'skjema.beslutning',
+                Aktor: upn || 'ekstern-flyt',
+                ObjektType: 'skjema', ObjektId: skjemaId,
+                Melding: `Steg ${stegNr}: beslutning ${beslutning}${valgtValg?.Tekst ? ' (' + valgtValg.Tekst + ')' : ''}`,
+                Detaljer: { skjematypeId, steg: stegNr, beslutning, tekst: valgtValg?.Tekst || '', nyStatus: skjema.Skjema_status }
+            });
 
             // Varsling (fire-and-forget) — kalles etter lagring
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
@@ -667,6 +675,13 @@ app.http('lagreSkjema', {
 
             await forekomstStorage.lagreSkjema(skjemaData, erNytt);
             context.log(`skjemaer: ${innsenderId}${eksternAuth ? ' (ekstern)' : ''} ${erNytt ? 'opprettet' : 'oppdaterte'} ${skjemaId} (type ${skjematypeId})`);
+            hendelser.logg({
+                Type: erNytt ? 'skjema.opprett' : (skjemaData.Skjema_status === 1 ? 'skjema.mellomlagre' : 'skjema.innsend'),
+                Aktor: innsenderId,
+                ObjektType: 'skjema', ObjektId: skjemaId,
+                Melding: `${erNytt ? 'Opprettet' : 'Oppdaterte'} skjema (status ${skjemaData.Skjema_status})`,
+                Detaljer: { skjematypeId, status: skjemaData.Skjema_status, ekstern: !!eksternAuth }
+            });
 
             // Varsling ved innsending (status 2 = Innsendt, ellers mellomlagring)
             // Fire-and-forget så feil i SMTP ikke feiler hovedhandlingen.
@@ -832,6 +847,11 @@ app.http('slettSkjema', {
             }
 
             context.log(`skjemaer DELETE: ${upn} slettet ${skjemaId} (type ${skjematypeId})`);
+            hendelser.logg({
+                Type: 'skjema.slett', Aktor: upn,
+                ObjektType: 'skjema', ObjektId: skjemaId,
+                Melding: `Slettet skjema`, Detaljer: { skjematypeId }
+            });
             return { jsonBody: { status: 'ok' } };
         } catch (e) {
             context.log('skjemaer DELETE FEIL:', e.message, e.stack);

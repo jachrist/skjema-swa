@@ -11,6 +11,7 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const rollerStorage = require('../lib/roller-storage');
+const hendelser = require('../lib/hendelser-storage');
 
 app.http('rollerGrupper', {
     methods: ['GET'],
@@ -58,6 +59,12 @@ app.http('rollerLeggTil', {
             const body = await request.json();
             await rollerStorage.leggTilInnehaver(body);
             context.log(`roller: ${upn} la til ${body.UPN} som ${body.Rolle}${body.Omfang ? '(' + body.Omfang + ')' : ''}`);
+            hendelser.logg({
+                Type: 'rolle.leggtil', Aktor: upn,
+                ObjektType: 'rolle', ObjektId: `${body.Rolle}${body.Omfang ? '(' + body.Omfang + ')' : ''}`,
+                Melding: `La til ${body.UPN} i ${body.Rolle}${body.Omfang ? '(' + body.Omfang + ')' : ''}`,
+                Detaljer: { rolle: body.Rolle, omfang: body.Omfang || '', upn: body.UPN }
+            });
             return { jsonBody: { status: 'ok' } };
         } catch (e) {
             context.log('roller/leggtil FEIL:', e.message);
@@ -106,6 +113,12 @@ app.http('rollerFjern', {
             const slettet = await rollerStorage.fjernInnehaver(body);
             if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Fant ikke innehaver' } };
             context.log(`roller: ${upn} fjernet ${body.UPN} fra ${body.Rolle}${body.Omfang ? '(' + body.Omfang + ')' : ''}`);
+            hendelser.logg({
+                Type: 'rolle.fjern', Aktor: upn,
+                ObjektType: 'rolle', ObjektId: `${body.Rolle}${body.Omfang ? '(' + body.Omfang + ')' : ''}`,
+                Melding: `Fjernet ${body.UPN} fra ${body.Rolle}${body.Omfang ? '(' + body.Omfang + ')' : ''}`,
+                Detaljer: { rolle: body.Rolle, omfang: body.Omfang || '', upn: body.UPN }
+            });
             return { jsonBody: { status: 'ok' } };
         } catch (e) {
             context.log('roller/fjern FEIL:', e.message);

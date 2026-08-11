@@ -15,6 +15,7 @@ const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 const { erTilgjengeligNaa } = require('../lib/periode');
 const rollerStorage = require('../lib/roller-storage');
+const hendelser = require('../lib/hendelser-storage');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -223,6 +224,13 @@ app.http('lagreSkjematype', {
 
             await skjemaStorage.lagreSkjematype(body);
             context.log(`skjematyper: ${upn} ${erNy ? 'opprettet' : 'oppdaterte'} skjematype ${body.Skjematype_id}`);
+            hendelser.logg({
+                Type: erNy ? 'skjematype.opprett' : 'skjematype.oppdater',
+                Aktor: upn,
+                ObjektType: 'skjematype', ObjektId: String(body.Skjematype_id),
+                Melding: `${erNy ? 'Opprettet' : 'Oppdaterte'} skjematype "${body.Skjema_navn || ''}"`,
+                Detaljer: { fase: body.Fase || '', krypteres: body.Krypteres || 'Nei', anonymiseres: !!body.Anonymiseres }
+            });
             return { jsonBody: { status: 'ok', Skjematype_id: body.Skjematype_id, erNy } };
         } catch (e) {
             context.log('skjematyper POST FEIL:', e.message, e.stack);
@@ -248,6 +256,11 @@ app.http('slettSkjematype', {
             if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
 
             context.log(`skjematyper DELETE: ${upn} slettet skjematype ${id}`);
+            hendelser.logg({
+                Type: 'skjematype.slett', Aktor: upn,
+                ObjektType: 'skjematype', ObjektId: String(id),
+                Melding: `Slettet skjematype ${id}`
+            });
             return { jsonBody: { status: 'ok' } };
         } catch (e) {
             context.log('skjematyper DELETE FEIL:', e.message, e.stack);

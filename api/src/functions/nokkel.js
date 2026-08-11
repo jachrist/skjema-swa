@@ -15,6 +15,7 @@ const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const nokkelStorage = require('../lib/nokkel-storage');
 const kryptering = require('../lib/kryptering');
+const hendelser = require('../lib/hendelser-storage');
 
 async function harEierTilgang(skjematypeId, upn) {
     if (erAdmin(upn)) return true;
@@ -64,6 +65,11 @@ app.http('nokkelGenerer', {
             const ny = kryptering.genererNokkel();
             await nokkelStorage.lagreNokkel(skjematypeId, ny);
             context.log(`nokkel: ${upn} genererte ny nøkkel for skjematype ${skjematypeId}`);
+            hendelser.logg({
+                Type: 'nokkel.generer', Aktor: upn,
+                ObjektType: 'nokkel', ObjektId: String(skjematypeId),
+                Melding: `Genererte ny krypteringsnøkkel for skjematype ${skjematypeId}`
+            });
             return { jsonBody: { status: 'ok', nokkel: ny } };
         } catch (e) {
             context.log('nokkel/generer FEIL:', e.message, e.stack);
@@ -129,6 +135,12 @@ app.http('nokkelRekrypter', {
             // gammel nøkkel før alle skjemaer er konvertert
             await nokkelStorage.lagreNokkel(skjematypeId, ny);
             context.log(`nokkel: ${upn} rekrypterte ${antallRekryptert} skjemaer for type ${skjematypeId} (${antallFeilet} feil)`);
+            hendelser.logg({
+                Type: 'nokkel.rekrypter', Aktor: upn,
+                ObjektType: 'nokkel', ObjektId: String(skjematypeId),
+                Melding: `Byttet nøkkel — rekrypterte ${antallRekryptert} skjemaer${antallFeilet ? ' (' + antallFeilet + ' feil)' : ''}`,
+                Detaljer: { antallRekryptert, antallFeilet }
+            });
             return { jsonBody: {
                 status: 'ok',
                 nokkel: ny,
