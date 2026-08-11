@@ -608,10 +608,40 @@ app.http('lagreSkjema', {
 
             // Ved innsending: kjør skip-logikk så steg som ikke oppfyller vilkår
             // markeres som "Hoppet over" med én gang, og skjemaet kan lukkes hvis alt skippes.
-            if (skjemaData.Skjema_status === 2 && Array.isArray(skjemaData.Behandling)) {
-                skipStegSomIkkeSkalKjore(skjemaData);
+            // NB: alleStegFerdig() returnerer true for 0 steg — så skjematyper uten
+            // Behandling får Skjema_status=5 ved innsending (går rett til avsluttet).
+            if (skjemaData.Skjema_status === 2) {
+                if (Array.isArray(skjemaData.Behandling)) {
+                    skipStegSomIkkeSkalKjore(skjemaData);
+                }
                 if (alleStegFerdig(skjemaData)) {
                     skjemaData.Skjema_status = 5;
+                }
+            }
+
+            // Ved status=5 (avsluttet): anonymiser + krypter før lagring.
+            // Trigges både for skjematyper uten behandling (direkte-arkivering)
+            // og for de som ble ferdig etter siste beslutning.
+            if (skjemaData.Skjema_status === 5) {
+                try {
+                    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+                    const def = st?.JSON || {};
+                    if (def.Anonymiseres) {
+                        skjemaData = kryptering.anonymiserInnsender(skjemaData, process.env.HASH_SALT || '');
+                        context.log(`lagreSkjema: anonymiserte innsender for skjema ${skjemaId}`);
+                    }
+                    const omfang = def.Krypteres;
+                    if (omfang === 'Svar' || omfang === 'Alt') {
+                        const nokkel = await nokkelStorage.hentNokkel(skjematypeId);
+                        if (nokkel) {
+                            skjemaData = kryptering.krypterSkjema(skjemaData, nokkel, omfang);
+                            context.log(`lagreSkjema: krypterte skjema ${skjemaId} (${omfang})`);
+                        } else {
+                            context.log(`lagreSkjema: Krypteres=${omfang} men mangler nøkkel for skjematype ${skjematypeId} — hoppes over`);
+                        }
+                    }
+                } catch (e) {
+                    context.log(`lagreSkjema: kryptering/anonymisering feilet — ${e.message}`);
                 }
             }
 

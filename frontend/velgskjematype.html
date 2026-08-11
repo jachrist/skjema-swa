@@ -645,7 +645,7 @@
             return `
                 <div class="skjematype-kort">
                     <div class="kort-tittelrad">
-                        <h2 class="kort-tittel">${escapeHtml(t.Skjema_navn || '(uten navn)')}</h2>
+                        <h2 class="kort-tittel">${escapeHtml(t.Skjema_navn || '(uten navn)')} <small style="font-weight: 400; color: var(--text-secondary); font-size: 0.65em;">ID ${escapeHtml(String(t.Skjematype_id))}</small></h2>
                         <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
                     </div>
                     ${forklaring}

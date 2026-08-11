@@ -518,7 +518,7 @@
             try {
                 if (eksisterendeId) {
                     data = await api.get(`/api/skjematyper/${encodeURIComponent(eksisterendeId)}?rå=1`);
-                    document.getElementById('tittel').textContent = `Rediger: ${data.Skjema_navn || eksisterendeId}`;
+                    document.getElementById('tittel').textContent = `Rediger: ${data.Skjema_navn || eksisterendeId} (ID ${eksisterendeId})`;
                 } else if (kopiFraId) {
                     data = await api.get(`/api/skjematyper/${encodeURIComponent(kopiFraId)}?rå=1`);
                     // Klar for kopi: fjern id, marker som ny fase, endre navn
