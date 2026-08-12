@@ -388,9 +388,13 @@
                 api.settHeader('x-utsending-token', utsendingToken);
                 document.getElementById('upn').textContent = `${v.mottaker} (via lenke)`;
 
-                // Bygg pseudo-eksisterendeSkjema fra prefilled slik at
-                // rendreren plukker opp initial-verdiene automatisk. Alt
-                // feltnummer normaliseres til padded (svarMap bruker padFelt()).
+                // Prefilled kan treffe to slags felt:
+                //  1) Input-felt (Tekst, Skala, Flervalg osv.) — legges i pseudo-
+                //     eksisterendeSkjema så svarMap plukker det opp, og feltet
+                //     låses i lasUtsendingFelter.
+                //  2) Informasjon-felt — ingen input; vi overstyrer Tekst.Verdi
+                //     direkte i skjematypen så info-boksen viser dynamisk tekst
+                //     med sin normale styling. Format bevares (Tekst/Markdown).
                 if (v.prefilled && typeof v.prefilled === 'object') {
                     const seks = new Map();
                     for (const [nokkel, sva] of Object.entries(v.prefilled)) {
@@ -398,6 +402,19 @@
                         if (!m) continue;
                         const sekNr = Number(m[1]);
                         const feltNr = padFelt(m[2]);
+                        // Slå opp feltet i skjematypen for å avgjøre type
+                        let feltDef = null;
+                        for (const s of (skjematype.Seksjoner || [])) {
+                            if (Number(s.Seksjon_nummer) !== sekNr) continue;
+                            for (const f of (s.Felter || [])) {
+                                if (padFelt(f.Nummer) === feltNr) { feltDef = f; break; }
+                            }
+                        }
+                        if (feltDef && feltDef.Type === 'Informasjon') {
+                            const verdi = Array.isArray(sva) ? sva.join('\n') : String(sva ?? '');
+                            feltDef.Tekst = { Verdi: verdi, Format: feltDef.Tekst?.Format || 'Tekst' };
+                            continue;
+                        }
                         utsendingPrefilledKeys.add(`${sekNr}-${feltNr}`);
                         if (!seks.has(sekNr)) seks.set(sekNr, []);
                         seks.get(sekNr).push({ Nummer: feltNr, Svar: Array.isArray(sva) ? sva : [sva] });
