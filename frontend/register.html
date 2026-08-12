@@ -412,6 +412,9 @@
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
+        // ?status=N pre-selekterer statusfilteret. Brukes bl.a. av arkiv-lenken
+        // (?status=5 = Avsluttet).
+        const statusParam = params.get('status');
 
         const STATUS_TEKST = { 0: '–', 1: 'Utkast', 2: 'Innsendt', 3: 'Avvist', 4: 'Under behandling', 5: 'Avsluttet' };
         const state = {
@@ -435,9 +438,18 @@
                 return;
             }
 
+            // Pre-selekter status-filter fra URL (før første render)
+            if (statusParam) {
+                const sf = document.getElementById('statusFilter');
+                if (sf) sf.value = statusParam;
+            }
+
             try {
                 state.skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
-                document.getElementById('tittel').textContent = `Register — ${state.skjematype.Skjema_navn || 'Skjematype ' + skjematypeId}`;
+                const navn = state.skjematype.Skjema_navn || 'Skjematype ' + skjematypeId;
+                // Egen tittel når vi kommer via arkiv-lenken
+                const prefix = statusParam === '5' ? 'Arkiv' : 'Register';
+                document.getElementById('tittel').textContent = `${prefix} — ${navn}`;
                 document.title = document.getElementById('tittel').textContent;
                 const lenke = document.getElementById('lenke-datauttrekk');
                 if (lenke) {
