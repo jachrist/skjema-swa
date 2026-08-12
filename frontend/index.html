@@ -389,16 +389,15 @@
                 document.getElementById('upn').textContent = `${v.mottaker} (via lenke)`;
 
                 // Bygg pseudo-eksisterendeSkjema fra prefilled slik at
-                // rendreren plukker opp initial-verdiene automatisk. svarMap i
-                // rendrer bruker unpadded felt.Nummer, så vi normaliserer bort
-                // ledende null her (backend-nøkkel er "1-01" — vi lagrer som "1-1").
+                // rendreren plukker opp initial-verdiene automatisk. Alt
+                // feltnummer normaliseres til padded (svarMap bruker padFelt()).
                 if (v.prefilled && typeof v.prefilled === 'object') {
                     const seks = new Map();
                     for (const [nokkel, sva] of Object.entries(v.prefilled)) {
                         const m = /^(\d+)-(\d+)$/.exec(nokkel);
                         if (!m) continue;
                         const sekNr = Number(m[1]);
-                        const feltNr = String(Number(m[2])); // strippet for ledende null
+                        const feltNr = padFelt(m[2]);
                         utsendingPrefilledKeys.add(`${sekNr}-${feltNr}`);
                         if (!seks.has(sekNr)) seks.set(sekNr, []);
                         seks.get(sekNr).push({ Nummer: feltNr, Svar: Array.isArray(sva) ? sva : [sva] });
@@ -417,12 +416,14 @@
         // Etter render: lås prefilled felter (disable input og markér visuelt).
         function lasUtsendingFelter() {
             for (const nokkel of utsendingPrefilledKeys) {
-                const [sek, felt] = nokkel.split('-');
-                // Felt.Nummer i DOM kan være "1" eller "01" avhengig av skjematype
+                const [sek, felt] = nokkel.split('-'); // felt er allerede padded
+                // felt.Nummer i DOM kan være "1" eller "01" avhengig av skjematype-def
                 const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${sek}"] .felt[data-felt-nummer="${felt}"]`)
-                    || document.querySelector(`.seksjon[data-seksjon-nummer="${sek}"] .felt[data-felt-nummer="${felt.padStart(2, '0')}"]`);
+                    || document.querySelector(`.seksjon[data-seksjon-nummer="${sek}"] .felt[data-felt-nummer="${String(Number(felt))}"]`);
                 if (!feltEl) continue;
-                for (const el of feltEl.querySelectorAll('input, select, textarea')) {
+                const inputs = feltEl.querySelectorAll('input, select, textarea');
+                if (inputs.length === 0) continue; // Informasjon-felt e.l. har ingen input — hopp over
+                for (const el of inputs) {
                     el.disabled = true;
                     el.readOnly = true;
                 }
@@ -456,13 +457,17 @@
             document.getElementById('innhold').textContent = tekst;
         }
 
-        // Bygg lookup fra eksisterende svar (ved fortsett): "sek-felt" -> array
+        // Normaliser feltnummer til padded to-sifret streng ("1" → "01", "01" → "01")
+        function padFelt(n) { return String(Number(n) || 0).padStart(2, '0'); }
+
+        // Bygg lookup fra eksisterende svar (ved fortsett): "sek-felt" -> array.
+        // Nøkkelen er alltid padded feltnummer så oppslag er trygt uansett kilde-format.
         function bySvarMap() {
             const map = new Map();
             if (!eksisterendeSkjema?.Seksjoner) return map;
             for (const seksjon of eksisterendeSkjema.Seksjoner) {
                 for (const felt of (seksjon.Felter || [])) {
-                    const key = `${seksjon.Nummer}-${felt.Nummer}`;
+                    const key = `${seksjon.Nummer}-${padFelt(felt.Nummer)}`;
                     map.set(key, felt.Svar || []);
                 }
             }
@@ -589,7 +594,7 @@
                 }
             }
 
-            const initialSvar = svarMap.get(`${seksjonNr}-${felt.Nummer}`) || [];
+            const initialSvar = svarMap.get(`${seksjonNr}-${padFelt(felt.Nummer)}`) || [];
             div.appendChild(byggEditWidget(felt, feltId, initialSvar));
 
             const feil = document.createElement('div');
