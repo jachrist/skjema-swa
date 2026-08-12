@@ -649,7 +649,17 @@
                         </select>
                     </div>
                     <div class="rad">
-                        <label>Logo <small>(vises i skjema-header — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>)</small></label>
+                        <label>DIF-logo (venstre) <small>(større logo til venstre for tittelen, f.eks. avdelings/våpen-merke)</small></label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <select id="f-diflogo" onchange="setDIFLogo(this.value)" style="flex: 1;">
+                                <option value="">— ingen —</option>
+                            </select>
+                            <img id="f-diflogo-preview" src="${escapeAttr(data.DIFLogo_URL || '')}" alt=""
+                                style="height: 50px; max-width: 100px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.DIFLogo_URL ? '' : 'display: none;'}">
+                        </div>
+                    </div>
+                    <div class="rad">
+                        <label>Logo (høyre) <small>(vises til høyre for tittelen — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>)</small></label>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <select id="f-logo" onchange="setLogo(this.value)" style="flex: 1;">
                                 <option value="">— ingen —</option>
@@ -1721,23 +1731,33 @@
                 preview.style.display = v ? '' : 'none';
             }
         };
+        window.setDIFLogo = v => {
+            data.DIFLogo_URL = v || '';
+            const preview = document.getElementById('f-diflogo-preview');
+            if (preview) {
+                preview.src = v || '';
+                preview.style.display = v ? '' : 'none';
+            }
+        };
+        function fyllEnDropdown(sel, gjeldende, logoer) {
+            sel.innerHTML = '<option value="">— ingen —</option>' + logoer.map(l =>
+                `<option value="${escapeAttr(l.url)}" ${gjeldende === l.url ? 'selected' : ''}>${escapeAttr(l.navn)}</option>`
+            ).join('');
+            if (gjeldende && !logoer.some(l => l.url === gjeldende)) {
+                const opt = document.createElement('option');
+                opt.value = gjeldende;
+                opt.textContent = '(annet: ' + gjeldende + ')';
+                opt.selected = true;
+                sel.appendChild(opt);
+            }
+        }
         async function fyllLogoDropdown() {
-            const sel = document.getElementById('f-logo');
-            if (!sel) return;
             try {
                 const logoer = await api.get('/api/logoer');
-                const gjeldende = data.Logo_url || '';
-                sel.innerHTML = '<option value="">— ingen —</option>' + logoer.map(l =>
-                    `<option value="${escapeAttr(l.url)}" ${gjeldende === l.url ? 'selected' : ''}>${escapeAttr(l.navn)}</option>`
-                ).join('');
-                // Hvis gjeldende Logo_url ikke matcher noen (f.eks. ekstern URL), legg til en egen "custom"-rad
-                if (gjeldende && !logoer.some(l => l.url === gjeldende)) {
-                    const opt = document.createElement('option');
-                    opt.value = gjeldende;
-                    opt.textContent = '(annet: ' + gjeldende + ')';
-                    opt.selected = true;
-                    sel.appendChild(opt);
-                }
+                const highre = document.getElementById('f-logo');
+                if (highre) fyllEnDropdown(highre, data.Logo_url || '', logoer);
+                const venstre = document.getElementById('f-diflogo');
+                if (venstre) fyllEnDropdown(venstre, data.DIFLogo_URL || '', logoer);
             } catch (e) {
                 console.warn('Kunne ikke laste logoer:', e.message);
             }

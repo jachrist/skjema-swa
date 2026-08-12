@@ -949,8 +949,11 @@ export function parseMarkdown(tekst) {
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-    // Lenker: [tekst](url) — bare http(s) tillates
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    // Lenker: [tekst](url) — bare http(s) tillates.
+    // Egen class md-lenke så CSS kan sikre synlig lenkestil (arvet farge fra
+    // parent kan gjøre standard-anchor usynlig i info-bannere e.l.).
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+        '<a class="md-lenke" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
     // Avsnitt/linjeskift — dobbel newline til </p><p>, enkel til <br>
     // Men ikke inne i eksisterende blokk-tags (h1-h3, ul, ol, li)
@@ -969,9 +972,13 @@ export function parseMarkdown(tekst) {
  * Returnerer HTML-string (allerede escape'd der det passer).
  */
 export function renderTekst(tekstObj) {
-    if (!tekstObj || !tekstObj.Verdi) return '';
-    if (tekstObj.Format === 'Markdown') return parseMarkdown(tekstObj.Verdi);
-    return escapeHtml(tekstObj.Verdi);
+    if (!tekstObj) return '';
+    // Skjemaforklaring bruker .Innhold, felt-Tekst/Undertittel bruker .Verdi.
+    // Migrerte skjematyper fra legacy kan ha begge — prioriter Verdi, fall tilbake til Innhold.
+    const verdi = tekstObj.Verdi ?? tekstObj.Innhold ?? '';
+    if (!verdi) return '';
+    if (tekstObj.Format === 'Markdown') return parseMarkdown(verdi);
+    return escapeHtml(verdi);
 }
 
 // ==================== UTILITY ====================

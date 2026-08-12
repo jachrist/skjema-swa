@@ -94,6 +94,8 @@
         }
         .status-melding.info { background: var(--accent-light); color: var(--text-heading); }
         .status-melding.feil { background: rgba(255, 59, 48, 0.1); color: var(--error); }
+        .md-lenke { color: var(--accent); text-decoration: underline; }
+        .md-lenke:hover { opacity: 0.8; }
 
         .seksjon {
             margin-top: 24px;
@@ -276,9 +278,10 @@
 <body>
     <div class="container">
         <div class="topplinje">
-            <div style="display: flex; align-items: center; gap: 14px;">
+            <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
+                <img id="dif-logo" alt="" style="display: none; max-height: 100px; max-width: 100px; object-fit: contain;">
+                <h1 id="tittel" style="flex: 1;">Laster skjema…</h1>
                 <img id="logo" alt="" style="display: none; max-height: 50px; max-width: 140px; object-fit: contain;">
-                <h1 id="tittel">Laster skjema…</h1>
             </div>
             <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
         </div>
@@ -503,6 +506,11 @@
             if (logoEl && skjematype.Logo_url) {
                 logoEl.src = skjematype.Logo_url;
                 logoEl.style.display = '';
+            }
+            const difLogoEl = document.getElementById('dif-logo');
+            if (difLogoEl && skjematype.DIFLogo_URL) {
+                difLogoEl.src = skjematype.DIFLogo_URL;
+                difLogoEl.style.display = '';
             }
 
             if (skjematype.Skjemaforklaring?.Innhold) {
