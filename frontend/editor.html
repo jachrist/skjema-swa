@@ -1057,6 +1057,21 @@
                     </div>
 
                     <div class="rad">
+                        <label>Krav ved flere behandlere</label>
+                        <div style="display: flex; gap: 12px; font-size: 12px; align-items: center; flex-wrap: wrap;">
+                            <label class="checkbox-rad"><input type="radio" name="beslutning-modus-${idx}" value="forste"
+                                ${steg.Beslutning_alle === true ? '' : 'checked'}
+                                onchange="setBeslutningAlle(${idx}, false)"> Første behandler avgjør</label>
+                            <label class="checkbox-rad"><input type="radio" name="beslutning-modus-${idx}" value="alle"
+                                ${steg.Beslutning_alle === true ? 'checked' : ''}
+                                onchange="setBeslutningAlle(${idx}, true)"> Alle må avgjøre</label>
+                            <span style="color: var(--text-secondary); font-size: 11px;">
+                                Ved "alle": teller kun konkrete Personer. Ompuss trigger umiddelbart.
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="rad">
                         <label>Beslutningsvalg <small>(hva behandleren kan velge — melding-knapp per valg gir egen tilbakemelding til innsender)</small></label>
                         <div class="valg-liste">${valgHtml || '<div style="color: var(--text-secondary); font-size: 12px; font-style: italic;">Ingen valg — legg til under.</div>'}</div>
                         <button class="knapp mini sekundær" onclick="leggTilBeslutningsvalg(${idx})" style="margin-top: 6px;">+ Legg til valg</button>
@@ -1123,6 +1138,9 @@
             });
         }
         window.setStegNavn = (idx, v) => { data.Behandling[idx].Stegnavn = v; };
+        window.setBeslutningAlle = (idx, alle) => {
+            data.Behandling[idx].Beslutning_alle = alle === true;
+        };
         // Behandlere håndteres av tilgang-editor (i rendrerBehandling)
 
         window.setStegFlytUrl = (idx, v) => {

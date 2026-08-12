@@ -179,6 +179,8 @@ app.http('lagreBeslutning', {
             if (stegErFerdig(stegObj)) {
                 return { status: 409, jsonBody: { status: 'feil', melding: 'Steget er allerede behandlet' } };
             }
+            // I alle-modus: hindre at samme aktør avgir mer enn én gang uten at det er
+            // en oppdatering av egen. Duplikat-håndteringen skjer i selve avgivelses-koden.
             const aktive = beregnAktiveSteg(skjema);
             if (!aktive.some(s => Number(s.Steg) === stegNr)) {
                 return { status: 409, jsonBody: { status: 'feil', melding: 'Steget er ikke aktivt ennå' } };
@@ -213,18 +215,53 @@ app.http('lagreBeslutning', {
                 skjema.Skjema_status = 3;
                 context.log(`beslutning: ${upn || 'ekstern-flyt'} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
             } else {
-                // Vanlig beslutning
-                stegObj.Beslutning = beslutning;
-                stegObj.BehandletAv = upn || 'ekstern-flyt';
-                stegObj.BehandletDato = new Date().toISOString();
+                // "Alle må avgjøre"-modus: samle beslutninger, sett stegets sluttbeslutning
+                // først når alle konkrete Personer har levert. Ellers: normal behandling
+                // (første behandler avgjør).
+                const kreverAlle = stegObj.Beslutning_alle === true;
+                const personer = (stegObj.Personer || []).map(p => String(p).toLowerCase());
+                const aktor = upn ? String(upn).toLowerCase() : 'ekstern-flyt';
 
-                // Kaskader: marker steg som skal skippes som "Hoppet over"
-                const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
-                if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
+                if (kreverAlle && personer.length > 0) {
+                    if (!Array.isArray(stegObj.Beslutninger)) stegObj.Beslutninger = [];
+                    // Hindre duplikat fra samme aktør (idempotens ved retry)
+                    const eksisterende = stegObj.Beslutninger.find(b => String(b.Aktor || '').toLowerCase() === aktor);
+                    if (eksisterende) {
+                        eksisterende.Beslutning = beslutning;
+                        eksisterende.Dato = new Date().toISOString();
+                        eksisterende.Kommentar = body?.kommentar || '';
+                    } else {
+                        stegObj.Beslutninger.push({
+                            Aktor: upn || 'ekstern-flyt',
+                            Beslutning: beslutning,
+                            Dato: new Date().toISOString(),
+                            Kommentar: body?.kommentar || ''
+                        });
+                    }
+                    // Sjekk om alle konkrete personer har levert
+                    const leverte = new Set(stegObj.Beslutninger.map(b => String(b.Aktor || '').toLowerCase()));
+                    const alleLeverte = personer.every(p => leverte.has(p));
 
-                // Oppdater skjema-status hvis alle steg ferdig
-                if (alleStegFerdig(skjema)) {
-                    skjema.Skjema_status = 5; // Avsluttet
+                    if (alleLeverte) {
+                        // Sluttbeslutning = siste avgivelse (i praksis samme siden alle må godkjenne)
+                        stegObj.Beslutning = beslutning;
+                        stegObj.BehandletAv = 'alle-behandlere';
+                        stegObj.BehandletDato = new Date().toISOString();
+                        const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
+                        if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
+                        if (alleStegFerdig(skjema)) skjema.Skjema_status = 5;
+                    } else {
+                        const gjenstar = personer.filter(p => !leverte.has(p));
+                        context.log(`beslutning: ${aktor} avga sin beslutning på steg ${stegNr}. Venter på: ${gjenstar.join(', ')}`);
+                    }
+                } else {
+                    // Standard: første behandler avgjør
+                    stegObj.Beslutning = beslutning;
+                    stegObj.BehandletAv = upn || 'ekstern-flyt';
+                    stegObj.BehandletDato = new Date().toISOString();
+                    const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
+                    if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
+                    if (alleStegFerdig(skjema)) skjema.Skjema_status = 5;
                 }
             }
 

@@ -547,6 +547,28 @@
             info.textContent = 'Velg beslutning:';
             div.appendChild(info);
 
+            // Alle-modus: vis progresjon
+            if (steg.Beslutning_alle === true) {
+                const personer = (steg.Personer || []).map(p => String(p).toLowerCase());
+                const leverte = new Set((steg.Beslutninger || []).map(b => String(b.Aktor || '').toLowerCase()));
+                const megLower = String(bruker?.userDetails || '').toLowerCase();
+                const jegHarLevert = leverte.has(megLower);
+                const gjenstar = personer.filter(p => !leverte.has(p));
+                const alleModusInfo = document.createElement('div');
+                alleModusInfo.style.cssText = 'padding: 8px 10px; background: var(--accent-light, rgba(10,132,255,0.1)); border-radius: 6px; margin-bottom: 10px; font-size: 12px;';
+                let html = `<strong>Alle må avgjøre</strong> — ${leverte.size} av ${personer.length} har levert.`;
+                if (jegHarLevert) {
+                    const min = (steg.Beslutninger || []).find(b => String(b.Aktor || '').toLowerCase() === megLower);
+                    const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(min?.Beslutning));
+                    html += `<br><small>Du valgte: <b>${escapeHtml(valg?.Tekst || String(min?.Beslutning))}</b>. Du kan endre valget så lenge steget er åpent.</small>`;
+                }
+                if (gjenstar.length > 0) {
+                    html += `<br><small>Venter på: ${gjenstar.map(p => escapeHtml(p)).join(', ')}</small>`;
+                }
+                alleModusInfo.innerHTML = html;
+                div.appendChild(alleModusInfo);
+            }
+
             const knapper = document.createElement('div');
             knapper.className = 'beslutning-knapper';
             for (const valg of (steg.Beslutningsvalg || [])) {
