@@ -133,6 +133,7 @@ export function byggDNFEditor(container, initial, options) {
                 const o = document.createElement('option');
                 o.value = dk.navn;
                 o.textContent = dk.navn;
+                if (dk.beskrivelse) o.title = dk.beskrivelse;
                 if (dk.navn === state.Datakilde) o.selected = true;
                 sel.appendChild(o);
             }
@@ -270,6 +271,7 @@ export function byggDNFEditor(container, initial, options) {
                 const o = document.createElement('option');
                 o.value = f.navn || f;
                 o.textContent = f.navn || f;
+                if (typeof f === 'object' && f.beskrivelse) o.title = f.beskrivelse;
                 if (o.value === nåværendeRef) o.selected = true;
                 refSel.appendChild(o);
             }
@@ -312,7 +314,17 @@ export function byggDNFEditor(container, initial, options) {
             const inp = document.createElement('input');
             inp.type = 'text';
             inp.style.cssText = 'flex: 1 1 100px; min-width: 80px; padding: 3px 6px; font-size: 12px;';
-            inp.placeholder = 'verdi';
+            // Bruk filter-beskrivelse som placeholder + tooltip når filter er valgt
+            let ph = 'verdi';
+            if (modus === 'faste-data' && nåværendeRef) {
+                const dk = datakilder.find(d => d.navn === state.Datakilde);
+                const filt = (dk?.filtre || []).find(f => (f.navn || f) === nåværendeRef);
+                if (filt && typeof filt === 'object' && filt.beskrivelse) {
+                    ph = filt.beskrivelse;
+                    inp.title = filt.beskrivelse;
+                }
+            }
+            inp.placeholder = ph;
             inp.value = betingelse.Verdi || '';
             inp.addEventListener('input', () => {
                 betingelse.Verdi = inp.value;

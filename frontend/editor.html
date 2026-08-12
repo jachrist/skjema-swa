@@ -486,14 +486,61 @@
 
         // Tilgjengelige datakilder for FasteData i pilot.
         // Kolonner (filter-navn) matcher det oppslag-dispatcheren støtter.
+        // Beskrivelser vises som tooltip (title) i editorens FasteData-bygger,
+        // og filter-beskrivelse settes som placeholder på verdi-input.
         const DATAKILDER = [
-            { navn: 'Postnumre', filtre: ['Kommune', 'Poststed'] },
-            { navn: 'Skjematyper', filtre: ['Fase'] },
-            { navn: 'Roller', filtre: ['Omfang'] },
-            { navn: 'Personer', filtre: ['Rolle', 'EmneLarere', 'EmneHovedlarere', 'EmneStudenter'] },
-            { navn: 'Emner', filtre: ['Termin', 'Campus'] },
-            { navn: 'Studenter', filtre: ['Emne'] },
-            { navn: 'Studieprogrammer', filtre: [] }
+            {
+                navn: 'Postnumre',
+                beskrivelse: 'Norske postnumre (importert fra Bring 2×/år)',
+                filtre: [
+                    { navn: 'Kommune', beskrivelse: 'Postnumre i én kommune. Verdi: kommunenavn (f.eks. "Oslo").' },
+                    { navn: 'Poststed', beskrivelse: 'Postnumre i ett poststed. Verdi: poststedsnavn (f.eks. "OSLO").' }
+                ]
+            },
+            {
+                navn: 'Skjematyper',
+                beskrivelse: 'Skjematyper i systemet',
+                filtre: [
+                    { navn: 'Fase', beskrivelse: 'Begrens til én fase. Verdi: "Utvikling", "Test" eller "Produksjon".' }
+                ]
+            },
+            {
+                navn: 'Roller',
+                beskrivelse: 'Distinkte (Rolle, Omfang)-par — for valg av rolle (ikke innehaver)',
+                filtre: [
+                    { navn: 'Omfang', beskrivelse: 'Roller med spesifikt omfang. Verdi: omfang-tekst (f.eks. "MILM2301").' }
+                ]
+            },
+            {
+                navn: 'Personer',
+                beskrivelse: 'Personer — henter fra rolleinnehavere eller emne-tilknytninger',
+                filtre: [
+                    { navn: 'Rolle', beskrivelse: 'Innehavere av en rolle. Verdi: "Rolle(Omfang)" eller "Rolle".' },
+                    { navn: 'EmneLarere', beskrivelse: 'Lærere for et emne (fra FS). Verdi: emnekode (f.eks. "CBU2501" eller "CBU2501-1").' },
+                    { navn: 'EmneHovedlarere', beskrivelse: 'Hovedlærere for et emne (fra FS). Verdi: emnekode.' },
+                    { navn: 'EmneStudenter', beskrivelse: 'Studenter på et emne (fra FS). Verdi: emnekode.' }
+                ]
+            },
+            {
+                navn: 'Emner',
+                beskrivelse: 'Alle emner ved FHS (fra FS, oppdatert daglig)',
+                filtre: [
+                    { navn: 'Termin', beskrivelse: 'Begrens til én termin. Verdi: kort-form (f.eks. "26V" eller "26H").' },
+                    { navn: 'Campus', beskrivelse: 'Begrens til ett campus. Verdi: campus-kode (f.eks. "SKSK").' }
+                ]
+            },
+            {
+                navn: 'Studenter',
+                beskrivelse: 'Studenter (fra FS)',
+                filtre: [
+                    { navn: 'Emne', beskrivelse: 'Studenter på et emne. Verdi: "{Termin}|{EK}-{VK}" eller "{EK}-{VK}" (f.eks. "26V|MILM2301-1").' }
+                ]
+            },
+            {
+                navn: 'Studieprogrammer',
+                beskrivelse: 'Distinkte studieprogrammer (utledet fra Emner)',
+                filtre: []
+            }
             // Team kommer med Graph API (fase 8)
         ];
 
