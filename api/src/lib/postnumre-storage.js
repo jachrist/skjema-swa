@@ -85,6 +85,55 @@ async function upsertBatch(rader) {
     }
 }
 
+/**
+ * Import av en full postnummer-liste. Med erstattAlt=true slettes alle
+ * eksisterende rader som IKKE finnes i det nye settet (så sammenslåtte/
+ * utgåtte postnumre forsvinner). Bulk-upsert av alle i nye settet.
+ *
+ * Ytelse: sekvensielle kall — ~5000 rader tar 30-60 s. Akseptert siden
+ * jobben kjører 2×/år.
+ */
+async function importerAlle(rader, { erstattAlt = false, log = () => {} } = {}) {
+    const tabell = tabellKlient(TABELL);
+    try { await tabell.createTable(); } catch (_) { /* fins */ }
+
+    // Normaliser + dedupliser input
+    const nye = new Map();
+    let avvist = 0;
+    for (const r of rader) {
+        const nr = String(r.Postnr || r.postnr || '').trim().padStart(4, '0');
+        if (!/^\d{4}$/.test(nr)) { avvist++; continue; }
+        nye.set(nr, {
+            partitionKey: nr[0],
+            rowKey: nr,
+            Postnr: nr,
+            Poststed: r.Poststed || r.poststed || '',
+            Kommune: r.Kommune || r.kommune || ''
+        });
+    }
+
+    let slettet = 0;
+    if (erstattAlt) {
+        log(`importerAlle: sjekker eksisterende for sletting…`);
+        for await (const e of tabell.listEntities({ queryOptions: { select: ['PartitionKey', 'RowKey'] } })) {
+            if (!nye.has(e.rowKey)) {
+                try { await tabell.deleteEntity(e.partitionKey, e.rowKey); slettet++; }
+                catch (_) { /* stille — kan være allerede borte */ }
+            }
+        }
+        log(`importerAlle: slettet ${slettet} utgåtte`);
+    }
+
+    let skrevet = 0;
+    log(`importerAlle: upserter ${nye.size} rader…`);
+    for (const entity of nye.values()) {
+        await tabell.upsertEntity(entity, 'Replace');
+        skrevet++;
+        if (skrevet % 500 === 0) log(`importerAlle: ${skrevet}/${nye.size}…`);
+    }
+    return { antallSkrevet: skrevet, antallSlettet: slettet, antallAvvist: avvist };
+}
+
 async function hentAntall() {
     const tabell = tabellKlient(TABELL);
     let antall = 0;
@@ -97,4 +146,4 @@ async function hentAntall() {
     return antall;
 }
 
-module.exports = { hentPostnummer, sokPostnumre, upsertBatch, hentAntall };
+module.exports = { hentPostnummer, sokPostnumre, upsertBatch, importerAlle, hentAntall };

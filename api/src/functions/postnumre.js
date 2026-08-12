@@ -57,6 +57,88 @@ const EKSEMPEL_POSTNUMRE = [
     { Postnr: '9008', Poststed: 'TROMSØ', Kommune: 'Tromsø' }
 ];
 
+/**
+ * POST /api/postnumre/refresh-bring
+ * Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
+ * Henter Bring sitt postnummerregister og importerer med erstattAlt=true.
+ * Fire-and-forget — status leses via GET /api/postnumre/status.
+ */
+app.http('postnumreRefreshBring', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'postnumre/refresh-bring',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        const schedulerKey = request.headers.get('x-scheduler-key');
+        const configuredKey = String(process.env.SCHEDULER_KEY || '').trim();
+        const schedulerOk = configuredKey && schedulerKey && schedulerKey === configuredKey;
+        if (!schedulerOk && !(upn && erAdmin(upn))) {
+            return { status: 401, jsonBody: { status: 'feil', melding: 'Krever x-scheduler-key eller admin' } };
+        }
+
+        const bring = require('../lib/bring-postnummer');
+        const { tabellKlient } = require('../lib/storage');
+        const hendelser = require('../lib/hendelser-storage');
+        const kilde = schedulerOk ? 'scheduler' : upn;
+        const startTid = new Date().toISOString();
+
+        // Marker som "kjører" i CacheMetadata
+        try {
+            const t = tabellKlient('CacheMetadata');
+            try { await t.createTable(); } catch (_) {}
+            await t.upsertEntity({
+                partitionKey: 'Meta', rowKey: 'Postnumre-Bring',
+                Status: 'kjører', Startet: startTid, Kilde: kilde, SistFeil: ''
+            }, 'Merge');
+        } catch (_) { /* ikke-kritisk */ }
+
+        const jobbLog = (...a) => context.log(...a);
+        jobbLog(`postnumre/refresh-bring: trigget av ${kilde} (fire-and-forget)`);
+
+        // Fire-and-forget — kan ta 30-90 s
+        bring.oppdaterFraBring(jobbLog)
+            .then(async res => {
+                jobbLog(`postnumre/refresh-bring: OK — ${JSON.stringify(res)}`);
+                try {
+                    const t = tabellKlient('CacheMetadata');
+                    await t.upsertEntity({
+                        partitionKey: 'Meta', rowKey: 'Postnumre-Bring',
+                        Status: 'ok', SistOppdatert: new Date().toISOString(),
+                        AntallRader: res.antallSkrevet, AntallSlettet: res.antallSlettet,
+                        VarighetSekunder: res.varighetSekunder, SistFeil: ''
+                    }, 'Merge');
+                } catch (_) {}
+                hendelser.logg({
+                    Type: 'postnumre.bring-oppdatert', Aktor: kilde,
+                    ObjektType: 'postnumre', ObjektId: 'Bring',
+                    Melding: `Oppdaterte postnummerregister — ${res.antallSkrevet} skrevet, ${res.antallSlettet} slettet (${res.varighetSekunder}s)`,
+                    Detaljer: res
+                });
+            })
+            .catch(async e => {
+                jobbLog(`postnumre/refresh-bring FEIL: ${e.message}`);
+                try {
+                    const t = tabellKlient('CacheMetadata');
+                    await t.upsertEntity({
+                        partitionKey: 'Meta', rowKey: 'Postnumre-Bring',
+                        Status: 'feil', Ferdig: new Date().toISOString(),
+                        SistFeil: String(e.message || e).slice(0, 500)
+                    }, 'Merge');
+                } catch (_) {}
+                hendelser.logg({
+                    Type: 'postnumre.bring-feil', Aktor: kilde,
+                    ObjektType: 'postnumre', ObjektId: 'Bring',
+                    Melding: `Bring-oppdatering feilet: ${e.message}`.slice(0, 500)
+                });
+            });
+
+        return {
+            status: 202,
+            jsonBody: { status: 'startet', startet: startTid, melding: 'Jobben kjører asynkront (30-90 s). Sjekk /api/postnumre/status.' }
+        };
+    }
+});
+
 app.http('postnumreStatus', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -67,7 +149,28 @@ app.http('postnumreStatus', {
         if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
         try {
             const antall = await postnumreStorage.hentAntall();
-            return { jsonBody: { antall } };
+            // Hent Bring-import-metadata hvis finnes
+            const { tabellKlient } = require('../lib/storage');
+            let bring = null;
+            try {
+                const t = tabellKlient('CacheMetadata');
+                const e = await t.getEntity('Meta', 'Postnumre-Bring');
+                bring = {
+                    status: e.Status || 'ukjent',
+                    sistOppdatert: e.SistOppdatert || null,
+                    antallRader: e.AntallRader ?? null,
+                    antallSlettet: e.AntallSlettet ?? null,
+                    varighetSekunder: e.VarighetSekunder ?? null,
+                    startet: e.Startet || null,
+                    ferdig: e.Ferdig || null,
+                    kilde: e.Kilde || null,
+                    sistFeil: e.SistFeil || ''
+                };
+            } catch (err) {
+                if (err.statusCode !== 404) throw err;
+                bring = { status: 'aldri kjørt' };
+            }
+            return { jsonBody: { antall, bring } };
         } catch (e) {
             context.log('postnumre/status FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };

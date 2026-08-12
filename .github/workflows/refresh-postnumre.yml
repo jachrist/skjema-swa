@@ -1,0 +1,34 @@
+name: Refresh postnumre fra Bring
+
+# Bring oppdaterer postnummerregisteret ~1 gang per måned.
+# Vi kjører 2 ganger i året (15. januar og 15. juli 04:30 UTC) — postnr endres
+# sjelden nok til at det holder. Kan trigges manuelt via workflow_dispatch
+# eller fra admin-panelet (POST /api/postnumre/refresh-bring).
+
+on:
+  schedule:
+    - cron: '30 4 15 1,7 *' # 04:30 UTC den 15. januar og 15. juli
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kall postnumre/refresh-bring
+        env:
+          SWA_URL: ${{ vars.SWA_URL }}
+          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "SWA_URL eller SCHEDULER_KEY mangler."
+            exit 1
+          fi
+          echo "Kaller $SWA_URL/api/postnumre/refresh-bring …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/postnumre/refresh-bring" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          if [ "$RESP" != "200" ] && [ "$RESP" != "202" ]; then exit 1; fi

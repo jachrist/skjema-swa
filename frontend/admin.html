@@ -924,14 +924,17 @@
                     </div>
                 </div>
                 <div class="panel">
-                    <h2>Postnumre</h2>
-                    <div id="pn-status"><div class="laster">Laster antall…</div></div>
+                    <h2>Postnumre (Bring-import)</h2>
+                    <div id="pn-status"><div class="laster">Laster…</div></div>
                     <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp primær" onclick="pnRefreshBring()">🔄 Oppdater fra Bring nå</button>
                         <button class="knapp" onclick="pnSeed()">Seed 10 test-postnumre</button>
+                        <button class="knapp mini" onclick="pnStatusLast()">Oppdater status</button>
                     </div>
                     <div id="pn-melding" style="margin-top: 10px;"></div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
-                        For fullstendig import må Bring/Posten sitt datasett lastes inn separat (kommer).
+                        Full import fra Bring skjer 2 ganger i året (15. jan og 15. jul) via GitHub Actions.
+                        Manuell trigger tar 30-90 sekunder å kjøre asynkront.
                     </div>
                 </div>
             `;
@@ -1011,9 +1014,40 @@
             const el = document.getElementById('pn-status');
             try {
                 const s = await api.get('/api/postnumre/status');
-                el.innerHTML = `<div style="font-size: 14px;">Lagret: <strong>${s.antall}</strong> postnummer${s.antall === 1 ? '' : 'e'}</div>`;
+                const b = s.bring || {};
+                const fargevar = b.status === 'ok' ? 'success' : (b.status === 'feil' ? 'danger' : (b.status === 'kjører' ? 'warning' : 'text-secondary'));
+                el.innerHTML = `
+                    <div style="font-size: 14px; margin-bottom: 8px;">Lagret: <strong>${s.antall}</strong> postnummer${s.antall === 1 ? '' : 'e'}</div>
+                    <div class="innehaver-header" style="grid-template-columns: 100px 145px 130px 1fr; gap: 12px;">
+                        <div>Status</div><div>Sist oppdatert</div><div>Skrevet/slettet</div><div>Sist feil</div>
+                    </div>
+                    <div class="innehaver-rad" style="grid-template-columns: 100px 145px 130px 1fr; gap: 12px;">
+                        <div style="color: var(--${fargevar});">${escHtml(b.status || 'aldri kjørt')}</div>
+                        <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${b.sistOppdatert ? formatDato(b.sistOppdatert) : (b.ferdig ? formatDato(b.ferdig) : '—')}</div>
+                        <div style="font-size: 12px;">
+                            ${b.antallRader != null ? `<strong>${b.antallRader}</strong> skrevet` : ''}
+                            ${b.antallSlettet != null ? `<br>${b.antallSlettet} slettet` : ''}
+                            ${b.varighetSekunder != null ? `<br><small style="color: var(--text-secondary);">${b.varighetSekunder}s</small>` : ''}
+                            ${b.antallRader == null && b.antallSlettet == null && b.varighetSekunder == null ? '<span style="color: var(--text-secondary);">—</span>' : ''}
+                        </div>
+                        <div style="font-size: 12px; color: var(--danger); overflow: hidden; text-overflow: ellipsis;" title="${escAttr(b.sistFeil || '')}">${escHtml(b.sistFeil || '')}</div>
+                    </div>
+                `;
             } catch (e) {
                 el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.pnRefreshBring = async () => {
+            if (!confirm('Hente og importere postnumre fra Bring nå? Tar 30-90 sekunder, kjører asynkront.')) return;
+            const m = document.getElementById('pn-melding');
+            m.innerHTML = '<div class="banner info">Starter Bring-import…</div>';
+            try {
+                const res = await api.post('/api/postnumre/refresh-bring', {});
+                m.innerHTML = `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. Kom tilbake om ~1 min og trykk 'Oppdater status'.</div>`;
+                setTimeout(pnStatusLast, 3000);
+            } catch (e) {
+                m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
         };
 

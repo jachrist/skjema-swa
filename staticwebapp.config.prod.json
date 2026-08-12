@@ -14,6 +14,7 @@
         { "route": "/api/utsending/valider",          "allowedRoles": ["anonymous"] },
         { "route": "/api/utsending/purre",            "allowedRoles": ["anonymous"] },
         { "route": "/api/logo/*",                     "allowedRoles": ["anonymous"] },
+        { "route": "/api/postnumre/refresh-bring",    "allowedRoles": ["anonymous"] },
         { "route": "/api/*",                          "allowedRoles": ["authenticated"] },
         { "route": "/admin.html",                     "allowedRoles": ["admin"] },
         { "route": "/migrer.html",                    "allowedRoles": ["admin"] },
