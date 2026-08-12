@@ -14,6 +14,7 @@
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const utsendingToken = require('../lib/utsending-token');
 const vedleggStorage = require('../lib/vedlegg-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const skjemaStorage = require('../lib/skjema-storage');
@@ -45,11 +46,18 @@ app.http('opplastVedlegg', {
     authLevel: 'anonymous',
     route: 'vedlegg/{skjematypeId}/{skjemaId}',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-
         const { skjematypeId, skjemaId } = request.params;
-        if (!(await harTilgangTilSkjema(skjematypeId, skjemaId, upn))) {
+        let upn = hentInnloggetUpn(request);
+        const utsendingHeader = request.headers.get('x-utsending-token');
+        if (utsendingHeader) {
+            const v = utsendingToken.valider(utsendingHeader);
+            if (!v.gyldig || v.skjematypeId !== skjematypeId) {
+                return { status: 401, jsonBody: { status: 'feil', melding: v.melding || 'Ugyldig utsendings-token' } };
+            }
+            upn = v.mottaker; // brukes kun til logging (opplasterUpn)
+        } else if (!upn) {
+            return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        } else if (!(await harTilgangTilSkjema(skjematypeId, skjemaId, upn))) {
             return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
         }
 

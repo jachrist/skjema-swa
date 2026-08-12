@@ -296,12 +296,19 @@
         let eksisterendeSkjema = null; // hvis vi henter fra fortsett
         let otpMottaker = null; // e-post eller mobilnr (for ekstern-modus)
         let otpKanal = null; // 'epost' | 'sms'
+        let utsendingModus = false;
+        let utsendingPrefilledKeys = new Set(); // "sek-felt-padded" → låst felt
         const params = new URLSearchParams(window.location.search);
-        const skjematypeId = params.get('skjematype_id');
+        let skjematypeId = params.get('skjematype_id');
         const skjemaIdParam = params.get('skjema_id'); // satt hvis "Fortsett"
         const eksternModus = params.get('ekstern') === '1';
+        const utsendingToken = params.get('utsending');
 
         async function init() {
+            if (utsendingToken) {
+                await initUtsending();
+                return;
+            }
             if (!skjematypeId) {
                 visFeil('Mangler skjematype_id i URL. Åpne skjemaet fra "Velg skjema"-siden.');
                 return;
@@ -357,6 +364,77 @@
             } catch (e) {
                 visFeil('Kunne ikke laste skjema: ' + e.message);
             }
+        }
+
+        async function initUtsending() {
+            utsendingModus = true;
+            // Slå av "Lagre for senere" (utsending går rett til innsending) — vi
+            // skjuler knappen etter render.
+            try {
+                const v = await api.get(`/api/utsending/valider?t=${encodeURIComponent(utsendingToken)}`);
+                if (v.alleredeBesvart) {
+                    document.getElementById('innhold').className = 'status-melding info';
+                    document.getElementById('innhold').innerHTML =
+                        `Denne lenken er allerede besvart. Skjema-ID: <code>${escapeHtml(v.svarSkjemaId || '')}</code>. ` +
+                        `Kontakt utsteder hvis du trenger å endre svaret.`;
+                    return;
+                }
+                skjematypeId = v.skjematypeId;
+                skjematype = v.skjematype;
+                if (!skjematype) {
+                    visFeil('Kunne ikke laste skjemadefinisjon for utsendingen.');
+                    return;
+                }
+                api.settHeader('x-utsending-token', utsendingToken);
+                document.getElementById('upn').textContent = `${v.mottaker} (via lenke)`;
+
+                // Bygg pseudo-eksisterendeSkjema fra prefilled slik at
+                // rendreren plukker opp initial-verdiene automatisk. svarMap i
+                // rendrer bruker unpadded felt.Nummer, så vi normaliserer bort
+                // ledende null her (backend-nøkkel er "1-01" — vi lagrer som "1-1").
+                if (v.prefilled && typeof v.prefilled === 'object') {
+                    const seks = new Map();
+                    for (const [nokkel, sva] of Object.entries(v.prefilled)) {
+                        const m = /^(\d+)-(\d+)$/.exec(nokkel);
+                        if (!m) continue;
+                        const sekNr = Number(m[1]);
+                        const feltNr = String(Number(m[2])); // strippet for ledende null
+                        utsendingPrefilledKeys.add(`${sekNr}-${feltNr}`);
+                        if (!seks.has(sekNr)) seks.set(sekNr, []);
+                        seks.get(sekNr).push({ Nummer: feltNr, Svar: Array.isArray(sva) ? sva : [sva] });
+                    }
+                    eksisterendeSkjema = { Seksjoner: [...seks.entries()].map(([Nummer, Felter]) => ({ Nummer, Felter })) };
+                }
+
+                await forbereedSkjemaId();
+                rendrer();
+                lasUtsendingFelter();
+            } catch (e) {
+                visFeil('Ugyldig eller utløpt lenke: ' + e.message);
+            }
+        }
+
+        // Etter render: lås prefilled felter (disable input og markér visuelt).
+        function lasUtsendingFelter() {
+            for (const nokkel of utsendingPrefilledKeys) {
+                const [sek, felt] = nokkel.split('-');
+                // Felt.Nummer i DOM kan være "1" eller "01" avhengig av skjematype
+                const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${sek}"] .felt[data-felt-nummer="${felt}"]`)
+                    || document.querySelector(`.seksjon[data-seksjon-nummer="${sek}"] .felt[data-felt-nummer="${felt.padStart(2, '0')}"]`);
+                if (!feltEl) continue;
+                for (const el of feltEl.querySelectorAll('input, select, textarea')) {
+                    el.disabled = true;
+                    el.readOnly = true;
+                }
+                feltEl.style.opacity = '0.85';
+                const merke = document.createElement('div');
+                merke.style.cssText = 'font-size: 12px; color: var(--text-secondary); margin-top: 4px;';
+                merke.textContent = '🔒 Forhåndsutfylt — kan ikke endres';
+                feltEl.appendChild(merke);
+            }
+            // Skjul "Lagre for senere" — utsending er én-og-gjort
+            const lagre = document.getElementById('lagre-knapp');
+            if (lagre) lagre.style.display = 'none';
         }
 
         async function forbereedSkjemaId() {
@@ -685,7 +763,21 @@
 
             try {
                 const resp = await api.post('/api/skjemaer', body);
-                window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
+                if (utsendingModus) {
+                    // Utsending-mottakere er ikke SWA-innlogget, så kvittering.html
+                    // vil kreve login. Vis inline takk-melding i stedet.
+                    document.getElementById('innhold').className = 'status-melding info';
+                    document.getElementById('innhold').innerHTML =
+                        `<div style="text-align: center;">
+                            <div style="font-size: 48px;">✓</div>
+                            <h2 style="margin: 10px 0;">Takk for svaret!</h2>
+                            <p>Skjema-ID: <code>${escapeHtml(resp.Skjema_id || '')}</code></p>
+                            <p style="color: var(--text-secondary); font-size: 14px;">Du kan lukke dette vinduet.</p>
+                        </div>`;
+                    document.getElementById('forklaring').innerHTML = '';
+                } else {
+                    window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
+                }
             } catch (e) {
                 submitKnapp.disabled = false;
                 submitKnapp.textContent = 'Send inn';

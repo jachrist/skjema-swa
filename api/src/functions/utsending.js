@@ -29,6 +29,9 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const utsendingStorage = require('../lib/utsending-storage');
 const utsendingToken = require('../lib/utsending-token');
 const hendelser = require('../lib/hendelser-storage');
+const skjemaStorage = require('../lib/skjema-storage');
+const { hentOgSettFasteData } = require('../lib/faste-data');
+const { hentDropdownVerdier } = require('../lib/oppslag');
 
 function harFlytNokkel(request) {
     const forventet = process.env.FLOW_CALLBACK_KEY;
@@ -123,6 +126,23 @@ app.http('utsendingValider', {
             if (!post) return { status: 404, jsonBody: { status: 'feil', melding: 'Utsending ikke funnet' } };
             if (post.Jti !== v.jti) return { status: 401, jsonBody: { status: 'feil', melding: 'Token matcher ikke lagret jti (kan være erstattet)' } };
 
+            // Beriker med skjematype (samme berikning som publikum-endepunktet)
+            // så frontend slipper ekstra kall og trenger ikke EksternTilgang=true.
+            let skjematype = null;
+            try {
+                const st = await skjemaStorage.hentSkjematype(post.SkjematypeId);
+                if (st?.JSON) {
+                    skjematype = await hentOgSettFasteData(
+                        st.JSON,
+                        (dk, fb, fo, fv) => hentDropdownVerdier(dk, fb, fo, fv, (m) => context.log('oppslag: ' + m)),
+                        null,
+                        (m) => context.log('faste-data: ' + m)
+                    );
+                }
+            } catch (e) {
+                context.log('utsending/valider: kunne ikke hente skjematype — ' + e.message);
+            }
+
             return {
                 jsonBody: {
                     status: 'ok',
@@ -131,7 +151,8 @@ app.http('utsendingValider', {
                     prefilled: post.Prefilled || null,
                     alleredeBesvart: !!post.SvarSkjemaId,
                     svarSkjemaId: post.SvarSkjemaId || null,
-                    utloper: v.utloper
+                    utloper: v.utloper,
+                    skjematype
                 }
             };
         } catch (e) {

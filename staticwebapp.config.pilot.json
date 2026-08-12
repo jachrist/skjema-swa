@@ -37,6 +37,14 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/utsending",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/utsending/valider",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },

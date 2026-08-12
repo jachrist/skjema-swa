@@ -10,6 +10,8 @@
         { "route": "/api/skjemaer/*",                 "allowedRoles": ["anonymous"] },
         { "route": "/api/ny-skjema-id/*",             "allowedRoles": ["anonymous"] },
         { "route": "/api/vedlegg/*",                  "allowedRoles": ["anonymous"] },
+        { "route": "/api/utsending",                  "allowedRoles": ["anonymous"] },
+        { "route": "/api/utsending/valider",          "allowedRoles": ["anonymous"] },
         { "route": "/api/*",                          "allowedRoles": ["authenticated"] },
         { "route": "/admin.html",                     "allowedRoles": ["admin"] },
         { "route": "/migrer.html",                    "allowedRoles": ["admin"] },

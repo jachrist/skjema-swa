@@ -537,7 +537,13 @@ app.http('nyttSkjemaId', {
         try {
             const skjematypeId = request.params.skjematypeId;
             const upn = hentInnloggetUpn(request);
-            if (!upn) {
+            const utsendingHeader = request.headers.get('x-utsending-token');
+            if (utsendingHeader) {
+                const v = utsendingToken.valider(utsendingHeader);
+                if (!v.gyldig || v.skjematypeId !== skjematypeId) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: v.melding || 'Ugyldig utsendings-token' } };
+                }
+            } else if (!upn) {
                 // Ekstern-flyt: krev gyldig OTP-token + EksternTilgang=true
                 const eksternAuth = await autentiserEkstern(request, skjematypeId);
                 if (!eksternAuth.ok) {
