@@ -293,7 +293,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
 
@@ -616,13 +616,13 @@
                 label.className = 'felt-label';
                 label.htmlFor = feltId;
                 const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
-                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}${oblig}`;
+                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${renderTekstInline(felt.Tekst)}${oblig}`;
                 div.appendChild(label);
 
                 if (felt.Undertittel?.Verdi) {
                     const u = document.createElement('div');
                     u.className = 'felt-undertittel';
-                    u.textContent = felt.Undertittel.Verdi;
+                    u.innerHTML = renderTekstInline(felt.Undertittel);
                     div.appendChild(u);
                 }
             }

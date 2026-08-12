@@ -987,6 +987,25 @@ export function renderTekst(tekstObj) {
     return escapeHtml(verdi);
 }
 
+/**
+ * Inline-variant av renderTekst — for label/tittel-kontekster hvor blokk-
+ * elementer (<p>, <ul>, <h1-3>) ville ødelagt layout. Støtter bold, italic,
+ * code, lenker. Ingen paragraph-wrapping.
+ */
+export function renderTekstInline(tekstObj) {
+    if (!tekstObj) return '';
+    const verdi = tekstObj.Verdi ?? tekstObj.Innhold ?? '';
+    if (!verdi) return '';
+    if (tekstObj.Format !== 'Markdown') return escapeHtml(verdi);
+    let s = escapeHtml(verdi);
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+        '<a class="md-lenke" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+    return s;
+}
+
 // ==================== UTILITY ====================
 
 export function escapeHtml(s) {

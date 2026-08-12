@@ -1574,12 +1574,34 @@
         }
 
         function byggFeltConfigHtml(felt, sIdx, fIdx) {
+            const tekstFormat = felt.Tekst?.Format || 'Tekst';
+            const undertittelFormat = felt.Undertittel?.Format || 'Tekst';
             const undertittel = felt.Type === 'Informasjon' ? '' : `
+                <div class="rad">
+                    <label>Spørsmåls-format <small>(gjelder tittelen)</small></label>
+                    <div style="display: flex; gap: 12px; font-size: 12px; align-items: center;">
+                        <label class="checkbox-rad"><input type="radio" name="tekst-format-${sIdx}-${fIdx}" value="Tekst"
+                            ${tekstFormat === 'Tekst' ? 'checked' : ''}
+                            onchange="setTekstFormat(${sIdx}, ${fIdx}, 'Tekst')"> Ren tekst</label>
+                        <label class="checkbox-rad"><input type="radio" name="tekst-format-${sIdx}-${fIdx}" value="Markdown"
+                            ${tekstFormat === 'Markdown' ? 'checked' : ''}
+                            onchange="setTekstFormat(${sIdx}, ${fIdx}, 'Markdown')"> Markdown</label>
+                        <span style="color: var(--text-secondary); font-size: 11px;">**bold**, *italic*, [tekst](url)</span>
+                    </div>
+                </div>
                 <div class="rad">
                     <label>Undertittel <small>(vises under spørsmålet — valgfritt)</small></label>
                     <input type="text" value="${escapeAttr(felt.Undertittel?.Verdi || '')}"
                         placeholder="Hjelpetekst / presisering"
                         oninput="setUndertittel(${sIdx}, ${fIdx}, this.value)">
+                    <div style="display: flex; gap: 12px; font-size: 12px; align-items: center; margin-top: 4px;">
+                        <label class="checkbox-rad"><input type="radio" name="und-format-${sIdx}-${fIdx}" value="Tekst"
+                            ${undertittelFormat === 'Tekst' ? 'checked' : ''}
+                            onchange="setUndertittelFormat(${sIdx}, ${fIdx}, 'Tekst')"> Ren tekst</label>
+                        <label class="checkbox-rad"><input type="radio" name="und-format-${sIdx}-${fIdx}" value="Markdown"
+                            ${undertittelFormat === 'Markdown' ? 'checked' : ''}
+                            onchange="setUndertittelFormat(${sIdx}, ${fIdx}, 'Markdown')"> Markdown</label>
+                    </div>
                 </div>
             `;
 
@@ -1858,6 +1880,16 @@
             const felt = data.Seksjoner[sIdx].Felter[fIdx];
             if (!felt.Tekst) felt.Tekst = { Verdi: '' };
             felt.Tekst.Format = format;
+        };
+        window.setTekstFormat = (sIdx, fIdx, format) => {
+            const felt = data.Seksjoner[sIdx].Felter[fIdx];
+            if (!felt.Tekst) felt.Tekst = { Verdi: '' };
+            felt.Tekst.Format = format;
+        };
+        window.setUndertittelFormat = (sIdx, fIdx, format) => {
+            const felt = data.Seksjoner[sIdx].Felter[fIdx];
+            if (!felt.Undertittel) felt.Undertittel = { Verdi: '' };
+            felt.Undertittel.Format = format;
         };
         window.toggleFiltype = (sIdx, fIdx, filtype, valgt) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];

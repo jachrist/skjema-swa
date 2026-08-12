@@ -410,7 +410,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml } from './js/felt-render.js';
+        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
@@ -818,12 +818,12 @@
                 const label = document.createElement('label');
                 label.className = 'felt-label';
                 const oblig = felt.Obligatorisk ? '<span class="oblig-markering">*</span>' : '';
-                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escHtml(felt.Tekst?.Verdi || '')}${oblig}`;
+                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${renderTekstInline(felt.Tekst)}${oblig}`;
                 div.appendChild(label);
                 if (felt.Undertittel?.Verdi) {
                     const u = document.createElement('div');
                     u.style.cssText = 'font-size: 13px; color: var(--text-secondary); margin: 2px 0 6px;';
-                    u.textContent = felt.Undertittel.Verdi;
+                    u.innerHTML = renderTekstInline(felt.Undertittel);
                     div.appendChild(u);
                 }
             }

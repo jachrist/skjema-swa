@@ -278,7 +278,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggReadonlyVisning, escapeHtml } from './js/felt-render.js';
+        import { byggReadonlyVisning, escapeHtml, renderTekstInline } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
@@ -687,12 +687,12 @@
             if (felt.Type !== 'Informasjon') {
                 const label = document.createElement('label');
                 label.className = 'felt-label';
-                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${escapeHtml(felt.Tekst?.Verdi || '')}`;
+                label.innerHTML = `<span class="felt-nummer">${visningsNr}.</span> ${renderTekstInline(felt.Tekst)}`;
                 div.appendChild(label);
                 if (felt.Undertittel?.Verdi) {
                     const u = document.createElement('div');
                     u.style.cssText = 'font-size: 13px; color: var(--text-secondary); margin: 2px 0 6px;';
-                    u.textContent = felt.Undertittel.Verdi;
+                    u.innerHTML = renderTekstInline(felt.Undertittel);
                     div.appendChild(u);
                 }
             }
