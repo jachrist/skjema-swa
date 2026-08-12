@@ -560,9 +560,12 @@
             }
             document.getElementById('upn').textContent = bruker.userDetails;
 
-            // Hent rolle-grupper og team-navn i bakgrunnen — brukes av tilgang-editor
-            hentRolleGrupper(api).then(g => { rolleGrupper = g || []; });
-            hentTeamNavn(api).then(t => { teamNavn = t || []; });
+            // Hent rolle-grupper og team-navn før første render — dropdown i
+            // tilgang-editor må ha data tilgjengelig når den bygges.
+            [rolleGrupper, teamNavn] = await Promise.all([
+                hentRolleGrupper(api).then(g => g || []),
+                hentTeamNavn(api).then(t => t || [])
+            ]);
 
             try {
                 if (eksisterendeId) {
