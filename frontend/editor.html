@@ -1654,9 +1654,23 @@
                     `;
                     break;
                 }
-                case 'Informasjon':
-                    typeConfig = `<div style="color: var(--text-secondary); font-size: 12px;">Vises som informasjonstekst — ingen inntasting.</div>`;
+                case 'Informasjon': {
+                    const format = felt.Tekst?.Format || 'Tekst';
+                    typeConfig = `
+                        <div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 8px;">Vises som informasjonstekst — ingen inntasting.</div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 12px;">
+                            <span>Format:</span>
+                            <label class="checkbox-rad"><input type="radio" name="info-format-${sIdx}-${fIdx}" value="Tekst"
+                                ${format === 'Tekst' ? 'checked' : ''}
+                                onchange="setInfoFormat(${sIdx}, ${fIdx}, 'Tekst')"> Ren tekst</label>
+                            <label class="checkbox-rad"><input type="radio" name="info-format-${sIdx}-${fIdx}" value="Markdown"
+                                ${format === 'Markdown' ? 'checked' : ''}
+                                onchange="setInfoFormat(${sIdx}, ${fIdx}, 'Markdown')"> Markdown</label>
+                            <span style="color: var(--text-secondary); font-size: 11px;">**bold**, *italic*, [tekst](url), - lister, # overskrifter</span>
+                        </div>
+                    `;
                     break;
+                }
                 case 'Dato':
                     typeConfig = '';
                     break;
@@ -1839,6 +1853,11 @@
         };
         window.setFeltProp = (sIdx, fIdx, prop, v) => {
             data.Seksjoner[sIdx].Felter[fIdx][prop] = v;
+        };
+        window.setInfoFormat = (sIdx, fIdx, format) => {
+            const felt = data.Seksjoner[sIdx].Felter[fIdx];
+            if (!felt.Tekst) felt.Tekst = { Verdi: '' };
+            felt.Tekst.Format = format;
         };
         window.toggleFiltype = (sIdx, fIdx, filtype, valgt) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];

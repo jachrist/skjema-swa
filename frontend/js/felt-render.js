@@ -111,7 +111,13 @@ export function byggEditWidget(felt, feltId, initialSvar = []) {
 function _lagInformasjon(felt) {
     const div = document.createElement('div');
     div.className = 'informasjon';
-    div.textContent = felt.Tekst?.Verdi || '';
+    // Rendrer Markdown med levende lenker når Tekst.Format === 'Markdown',
+    // ellers plain tekst. renderTekst håndterer HTML-escape.
+    if (felt.Tekst?.Format === 'Markdown') {
+        div.innerHTML = renderTekst(felt.Tekst);
+    } else {
+        div.textContent = felt.Tekst?.Verdi || felt.Tekst?.Innhold || '';
+    }
     return div;
 }
 
