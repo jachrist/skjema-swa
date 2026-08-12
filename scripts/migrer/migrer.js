@@ -21,17 +21,30 @@ const { kopierTabell } = require('./lib/tabell-kopi');
 const { kopierContainer } = require('./lib/blob-kopi');
 
 // Kjente tabeller i skjema-appen. Kopieres i denne rekkefølgen (avhengigheter først).
+// Hver entry er enten en string (samme navn i kilde og mål) eller
+// { kilde, mal } når legacy og SWA bruker forskjellige navn.
 const TABELLER = [
-    'Skjemadefinisjoner',   // skjematypen — kryptonokler er avhengig av at type finnes
-    'Kryptonokler',         // nøkler per skjematype (KRITISK for krypterte skjemaer)
-    'Skjemaer',             // forekomster
-    'Rollemedlemskap',      // rolle-tildelinger
-    'Emner',                // FS-masterdata (kan re-genereres via refresh-fs)
+    'Skjemadefinisjoner',                              // skjematypen
+    'Kryptonokler',                                    // nøkler (KRITISK for krypterte skjemaer)
+    { kilde: 'Skjemaresultater', mal: 'Skjemaer' },    // legacy → SWA rename
+    'Skjemaer',                                        // for SWA→SWA-migrering (samme-navn fallback)
+    'Rollemedlemskap',                                 // rolle-tildelinger
+    'Emner',                                           // FS-masterdata (kan re-genereres via refresh-fs)
     'EmneStudenter',
-    'Postnumre',            // kan re-seedes fra bring/postnord
-    'Tilgangskontroll',     // tokens + OTP-koder (ephemeral, kan hoppes over)
-    'CacheMetadata'         // sist-refresh-info per kilde
+    'Postnumre',                                       // kan re-seedes fra Bring
+    'Tilgangskontroll',                                // tokens + OTP-koder (ephemeral)
+    'CacheMetadata'                                    // sist-refresh-info per kilde
 ];
+
+function tabellNavn(spec) {
+    return typeof spec === 'string' ? spec : (spec.mal || spec.kilde);
+}
+function tabellKildeNavn(spec) {
+    return typeof spec === 'string' ? spec : (spec.kilde || spec.mal);
+}
+function tabellMalNavn(spec) {
+    return typeof spec === 'string' ? spec : (spec.mal || spec.kilde);
+}
 
 const CONTAINERE = [
     'vedlegg',
@@ -74,7 +87,7 @@ Flagg:
   --dry-run              Kun list opp — ingen skriving
   --help                 Vis denne meldingen
 
-Kjente tabeller: ${TABELLER.join(', ')}
+Kjente tabeller: ${TABELLER.map(t => typeof t === 'string' ? t : `${t.kilde}→${t.mal}`).join(', ')}
 Kjente containere: ${CONTAINERE.join(', ')}
 
 Eksempel — full migrering med env-vars:
@@ -99,7 +112,11 @@ async function main() {
         process.exit(1);
     }
 
-    const tabellerKjor = args.tabeller.length > 0 ? args.tabeller : TABELLER;
+    // Hvis bruker har spesifisert --tabell, mapp navnet til spec-en (så
+    // rename fortsatt virker) — ellers kjør alle.
+    const tabellerKjor = args.tabeller.length > 0
+        ? args.tabeller.map(n => TABELLER.find(t => tabellNavn(t) === n || tabellKildeNavn(t) === n) || n)
+        : TABELLER;
     const containereKjor = args.containere.length > 0 ? args.containere : CONTAINERE;
     const log = console.log;
 
@@ -113,18 +130,22 @@ async function main() {
 
     if (!args.kunBlobs) {
         for (const t of tabellerKjor) {
+            const kNavn = tabellKildeNavn(t);
+            const mNavn = tabellMalNavn(t);
+            const label = kNavn === mNavn ? kNavn : `${kNavn}→${mNavn}`;
             try {
                 const res = await kopierTabell({
-                    tabellNavn: t,
+                    kildeNavn: kNavn,
+                    malNavn: mNavn,
                     kildeConn: args.kildeConn,
                     malConn: args.malConn,
                     dryRun: args.dryRun,
                     log
                 });
-                sammendrag.tabeller.push({ tabell: t, ...res });
+                sammendrag.tabeller.push({ tabell: label, ...res });
             } catch (e) {
-                log(`  KATASTROFE-FEIL for ${t}: ${e.message}`);
-                sammendrag.tabeller.push({ tabell: t, feil: e.message });
+                log(`  KATASTROFE-FEIL for ${label}: ${e.message}`);
+                sammendrag.tabeller.push({ tabell: label, feil: e.message });
             }
         }
     }

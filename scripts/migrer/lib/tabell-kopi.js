@@ -17,13 +17,20 @@ async function sikrTabell(client) {
 
 /**
  * Kopier en tabell fra kilde til mål.
+ * @param {Object} opts
+ * @param {string} opts.tabellNavn   — tabellnavn hvis samme i kilde og mål
+ * @param {string} [opts.kildeNavn]  — override: kildens tabellnavn (f.eks. legacy Skjemaresultater)
+ * @param {string} [opts.malNavn]    — override: målets tabellnavn (f.eks. SWA Skjemaer)
  * @returns {Promise<{lest, upsertet, hoppetOver, feil}>}
  */
-async function kopierTabell({ tabellNavn, kildeConn, malConn, dryRun, log }) {
-    log(`\n=== ${tabellNavn} ===`);
+async function kopierTabell({ tabellNavn, kildeNavn, malNavn, kildeConn, malConn, dryRun, log }) {
+    const knavn = kildeNavn || tabellNavn;
+    const mnavn = malNavn || tabellNavn;
+    const etikett = knavn === mnavn ? knavn : `${knavn} → ${mnavn}`;
+    log(`\n=== ${etikett} ===`);
 
-    const kilde = TableClient.fromConnectionString(kildeConn, tabellNavn);
-    const mal = TableClient.fromConnectionString(malConn, tabellNavn);
+    const kilde = TableClient.fromConnectionString(kildeConn, knavn);
+    const mal = TableClient.fromConnectionString(malConn, mnavn);
 
     if (!dryRun) await sikrTabell(mal);
 
@@ -51,7 +58,7 @@ async function kopierTabell({ tabellNavn, kildeConn, malConn, dryRun, log }) {
     log(`  Totalt lest: ${lest} entiteter i ${perPk.size} partisjoner`);
 
     if (dryRun) {
-        log(`  DRY-RUN: ville skrevet ${lest} entiteter til ${tabellNavn}`);
+        log(`  DRY-RUN: ville skrevet ${lest} entiteter til ${mnavn}`);
         return { lest, upsertet: 0, hoppetOver: 0, feil: 0 };
     }
 
