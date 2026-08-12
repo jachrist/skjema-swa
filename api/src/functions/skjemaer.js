@@ -259,11 +259,11 @@ app.http('lagreBeslutning', {
             await forekomstStorage.lagreSkjema(skjema, false);
             context.log(`beslutning: ${upn || 'ekstern-flyt'} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
             hendelser.logg({
-                Type: 'skjema.beslutning',
+                Type: erFlowCallback ? 'skjema.beslutning.ekstern-flyt' : 'skjema.beslutning',
                 Aktor: upn || 'ekstern-flyt',
                 ObjektType: 'skjema', ObjektId: skjemaId,
-                Melding: `Steg ${stegNr}: beslutning ${beslutning}${valgtValg?.Tekst ? ' (' + valgtValg.Tekst + ')' : ''}`,
-                Detaljer: { skjematypeId, steg: stegNr, beslutning, tekst: valgtValg?.Tekst || '', nyStatus: skjema.Skjema_status }
+                Melding: `Steg ${stegNr}: beslutning ${beslutning}${valgtValg?.Tekst ? ' (' + valgtValg.Tekst + ')' : ''}${erFlowCallback ? ' (via ekstern-flyt)' : ''}`,
+                Detaljer: { skjematypeId, steg: stegNr, beslutning, tekst: valgtValg?.Tekst || '', nyStatus: skjema.Skjema_status, kilde: erFlowCallback ? 'ekstern-flyt' : 'bruker' }
             });
 
             // Varsling (fire-and-forget) — kalles etter lagring
@@ -281,7 +281,7 @@ app.http('lagreBeslutning', {
                 const flytSteg = nyeAktive.filter(s => (s.Flyt_url || '').trim());
                 const vanligeSteg = nyeAktive.filter(s => !(s.Flyt_url || '').trim());
                 varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, vanligeSteg, varslOpts));
-                for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjema, log));
+                for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjema, s, log));
             }
             Promise.all(varslinger).catch(e => context.log(`varsling/ekstern-flyt FEIL (beslutning): ${e.message}`));
 
@@ -752,7 +752,7 @@ app.http('lagreSkjema', {
                 Promise.all([
                     varsling.sendInnsenderKvittering(skjemaData, skjematype, varslOpts),
                     varsling.sendVarslingAktiveSteg(skjemaData, skjematype, vanligeSteg, varslOpts),
-                    ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaData, log)),
+                    ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaData, s, log)),
                     oppdaterSPListe(skjemaData, skjematype, log)
                 ]).catch(e => context.log(`varsling/ekstern-flyt/sp FEIL (innsending): ${e.message}`));
             }
