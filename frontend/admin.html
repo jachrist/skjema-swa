@@ -182,7 +182,7 @@
                 <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser</a>
                 <a class="fane" data-fane="utsendinger" href="#utsendinger">✉️ Utsendinger</a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS</a>
-                <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="backup" href="#backup">💾 Backup</a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
                 <a class="fane" data-fane="system" href="#system">⚙️ System</a>
             </nav>
@@ -227,7 +227,7 @@
                 case 'hendelser':   rendrHendelser(); break;
                 case 'utsendinger': rendrUtsendinger(); break;
                 case 'postnumre-fs':rendrPostnumreFs(); break;
-                case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
+                case 'backup':      rendrBackup(); break;
                 case 'logoer':      rendrLogoer(); break;
                 case 'system':      rendrSystem(); break;
                 default: rendrRoller();
@@ -1143,6 +1143,154 @@
                 </div>
             `;
         }
+
+        // ==================== BACKUP-FANE ====================
+
+        function rendrBackup() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Innstillinger</h2>
+                    <div class="rad">
+                        <label style="min-width: 180px;">OneDrive-sti</label>
+                        <input type="text" id="b-sti" placeholder="/Backups/FHS-Skjema" style="flex: 1;">
+                        <button class="knapp mini primær" onclick="bLagreSti()">Lagre</button>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                        Sendes til PA-flyten (BACKUP_FLOW_URL) som destinasjonsmappe.
+                        Format og gyldige stier avhenger av PA-flytens OneDrive-connector-oppsett.
+                    </div>
+                    <div id="b-sti-status" style="margin-top: 8px;"></div>
+                </div>
+                <div class="panel">
+                    <h2>Kjør backup</h2>
+                    <div class="knapp-rad">
+                        <button class="knapp primær" onclick="bKjor()">💾 Kjør backup nå (til OneDrive)</button>
+                        <button class="knapp" onclick="bLastNed()">⬇ Last ned kryptert backup lokalt</button>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                        Backup inkluderer alle tabeller + blob-innhold (vedlegg + logoer). AES-256-GCM-kryptert med BACKUP_PASSPHRASE.
+                        Kan ta 30 sekunder til flere minutter avhengig av datamengde.
+                    </div>
+                    <div id="b-kjor-status" style="margin-top: 10px;"></div>
+                </div>
+                <div class="panel">
+                    <h2>Historikk</h2>
+                    <div style="margin-bottom: 8px;">
+                        <button class="knapp mini" onclick="bListLast()">Oppdater</button>
+                    </div>
+                    <div id="b-liste"><div class="laster">Laster…</div></div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                        Historikk lagres i blob-container "backups" og beholdes til admin sletter manuelt.
+                        SAS-lenkene er gyldige i 24 timer og gir lese-tilgang uten SWA-innlogging.
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Restore</h2>
+                    <div class="banner advarsel">
+                        Restore kommer i neste commit. Bruk .fsbk-filen (kryptert) og BACKUP_PASSPHRASE for å dekryptere manuelt så lenge.
+                    </div>
+                </div>
+            `;
+            bStiLast();
+            bListLast();
+        }
+
+        async function bStiLast() {
+            try {
+                const s = await api.get('/api/innstillinger/BackupOneDriveSti').catch(() => null);
+                document.getElementById('b-sti').value = s?.Verdi || '';
+                if (s?.SistEndret) {
+                    document.getElementById('b-sti-status').innerHTML =
+                        `<span style="font-size: 12px; color: var(--text-secondary);">Sist endret ${formatDato(s.SistEndret)} av ${escHtml(s.EndretAv || '-')}</span>`;
+                }
+            } catch (_) {}
+        }
+
+        window.bLagreSti = async () => {
+            const verdi = document.getElementById('b-sti').value.trim();
+            const status = document.getElementById('b-sti-status');
+            try {
+                await api.post('/api/innstillinger', { Nokkel: 'BackupOneDriveSti', Verdi: verdi });
+                status.innerHTML = '<span style="color: var(--success); font-size: 12px;">✓ Lagret</span>';
+                setTimeout(bStiLast, 500);
+            } catch (e) {
+                status.innerHTML = `<span style="color: var(--danger); font-size: 12px;">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        window.bKjor = async () => {
+            if (!confirm('Kjør backup nå? Kan ta flere minutter avhengig av datamengde.')) return;
+            const s = document.getElementById('b-kjor-status');
+            s.innerHTML = '<div class="banner info">Kjører backup — dette kan ta et par minutter…</div>';
+            try {
+                const res = await api.post('/api/backup/kjor', {});
+                const mbKlar = Math.round((res.manifest?.tabeller?.reduce((a, t) => a + t.antall, 0) || 0));
+                const mbKrypt = Math.round(res.storrelseBytes / 1024 / 1024 * 10) / 10;
+                s.innerHTML = `
+                    <div class="banner ${res.flytStatus === 'ok' ? 'suksess' : (res.flytStatus === 'hoppet-over' ? 'info' : 'advarsel')}">
+                        <strong>✓ Backup lagret som ${escHtml(res.filnavn)}</strong>
+                        <br><small>${mbKrypt} MB kryptert · ${res.varighetSekunder}s · PA-flyt: ${escHtml(res.flytStatus)}</small>
+                        ${res.flytMelding ? `<br><small>${escHtml(res.flytMelding)}</small>` : ''}
+                        ${res.oneDriveSti ? `<br><small>OneDrive-sti: <code>${escHtml(res.oneDriveSti)}</code></small>` : ''}
+                    </div>
+                `;
+                await bListLast();
+            } catch (e) {
+                s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.bLastNed = async () => {
+            if (!confirm('Bygg backup og last ned kryptert fil lokalt? Ta vare på BACKUP_PASSPHRASE for å kunne dekryptere.')) return;
+            const s = document.getElementById('b-kjor-status');
+            s.innerHTML = '<div class="banner info">Bygger backup…</div>';
+            try {
+                const res = await fetch('/api/backup/last-ned', { method: 'POST' });
+                if (!res.ok) {
+                    const t = await res.text();
+                    throw new Error(t || `HTTP ${res.status}`);
+                }
+                const disp = res.headers.get('content-disposition') || '';
+                const m = /filename="([^"]+)"/.exec(disp);
+                const filnavn = m ? m[1] : `backup-${Date.now()}.fsbk`;
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = filnavn;
+                document.body.appendChild(a); a.click(); a.remove();
+                URL.revokeObjectURL(url);
+                s.innerHTML = `<div class="banner suksess">✓ Lastet ned ${escHtml(filnavn)} (${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB)</div>`;
+            } catch (e) {
+                s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.bListLast = async () => {
+            const el = document.getElementById('b-liste');
+            try {
+                const liste = await api.get('/api/backup/liste');
+                if (liste.length === 0) {
+                    el.innerHTML = '<div class="tom-melding">Ingen backupper lagret ennå.</div>';
+                    return;
+                }
+                el.innerHTML = `
+                    <div class="innehaver-header" style="grid-template-columns: 2fr 145px 100px 100px 120px; gap: 12px;">
+                        <div>Filnavn</div><div>Opprettet</div><div>Størrelse</div><div>Varighet</div><div>Handling</div>
+                    </div>
+                    ${liste.map(b => `
+                        <div class="innehaver-rad" style="grid-template-columns: 2fr 145px 100px 100px 120px; gap: 12px;">
+                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(b.filnavn)}">${escHtml(b.filnavn)}</div>
+                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${formatDato(b.opprettet)}</div>
+                            <div style="font-size: 12px;">${Math.round(b.storrelseBytes / 1024 / 1024 * 10) / 10} MB</div>
+                            <div style="font-size: 12px;">${b.varighetSek != null ? b.varighetSek + 's' : '—'}</div>
+                            <div><a class="knapp mini" href="${escAttr(b.sasUrl)}" target="_blank" download>Last ned</a></div>
+                        </div>
+                    `).join('')}
+                `;
+            } catch (e) {
+                el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
 
         // ==================== Hjelpere ====================
         function escHtml(s) {

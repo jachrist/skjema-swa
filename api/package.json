@@ -17,6 +17,7 @@
         "@azure/storage-blob": "^12.26.0",
         "@azure/keyvault-secrets": "^4.9.0",
         "xlsx": "^0.18.5",
-        "pdf-lib": "^1.17.1"
+        "pdf-lib": "^1.17.1",
+        "jszip": "^3.10.1"
     }
 }

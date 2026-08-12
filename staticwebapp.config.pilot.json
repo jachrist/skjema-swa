@@ -57,6 +57,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/backup/kjor",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },

@@ -23,6 +23,8 @@ require('./functions/hendelser');
 require('./functions/utsending');
 require('./functions/logo');
 require('./functions/system');
+require('./functions/innstillinger');
+require('./functions/backup');
 
 // Etter hvert:
 // require('./functions/skjema');
