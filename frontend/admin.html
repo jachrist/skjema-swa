@@ -182,7 +182,7 @@
                 <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser</a>
                 <a class="fane" data-fane="utsendinger" href="#utsendinger">✉️ Utsendinger</a>
                 <a class="fane" data-fane="masterdata" href="#masterdata">🗂 Masterdata <span class="badge">Snart</span></a>
-                <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS</a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
                 <a class="fane" data-fane="system" href="#system">⚙️ System <span class="badge">Snart</span></a>
@@ -228,7 +228,7 @@
                 case 'hendelser':   rendrHendelser(); break;
                 case 'utsendinger': rendrUtsendinger(); break;
                 case 'masterdata':  rendrPlaceholder('Masterdata', 'Faste_data og oppslagslister (Emner, Fakulteter, osv.). Redigerbar tabell.'); break;
-                case 'postnumre-fs':rendrPlaceholder('Postnumre / FS', 'Seed postnumre-tabell. Trigg refresh av FS-data (emner, personer).'); break;
+                case 'postnumre-fs':rendrPostnumreFs(); break;
                 case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
                 case 'logoer':      rendrLogoer(); break;
                 case 'system':      rendrPlaceholder('System', 'Miljø-info, /api/whoami-dump, varsling-diag, seed-eksempler. Kanskje også migrering-verktøy.'); break;
@@ -902,6 +902,130 @@
                     `<div class="banner suksess">✓ URL kopiert: <code>${escHtml(url)}</code></div>`;
             } catch (_) {
                 prompt('Kopier URL manuelt:', url);
+            }
+        };
+
+        // ==================== POSTNUMRE / FS-FANE ====================
+
+        function rendrPostnumreFs() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>FS-data (emner, studenter)</h2>
+                    <div id="fs-status"><div class="laster">Laster status…</div></div>
+                    <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp primær" onclick="fsTrigger()">🔄 Trigg full refresh</button>
+                        <button class="knapp" onclick="fsDiag()">🔍 Diagnostikk</button>
+                        <button class="knapp mini" onclick="fsStatusLast()">Oppdater status</button>
+                    </div>
+                    <div id="fs-melding" style="margin-top: 10px;"></div>
+                    <div id="fs-diag-resultat" style="margin-top: 10px;"></div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                        Full refresh tar 2-4 min og kjøres asynkront. Automatisk hver dag 04:00 UTC via GitHub Actions.
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Postnumre</h2>
+                    <div id="pn-status"><div class="laster">Laster antall…</div></div>
+                    <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp" onclick="pnSeed()">Seed 10 test-postnumre</button>
+                    </div>
+                    <div id="pn-melding" style="margin-top: 10px;"></div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                        For fullstendig import må Bring/Posten sitt datasett lastes inn separat (kommer).
+                    </div>
+                </div>
+            `;
+            fsStatusLast();
+            pnStatusLast();
+        }
+
+        window.fsStatusLast = async () => {
+            const el = document.getElementById('fs-status');
+            try {
+                const s = await api.get('/api/refresh-fs/status');
+                el.innerHTML = renderFsStatusTabell(s);
+            } catch (e) {
+                el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        function renderFsStatusTabell(status) {
+            const kilder = Object.keys(status || {});
+            if (kilder.length === 0) return '<div class="tom-melding">Ingen status-info.</div>';
+            return `
+                <div class="innehaver-header" style="grid-template-columns: 120px 100px 145px 130px 1fr; gap: 12px;">
+                    <div>Kilde</div><div>Status</div><div>Sist oppdatert</div><div>Antall / varighet</div><div>Sist feil</div>
+                </div>
+                ${kilder.map(k => {
+                    const s = status[k];
+                    const fargeklasse = s.status === 'ok' ? 'suksess' : (s.status === 'feil' ? 'feil' : (s.status === 'kjører' ? 'advarsel' : 'info'));
+                    const fargevar = s.status === 'ok' ? 'success' : (s.status === 'feil' ? 'danger' : (s.status === 'kjører' ? 'warning' : 'text-secondary'));
+                    return `
+                        <div class="innehaver-rad" style="grid-template-columns: 120px 100px 145px 130px 1fr; gap: 12px;">
+                            <div><strong>${escHtml(k)}</strong></div>
+                            <div style="color: var(--${fargevar});">${escHtml(s.status || 'ukjent')}</div>
+                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${s.sistOppdatert ? formatDato(s.sistOppdatert) : (s.ferdig ? formatDato(s.ferdig) : '—')}</div>
+                            <div style="font-size: 12px;">
+                                ${s.antallRader ? `<strong>${s.antallRader}</strong> rader` : ''}
+                                ${s.varighetSekunder ? ` · ${s.varighetSekunder}s` : ''}
+                                ${!s.antallRader && !s.varighetSekunder ? '<span style="color: var(--text-secondary);">—</span>' : ''}
+                            </div>
+                            <div style="font-size: 12px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(s.sistFeil || '')}">${escHtml(s.sistFeil || '')}</div>
+                        </div>
+                    `;
+                }).join('')}
+            `;
+        }
+
+        window.fsTrigger = async () => {
+            if (!confirm('Trigg full FS-refresh nå? Kjører asynkront i 2-4 min.')) return;
+            const m = document.getElementById('fs-melding');
+            m.innerHTML = '<div class="banner info">Starter jobben…</div>';
+            try {
+                const res = await api.post('/api/refresh-fs', {});
+                m.innerHTML = `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. Kom tilbake om et par min og trykk 'Oppdater status'.</div>`;
+                setTimeout(fsStatusLast, 2000);
+            } catch (e) {
+                m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.fsDiag = async () => {
+            const r = document.getElementById('fs-diag-resultat');
+            r.innerHTML = '<div class="laster">Kjører diagnostikk (5-15 s)…</div>';
+            try {
+                const res = await fetch('/api/refresh-fs/diag', { method: 'POST' });
+                const data = await res.json();
+                r.innerHTML = `
+                    <div class="banner ${data.status === 'ok' ? 'suksess' : 'feil'}" style="max-height: 400px; overflow: auto;">
+                        <div style="font-weight: 600; margin-bottom: 6px;">Diagnostikk: ${escHtml(data.status)}</div>
+                        <pre style="margin: 0; font-size: 11px; white-space: pre-wrap;">${escHtml(JSON.stringify(data, null, 2))}</pre>
+                    </div>
+                `;
+            } catch (e) {
+                r.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.pnStatusLast = async () => {
+            const el = document.getElementById('pn-status');
+            try {
+                const s = await api.get('/api/postnumre/status');
+                el.innerHTML = `<div style="font-size: 14px;">Lagret: <strong>${s.antall}</strong> postnummer${s.antall === 1 ? '' : 'e'}</div>`;
+            } catch (e) {
+                el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.pnSeed = async () => {
+            const m = document.getElementById('pn-melding');
+            m.innerHTML = '<div class="banner info">Seeder…</div>';
+            try {
+                const res = await api.post('/api/postnumre/seed', {});
+                m.innerHTML = `<div class="banner suksess">✓ Seedet ${res.antall} postnumre</div>`;
+                await pnStatusLast();
+            } catch (e) {
+                m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
         };
 

@@ -85,4 +85,16 @@ async function upsertBatch(rader) {
     }
 }
 
-module.exports = { hentPostnummer, sokPostnumre, upsertBatch };
+async function hentAntall() {
+    const tabell = tabellKlient(TABELL);
+    let antall = 0;
+    try {
+        for await (const _ of tabell.listEntities({ queryOptions: { select: ['PartitionKey'] } })) antall++;
+    } catch (e) {
+        if (e.statusCode === 404) return 0;
+        throw e;
+    }
+    return antall;
+}
+
+module.exports = { hentPostnummer, sokPostnumre, upsertBatch, hentAntall };

@@ -57,6 +57,24 @@ const EKSEMPEL_POSTNUMRE = [
     { Postnr: '9008', Poststed: 'TROMSØ', Kommune: 'Tromsø' }
 ];
 
+app.http('postnumreStatus', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'postnumre/status',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
+        try {
+            const antall = await postnumreStorage.hentAntall();
+            return { jsonBody: { antall } };
+        } catch (e) {
+            context.log('postnumre/status FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('postnumreSeed', {
     methods: ['POST'],
     authLevel: 'anonymous',
