@@ -24,7 +24,12 @@ const TILLATTE_EXT = Object.keys(MIME_PER_EXT);
 
 async function container() {
     const c = containerKlient(CONTAINER);
-    try { await c.createIfNotExists({ access: 'blob' }); } catch (_) { /* fins */ }
+    // Private container — vi serverer bytes via /api/logo/{navn} selv.
+    // access: 'blob' feiler på storage-kontoer med public-access disabled (default).
+    try { await c.createIfNotExists(); } catch (e) {
+        // Bare 409 "Container already exists" er OK å svelge — resten skal opp
+        if (e.statusCode !== 409) throw e;
+    }
     return c;
 }
 
