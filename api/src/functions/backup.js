@@ -19,6 +19,7 @@ const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const backup = require('../lib/backup');
 const backupKrypto = require('../lib/backup-krypto');
+const restore = require('../lib/restore');
 const innstillinger = require('../lib/innstillinger-storage');
 const hendelser = require('../lib/hendelser-storage');
 const { containerKlient, serviceKlient } = require('../lib/blob');
@@ -216,6 +217,118 @@ app.http('backupLastNed', {
             };
         } catch (e) {
             context.log('backup/last-ned FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/backup/verifiser
+ * Admin, multipart/form-data:
+ *   fil         — .fsbk-fil
+ *   passphrase? — override env BACKUP_PASSPHRASE (nyttig for migrering
+ *                 mellom miljøer med ulik passphrase)
+ * Dekrypterer + åpner zip + leser manifest. INGEN skrivinger. Returnerer
+ * manifest så admin kan bekrefte innhold før den kjører restore.
+ */
+app.http('backupVerifiser', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'backup/verifiser',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const fd = await request.formData();
+            const fil = fd.get('fil');
+            if (!fil || typeof fil === 'string') {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Ingen fil sendt (må hete "fil")' } };
+            }
+            const passphrase = String(fd.get('passphrase') || '').trim() || (process.env.BACKUP_PASSPHRASE || '').trim();
+            if (!passphrase || passphrase.length < 16) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Passphrase mangler eller er kortere enn 16 tegn' } };
+            }
+            const buf = Buffer.from(await fil.arrayBuffer());
+            const { manifest } = await restore.apneOgDekrypter(buf, passphrase);
+            return {
+                jsonBody: {
+                    status: 'ok',
+                    filnavn: fil.name,
+                    storrelseBytes: buf.length,
+                    manifest,
+                    passphraseKilde: fd.get('passphrase') ? 'form' : 'env'
+                }
+            };
+        } catch (e) {
+            context.log('backup/verifiser FEIL:', e.message);
+            return { status: 400, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/backup/restore
+ * Admin, multipart/form-data:
+ *   fil          — .fsbk-fil
+ *   passphrase?  — override env BACKUP_PASSPHRASE
+ *   bekreftelse  — må være strengen "RESTORE" for at operasjonen skal kjøre
+ *
+ * DESTRUKTIVT: wiper alle tabeller + blob-containere i manifest, deretter
+ * upsert alle fra backup. Delvis feil etterlater systemet i inkonsistent
+ * tilstand — kjør på nytt.
+ */
+app.http('backupRestore', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'backup/restore',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        const jobbLog = (...m) => context.log(...m);
+        try {
+            const fd = await request.formData();
+            const bekreftelse = String(fd.get('bekreftelse') || '').trim();
+            if (bekreftelse !== 'RESTORE') {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'bekreftelse må være strengen "RESTORE"' } };
+            }
+            const fil = fd.get('fil');
+            if (!fil || typeof fil === 'string') {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Ingen fil sendt' } };
+            }
+            const passphrase = String(fd.get('passphrase') || '').trim() || (process.env.BACKUP_PASSPHRASE || '').trim();
+            if (!passphrase || passphrase.length < 16) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Passphrase mangler eller for kort' } };
+            }
+            const buf = Buffer.from(await fil.arrayBuffer());
+            jobbLog(`restore: mottok ${fil.name} (${buf.length} bytes) fra ${a.upn}`);
+            const apnet = await restore.apneOgDekrypter(buf, passphrase);
+            jobbLog(`restore: manifest ok — ${apnet.manifest.tabeller?.length || 0} tabeller, ${apnet.manifest.containers?.length || 0} containere`);
+
+            const res = await restore.kjorRestore(apnet, jobbLog);
+
+            hendelser.logg({
+                Type: 'restore.kjort', Aktor: a.upn,
+                ObjektType: 'backup', ObjektId: fil.name,
+                Melding: `Restore fullført — ${res.tabeller.length} tabeller, ${res.containere.length} containere (${res.varighetSekunder}s)`,
+                Detaljer: { ...res, backupTid: apnet.manifest.tid, backupMiljo: apnet.manifest.miljø }
+            });
+
+            return {
+                jsonBody: {
+                    status: 'ok',
+                    filnavn: fil.name,
+                    varighetSekunder: res.varighetSekunder,
+                    manifest: apnet.manifest,
+                    resultat: res
+                }
+            };
+        } catch (e) {
+            context.log('backup/restore FEIL:', e.message, e.stack);
+            hendelser.logg({
+                Type: 'restore.feil', Aktor: a.upn,
+                ObjektType: 'backup', ObjektId: '',
+                Melding: `Restore feilet: ${e.message}`.slice(0, 500)
+            });
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

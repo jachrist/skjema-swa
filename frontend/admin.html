@@ -1186,14 +1186,128 @@
                 </div>
                 <div class="panel">
                     <h2>Restore</h2>
-                    <div class="banner advarsel">
-                        Restore kommer i neste commit. Bruk .fsbk-filen (kryptert) og BACKUP_PASSPHRASE for å dekryptere manuelt så lenge.
+                    <div class="banner advarsel" style="margin-bottom: 12px;">
+                        <strong>⚠️ Destruktiv operasjon:</strong> Alle tabeller og blob-containere i backup-filen wipes og erstattes.
+                        Kan brukes for migrering mellom miljøer — spesifiser da passphrasen fra kildemiljøet.
+                    </div>
+                    <div class="rad">
+                        <label style="min-width: 180px;">Backup-fil (.fsbk)</label>
+                        <input type="file" id="r-fil" accept=".fsbk">
+                    </div>
+                    <div class="rad">
+                        <label style="min-width: 180px;">Passphrase (valgfritt)</label>
+                        <input type="password" id="r-passphrase" placeholder="Tom = bruk BACKUP_PASSPHRASE fra env">
+                    </div>
+                    <div class="knapp-rad" style="margin-top: 10px;">
+                        <button class="knapp" onclick="rVerifiser()">🔍 Verifiser (les manifest)</button>
+                    </div>
+                    <div id="r-verifiser-resultat" style="margin-top: 10px;"></div>
+                    <div id="r-restore-omrade" style="display: none; margin-top: 16px; padding: 14px; background: var(--danger-light); border-radius: 8px;">
+                        <div style="font-weight: 600; color: var(--danger); margin-bottom: 8px;">Bekreft restore</div>
+                        <div style="font-size: 13px; margin-bottom: 8px;">Skriv <code>RESTORE</code> for å bekrefte at alle nåværende data skal overskrives:</div>
+                        <div class="rad">
+                            <input type="text" id="r-bekreftelse" placeholder="RESTORE">
+                            <button class="knapp danger" onclick="rKjor()">Kjør restore nå</button>
+                            <button class="knapp mini" onclick="rAvbryt()">Avbryt</button>
+                        </div>
+                        <div id="r-restore-status" style="margin-top: 10px;"></div>
                     </div>
                 </div>
             `;
             bStiLast();
             bListLast();
         }
+
+        async function rBuildForm() {
+            const fil = document.getElementById('r-fil').files[0];
+            if (!fil) { alert('Velg en .fsbk-fil først'); return null; }
+            const fd = new FormData();
+            fd.append('fil', fil);
+            const pass = document.getElementById('r-passphrase').value;
+            if (pass) fd.append('passphrase', pass);
+            return fd;
+        }
+
+        window.rVerifiser = async () => {
+            const el = document.getElementById('r-verifiser-resultat');
+            const restoreOmr = document.getElementById('r-restore-omrade');
+            restoreOmr.style.display = 'none';
+            const fd = await rBuildForm();
+            if (!fd) return;
+            el.innerHTML = '<div class="laster">Dekrypterer og leser manifest…</div>';
+            try {
+                const res = await fetch('/api/backup/verifiser', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!res.ok) { el.innerHTML = `<div class="banner feil">${escHtml(data.melding || 'Feil')}</div>`; return; }
+                el.innerHTML = `
+                    <div class="banner suksess">
+                        <strong>✓ Backup verifisert</strong>
+                        <br><small>${escHtml(data.filnavn)} · ${Math.round(data.storrelseBytes / 1024 / 1024 * 10) / 10} MB · passphrase: ${escHtml(data.passphraseKilde)}</small>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <div style="font-weight: 600; margin-bottom: 6px;">Manifest</div>
+                        <div style="font-size: 13px; margin-bottom: 8px;">
+                            Tatt ${escHtml(formatDato(data.manifest.tid))} · miljø ${escHtml(data.manifest.miljø || 'ukjent')} · versjon ${data.manifest.versjon}
+                        </div>
+                        <div class="innehaver-header" style="grid-template-columns: 1fr 90px; gap: 12px;">
+                            <div>Tabell</div><div>Antall</div>
+                        </div>
+                        ${(data.manifest.tabeller || []).map(t => `
+                            <div class="innehaver-rad" style="grid-template-columns: 1fr 90px; gap: 12px;">
+                                <div>${escHtml(t.navn)}</div>
+                                <div style="font-size: 13px;">${t.antall}</div>
+                            </div>
+                        `).join('')}
+                        <div class="innehaver-header" style="grid-template-columns: 1fr 90px 100px; gap: 12px; margin-top: 12px;">
+                            <div>Container</div><div>Blobs</div><div>Bytes</div>
+                        </div>
+                        ${(data.manifest.containers || []).map(c => `
+                            <div class="innehaver-rad" style="grid-template-columns: 1fr 90px 100px; gap: 12px;">
+                                <div>${escHtml(c.navn)}</div>
+                                <div style="font-size: 13px;">${c.antall}</div>
+                                <div style="font-size: 13px;">${Math.round(c.bytes / 1024 / 1024 * 10) / 10} MB</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                restoreOmr.style.display = 'block';
+                document.getElementById('r-bekreftelse').value = '';
+            } catch (e) {
+                el.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.rAvbryt = () => {
+            document.getElementById('r-restore-omrade').style.display = 'none';
+            document.getElementById('r-bekreftelse').value = '';
+        };
+
+        window.rKjor = async () => {
+            const bekr = document.getElementById('r-bekreftelse').value.trim();
+            if (bekr !== 'RESTORE') { alert('Skriv "RESTORE" for å bekrefte'); return; }
+            const fd = await rBuildForm();
+            if (!fd) return;
+            fd.append('bekreftelse', 'RESTORE');
+            const status = document.getElementById('r-restore-status');
+            status.innerHTML = '<div class="banner info">Kjører restore — ikke lukk vinduet…</div>';
+            try {
+                const res = await fetch('/api/backup/restore', { method: 'POST', body: fd });
+                const data = await res.json();
+                if (!res.ok) { status.innerHTML = `<div class="banner feil">${escHtml(data.melding)}</div>`; return; }
+                const tRows = (data.resultat.tabeller || []).map(t => `<div>${escHtml(t.navn)}: slettet ${t.slettet}, skrev ${t.skrevet}</div>`).join('');
+                const cRows = (data.resultat.containere || []).map(c => `<div>${escHtml(c.navn)}: slettet ${c.slettet}, skrev ${c.skrevet}</div>`).join('');
+                status.innerHTML = `
+                    <div class="banner suksess">
+                        <strong>✓ Restore fullført på ${data.varighetSekunder}s</strong>
+                        <div style="font-size: 12px; margin-top: 8px; font-family: 'SF Mono', Menlo, monospace;">
+                            ${tRows}${cRows}
+                        </div>
+                    </div>
+                `;
+            } catch (e) {
+                status.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`;
+            }
+        };
 
         async function bStiLast() {
             try {
