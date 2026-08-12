@@ -786,8 +786,6 @@ app.http('listSkjemaer', {
             const erEier = await harEierTilgang(skjematypeId, upn);
             if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever eier-tilgang' } };
 
-            const alle = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId);
-
             // Finn hvilke felter som er filtrerbare i skjematypen — kun disse
             // trenger svar-verdi i lista (register-filtre + kolonne-fremvisning).
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
@@ -802,6 +800,17 @@ app.http('listSkjemaer', {
                     }
                 }
             }
+
+            // Rask sti: ingen filtrerbare felt → hopp over JSON-parse + ekspandering
+            // + dekryptering. Returnerer bare metadata-kolonner fra tabellen.
+            if (filterFelt.length === 0) {
+                const raskListe = await forekomstStorage.hentMetadataForType(skjematypeId);
+                raskListe.sort((a, b) => (b.Sist_endret || '').localeCompare(a.Sist_endret || ''));
+                return { jsonBody: raskListe };
+            }
+
+            // Full sti: filterFelt finnes → last JSON og ekspander + evt. dekrypter
+            const alle = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId);
 
             function hentFilterSvar(sk) {
                 const ut = {};

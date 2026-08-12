@@ -92,6 +92,40 @@ async function lagreSkjema(skjemaData, erNytt = false) {
     await tabell.upsertEntity(entity, 'Merge');
 }
 
+/**
+ * Rask metadata-only-versjon for register-lista når ingen filtrerbare felt.
+ * Bruker Table-storage sin `select` for å hoppe over JSON-kolonnen (som kan
+ * være 10-100 KB per rad). ~5-10× raskere for store lister.
+ *
+ * Returnerer array av { Skjema_id, Skjematype_id, Skjema_navn, Innsender_Epost,
+ * Skjema_status, Opprettet, Sist_endret } — SAMME struktur som skjema-liste-
+ * endpoint returnerer. Ingen JSON-parse, ingen dekryptering, ingen ekspandering.
+ */
+async function hentMetadataForType(skjematypeId) {
+    const tabell = tabellKlient(TABELL);
+    try { await tabell.createTable(); } catch (_) { /* fins */ }
+    const { odata } = require('@azure/data-tables');
+    const iter = tabell.listEntities({
+        queryOptions: {
+            filter: odata`PartitionKey eq ${String(skjematypeId)}`,
+            select: ['PartitionKey', 'RowKey', 'Tittel', 'InnsenderEpost', 'Skjemastatus', 'Opprettet', 'Oppdatert']
+        }
+    });
+    const ut = [];
+    for await (const e of iter) {
+        ut.push({
+            Skjema_id: e.rowKey,
+            Skjematype_id: e.partitionKey,
+            Skjema_navn: e.Tittel || '',
+            Innsender_Epost: e.InnsenderEpost || '',
+            Skjema_status: e.Skjemastatus || 0,
+            Opprettet: e.Opprettet || '',
+            Sist_endret: e.Oppdatert || ''
+        });
+    }
+    return ut;
+}
+
 async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}) {
     const tabell = tabellKlient(TABELL);
     try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
@@ -174,6 +208,7 @@ module.exports = {
     hentSkjema,
     lagreSkjema,
     hentAlleSkjemaerForType,
+    hentMetadataForType,
     hentMineMellomlagrede,
     slettSkjema,
     sikrFulltFormat
