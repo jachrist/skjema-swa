@@ -276,7 +276,10 @@
 <body>
     <div class="container">
         <div class="topplinje">
-            <h1 id="tittel">Laster skjema…</h1>
+            <div style="display: flex; align-items: center; gap: 14px;">
+                <img id="logo" alt="" style="display: none; max-height: 50px; max-width: 140px; object-fit: contain;">
+                <h1 id="tittel">Laster skjema…</h1>
+            </div>
             <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
         </div>
         <div id="forklaring"></div>
@@ -496,6 +499,11 @@
             svarMap = bySvarMap();
             document.getElementById('tittel').textContent = skjematype.Skjema_navn || 'Skjema';
             document.title = skjematype.Skjema_navn || 'Skjema';
+            const logoEl = document.getElementById('logo');
+            if (logoEl && skjematype.Logo_url) {
+                logoEl.src = skjematype.Logo_url;
+                logoEl.style.display = '';
+            }
 
             if (skjematype.Skjemaforklaring?.Innhold) {
                 document.getElementById('forklaring').innerHTML =

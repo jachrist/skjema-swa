@@ -184,7 +184,7 @@
                 <a class="fane" data-fane="masterdata" href="#masterdata">🗂 Masterdata <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
-                <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
                 <a class="fane" data-fane="system" href="#system">⚙️ System <span class="badge">Snart</span></a>
             </nav>
             <div class="innhold" id="innhold">
@@ -230,7 +230,7 @@
                 case 'masterdata':  rendrPlaceholder('Masterdata', 'Faste_data og oppslagslister (Emner, Fakulteter, osv.). Redigerbar tabell.'); break;
                 case 'postnumre-fs':rendrPlaceholder('Postnumre / FS', 'Seed postnumre-tabell. Trigg refresh av FS-data (emner, personer).'); break;
                 case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
-                case 'logoer':      rendrPlaceholder('Logoer', 'Opplasting og administrasjon av logoer brukt i skjema-headere. Blob-basert.'); break;
+                case 'logoer':      rendrLogoer(); break;
                 case 'system':      rendrPlaceholder('System', 'Miljø-info, /api/whoami-dump, varsling-diag, seed-eksempler. Kanskje også migrering-verktøy.'); break;
                 default: rendrRoller();
             }
@@ -793,6 +793,117 @@
             const pad = n => String(n).padStart(2, '0');
             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
+
+        // ==================== LOGOER-FANE ====================
+
+        function rendrLogoer() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Last opp ny logo</h2>
+                    <div id="l-drop" style="border: 2px dashed var(--input-border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: var(--bg-input);">
+                        <div style="font-size: 32px;">🖼</div>
+                        <div style="margin-top: 8px; font-size: 14px;">Klikk her eller dra en eller flere bildefiler hit</div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">PNG, JPG, SVG, GIF, WebP, BMP, ICO — maks 2 MB per fil</div>
+                        <input type="file" id="l-input" multiple accept=".png,.jpg,.jpeg,.gif,.webp,.svg,.bmp,.ico" style="display: none;">
+                    </div>
+                    <div id="l-opp-status" style="margin-top: 10px;"></div>
+                </div>
+                <div class="panel">
+                    <h2>Eksisterende logoer <span id="l-teller" style="font-weight: 400; color: var(--text-secondary); text-transform: none; letter-spacing: 0; margin-left: 8px;"></span></h2>
+                    <input type="text" id="l-sok" placeholder="🔍 Søk logo…" oninput="logoFiltrer()" style="margin-bottom: 12px;">
+                    <div id="l-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px;">
+                        <div class="laster">Laster…</div>
+                    </div>
+                </div>
+            `;
+            const drop = document.getElementById('l-drop');
+            const input = document.getElementById('l-input');
+            drop.addEventListener('click', () => input.click());
+            input.addEventListener('change', () => logoOpplast(input.files));
+            drop.addEventListener('dragover', e => { e.preventDefault(); drop.style.borderColor = 'var(--accent)'; });
+            drop.addEventListener('dragleave', () => { drop.style.borderColor = 'var(--input-border)'; });
+            drop.addEventListener('drop', e => {
+                e.preventDefault(); drop.style.borderColor = 'var(--input-border)';
+                logoOpplast(e.dataTransfer.files);
+            });
+            logoLast();
+        }
+
+        let logoAlle = [];
+
+        async function logoLast() {
+            const grid = document.getElementById('l-grid');
+            try {
+                logoAlle = await api.get('/api/logoer');
+                document.getElementById('l-teller').textContent = `— ${logoAlle.length} logo${logoAlle.length === 1 ? '' : 'er'}`;
+                logoRender(logoAlle);
+            } catch (e) {
+                grid.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        }
+
+        window.logoFiltrer = () => {
+            const q = document.getElementById('l-sok').value.trim().toLowerCase();
+            logoRender(q ? logoAlle.filter(l => l.navn.toLowerCase().includes(q)) : logoAlle);
+        };
+
+        function logoRender(liste) {
+            const grid = document.getElementById('l-grid');
+            if (liste.length === 0) {
+                grid.innerHTML = '<div class="tom-melding" style="grid-column: 1/-1;">Ingen logoer.</div>';
+                return;
+            }
+            grid.innerHTML = liste.map(l => `
+                <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; background: var(--bg-container); display: flex; flex-direction: column; gap: 6px;">
+                    <div style="height: 80px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border-radius: 4px; padding: 4px;">
+                        <img src="${escAttr(l.url)}" alt="${escAttr(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(l.navn)}">${escHtml(l.navn)}</div>
+                    <div style="display: flex; gap: 4px;">
+                        <button class="knapp mini" onclick="logoKopierUrl('${escAttr(l.navn)}')">Kopier URL</button>
+                        <button class="knapp mini danger" onclick="logoSlett('${escAttr(l.navn)}')">Slett</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function logoOpplast(filer) {
+            if (!filer || filer.length === 0) return;
+            const status = document.getElementById('l-opp-status');
+            let opplastet = 0, feilet = 0;
+            for (const fil of filer) {
+                status.innerHTML = `<div class="banner info">Laster opp ${escHtml(fil.name)}…</div>`;
+                const fd = new FormData();
+                fd.append('fil', fil);
+                try {
+                    const res = await fetch('/api/logoer', { method: 'POST', body: fd });
+                    if (!res.ok) { feilet++; console.error(await res.text()); }
+                    else opplastet++;
+                } catch (e) { feilet++; console.error(e); }
+            }
+            status.innerHTML = `<div class="banner ${feilet ? 'advarsel' : 'suksess'}">✓ ${opplastet} lastet opp${feilet ? `, ${feilet} feilet` : ''}</div>`;
+            document.getElementById('l-input').value = '';
+            await logoLast();
+        }
+
+        window.logoSlett = async (navn) => {
+            if (!confirm(`Slette logoen "${navn}"?`)) return;
+            try {
+                await api.del('/api/logoer/' + encodeURIComponent(navn));
+                await logoLast();
+            } catch (e) { alert('Kunne ikke slette: ' + e.message); }
+        };
+
+        window.logoKopierUrl = async (navn) => {
+            const url = window.location.origin + '/api/logo/' + encodeURIComponent(navn);
+            try {
+                await navigator.clipboard.writeText(url);
+                document.getElementById('l-opp-status').innerHTML =
+                    `<div class="banner suksess">✓ URL kopiert: <code>${escHtml(url)}</code></div>`;
+            } catch (_) {
+                prompt('Kopier URL manuelt:', url);
+            }
+        };
 
         // ==================== Hjelpere ====================
         function escHtml(s) {

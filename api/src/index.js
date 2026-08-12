@@ -21,6 +21,7 @@ require('./functions/otp');
 require('./functions/nokkel');
 require('./functions/hendelser');
 require('./functions/utsending');
+require('./functions/logo');
 
 // Etter hvert:
 // require('./functions/skjema');

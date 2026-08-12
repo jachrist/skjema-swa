@@ -602,6 +602,16 @@
                         </select>
                     </div>
                     <div class="rad">
+                        <label>Logo <small>(vises i skjema-header — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>)</small></label>
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                            <select id="f-logo" onchange="setLogo(this.value)" style="flex: 1;">
+                                <option value="">— ingen —</option>
+                            </select>
+                            <img id="f-logo-preview" src="${escapeAttr(data.Logo_url || '')}" alt=""
+                                style="height: 40px; max-width: 120px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.Logo_url ? '' : 'display: none;'}">
+                        </div>
+                    </div>
+                    <div class="rad">
                         <label>Skjemaforklaring
                             <small>(vises som informasjon på utfyllingssiden)</small>
                         </label>
@@ -737,6 +747,7 @@
             oppdaterKvitteringOppsummering();
             oppdaterSPOppsummering();
             appliserKollapsState();
+            fyllLogoDropdown();
         }
 
         function rendrerTilgang() {
@@ -1655,6 +1666,35 @@
 
         // ---- Metadata-settere ----
         window.setNavn = v => { data.Skjema_navn = v; };
+        window.setLogo = v => {
+            data.Logo_url = v || '';
+            const preview = document.getElementById('f-logo-preview');
+            if (preview) {
+                preview.src = v || '';
+                preview.style.display = v ? '' : 'none';
+            }
+        };
+        async function fyllLogoDropdown() {
+            const sel = document.getElementById('f-logo');
+            if (!sel) return;
+            try {
+                const logoer = await api.get('/api/logoer');
+                const gjeldende = data.Logo_url || '';
+                sel.innerHTML = '<option value="">— ingen —</option>' + logoer.map(l =>
+                    `<option value="${escapeAttr(l.url)}" ${gjeldende === l.url ? 'selected' : ''}>${escapeAttr(l.navn)}</option>`
+                ).join('');
+                // Hvis gjeldende Logo_url ikke matcher noen (f.eks. ekstern URL), legg til en egen "custom"-rad
+                if (gjeldende && !logoer.some(l => l.url === gjeldende)) {
+                    const opt = document.createElement('option');
+                    opt.value = gjeldende;
+                    opt.textContent = '(annet: ' + gjeldende + ')';
+                    opt.selected = true;
+                    sel.appendChild(opt);
+                }
+            } catch (e) {
+                console.warn('Kunne ikke laste logoer:', e.message);
+            }
+        }
         window.setFase = v => { data.Fase = v; };
         window.setForklaring = v => {
             if (!data.Skjemaforklaring) data.Skjemaforklaring = { Format: 'Tekst' };

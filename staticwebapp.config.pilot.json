@@ -49,6 +49,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/logo/*",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },
