@@ -479,10 +479,11 @@
         import { hentInnloggetBruker } from './js/auth.js';
         import { FELTTYPER, renderTekst } from './js/felt-render.js';
         import { byggDNFEditor } from './js/dnf-editor.js';
-        import { byggTilgangEditor, hentRolleGrupper, invaliderRolleCache } from './js/tilgang-editor.js';
+        import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn, invaliderRolleCache } from './js/tilgang-editor.js';
         import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
 
         let rolleGrupper = []; // populeres i init()
+        let teamNavn = [];     // populeres i init()
 
         // Tilgjengelige datakilder for FasteData i pilot.
         // Kolonner (filter-navn) matcher det oppslag-dispatcheren støtter.
@@ -559,8 +560,9 @@
             }
             document.getElementById('upn').textContent = bruker.userDetails;
 
-            // Hent rolle-grupper i bakgrunnen — brukes av tilgang-editor
+            // Hent rolle-grupper og team-navn i bakgrunnen — brukes av tilgang-editor
             hentRolleGrupper(api).then(g => { rolleGrupper = g || []; });
+            hentTeamNavn(api).then(t => { teamNavn = t || []; });
 
             try {
                 if (eksisterendeId) {
@@ -820,7 +822,7 @@
             const pubEl = document.getElementById('publikum-editor');
             if (pubEl) {
                 byggTilgangEditor(pubEl, data.Publikum, {
-                    rolleGrupper,
+                    rolleGrupper, teamNavn, api,
                     visAlleTilgang: true,
                     onEndring: (ny) => { data.Publikum = ny; }
                 });
@@ -828,7 +830,7 @@
             const eiEl = document.getElementById('eiere-editor');
             if (eiEl) {
                 byggTilgangEditor(eiEl, data.Eiere, {
-                    rolleGrupper,
+                    rolleGrupper, teamNavn, api,
                     onEndring: (ny) => { data.Eiere = ny; }
                 });
             }
@@ -939,7 +941,7 @@
                     };
                     byggTilgangEditor(tSlot, tilgang, {
                         kompakt: true,
-                        rolleGrupper,
+                        rolleGrupper, teamNavn, api,
                         onEndring: (ny) => {
                             steg.Personer = ny.Personer;
                             steg.Roller = ny.Roller;

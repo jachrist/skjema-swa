@@ -15,6 +15,7 @@
  */
 
 let _rolleGrupperCache = null;
+let _teamNavnCache = null;
 
 export async function hentRolleGrupper(api) {
     if (_rolleGrupperCache) return _rolleGrupperCache;
@@ -26,12 +27,25 @@ export async function hentRolleGrupper(api) {
     return _rolleGrupperCache;
 }
 
+export async function hentTeamNavn(api) {
+    if (_teamNavnCache) return _teamNavnCache;
+    try {
+        _teamNavnCache = await api.get('/api/cache/teammedlemskap/team-navn');
+    } catch (_) {
+        _teamNavnCache = [];
+    }
+    return _teamNavnCache;
+}
+
 export function invaliderRolleCache() { _rolleGrupperCache = null; }
+export function invaliderTeamCache() { _teamNavnCache = null; }
 
 export function byggTilgangEditor(container, verdi, options = {}) {
     const kompakt = options.kompakt === true;
     const onEndring = options.onEndring || (() => {});
     const rolleGrupper = options.rolleGrupper || [];
+    const teamNavn = options.teamNavn || [];
+    const api = options.api || null; // brukes for Søk eksternt-flyten
     // visAlleTilgang: true → viser en 'Åpen for alle innloggede'-checkbox
     // øverst som overstyrer person/rolle/team-sjekker. Kun meningsfull for
     // Publikum-tilgang (ellers ville alle blitt eiere/behandlere).
@@ -154,15 +168,85 @@ export function byggTilgangEditor(container, verdi, options = {}) {
 
     // ==================== Team ====================
     function byggTeamSeksjon() {
-        const sek = seksjon('Team', '(krever Graph API — foreløpig manuell tekst)');
-        sek.appendChild(byggChipListe('Team', state.Team, (verdi) => {
-            const trimmet = String(verdi || '').trim();
-            if (!trimmet || state.Team.includes(trimmet)) return false;
-            state.Team.push(trimmet);
-            ferdig();
-            return true;
-        }, 'Teamnavn'));
+        const sek = seksjon('Team', '(fra Teammedlemskap-cache — oppdatert av PA-flyt)');
+
+        // Dropdown + søk-eksternt-knapp
+        const velger = document.createElement('div');
+        velger.style.cssText = 'display: flex; gap: 6px; margin-bottom: 6px;';
+
+        const sel = document.createElement('select');
+        sel.style.cssText = 'flex: 1; padding: 4px 8px; font-size: 13px;';
+        const tomOpt = document.createElement('option');
+        tomOpt.value = '';
+        tomOpt.textContent = teamNavn.length === 0 ? '(ingen team i cachen — søk eksternt)' : '— velg team —';
+        sel.appendChild(tomOpt);
+        for (const t of teamNavn) {
+            if (state.Team.includes(t)) continue;
+            const o = document.createElement('option');
+            o.value = t;
+            o.textContent = t;
+            sel.appendChild(o);
+        }
+        sel.addEventListener('change', () => {
+            const v = sel.value;
+            if (v && !state.Team.includes(v)) {
+                state.Team.push(v);
+                ferdig();
+                render();
+            }
+        });
+        velger.appendChild(sel);
+
+        if (api) {
+            const sokBtn = document.createElement('button');
+            sokBtn.type = 'button';
+            sokBtn.textContent = 'Søk eksternt…';
+            sokBtn.style.cssText = 'padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
+            sokBtn.title = 'Søk i Graph og last team-medlemmer inn i cachen';
+            sokBtn.addEventListener('click', () => sokEksterntTeam(sokBtn));
+            velger.appendChild(sokBtn);
+        }
+        sek.appendChild(velger);
+
+        sek.appendChild(byggChipListe('Team', state.Team, () => false, null));
         return sek;
+    }
+
+    async function sokEksterntTeam(knapp) {
+        const sok = prompt('Skriv team-navn eller del av navn å søke etter i Graph:');
+        if (!sok || !sok.trim()) return;
+        const opprinneligTekst = knapp.textContent;
+        knapp.textContent = 'Søker…';
+        knapp.disabled = true;
+        try {
+            const treff = await api.post('/api/team/sok-eksternt', { sok: sok.trim() });
+            if (!Array.isArray(treff) || treff.length === 0) {
+                alert('Ingen treff.');
+                return;
+            }
+            const linjer = treff.map((t, i) => `${i + 1}. ${t.DisplayName || t.navn || t.Navn || t.Id}`).join('\n');
+            const valg = prompt(`Fant ${treff.length} team. Skriv nummeret på det du vil laste inn:\n\n${linjer}`);
+            const idx = Number(valg) - 1;
+            if (!(idx >= 0 && idx < treff.length)) return;
+            const valgtTeam = treff[idx];
+            const teamId = valgtTeam.Id || valgtTeam.id || '';
+            const teamNavnValgt = valgtTeam.DisplayName || valgtTeam.navn || valgtTeam.Navn || '';
+            knapp.textContent = 'Laster medlemmer…';
+            const res = await api.post('/api/team/last-medlemmer', { teamId, teamNavn: teamNavnValgt });
+            invaliderTeamCache();
+            const nye = await hentTeamNavn(api);
+            teamNavn.length = 0;
+            teamNavn.push(...nye);
+            if (!state.Team.includes(res.Team)) state.Team.push(res.Team);
+            ferdig();
+            render();
+            alert(`Lastet ${res.antallMedlemmer} medlemmer for "${res.Team}".`);
+        } catch (e) {
+            alert('Feil: ' + e.message);
+        } finally {
+            knapp.textContent = opprinneligTekst;
+            knapp.disabled = false;
+        }
     }
 
     // ==================== Bygg-helpere ====================
