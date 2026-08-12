@@ -243,13 +243,27 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 6px;
+            cursor: pointer;
+            user-select: none;
         }
+        .kort-tittelrad:hover .kort-tittel { color: var(--accent); }
         .kort-tittel {
             font-size: 17px;
             font-weight: 600;
             color: var(--text-primary);
             margin: 0;
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
         }
+        .kort-kollaps-pil {
+            display: inline-block;
+            font-size: 12px;
+            color: var(--text-secondary);
+            transition: transform 0.15s;
+        }
+        .skjematype-kort.kollapset .kort-kollaps-pil { transform: rotate(-90deg); }
+        .skjematype-kort.kollapset .kort-innhold { display: none; }
 
         .fase-badge {
             display: inline-block;
@@ -346,8 +360,12 @@
             <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
         </div>
 
-        <div id="ny-skjematype-rad" style="margin-bottom: 14px; display: none; gap: 10px; align-items: center;">
+        <div id="ny-skjematype-rad" style="margin-bottom: 14px; display: none; gap: 10px; align-items: center; flex-wrap: wrap;">
             <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
+        </div>
+        <div style="margin-bottom: 14px; display: flex; gap: 8px; align-items: center;">
+            <button class="knapp sekundær" style="padding: 4px 12px; font-size: 12px;" onclick="apneAlleKort()">▾ Vis alle</button>
+            <button class="knapp sekundær" style="padding: 4px 12px; font-size: 12px;" onclick="skjulAlleKort()">▸ Skjul alle</button>
         </div>
 
         <div id="admin-verktoy" style="display: none; margin-bottom: 18px; padding: 12px 16px; background: var(--forklaring-bg); border-radius: var(--radius-md); font-size: 13px; display: none; flex-wrap: wrap; gap: 10px; align-items: center;">
@@ -646,19 +664,61 @@
                 }
             }
 
+            const kollapsetKlasse = erKollapset(t.Skjematype_id) ? ' kollapset' : '';
             return `
-                <div class="skjematype-kort">
-                    <div class="kort-tittelrad">
-                        <h2 class="kort-tittel">${escapeHtml(t.Skjema_navn || '(uten navn)')} <small style="font-weight: 400; color: var(--text-secondary); font-size: 0.65em;">ID ${escapeHtml(String(t.Skjematype_id))}</small></h2>
+                <div class="skjematype-kort${kollapsetKlasse}" data-skjematype-id="${escapeAttr(String(t.Skjematype_id))}">
+                    <div class="kort-tittelrad" onclick="toggleKort('${escapeAttr(String(t.Skjematype_id))}')">
+                        <h2 class="kort-tittel">
+                            <span class="kort-kollaps-pil">▼</span>
+                            ${escapeHtml(t.Skjema_navn || '(uten navn)')}
+                            <small style="font-weight: 400; color: var(--text-secondary); font-size: 0.65em;">ID ${escapeHtml(String(t.Skjematype_id))}</small>
+                        </h2>
                         <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
                     </div>
-                    ${forklaring}
-                    ${periodeAdvarsel}
-                    ${knapperadHtml}
-                    ${behandlingHtml}
-                    ${mellomlagretHtml}
+                    <div class="kort-innhold">
+                        ${forklaring}
+                        ${periodeAdvarsel}
+                        ${knapperadHtml}
+                        ${behandlingHtml}
+                        ${mellomlagretHtml}
+                    </div>
                 </div>
             `;
+        }
+
+        // ---- Kollaps-state per skjematype i localStorage ----
+        const KOLLAPS_NOKKEL = 'velgskjematype.kollapset';
+        function lesKollapsSett() {
+            try { return new Set(JSON.parse(localStorage.getItem(KOLLAPS_NOKKEL) || '[]')); }
+            catch (_) { return new Set(); }
+        }
+        function skrivKollapsSett(sett) {
+            try { localStorage.setItem(KOLLAPS_NOKKEL, JSON.stringify([...sett])); } catch (_) {}
+        }
+        function erKollapset(id) { return lesKollapsSett().has(String(id)); }
+        window.toggleKort = (id) => {
+            const el = document.querySelector(`.skjematype-kort[data-skjematype-id="${id}"]`);
+            if (!el) return;
+            const sett = lesKollapsSett();
+            if (el.classList.toggle('kollapset')) sett.add(String(id));
+            else sett.delete(String(id));
+            skrivKollapsSett(sett);
+        };
+        window.apneAlleKort = () => {
+            document.querySelectorAll('.skjematype-kort').forEach(el => el.classList.remove('kollapset'));
+            skrivKollapsSett(new Set());
+        };
+        window.skjulAlleKort = () => {
+            const sett = new Set();
+            document.querySelectorAll('.skjematype-kort').forEach(el => {
+                el.classList.add('kollapset');
+                const id = el.dataset.skjematypeId;
+                if (id) sett.add(id);
+            });
+            skrivKollapsSett(sett);
+        };
+        function escapeAttr(s) {
+            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
         }
 
         function formaterDato(iso) {
