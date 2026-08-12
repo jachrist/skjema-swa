@@ -11,7 +11,7 @@
  *                    FraBehandler: [{ BeslutningNr, Emne, Tekst, Format }] }
  */
 
-const { sendEpostViaFlyt, baseUrl } = require('./flyt-kaller');
+const { sendEpostViaFlyt, sendVarslerViaFlyt, baseUrl } = require('./flyt-kaller');
 const { erstattPlassholdere, byggKontekst } = require('./placeholder');
 const rollerStorage = require('./roller-storage');
 
@@ -57,10 +57,17 @@ function skjemaLenke(skjematypeId, skjemaId, request) {
 
 function harEpostVarsling(steg) {
     if (!steg) return false;
-    // Default: hvis Varsling ikke er satt eksplisitt, anta e-post PÅ (matcher forventet oppførsel før konfig)
     if (!steg.Varsling) return true;
     const v = Array.isArray(steg.Varsling) ? steg.Varsling : [];
     return v.includes('epost');
+}
+
+// Returnerer valgte kanaler (epost/teams/planner/teamskanal).
+// Default (hvis Varsling ikke satt): ['epost'] — matcher tidligere oppførsel.
+function aktiveKanaler(steg) {
+    const v = Array.isArray(steg?.Varsling) ? steg.Varsling : null;
+    if (!v || v.length === 0) return ['epost'];
+    return v.filter(k => ['epost', 'teams', 'planner', 'teamskanal'].includes(k));
 }
 
 async function samleBehandlerMottakere(steg) {
@@ -120,8 +127,9 @@ async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
 async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
     const log = opts.log || (() => {});
     if (!steg) return { status: 'hoppet-over', melding: 'Ingen steg' };
-    if (!harEpostVarsling(steg)) {
-        log(`varsling: steg ${steg.Steg} har ikke epost i Varsling — hopper over`);
+    const kanaler = aktiveKanaler(steg);
+    if (kanaler.length === 0) {
+        log(`varsling: steg ${steg.Steg} har ingen aktive kanaler — hopper over`);
         return { status: 'hoppet-over' };
     }
     const mottakere = await samleBehandlerMottakere(steg);
@@ -134,9 +142,17 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
     const kontekst = byggKontekst({ skjema, skjematype, steg, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardTilBehandler().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardTilBehandler().Tekst, kontekst);
-    return await sendEpostViaFlyt({
+    // Planner-oppgave: bruk emne som tittel + lenke som notat. Frist kan settes
+    // av PA-flyten (f.eks. +7 dager fra nå) — SWA sender ingen frist selv.
+    const planner = kanaler.includes('planner') ? {
+        tittel: emne,
+        notat: `Åpne skjemaet: ${lenke}`
+    } : null;
+    return await sendVarslerViaFlyt({
         mottakere,
+        varslinger: kanaler,
         emne, html, lenke,
+        planner,
         skjemaId: skjema.Skjema_id,
         skjematypeId: skjema.Skjematype_id,
         skjemaNavn: kontekst.skjemanavn,

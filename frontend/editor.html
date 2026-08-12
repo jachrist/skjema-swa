@@ -1003,14 +1003,17 @@
                             <input type="checkbox" ${varsling.includes('epost') ? 'checked' : ''}
                                 onchange="setVarslingKanal(${idx}, 'epost', this.checked)"> <span>E-post</span>
                         </label>
-                        <label class="varsling-kanal disabled" title="Kommer i fase 6c">
-                            <input type="checkbox" disabled> <span>Teams-melding</span>
+                        <label class="varsling-kanal ${varsling.includes('teams') ? 'aktiv' : ''}" title="Direktemelding til hver behandler via Teams">
+                            <input type="checkbox" ${varsling.includes('teams') ? 'checked' : ''}
+                                onchange="setVarslingKanal(${idx}, 'teams', this.checked)"> <span>Teams-melding</span>
                         </label>
-                        <label class="varsling-kanal disabled" title="Kommer i fase 6d">
-                            <input type="checkbox" disabled> <span>Planner-oppgave</span>
+                        <label class="varsling-kanal ${varsling.includes('planner') ? 'aktiv' : ''}" title="Oppretter Planner-oppgave for hver behandler">
+                            <input type="checkbox" ${varsling.includes('planner') ? 'checked' : ''}
+                                onchange="setVarslingKanal(${idx}, 'planner', this.checked)"> <span>Planner-oppgave</span>
                         </label>
-                        <label class="varsling-kanal disabled" title="Kommer i fase 6c">
-                            <input type="checkbox" disabled> <span>Teams-kanal</span>
+                        <label class="varsling-kanal ${varsling.includes('teamskanal') ? 'aktiv' : ''}" title="Post i konfigurert Teams-kanal">
+                            <input type="checkbox" ${varsling.includes('teamskanal') ? 'checked' : ''}
+                                onchange="setVarslingKanal(${idx}, 'teamskanal', this.checked)"> <span>Teams-kanal</span>
                         </label>
                     </div>
                     <div style="margin-top: 6px;">

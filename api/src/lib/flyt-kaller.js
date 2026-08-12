@@ -83,9 +83,15 @@ async function kallVarslingFlyt(payload, log = () => {}) {
  * @param {string} [args.lenke]         — felles lenke; per-mottaker lenker bygges automatisk
  * @param {Array<{epost,url}>} [args.lenker] — evt. per-mottaker (overstyrer lenke)
  */
-async function sendEpostViaFlyt(args, log = () => {}) {
+/**
+ * Send varsling via PA-flyt over én eller flere kanaler.
+ * varslinger-array kan inneholde: 'epost', 'teams', 'planner', 'teamskanal'.
+ * PA-flyten switcher basert på kanal-innhold.
+ */
+async function sendVarslerViaFlyt(args, log = () => {}) {
     const mottakere = (args.mottakere || []).filter(m => m && m.epost);
     if (mottakere.length === 0) return { status: 'hoppet-over', melding: 'Ingen mottakere' };
+    const varslinger = Array.isArray(args.varslinger) && args.varslinger.length > 0 ? args.varslinger : ['epost'];
 
     const felleslenke = args.lenke || '';
     const lenker = Array.isArray(args.lenker) && args.lenker.length > 0
@@ -96,7 +102,7 @@ async function sendEpostViaFlyt(args, log = () => {}) {
     const payload = {
         handling: 'sendBehandlingsVarsling',
         mottakere: mottakere.map(m => ({ epost: m.epost, navn: m.navn || '' })),
-        varslinger: ['epost'],
+        varslinger,
         skjema_id: args.skjemaId || '',
         skjematype_id: args.skjematypeId || '',
         skjema_navn: args.skjemaNavn || '',
@@ -106,10 +112,17 @@ async function sendEpostViaFlyt(args, log = () => {}) {
         epost_og_teams: {
             emne: args.emne || '',
             html: args.html || ''
-        }
+        },
+        // Planner-oppgave: PA-flyten kan bruke disse feltene når 'planner' er i varslinger
+        planner: args.planner || null
     };
-    log(`flyt payload: base_url=${base || '(TOM!)'} lenke=${felleslenke || '(TOM!)'} mottakere=${payload.mottakere.length}`);
+    log(`flyt payload: kanaler=[${varslinger.join(',')}] base_url=${base || '(TOM!)'} mottakere=${payload.mottakere.length}`);
     return await kallVarslingFlyt(payload, log);
+}
+
+// Bakoverkompatibel wrapper — kun e-post
+async function sendEpostViaFlyt(args, log = () => {}) {
+    return await sendVarslerViaFlyt({ ...args, varslinger: ['epost'] }, log);
 }
 
 /**
@@ -157,6 +170,7 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
 module.exports = {
     kallVarslingFlyt,
     sendEpostViaFlyt,
+    sendVarslerViaFlyt,
     sendOtpViaFlyt,
     baseUrl
 };
