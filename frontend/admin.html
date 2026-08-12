@@ -184,7 +184,7 @@
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS</a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
-                <a class="fane" data-fane="system" href="#system">⚙️ System <span class="badge">Snart</span></a>
+                <a class="fane" data-fane="system" href="#system">⚙️ System</a>
             </nav>
             <div class="innhold" id="innhold">
                 <div class="laster">Laster…</div>
@@ -229,7 +229,7 @@
                 case 'postnumre-fs':rendrPostnumreFs(); break;
                 case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
                 case 'logoer':      rendrLogoer(); break;
-                case 'system':      rendrPlaceholder('System', 'Miljø-info, /api/whoami-dump, varsling-diag, seed-eksempler. Kanskje også migrering-verktøy.'); break;
+                case 'system':      rendrSystem(); break;
                 default: rendrRoller();
             }
         }
@@ -1060,6 +1060,89 @@
                 m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
         };
+
+        // ==================== SYSTEM-FANE ====================
+
+        function rendrSystem() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Miljø-info</h2>
+                    <div id="sys-innhold"><div class="laster">Laster…</div></div>
+                    <div style="margin-top: 12px;">
+                        <button class="knapp mini" onclick="rendrSystem()">Oppdater</button>
+                    </div>
+                </div>
+            `;
+            sysLast();
+        }
+
+        async function sysLast() {
+            const el = document.getElementById('sys-innhold');
+            try {
+                const d = await api.get('/api/system/info');
+                el.innerHTML = `
+                    <h3 style="font-size: 14px; margin: 0 0 8px 0;">Aktør</h3>
+                    ${nokkelVerdiTabell({ UPN: d.aktør.upn, Admin: d.aktør.erAdmin ? 'ja' : 'nei' })}
+
+                    <h3 style="font-size: 14px; margin: 16px 0 8px 0;">Runtime</h3>
+                    ${nokkelVerdiTabell({
+                        Miljø: d.miljø.MILJO,
+                        'Node-versjon': d.miljø.node,
+                        Plattform: d.miljø.plattform,
+                        Prosessorer: d.miljø.prosessorer,
+                        'Minne (MB)': d.miljø.minneMB,
+                        'Uptime (s)': d.miljø.uptime_sek,
+                        Servertid: d.miljø.servertid
+                    })}
+
+                    <h3 style="font-size: 14px; margin: 16px 0 8px 0;">Env-vars (offentlige)</h3>
+                    ${nokkelVerdiTabell(d.offentligeEnv, { markerTom: true })}
+
+                    <h3 style="font-size: 14px; margin: 16px 0 8px 0;">Env-vars (hemmelige — kun status)</h3>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Verdiene vises aldri — bare om de er satt og lengde for verifisering.</div>
+                    ${sysHemmeligeTabell(d.hemmeligeEnv)}
+
+                    <h3 style="font-size: 14px; margin: 16px 0 8px 0;">Request-headere</h3>
+                    ${nokkelVerdiTabell(d.request, { markerTom: true })}
+                `;
+            } catch (e) {
+                el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        }
+
+        function nokkelVerdiTabell(obj, { markerTom = false } = {}) {
+            const rader = Object.entries(obj || {});
+            if (rader.length === 0) return '<div class="tom-melding">Ingen data.</div>';
+            return `
+                <div style="display: grid; grid-template-columns: 200px 1fr; gap: 6px 12px; font-size: 13px;">
+                    ${rader.map(([k, v]) => {
+                        const vTekst = v === null || v === undefined || v === ''
+                            ? (markerTom ? '<span style="color: var(--text-secondary); font-style: italic;">(ikke satt)</span>' : '<span style="color: var(--text-secondary);">—</span>')
+                            : escHtml(String(v));
+                        return `
+                            <div style="color: var(--text-secondary); font-weight: 600;">${escHtml(k)}</div>
+                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px; word-break: break-all;">${vTekst}</div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        function sysHemmeligeTabell(hemmelige) {
+            const rader = Object.entries(hemmelige || {});
+            return `
+                <div style="display: grid; grid-template-columns: 240px 1fr; gap: 6px 12px; font-size: 13px;">
+                    ${rader.map(([k, v]) => `
+                        <div style="color: var(--text-secondary); font-weight: 600;">${escHtml(k)}</div>
+                        <div style="font-size: 12px;">
+                            ${v.satt
+                                ? `<span style="color: var(--success);">✓ satt</span> <small style="color: var(--text-secondary);">(${v.lengde} tegn)</small>`
+                                : `<span style="color: var(--danger);">✗ ikke satt</span>`}
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
 
         // ==================== Hjelpere ====================
         function escHtml(s) {

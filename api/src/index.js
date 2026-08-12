@@ -22,6 +22,7 @@ require('./functions/nokkel');
 require('./functions/hendelser');
 require('./functions/utsending');
 require('./functions/logo');
+require('./functions/system');
 
 // Etter hvert:
 // require('./functions/skjema');
