@@ -61,6 +61,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/cache/teammedlemskap",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },

@@ -13,6 +13,7 @@
  */
 const { evaluerVilkar } = require('./vilkar');
 const rollerStorage = require('./roller-storage');
+const teamStorage = require('./team-storage');
 
 function stegErFerdig(steg) {
     return Number(steg?.Beslutning || 0) !== 0;
@@ -55,7 +56,12 @@ async function brukerErBehandlerAsync(steg, upn) {
             if (await rollerStorage.erMedlem(r, upn)) return true;
         } catch (_) { /* prøv neste */ }
     }
-    // Team: kommer med Graph API (fase 8)
+    const team = steg?.Team || [];
+    for (const t of team) {
+        try {
+            if (await teamStorage.erMedlem(t, upn)) return true;
+        } catch (_) { /* prøv neste */ }
+    }
     return false;
 }
 

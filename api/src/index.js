@@ -25,6 +25,7 @@ require('./functions/logo');
 require('./functions/system');
 require('./functions/innstillinger');
 require('./functions/backup');
+require('./functions/team');
 
 // Etter hvert:
 // require('./functions/skjema');

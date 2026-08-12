@@ -7,6 +7,7 @@
  *   - Team-basert medlemskap — kommer med Graph API (fase 8) / stub
  */
 const rollerStorage = require('./roller-storage');
+const teamStorage = require('./team-storage');
 
 /**
  * Sjekk om upn har direkte tilgang via Personer-listen i en tilgangsstruktur.
@@ -45,9 +46,20 @@ async function harRolleTilgang(tilgang, upn) {
     return false;
 }
 
-// TODO (fase 8 med Graph API): implementer team-medlemskap
+/**
+ * Sjekk om upn er medlem av noen av teamene i tilgangsstrukturen.
+ * Data hentes fra Teammedlemskap-tabellen — populeres av PA-flyt
+ * (cron 6-timer + lazy-load ved editor-input).
+ */
 async function harTeamTilgang(tilgang, upn) {
-    return false; // stub — kommer med masterdata + Graph
+    const team = tilgang?.Team || [];
+    if (team.length === 0) return false;
+    for (const t of team) {
+        try {
+            if (await teamStorage.erMedlem(t, upn)) return true;
+        } catch (_) { /* ignorer, prøv neste */ }
+    }
+    return false;
 }
 
 async function filtrerTyperPåTilgang(skjematyper, upn, tilgangsFelt) {
