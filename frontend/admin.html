@@ -181,6 +181,7 @@
                 <div class="skille"></div>
                 <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser</a>
                 <a class="fane" data-fane="utsendinger" href="#utsendinger">✉️ Utsendinger</a>
+                <a class="fane" data-fane="gevinst" href="#gevinst">📈 Gevinstoppfølging</a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS</a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup</a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
@@ -226,6 +227,7 @@
                 case 'nokler':      rendrNokler(); break;
                 case 'hendelser':   rendrHendelser(); break;
                 case 'utsendinger': rendrUtsendinger(); break;
+                case 'gevinst':     rendrGevinst(); break;
                 case 'postnumre-fs':rendrPostnumreFs(); break;
                 case 'backup':      rendrBackup(); break;
                 case 'logoer':      rendrLogoer(); break;
@@ -1403,6 +1405,77 @@
                 `;
             } catch (e) {
                 el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        // ==================== GEVINSTOPPFØLGING-FANE ====================
+
+        const GEVINST_TYPER = [
+            { key: 'Gevinstestimat', tittel: 'Gevinstestimat',
+              hjelp: 'Vises øverst i editoren for alle skjematyper. Bruk <code>$lenke</code> i teksten der lenken til gevinstestimat-skjemaet skal vises.' },
+            { key: 'Gevinstrapportering', tittel: 'Gevinstrapportering',
+              hjelp: 'Samme som Gevinstestimat, men lenker til gevinstrapportering-skjemaet.' }
+        ];
+
+        function rendrGevinst() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Om Gevinstoppfølging</h2>
+                    <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+                        Editoren viser to informasjonsbokser rett før seksjoner-inndelingen som påminner
+                        skjematype-eier om å estimere og rapportere gevinster. Tekstene her er felles
+                        for alle skjematyper. Bruk <code>$lenke</code> som plassholder for lenken til
+                        det angitte skjemaet — den erstattes automatisk med URL som også inneholder
+                        gjeldende skjematype-id som kontekst.
+                    </div>
+                </div>
+                ${GEVINST_TYPER.map(t => `
+                    <div class="panel">
+                        <h2>${escHtml(t.tittel)}</h2>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 10px;">${t.hjelp}</div>
+                        <div class="rad">
+                            <label style="min-width: 130px;">Skjema-ID</label>
+                            <input type="text" id="g-${t.key}-id" placeholder="f.eks. 42" style="max-width: 200px;">
+                        </div>
+                        <div class="rad" style="flex-direction: column; align-items: stretch;">
+                            <label>Tekst (Markdown)</label>
+                            <textarea id="g-${t.key}-tekst" rows="6" style="width: 100%; font-family: 'SF Mono', Menlo, monospace; font-size: 13px;"
+                                placeholder="Skriv en informasjonstekst. Bruk $lenke der lenken skal vises."></textarea>
+                        </div>
+                        <div style="margin-top: 8px;">
+                            <button class="knapp primær" onclick="gLagre('${t.key}')">Lagre</button>
+                            <span id="g-${t.key}-status" style="margin-left: 12px; font-size: 12px;"></span>
+                        </div>
+                    </div>
+                `).join('')}
+            `;
+            gLast();
+        }
+
+        async function gLast() {
+            for (const t of GEVINST_TYPER) {
+                try {
+                    const [id, tekst] = await Promise.all([
+                        api.get(`/api/innstillinger/${t.key}.SkjemaId`).catch(() => null),
+                        api.get(`/api/innstillinger/${t.key}.Tekst`).catch(() => null)
+                    ]);
+                    document.getElementById(`g-${t.key}-id`).value = id?.Verdi || '';
+                    document.getElementById(`g-${t.key}-tekst`).value = tekst?.Verdi || '';
+                } catch (_) {}
+            }
+        }
+
+        window.gLagre = async (key) => {
+            const skjemaId = document.getElementById(`g-${key}-id`).value.trim();
+            const tekst = document.getElementById(`g-${key}-tekst`).value;
+            const status = document.getElementById(`g-${key}-status`);
+            try {
+                await api.post('/api/innstillinger', { Nokkel: `${key}.SkjemaId`, Verdi: skjemaId });
+                await api.post('/api/innstillinger', { Nokkel: `${key}.Tekst`, Verdi: tekst });
+                status.innerHTML = '<span style="color: var(--success);">✓ Lagret</span>';
+                setTimeout(() => { status.innerHTML = ''; }, 3000);
+            } catch (e) {
+                status.innerHTML = `<span style="color: var(--danger);">${escHtml(e.message)}</span>`;
             }
         };
 

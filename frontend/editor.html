@@ -477,7 +477,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { FELTTYPER } from './js/felt-render.js';
+        import { FELTTYPER, renderTekst } from './js/felt-render.js';
         import { byggDNFEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, invaliderRolleCache } from './js/tilgang-editor.js';
         import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
@@ -777,6 +777,15 @@
                     </div>
                 </div>
 
+                <div class="panel" data-panel-id="gevinst">
+                    <h2 onclick="togglePanel('gevinst')"><span class="kollaps-pil">▼</span>Gevinstoppfølging <small style="font-weight: 400; text-transform: none;">— estimat og rapportering (redigeres av admin)</small></h2>
+                    <div id="gevinst-innhold" style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="informasjon" id="gevinst-estimat" style="display: none;"></div>
+                        <div class="informasjon" id="gevinst-rapportering" style="display: none;"></div>
+                        <div id="gevinst-tom" style="color: var(--text-secondary); font-size: 13px;">Ikke konfigurert ennå. Admin kan sette teksten under <a href="/admin.html#gevinst" target="_blank">Admin-panelet → Gevinstoppfølging</a>.</div>
+                    </div>
+                </div>
+
                 <div class="panel" data-panel-id="seksjoner">
                     <h2 onclick="togglePanel('seksjoner')"><span class="kollaps-pil">▼</span>Seksjoner og felter</h2>
                     <div class="kollaps-verktoy" style="margin-top: -4px;">
@@ -805,6 +814,7 @@
             oppdaterSPOppsummering();
             appliserKollapsState();
             fyllLogoDropdown();
+            fyllGevinstoppfolging();
         }
 
         function rendrerTilgang() {
@@ -1790,6 +1800,46 @@
                 sel.appendChild(opt);
             }
         }
+        // Gevinstoppfølging: henter to bokser fra SystemInnstillinger og rendrer
+        // Markdown-teksten med $lenke erstattet til lenke til det konfigurerte
+        // skjemaet. Bruker gjeldende skjematype-id som kontekst-param så
+        // gevinstskjemaet kan spore kilde.
+        async function fyllGevinstoppfolging() {
+            const kontekst = eksisterendeId ? `&kontekst_skjematype_id=${encodeURIComponent(eksisterendeId)}` : '';
+            const typer = [
+                { key: 'Gevinstestimat', divId: 'gevinst-estimat' },
+                { key: 'Gevinstrapportering', divId: 'gevinst-rapportering' }
+            ];
+            let noeVist = false;
+            for (const t of typer) {
+                try {
+                    const [tekstRes, idRes] = await Promise.all([
+                        api.get(`/api/innstillinger/${t.key}.Tekst`).catch(() => null),
+                        api.get(`/api/innstillinger/${t.key}.SkjemaId`).catch(() => null)
+                    ]);
+                    const tekst = tekstRes?.Verdi || '';
+                    const skjemaId = idRes?.Verdi || '';
+                    if (!tekst) continue;
+                    const el = document.getElementById(t.divId);
+                    if (!el) continue;
+                    let ferdigTekst = tekst;
+                    if (skjemaId) {
+                        const url = `/index.html?skjematype_id=${encodeURIComponent(skjemaId)}${kontekst}`;
+                        // Erstatt $lenke — enten som del av Markdown [tekst]($lenke) eller alene
+                        ferdigTekst = ferdigTekst.split('$lenke').join(url);
+                    }
+                    // Rendrer alltid som Markdown (samme parser som skjemaforklaring)
+                    el.innerHTML = renderTekst({ Verdi: ferdigTekst, Format: 'Markdown' });
+                    el.style.display = '';
+                    noeVist = true;
+                } catch (e) {
+                    console.warn(`gevinstoppfolging ${t.key}:`, e.message);
+                }
+            }
+            const tom = document.getElementById('gevinst-tom');
+            if (tom) tom.style.display = noeVist ? 'none' : '';
+        }
+
         async function fyllLogoDropdown() {
             try {
                 const logoer = await api.get('/api/logoer');
