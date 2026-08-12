@@ -651,21 +651,21 @@
                     <div class="rad">
                         <label>DIF-logo (venstre) <small>(større logo til venstre for tittelen, f.eks. avdelings/våpen-merke)</small></label>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <select id="f-diflogo" onchange="setDIFLogo(this.value)" style="flex: 1;">
-                                <option value="">— ingen —</option>
-                            </select>
                             <img id="f-diflogo-preview" src="${escapeAttr(data.DIFLogo_URL || '')}" alt=""
                                 style="height: 50px; max-width: 100px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.DIFLogo_URL ? '' : 'display: none;'}">
+                            <span id="f-diflogo-navn" style="font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${data.DIFLogo_URL ? escapeHtml(data.DIFLogo_URL.split('/').pop()) : '(ingen valgt)'}</span>
+                            <button class="knapp sekundær" style="font-size: 12px; padding: 4px 10px;" onclick="velgLogoModal('DIFLogo_URL')">Velg logo…</button>
+                            <button class="knapp sekundær" style="font-size: 12px; padding: 4px 8px;" onclick="setDIFLogo('')" title="Fjern logo">✕</button>
                         </div>
                     </div>
                     <div class="rad">
                         <label>Logo (høyre) <small>(vises til høyre for tittelen — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>)</small></label>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <select id="f-logo" onchange="setLogo(this.value)" style="flex: 1;">
-                                <option value="">— ingen —</option>
-                            </select>
                             <img id="f-logo-preview" src="${escapeAttr(data.Logo_url || '')}" alt=""
                                 style="height: 40px; max-width: 120px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.Logo_url ? '' : 'display: none;'}">
+                            <span id="f-logo-navn" style="font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${data.Logo_url ? escapeHtml(data.Logo_url.split('/').pop()) : '(ingen valgt)'}</span>
+                            <button class="knapp sekundær" style="font-size: 12px; padding: 4px 10px;" onclick="velgLogoModal('Logo_url')">Velg logo…</button>
+                            <button class="knapp sekundær" style="font-size: 12px; padding: 4px 8px;" onclick="setLogo('')" title="Fjern logo">✕</button>
                         </div>
                     </div>
                     <div class="rad">
@@ -813,7 +813,6 @@
             oppdaterKvitteringOppsummering();
             oppdaterSPOppsummering();
             appliserKollapsState();
-            fyllLogoDropdown();
             fyllGevinstoppfolging();
         }
 
@@ -1772,33 +1771,73 @@
 
         // ---- Metadata-settere ----
         window.setNavn = v => { data.Skjema_navn = v; };
-        window.setLogo = v => {
-            data.Logo_url = v || '';
-            const preview = document.getElementById('f-logo-preview');
+        function oppdaterLogoPreview(previewId, navnId, v) {
+            const preview = document.getElementById(previewId);
             if (preview) {
                 preview.src = v || '';
                 preview.style.display = v ? '' : 'none';
             }
+            const navn = document.getElementById(navnId);
+            if (navn) navn.textContent = v ? v.split('/').pop() : '(ingen valgt)';
+        }
+        window.setLogo = v => {
+            data.Logo_url = v || '';
+            oppdaterLogoPreview('f-logo-preview', 'f-logo-navn', v);
         };
         window.setDIFLogo = v => {
             data.DIFLogo_URL = v || '';
-            const preview = document.getElementById('f-diflogo-preview');
-            if (preview) {
-                preview.src = v || '';
-                preview.style.display = v ? '' : 'none';
-            }
+            oppdaterLogoPreview('f-diflogo-preview', 'f-diflogo-navn', v);
         };
-        function fyllEnDropdown(sel, gjeldende, logoer) {
-            sel.innerHTML = '<option value="">— ingen —</option>' + logoer.map(l =>
-                `<option value="${escapeAttr(l.url)}" ${gjeldende === l.url ? 'selected' : ''}>${escapeAttr(l.navn)}</option>`
-            ).join('');
-            if (gjeldende && !logoer.some(l => l.url === gjeldende)) {
-                const opt = document.createElement('option');
-                opt.value = gjeldende;
-                opt.textContent = '(annet: ' + gjeldende + ')';
-                opt.selected = true;
-                sel.appendChild(opt);
-            }
+        // Åpne modal med logo-grid — feltNavn = 'Logo_url' eller 'DIFLogo_URL'
+        window.velgLogoModal = async (feltNavn) => {
+            let logoer = [];
+            try { logoer = await api.get('/api/logoer'); }
+            catch (e) { alert('Kunne ikke laste logoer: ' + e.message); return; }
+            const gjeldende = data[feltNavn] || '';
+            const setter = feltNavn === 'DIFLogo_URL' ? setDIFLogo : setLogo;
+            apneLogoGrid(logoer, gjeldende, (valgt) => setter(valgt));
+        };
+        function apneLogoGrid(logoer, gjeldende, callback) {
+            const bakgrunn = document.createElement('div');
+            bakgrunn.className = 'meldingsmodal-bakgrunn';
+            const griddHtml = logoer.length === 0
+                ? '<div style="text-align: center; color: var(--text-secondary); padding: 30px;">Ingen logoer lastet opp. Se <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>.</div>'
+                : logoer.map(l => `
+                    <div class="logo-valg" data-url="${escapeAttr(l.url)}" title="${escapeAttr(l.navn)}"
+                        style="border: 2px solid ${l.url === gjeldende ? 'var(--accent)' : 'var(--border-color)'};
+                               border-radius: 8px; padding: 10px; cursor: pointer; background: var(--bg-container);
+                               display: flex; flex-direction: column; gap: 6px; transition: transform 0.1s;">
+                        <div style="height: 70px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border-radius: 4px; padding: 4px;">
+                            <img src="${escapeAttr(l.url)}" alt="${escapeAttr(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeAttr(l.navn)}</div>
+                    </div>
+                `).join('');
+            bakgrunn.innerHTML = `
+                <div class="meldingsmodal-boks" style="max-width: 800px;">
+                    <h3 style="margin: 0 0 12px 0;">Velg logo</h3>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; max-height: 65vh; overflow-y: auto;">
+                        ${griddHtml}
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 16px;">
+                        <button class="knapp danger" data-handling="fjern">Fjern logo</button>
+                        <button class="knapp sekundær" data-handling="avbryt">Avbryt</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(bakgrunn);
+            const lukk = () => document.body.removeChild(bakgrunn);
+            bakgrunn.addEventListener('click', e => { if (e.target === bakgrunn) lukk(); });
+            bakgrunn.querySelector('[data-handling="avbryt"]').addEventListener('click', lukk);
+            bakgrunn.querySelector('[data-handling="fjern"]').addEventListener('click', () => { callback(''); lukk(); });
+            bakgrunn.querySelectorAll('.logo-valg').forEach(el => {
+                el.addEventListener('mouseenter', () => { el.style.transform = 'scale(1.03)'; });
+                el.addEventListener('mouseleave', () => { el.style.transform = ''; });
+                el.addEventListener('click', () => { callback(el.dataset.url); lukk(); });
+            });
+            document.addEventListener('keydown', function esc(e) {
+                if (e.key === 'Escape') { lukk(); document.removeEventListener('keydown', esc); }
+            });
         }
         // Gevinstoppfølging: henter to bokser fra SystemInnstillinger og rendrer
         // Markdown-teksten med $lenke erstattet til en utsending-token-URL.
@@ -1856,17 +1895,6 @@
             if (tom) tom.style.display = noeVist ? 'none' : '';
         }
 
-        async function fyllLogoDropdown() {
-            try {
-                const logoer = await api.get('/api/logoer');
-                const highre = document.getElementById('f-logo');
-                if (highre) fyllEnDropdown(highre, data.Logo_url || '', logoer);
-                const venstre = document.getElementById('f-diflogo');
-                if (venstre) fyllEnDropdown(venstre, data.DIFLogo_URL || '', logoer);
-            } catch (e) {
-                console.warn('Kunne ikke laste logoer:', e.message);
-            }
-        }
         window.setFase = v => { data.Fase = v; };
         window.setForklaring = v => {
             if (!data.Skjemaforklaring) data.Skjemaforklaring = { Format: 'Tekst' };
