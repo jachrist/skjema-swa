@@ -29,6 +29,7 @@ const TABELLER = [
     { kilde: 'Skjemaresultater', mal: 'Skjemaer' },    // legacy → SWA rename
     'Skjemaer',                                        // for SWA→SWA-migrering (samme-navn fallback)
     'Rollemedlemskap',                                 // rolle-tildelinger
+    'Teammedlemskap',                                  // team-medlemskap (cache oppdatert av PA-flyt)
     'Emner',                                           // FS-masterdata (kan re-genereres via refresh-fs)
     'EmneStudenter',
     'Postnumre',                                       // kan re-seedes fra Bring
