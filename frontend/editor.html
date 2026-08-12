@@ -821,6 +821,7 @@
             if (pubEl) {
                 byggTilgangEditor(pubEl, data.Publikum, {
                     rolleGrupper,
+                    visAlleTilgang: true,
                     onEndring: (ny) => { data.Publikum = ny; }
                 });
             }

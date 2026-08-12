@@ -32,6 +32,10 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     const kompakt = options.kompakt === true;
     const onEndring = options.onEndring || (() => {});
     const rolleGrupper = options.rolleGrupper || [];
+    // visAlleTilgang: true → viser en 'Åpen for alle innloggede'-checkbox
+    // øverst som overstyrer person/rolle/team-sjekker. Kun meningsfull for
+    // Publikum-tilgang (ellers ville alle blitt eiere/behandlere).
+    const visAlleTilgang = options.visAlleTilgang === true;
 
     // Kloningsstate — muter aldri innkommende
     let state = normaliserVerdi(verdi);
@@ -40,7 +44,8 @@ export function byggTilgangEditor(container, verdi, options = {}) {
         return {
             Personer: Array.isArray(v?.Personer) ? [...v.Personer].filter(Boolean) : [],
             Roller:   Array.isArray(v?.Roller)   ? [...v.Roller].filter(Boolean)   : [],
-            Team:     Array.isArray(v?.Team)     ? [...v.Team].filter(Boolean)     : []
+            Team:     Array.isArray(v?.Team)     ? [...v.Team].filter(Boolean)     : [],
+            AlleTilgang: v?.AlleTilgang === true
         };
     }
 
@@ -62,10 +67,36 @@ export function byggTilgangEditor(container, verdi, options = {}) {
         const wrap = document.createElement('div');
         wrap.style.cssText = 'display: flex; flex-direction: column; gap: 10px;';
 
-        wrap.appendChild(byggPersonerSeksjon());
-        wrap.appendChild(byggRollerSeksjon());
-        wrap.appendChild(byggTeamSeksjon());
+        if (visAlleTilgang) {
+            wrap.appendChild(byggAlleTilgangCheckbox());
+        }
+
+        const kroppen = document.createElement('div');
+        kroppen.style.cssText = `display: flex; flex-direction: column; gap: 10px; ${state.AlleTilgang ? 'opacity: 0.4; pointer-events: none;' : ''}`;
+        kroppen.appendChild(byggPersonerSeksjon());
+        kroppen.appendChild(byggRollerSeksjon());
+        kroppen.appendChild(byggTeamSeksjon());
+        wrap.appendChild(kroppen);
+
         container.appendChild(wrap);
+    }
+
+    function byggAlleTilgangCheckbox() {
+        const box = document.createElement('label');
+        box.style.cssText = `display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid ${state.AlleTilgang ? 'var(--accent)' : 'var(--border-color)'}; border-radius: 8px; background: ${state.AlleTilgang ? 'var(--accent-light)' : 'transparent'}; cursor: pointer; font-size: ${kompakt ? '12px' : '13px'};`;
+        const inp = document.createElement('input');
+        inp.type = 'checkbox';
+        inp.checked = state.AlleTilgang;
+        inp.addEventListener('change', () => {
+            state.AlleTilgang = inp.checked;
+            ferdig();
+            render();
+        });
+        const tekst = document.createElement('span');
+        tekst.innerHTML = '<strong>Åpen for alle innloggede</strong> <span style="color: var(--text-secondary);">— overstyrer Personer/Roller/Team</span>';
+        box.appendChild(inp);
+        box.appendChild(tekst);
+        return box;
     }
 
     // ==================== Personer ====================

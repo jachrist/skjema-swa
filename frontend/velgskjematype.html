@@ -673,7 +673,10 @@
                             ${escapeHtml(t.Skjema_navn || '(uten navn)')}
                             <small style="font-weight: 400; color: var(--text-secondary); font-size: 0.65em;">ID ${escapeHtml(String(t.Skjematype_id))}</small>
                         </h2>
-                        <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            ${t.AlleTilgang ? '<span class="fase-badge" style="background: #34c759;" title="Alle innloggede kan fylle ut">Åpen for alle</span>' : ''}
+                            <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
+                        </div>
                     </div>
                     <div class="kort-innhold">
                         ${forklaring}

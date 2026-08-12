@@ -55,7 +55,8 @@ function tilKortformat(st, erEier, kanFylle) {
         // Utfylling blokkeres utenfor tilgjengelighetsperioden — eier ser kortet uansett
         KanFylle: kanFylle && iPeriode,
         ErIPeriode: iPeriode,
-        Tilgjengelighetsperioder: data.Tilgjengelighetsperioder || []
+        Tilgjengelighetsperioder: data.Tilgjengelighetsperioder || [],
+        AlleTilgang: data.Publikum?.AlleTilgang === true
     };
 }
 

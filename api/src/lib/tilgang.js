@@ -68,6 +68,12 @@ async function filtrerTyperPåTilgang(skjematyper, upn, tilgangsFelt) {
         const tilgang = st.JSON?.[tilgangsFelt];
         if (!tilgang) continue;
 
+        // "Åpen for alle innloggede" — overstyrer alle andre sjekker.
+        // Kun for Publikum-felt; ellers ville alle blitt eiere/behandlere også.
+        if (tilgangsFelt === 'Publikum' && tilgang.AlleTilgang === true) {
+            brukerensTyper.push(st);
+            continue;
+        }
         if (harPersonligTilgang(tilgang, upn)) {
             brukerensTyper.push(st);
             continue;
