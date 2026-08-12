@@ -34,7 +34,8 @@ const TABELLER = [
 ];
 
 const CONTAINERE = [
-    'vedlegg'
+    'vedlegg',
+    'logoer'
 ];
 
 function parseArgs(argv) {
