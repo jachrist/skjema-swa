@@ -180,6 +180,7 @@
                 <a class="fane" data-fane="nokler" href="#nokler">🔐 Nøkler</a>
                 <div class="skille"></div>
                 <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser</a>
+                <a class="fane" data-fane="utsendinger" href="#utsendinger">✉️ Utsendinger</a>
                 <a class="fane" data-fane="masterdata" href="#masterdata">🗂 Masterdata <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS <span class="badge">Snart</span></a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup <span class="badge">Snart</span></a>
@@ -225,6 +226,7 @@
                 case 'roller':      rendrRoller(); break;
                 case 'nokler':      rendrNokler(); break;
                 case 'hendelser':   rendrHendelser(); break;
+                case 'utsendinger': rendrUtsendinger(); break;
                 case 'masterdata':  rendrPlaceholder('Masterdata', 'Faste_data og oppslagslister (Emner, Fakulteter, osv.). Redigerbar tabell.'); break;
                 case 'postnumre-fs':rendrPlaceholder('Postnumre / FS', 'Seed postnumre-tabell. Trigg refresh av FS-data (emner, personer).'); break;
                 case 'backup':      rendrPlaceholder('Backup', 'Manuell trigger + tidsplan for eksport av skjemaer, skjematyper, roller til blob-container. Nedlastbare øyeblikksbilder.'); break;
@@ -688,6 +690,108 @@
             const d = new Date(iso);
             const pad = n => String(n).padStart(2, '0');
             return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+        }
+
+        // ==================== UTSENDINGER-FANE ====================
+
+        function rendrUtsendinger() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Batch-status</h2>
+                    <div style="display: flex; gap: 10px; align-items: end;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Batch-ID</label>
+                            <input type="text" id="u-batch" placeholder="f.eks. test-1786520977">
+                        </div>
+                        <button class="knapp primær" onclick="utsHentBatch()">Hent</button>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                        Batch-ID er verdien du sendte som <code>batchId</code> ved <code>POST /api/utsending</code>. Kan også være sender-skjema-id.
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Manuell purring</h2>
+                    <div style="display: flex; gap: 10px; align-items: end;">
+                        <div style="flex: 1;">
+                            <label style="font-size: 12px; color: var(--text-secondary);">Batch-ID (tomt = alle ubesvarte)</label>
+                            <input type="text" id="u-purre-batch" placeholder="(valgfritt)">
+                        </div>
+                        <button class="knapp" onclick="utsPurre()">Trigg purring nå</button>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">
+                        Purring skjer også automatisk daglig via GitHub Actions.
+                    </div>
+                </div>
+                <div id="u-resultat"></div>
+            `;
+        }
+
+        window.utsHentBatch = async () => {
+            const batchId = document.getElementById('u-batch').value.trim();
+            const resultat = document.getElementById('u-resultat');
+            if (!batchId) { resultat.innerHTML = '<div class="feilmelding">Batch-ID kreves</div>'; return; }
+            resultat.innerHTML = '<div class="laster">Henter…</div>';
+            try {
+                const data = await api.get(`/api/utsending/batch/${encodeURIComponent(batchId)}`);
+                if (data.antall === 0) {
+                    resultat.innerHTML = '<div class="tom-melding">Ingen utsendinger i denne batchen.</div>';
+                    return;
+                }
+                resultat.innerHTML = `
+                    <div class="panel">
+                        <h2>Resultat for ${escHtml(batchId)}</h2>
+                        <div style="display: flex; gap: 20px; margin-bottom: 12px; font-size: 14px;">
+                            <div><strong>${data.antall}</strong> totalt</div>
+                            <div style="color: var(--success);"><strong>${data.besvart}</strong> besvart</div>
+                            <div style="color: var(--warning);"><strong>${data.ubesvart}</strong> ubesvart</div>
+                        </div>
+                        <div class="innehaver-header" style="grid-template-columns: 1.5fr 100px 145px 145px 120px; gap: 12px;">
+                            <div>Mottaker</div><div>Kanal</div><div>Opprettet</div><div>Besvart</div><div>Sist purret</div>
+                        </div>
+                        ${data.rader.map(r => `
+                            <div class="innehaver-rad" style="grid-template-columns: 1.5fr 100px 145px 145px 120px; gap: 12px;">
+                                <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(r.Mottaker)}</div>
+                                <div>${escHtml(r.KanalHint || 'epost')}</div>
+                                <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${formatDato(r.Opprettet)}</div>
+                                <div>${r.SvarSkjemaId
+                                    ? `<span style="color: var(--success);">✓</span> <small>${escHtml(r.SvarSkjemaId)}</small>`
+                                    : '<span style="color: var(--text-secondary);">—</span>'}</div>
+                                <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${r.SistPurret ? formatDato(r.SistPurret) : '<span style="color: var(--text-secondary);">aldri</span>'}</div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } catch (e) {
+                resultat.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.utsPurre = async () => {
+            const batchId = document.getElementById('u-purre-batch').value.trim();
+            if (!confirm(batchId
+                ? `Trigg purring for batch "${batchId}" nå?`
+                : 'Trigg purring for ALLE ubesvarte utsendinger (som ikke er purret nylig)?')) return;
+            const resultat = document.getElementById('u-resultat');
+            resultat.innerHTML = '<div class="laster">Purrer…</div>';
+            try {
+                const res = await api.post('/api/utsending/purre', batchId ? { batchId } : {});
+                resultat.innerHTML = `
+                    <div class="banner ${res.feil ? 'advarsel' : 'suksess'}">
+                        ✓ Purret ${res.antallPurret} utsending${res.antallPurret === 1 ? '' : 'er'}
+                        ${res.melding ? '<br><small>' + escHtml(res.melding) + '</small>' : ''}
+                        ${res.feil ? '<br><small>Feil: ' + escHtml(res.feil) + '</small>' : ''}
+                    </div>
+                `;
+            } catch (e) {
+                resultat.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        function formatDato(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            const pad = n => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
 
         // ==================== Hjelpere ====================

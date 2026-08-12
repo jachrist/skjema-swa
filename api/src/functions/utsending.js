@@ -178,6 +178,119 @@ app.http('utsendingValider', {
     }
 });
 
+/**
+ * POST /api/utsending/purre — kalles av scheduler (GitHub Actions cron) eller admin.
+ * Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
+ *
+ * Går gjennom alle ubesvarte utsendinger som ikke ble purret nylig,
+ * kaller PURRE_FLOW_URL (PA-flyt) med batch av mottakere, og markerer
+ * hver som purret. Fire-and-forget — feiler ikke om PA er nede.
+ *
+ * Body (valgfritt):
+ *   { batchId?: "..." }   — hvis satt: purr KUN denne batchen (manuell trigger)
+ *
+ * Returnerer: { antallPurret, antallHoppetOver, feil? }
+ */
+app.http('utsendingPurre', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'utsending/purre',
+    handler: async (request, context) => {
+        // Auth: scheduler-key eller admin
+        const schedulerKey = request.headers.get('x-scheduler-key');
+        const configuredKey = String(process.env.SCHEDULER_KEY || '').trim();
+        const upn = hentInnloggetUpn(request);
+        const schedulerOk = configuredKey && schedulerKey && schedulerKey === configuredKey;
+        if (!schedulerOk && !(upn && erAdmin(upn))) {
+            return { status: 401, jsonBody: { status: 'feil', melding: 'Krever x-scheduler-key eller admin' } };
+        }
+
+        try {
+            const body = await request.json().catch(() => ({}));
+            const batchFilter = String(body?.batchId || '').trim();
+            const maksDager = Number(process.env.PURRE_MAKS_DAGER || 14);
+            const minDagerMellom = Number(process.env.PURRE_MIN_DAGER_MELLOM || 3);
+
+            let kandidater = await utsendingStorage.listUbesvarte({
+                maksDagerSidenOpprettet: maksDager,
+                minDagerSidenPurring: minDagerMellom
+            });
+            if (batchFilter) kandidater = kandidater.filter(k => k.BatchId === batchFilter);
+
+            if (kandidater.length === 0) {
+                return { jsonBody: { status: 'ok', antallPurret: 0, antallHoppetOver: 0, melding: 'Ingen kandidater å purre' } };
+            }
+
+            const purreFlyt = String(process.env.PURRE_FLOW_URL || '').trim();
+            const b = baseUrl(request);
+            const nå = Date.now();
+
+            // Bygg mottakere-liste med regenerert token (bevarer jti — samme identitet, ny exp)
+            const mottakere = kandidater.map(k => {
+                const token = utsendingToken.utsted({
+                    batchId: k.BatchId, mottaker: k.Mottaker, skjematypeId: k.SkjematypeId, jti: k.Jti
+                });
+                const dagerSiden = Math.floor((nå - new Date(k.Opprettet).getTime()) / (24 * 3600 * 1000));
+                return {
+                    mottaker: k.Mottaker,
+                    url: `${b}/index.html?utsending=${encodeURIComponent(token)}`,
+                    batchId: k.BatchId,
+                    skjematypeId: k.SkjematypeId,
+                    kanal: k.KanalHint || 'epost',
+                    dagerSiden
+                };
+            });
+
+            let antallPurret = 0, feil = null;
+            if (!purreFlyt) {
+                context.log('utsending/purre: PURRE_FLOW_URL ikke satt — markerer likevel som purret (dry-run)');
+            } else {
+                try {
+                    const res = await fetch(purreFlyt, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ handling: 'purreUtsendinger', mottakere })
+                    });
+                    if (!res.ok) {
+                        feil = `PA-flyt returnerte ${res.status}`;
+                        context.log(`utsending/purre: ${feil}`);
+                    }
+                } catch (e) {
+                    feil = `PA-flyt-kall feilet: ${e.message}`;
+                    context.log(`utsending/purre: ${feil}`);
+                }
+            }
+
+            // Marker alle som purret (også hvis PA feilet — så vi ikke spammer neste kjøring)
+            for (const k of kandidater) {
+                try {
+                    await utsendingStorage.markerPurret(k.BatchId, k.Mottaker);
+                    antallPurret++;
+                } catch (e) {
+                    context.log(`utsending/purre: markerPurret feilet for ${k.BatchId}/${k.Mottaker}: ${e.message}`);
+                }
+            }
+
+            hendelser.logg({
+                Type: 'utsending.purre', Aktor: upn || 'scheduler',
+                ObjektType: 'utsending', ObjektId: batchFilter || '(alle)',
+                Melding: `Purret ${antallPurret} ubesvarte utsending${antallPurret === 1 ? '' : 'er'}${feil ? ' (PA-flyt feilet: ' + feil + ')' : ''}`,
+                Detaljer: { antallPurret, batchFilter, feil, maksDager, minDagerMellom }
+            });
+
+            return {
+                jsonBody: {
+                    status: 'ok', antallPurret, antallHoppetOver: 0, feil,
+                    melding: purreFlyt ? undefined : 'PURRE_FLOW_URL ikke satt — dry-run (markert som purret men ingen e-post sendt)'
+                }
+            };
+        } catch (e) {
+            context.log('utsending/purre FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('utsendingBatchStatus', {
     methods: ['GET'],
     authLevel: 'anonymous',

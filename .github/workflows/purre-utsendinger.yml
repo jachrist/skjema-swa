@@ -1,0 +1,33 @@
+name: Purre utsendinger
+
+# SWA Managed Functions støtter ikke timer-triggere.
+# Denne workflowen kaller /api/utsending/purre daglig for å finne
+# ubesvarte utsendinger og trigge PA-purringsflyt.
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 06:00 UTC daglig (08:00 norsk sommertid)
+  workflow_dispatch:
+
+jobs:
+  purre:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kall utsending/purre
+        env:
+          SWA_URL: ${{ vars.SWA_URL }}
+          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "SWA_URL eller SCHEDULER_KEY mangler — kjør workflow_dispatch etter oppsett."
+            exit 1
+          fi
+          echo "Kaller $SWA_URL/api/utsending/purre …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/utsending/purre" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          if [ "$RESP" != "200" ]; then exit 1; fi

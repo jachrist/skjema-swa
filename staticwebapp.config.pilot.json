@@ -45,6 +45,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/utsending/purre",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },
