@@ -130,34 +130,23 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     function byggRollerSeksjon() {
         const sek = seksjon('Roller', '(fra rolle-adm — henter innehavere dynamisk)');
 
-        // Dropdown-velger
-        const velger = document.createElement('div');
-        velger.style.cssText = 'display: flex; gap: 6px; margin-bottom: 6px;';
-
-        const sel = document.createElement('select');
-        sel.style.cssText = 'flex: 1; padding: 4px 8px; font-size: 13px;';
-        const tomOpt = document.createElement('option');
-        tomOpt.value = '';
-        tomOpt.textContent = rolleGrupper.length === 0 ? '(ingen roller registrert — bruk rolle-adm)' : '— velg rolle —';
-        sel.appendChild(tomOpt);
-        for (const g of rolleGrupper) {
-            const rolleStr = grupperTilRolleStreng(g);
-            if (state.Roller.includes(rolleStr)) continue;
-            const o = document.createElement('option');
-            o.value = rolleStr;
-            o.textContent = rolleTilVisning(rolleStr);
-            sel.appendChild(o);
-        }
-        sel.addEventListener('change', () => {
-            const v = sel.value;
-            if (v && !state.Roller.includes(v)) {
-                state.Roller.push(v);
-                ferdig();
-                render();
+        const tilgjengelige = rolleGrupper
+            .map(g => ({ verdi: grupperTilRolleStreng(g), visning: rolleTilVisning(grupperTilRolleStreng(g)) }))
+            .filter(o => !state.Roller.includes(o.verdi));
+        const placeholder = rolleGrupper.length === 0
+            ? '(ingen roller registrert — bruk rolle-adm)'
+            : 'Søk og velg rolle…';
+        sek.appendChild(byggSokDropdown({
+            placeholder,
+            alternativer: tilgjengelige,
+            onVelg: (v) => {
+                if (!state.Roller.includes(v)) {
+                    state.Roller.push(v);
+                    ferdig();
+                    render();
+                }
             }
-        });
-        velger.appendChild(sel);
-        sek.appendChild(velger);
+        }));
 
         // Chip-liste for valgte roller
         sek.appendChild(byggChipListe('Roller', state.Roller, () => false, null, {
@@ -170,32 +159,29 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     function byggTeamSeksjon() {
         const sek = seksjon('Team', '(fra Teammedlemskap-cache — oppdatert av PA-flyt)');
 
-        // Dropdown + søk-eksternt-knapp
         const velger = document.createElement('div');
         velger.style.cssText = 'display: flex; gap: 6px; margin-bottom: 6px;';
 
-        const sel = document.createElement('select');
-        sel.style.cssText = 'flex: 1; padding: 4px 8px; font-size: 13px;';
-        const tomOpt = document.createElement('option');
-        tomOpt.value = '';
-        tomOpt.textContent = teamNavn.length === 0 ? '(ingen team i cachen — søk eksternt)' : '— velg team —';
-        sel.appendChild(tomOpt);
-        for (const t of teamNavn) {
-            if (state.Team.includes(t)) continue;
-            const o = document.createElement('option');
-            o.value = t;
-            o.textContent = t;
-            sel.appendChild(o);
-        }
-        sel.addEventListener('change', () => {
-            const v = sel.value;
-            if (v && !state.Team.includes(v)) {
-                state.Team.push(v);
-                ferdig();
-                render();
+        const tilgjengelige = teamNavn
+            .filter(t => !state.Team.includes(t))
+            .map(t => ({ verdi: t, visning: t }));
+        const placeholder = teamNavn.length === 0
+            ? '(ingen team i cachen — søk eksternt)'
+            : 'Søk og velg team…';
+
+        const dropdown = byggSokDropdown({
+            placeholder,
+            alternativer: tilgjengelige,
+            onVelg: (v) => {
+                if (!state.Team.includes(v)) {
+                    state.Team.push(v);
+                    ferdig();
+                    render();
+                }
             }
         });
-        velger.appendChild(sel);
+        dropdown.style.flex = '1';
+        velger.appendChild(dropdown);
 
         if (api) {
             const sokBtn = document.createElement('button');
@@ -210,6 +196,74 @@ export function byggTilgangEditor(container, verdi, options = {}) {
 
         sek.appendChild(byggChipListe('Team', state.Team, () => false, null));
         return sek;
+    }
+
+    // ==================== Søkbar dropdown ====================
+    // Gjenbrukbar helper: input-felt som viser filtrerbar liste under.
+    // { placeholder, alternativer: [{verdi, visning}], onVelg(verdi) }
+    function byggSokDropdown({ placeholder, alternativer, onVelg }) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'position: relative;';
+
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.placeholder = placeholder || 'Søk…';
+        input.style.cssText = `width: 100%; padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px; box-sizing: border-box;`;
+        input.readOnly = alternativer.length === 0;
+        wrap.appendChild(input);
+
+        const liste = document.createElement('div');
+        liste.style.cssText = `position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+            background: var(--bg-input, white); border: 1px solid var(--input-border, #d1d1d6);
+            border-radius: 6px; max-height: 240px; overflow-y: auto; display: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-top: 2px;`;
+        wrap.appendChild(liste);
+
+        function renderListe() {
+            const q = input.value.trim().toLowerCase();
+            const filtrert = q
+                ? alternativer.filter(a => a.visning.toLowerCase().includes(q))
+                : alternativer;
+            liste.innerHTML = '';
+            if (filtrert.length === 0) {
+                const tom = document.createElement('div');
+                tom.style.cssText = 'padding: 8px 10px; color: var(--text-secondary); font-size: 12px; font-style: italic;';
+                tom.textContent = q ? 'Ingen treff.' : '(tom)';
+                liste.appendChild(tom);
+                return;
+            }
+            for (const a of filtrert.slice(0, 100)) {
+                const rad = document.createElement('div');
+                rad.textContent = a.visning;
+                rad.style.cssText = 'padding: 6px 10px; font-size: 13px; cursor: pointer;';
+                rad.addEventListener('mouseenter', () => { rad.style.background = 'var(--accent-light)'; });
+                rad.addEventListener('mouseleave', () => { rad.style.background = ''; });
+                rad.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    liste.style.display = 'none';
+                    onVelg(a.verdi);
+                });
+                liste.appendChild(rad);
+            }
+        }
+
+        input.addEventListener('focus', () => {
+            renderListe();
+            liste.style.display = 'block';
+        });
+        input.addEventListener('input', () => {
+            renderListe();
+            liste.style.display = 'block';
+        });
+        input.addEventListener('blur', () => {
+            // Kort delay så mousedown på rad rekker å registrere
+            setTimeout(() => { liste.style.display = 'none'; }, 150);
+        });
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') { input.blur(); }
+        });
+
+        return wrap;
     }
 
     async function sokEksterntTeam(knapp) {
