@@ -33,14 +33,22 @@ const skjemaStorage = require('../lib/skjema-storage');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 
-function harFlytNokkel(request) {
-    const forventet = process.env.FLOW_CALLBACK_KEY;
-    if (!forventet) return false;
-    const gitt = request.headers.get('x-flow-key') || '';
-    if (!gitt || gitt.length !== forventet.length) return false;
+function harFlytNokkel(request, context) {
+    const forventet = String(process.env.FLOW_CALLBACK_KEY || '').trim();
+    if (!forventet) {
+        context?.log('utsending: FLOW_CALLBACK_KEY env-var er ikke satt');
+        return { ok: false, årsak: 'FLOW_CALLBACK_KEY env-var er ikke satt i backend' };
+    }
+    const gitt = String(request.headers.get('x-flow-key') || '').trim();
+    if (!gitt) return { ok: false, årsak: 'x-flow-key-header mangler eller er tom' };
+    if (gitt.length !== forventet.length) {
+        context?.log(`utsending: x-flow-key lengdemismatch (gitt=${gitt.length}, forventet=${forventet.length})`);
+        return { ok: false, årsak: `x-flow-key har feil lengde (${gitt.length} vs forventet ${forventet.length})` };
+    }
     try {
-        return crypto.timingSafeEqual(Buffer.from(gitt), Buffer.from(forventet));
-    } catch (_) { return false; }
+        const match = crypto.timingSafeEqual(Buffer.from(gitt), Buffer.from(forventet));
+        return match ? { ok: true } : { ok: false, årsak: 'x-flow-key matcher ikke' };
+    } catch (e) { return { ok: false, årsak: 'x-flow-key sammenligning feilet: ' + e.message }; }
 }
 
 function baseUrl(request) {
@@ -58,9 +66,17 @@ app.http('utsendingOpprett', {
     handler: async (request, context) => {
         // Auth: enten flyt-nøkkel eller admin
         const upn = hentInnloggetUpn(request);
-        const flytOk = harFlytNokkel(request);
-        if (!flytOk && !(upn && erAdmin(upn))) {
-            return { status: 401, jsonBody: { status: 'feil', melding: 'Krever x-flow-key eller admin-innlogging' } };
+        const flyt = harFlytNokkel(request, context);
+        if (!flyt.ok && !(upn && erAdmin(upn))) {
+            return {
+                status: 401,
+                jsonBody: {
+                    status: 'feil',
+                    melding: upn
+                        ? `Krever admin eller gyldig x-flow-key. Innlogget som ${upn} (ikke admin). Flyt-nøkkel: ${flyt.årsak}`
+                        : `Krever gyldig x-flow-key eller admin-innlogging. Flyt-nøkkel: ${flyt.årsak}`
+                }
+            };
         }
 
         try {
