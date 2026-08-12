@@ -127,6 +127,62 @@ app.http('utsendingOpprett', {
     }
 });
 
+/**
+ * POST /api/utsending/for-meg
+ * Auth: authenticated. Aksepterer kun oppretting av token der mottaker = innlogget bruker.
+ * Brukbart for editor/gevinstoppfølging der vi trenger prefylt lenke til pålogget bruker
+ * uten å kreve admin/x-flow-key.
+ *
+ * Body: { skjematypeId, batchId?, prefilled? }
+ * Returnerer: { batchId, mottaker, url, utloper }
+ */
+app.http('utsendingForMeg', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'utsending/for-meg',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const body = await request.json();
+            const skjematypeId = String(body.skjematypeId || '').trim();
+            if (!skjematypeId) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler skjematypeId' } };
+            const prefilled = body?.prefilled && typeof body.prefilled === 'object' ? body.prefilled : null;
+            // Idempotent batchId per (upn, skjematypeId, evt. custom-suffix) så vi ikke
+            // fyller storage med duplikater ved gjentatte editor-loads.
+            const suffix = String(body.batchId || 'for-meg').trim();
+            const batchId = `${suffix}-${upn}-${skjematypeId}`.toLowerCase();
+            // Idempotent: gjenbruk jti hvis raden finnes, ellers generer ny.
+            // Da forblir URL stabil på tvers av editor-loads.
+            const eksist = await utsendingStorage.hent(batchId, upn);
+            let jti;
+            if (eksist && !eksist.SvarSkjemaId) {
+                jti = eksist.Jti;
+                // Oppdater prefilled hvis endret
+                await utsendingStorage.opprett({
+                    batchId, mottaker: upn, skjematypeId, jti, prefilled,
+                    kanalHint: 'epost', senderSkjemaId: '', opprettetAv: upn
+                });
+            } else {
+                jti = crypto.randomBytes(8).toString('hex');
+                await utsendingStorage.opprett({
+                    batchId, mottaker: upn, skjematypeId, jti, prefilled,
+                    kanalHint: 'epost', senderSkjemaId: '', opprettetAv: upn
+                });
+            }
+            const token = utsendingToken.utsted({ batchId, mottaker: upn, skjematypeId, jti });
+            const b = baseUrl(request);
+            const url = `${b}/index.html?utsending=${encodeURIComponent(token)}`;
+            const v = utsendingToken.valider(token);
+            return { jsonBody: { status: 'ok', batchId, mottaker: upn, url, utloper: v.utloper } };
+        } catch (e) {
+            context.log('utsending/for-meg FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('utsendingValider', {
     methods: ['GET'],
     authLevel: 'anonymous',

@@ -955,10 +955,9 @@ export function parseMarkdown(tekst) {
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-    // Lenker: [tekst](url) — bare http(s) tillates.
-    // Egen class md-lenke så CSS kan sikre synlig lenkestil (arvet farge fra
-    // parent kan gjøre standard-anchor usynlig i info-bannere e.l.).
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+    // Lenker: [tekst](url) — aksepterer http(s), relative (/), og fragmenter (#).
+    // Blokkerer javascript:/data: for XSS. Egen class md-lenke for lenkestil.
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+|\/[^)]*|#[^)]*)\)/g,
         '<a class="md-lenke" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
 
     // Avsnitt/linjeskift — dobbel newline til </p><p>, enkel til <br>
@@ -1001,7 +1000,7 @@ export function renderTekstInline(tekstObj) {
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g,
+    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+|\/[^)]*|#[^)]*)\)/g,
         '<a class="md-lenke" href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
     return s;
 }

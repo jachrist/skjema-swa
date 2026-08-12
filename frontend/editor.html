@@ -1801,16 +1801,18 @@
             }
         }
         // Gevinstoppfølging: henter to bokser fra SystemInnstillinger og rendrer
-        // Markdown-teksten med $lenke erstattet til lenke til det konfigurerte
-        // skjemaet. Bruker gjeldende skjematype-id som kontekst-param så
-        // gevinstskjemaet kan spore kilde.
+        // Markdown-teksten med $lenke erstattet til en utsending-token-URL.
+        // Prefill (invariant): felt 1-01 = gjeldende skjematype-id, 1-02 = navn.
+        // Trenger eksisterende skjematype-id for å ha noe kontekst å prefille.
         async function fyllGevinstoppfolging() {
-            const kontekst = eksisterendeId ? `&kontekst_skjematype_id=${encodeURIComponent(eksisterendeId)}` : '';
+            if (!eksisterendeId) return; // ny (ulagret) skjematype — ingen kontekst å sende
             const typer = [
                 { key: 'Gevinstestimat', divId: 'gevinst-estimat' },
                 { key: 'Gevinstrapportering', divId: 'gevinst-rapportering' }
             ];
             let noeVist = false;
+            const kontekstSkjematypeId = String(eksisterendeId);
+            const kontekstNavn = data.Skjema_navn || '';
             for (const t of typer) {
                 try {
                     const [tekstRes, idRes] = await Promise.all([
@@ -1818,17 +1820,31 @@
                         api.get(`/api/innstillinger/${t.key}.SkjemaId`).catch(() => null)
                     ]);
                     const tekst = tekstRes?.Verdi || '';
-                    const skjemaId = idRes?.Verdi || '';
+                    const gevinstSkjemaId = idRes?.Verdi || '';
                     if (!tekst) continue;
                     const el = document.getElementById(t.divId);
                     if (!el) continue;
                     let ferdigTekst = tekst;
-                    if (skjemaId) {
-                        const url = `/index.html?skjematype_id=${encodeURIComponent(skjemaId)}${kontekst}`;
-                        // Erstatt $lenke — enten som del av Markdown [tekst]($lenke) eller alene
-                        ferdigTekst = ferdigTekst.split('$lenke').join(url);
+                    if (gevinstSkjemaId) {
+                        try {
+                            // Opprett/hent utsending-token for meg selv med prefill av
+                            // skjematype-id (1-01) og skjematype-navn (1-02).
+                            const res = await api.post('/api/utsending/for-meg', {
+                                skjematypeId: gevinstSkjemaId,
+                                batchId: `gevinst-${t.key.toLowerCase()}`,
+                                prefilled: {
+                                    '1-01': [kontekstSkjematypeId],
+                                    '1-02': [kontekstNavn]
+                                }
+                            });
+                            ferdigTekst = ferdigTekst.split('$lenke').join(res.url);
+                        } catch (e) {
+                            console.warn(`gevinstoppfolging: kunne ikke opprette token for ${t.key}:`, e.message);
+                            // Fall back til enkel lenke uten prefill
+                            const url = `/index.html?skjematype_id=${encodeURIComponent(gevinstSkjemaId)}`;
+                            ferdigTekst = ferdigTekst.split('$lenke').join(url);
+                        }
                     }
-                    // Rendrer alltid som Markdown (samme parser som skjemaforklaring)
                     el.innerHTML = renderTekst({ Verdi: ferdigTekst, Format: 'Markdown' });
                     el.style.display = '';
                     noeVist = true;
