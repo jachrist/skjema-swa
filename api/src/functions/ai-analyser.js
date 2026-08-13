@@ -72,6 +72,90 @@ Returner BARE gyldig JSON i dette formatet (ingen forklaring, ingen markdown-cod
 
 Ta med bare de feltene som er relevante for hver type (f.eks. ingen Valg for Tekst-felt).`;
 
+/**
+ * POST /api/ai/diag — minimal Anthropic-test uten multipart-håndtering.
+ * Sender en tekst-hilsen og returnerer respons + timing. Brukes til å
+ * verifisere at ANTHROPIC_API_KEY, nettverk mot api.anthropic.com og
+ * global fetch alle fungerer i miljøet.
+ */
+app.http('aiDiag', {
+    methods: ['POST', 'GET'],
+    authLevel: 'anonymous',
+    route: 'ai/diag',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'feil', melding: 'Krever admin' } };
+
+        const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
+        const modell = String(process.env.ANTHROPIC_MODELL || DEFAULT_MODELL).trim();
+        const trinn = [];
+        const start = Date.now();
+        const merk = (navn, ekstra) => trinn.push({ trinn: navn, ms: Date.now() - start, ...(ekstra || {}) });
+
+        try {
+            merk('start', {
+                node: process.version,
+                harFetch: typeof fetch === 'function',
+                modell,
+                apiKeyLengde: apiKey.length,
+                apiKeyPrefiks: apiKey.slice(0, 8)
+            });
+
+            if (!apiKey) {
+                return { status: 503, jsonBody: { status: 'feil', melding: 'ANTHROPIC_API_KEY ikke satt', trinn } };
+            }
+
+            const controller = new AbortController();
+            const timeoutHandle = setTimeout(() => controller.abort(), 30_000);
+            let resp;
+            try {
+                resp = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01'
+                    },
+                    body: JSON.stringify({
+                        model: modell,
+                        max_tokens: 100,
+                        messages: [{ role: 'user', content: 'Svar med kun ordet OK.' }]
+                    }),
+                    signal: controller.signal
+                });
+                merk('fetch fullført', { status: resp.status });
+            } catch (fe) {
+                clearTimeout(timeoutHandle);
+                merk('fetch feilet', { navn: fe.name, melding: fe.message });
+                return { status: 504, jsonBody: { status: 'feil', melding: `${fe.name}: ${fe.message}`, trinn } };
+            }
+            clearTimeout(timeoutHandle);
+
+            const tekst = await resp.text();
+            merk('response lest', { bytes: tekst.length });
+
+            let json = null;
+            try { json = JSON.parse(tekst); merk('json parset'); }
+            catch (pe) { merk('json parse feilet', { melding: pe.message }); }
+
+            return {
+                jsonBody: {
+                    status: resp.ok ? 'ok' : 'feil',
+                    httpStatus: resp.status,
+                    svar: json?.content?.[0]?.text || tekst.slice(0, 500),
+                    tokens: json?.usage || null,
+                    trinn,
+                    modell
+                }
+            };
+        } catch (e) {
+            context.log('ai/diag EXCEPTION:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message, trinn, stack: (e.stack || '').split('\n').slice(0, 6) } };
+        }
+    }
+});
+
 app.http('aiAnalyserSkjema', {
     methods: ['POST'],
     authLevel: 'anonymous',
@@ -117,19 +201,37 @@ app.http('aiAnalyserSkjema', {
             ];
 
             context.log(`ai/analyser-skjema: ${upn} sender ${filnavn} (${buffer.length} bytes, ${contentType}) til ${modell}`);
-            const resp = await fetch('https://api.anthropic.com/v1/messages', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-api-key': apiKey,
-                    'anthropic-version': '2023-06-01'
-                },
-                body: JSON.stringify({
-                    model: modell,
-                    max_tokens: 8192,
-                    messages: [{ role: 'user', content: innhold }]
-                })
-            });
+            const start = Date.now();
+            const controller = new AbortController();
+            const timeoutMs = 90_000;
+            const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+            let resp;
+            try {
+                resp = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-api-key': apiKey,
+                        'anthropic-version': '2023-06-01'
+                    },
+                    body: JSON.stringify({
+                        model: modell,
+                        max_tokens: 8192,
+                        messages: [{ role: 'user', content: innhold }]
+                    }),
+                    signal: controller.signal
+                });
+            } catch (fe) {
+                clearTimeout(timeoutHandle);
+                const varighet = Date.now() - start;
+                context.log(`ai/analyser-skjema: fetch feilet etter ${varighet}ms — ${fe.name}: ${fe.message}`);
+                const melding = fe.name === 'AbortError'
+                    ? `Anthropic svarte ikke innen ${timeoutMs / 1000}s (aborted)`
+                    : `Nettverksfeil mot Anthropic: ${fe.name}: ${fe.message}`;
+                return { status: 504, jsonBody: { status: 'feil', melding, varighetMs: varighet } };
+            }
+            clearTimeout(timeoutHandle);
+            context.log(`ai/analyser-skjema: fetch OK etter ${Date.now() - start}ms, HTTP ${resp.status}`);
 
             if (!resp.ok) {
                 const feilTekst = await resp.text().catch(() => '');
