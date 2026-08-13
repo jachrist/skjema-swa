@@ -33,6 +33,9 @@ const TABELLER = [
     'Emner',                                           // FS-masterdata (kan re-genereres via refresh-fs)
     'EmneStudenter',
     'Postnumre',                                       // kan re-seedes fra Bring
+    'Utsendinger',                                     // mass-utsendings-tokens (bl.a. gevinstlenker)
+    'SystemInnstillinger',                             // gevinst-tekster + andre admin-innstillinger
+    'Hendelser',                                       // audit-logg (ikke kritisk, men bra historikk)
     'Tilgangskontroll',                                // tokens + OTP-koder (ephemeral)
     'CacheMetadata'                                    // sist-refresh-info per kilde
 ];
