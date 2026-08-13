@@ -118,16 +118,25 @@ async function _hentEmner(filterbegrep, filterverdi) {
 }
 
 async function _hentStudenter(filterbegrep, filterverdi) {
-    // Filter: Emne={EK}-{VK} — obligatorisk
+    // Filter: Emne={EK}-{VK}. Uten filter: alle unike studenter (dedup på UPN).
+    let studenter;
     if (filterbegrep === 'Emne' && filterverdi) {
-        const studenter = await emnerStorage.hentStudenterForEmne(String(filterverdi));
-        return studenter.map(s => ({
-            Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
-            Verdi: s.EP,
-            FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
-        }));
+        studenter = await emnerStorage.hentStudenterForEmne(String(filterverdi));
+    } else {
+        studenter = await emnerStorage.hentAlleStudenter();
     }
-    return [];
+    // Dedupliser: samme student kan være på flere emner
+    const dedup = new Map();
+    for (const s of studenter) {
+        const nokkel = String(s.EP || '').toLowerCase();
+        if (!nokkel || dedup.has(nokkel)) continue;
+        dedup.set(nokkel, s);
+    }
+    return [...dedup.values()].map(s => ({
+        Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+        Verdi: s.EP,
+        FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
+    }));
 }
 
 async function _hentStudieprogrammer() {

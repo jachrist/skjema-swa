@@ -379,14 +379,32 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
     container.dataset.feltId = feltId;
     const maks = felt.Max_valg || 1;
     let antallValgt = 0;
-    for (const valg of (felt.Valg || [])) {
+    // Legg til søkefelt hvis mange valg (>10) — filtrerer synlige labels
+    const valgListe = felt.Valg || [];
+    if (valgListe.length > 10) {
+        const sok = document.createElement('input');
+        sok.type = 'text';
+        sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
+        sok.style.cssText = 'width: 100%; padding: 4px 8px; margin-bottom: 6px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
+        sok.addEventListener('input', () => {
+            const q = sok.value.trim().toLowerCase();
+            container.querySelectorAll('label.flervalg-knapp').forEach(lbl => {
+                const t = (lbl.querySelector('span')?.textContent || '').toLowerCase();
+                lbl.style.display = q === '' || t.includes(q) ? '' : 'none';
+            });
+        });
+        container.appendChild(sok);
+    }
+    for (const valg of valgListe) {
         const label = document.createElement('label');
         label.className = 'flervalg-knapp';
         const cb = document.createElement('input');
         cb.type = 'checkbox';
         cb.name = `${feltId}[]`;
-        cb.value = valg.Tekst;
-        if ((initialSvar || []).includes(valg.Tekst)) {
+        // Verdi lagres som value (UPN/kode fra FasteData); Tekst brukes til visning.
+        cb.value = valg.Verdi ?? valg.Tekst;
+        // initialSvar kan matche enten Verdi eller Tekst (bakoverkompatibelt)
+        if ((initialSvar || []).includes(cb.value) || (initialSvar || []).includes(valg.Tekst)) {
             cb.checked = true;
             label.classList.add('selected');
             antallValgt++;
@@ -437,10 +455,30 @@ function _lagFlervalgDropdown(felt, feltId, valgtVerdi) {
     sel.appendChild(tom);
     for (const valg of (felt.Valg || [])) {
         const opt = document.createElement('option');
-        opt.value = valg.Tekst;
+        // Bruker Verdi som value når finnes (FasteData: UPN/kode), Tekst til visning.
+        opt.value = valg.Verdi ?? valg.Tekst;
         opt.textContent = valg.Tekst;
-        if (valg.Tekst === valgtVerdi) opt.selected = true;
+        // Bakoverkompatibel selection: match mot enten Verdi eller Tekst
+        if (opt.value === valgtVerdi || valg.Tekst === valgtVerdi) opt.selected = true;
         sel.appendChild(opt);
+    }
+    // Legg til søk hvis mange valg — bygger søkbar wrapper rundt <select>
+    if ((felt.Valg || []).length > 10) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
+        const sok = document.createElement('input');
+        sok.type = 'text';
+        sok.placeholder = `🔍 Filtrer (${felt.Valg.length} valg)…`;
+        sok.style.cssText = 'padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
+        sok.addEventListener('input', () => {
+            const q = sok.value.trim().toLowerCase();
+            for (const opt of sel.querySelectorAll('option')) {
+                if (opt.value === '') { opt.hidden = false; continue; }
+                opt.hidden = q !== '' && !opt.textContent.toLowerCase().includes(q);
+            }
+        });
+        wrap.append(sok, sel);
+        return wrap;
     }
     return sel;
 }

@@ -148,6 +148,21 @@ async function hentEmnerForUpn(upn, rolle = null) {
     });
 }
 
+async function hentAlleStudenter() {
+    const t = await tabell(TABELL_STUDENTER);
+    const result = [];
+    for await (const row of t.listEntities()) {
+        result.push({
+            Termin: String(row.partitionKey).split('|')[0],
+            EmneId: String(row.partitionKey).split('|')[1] || '',
+            EP: row.EP,
+            FN: row.FN,
+            EN: row.EN
+        });
+    }
+    return result;
+}
+
 async function hentStudenterForEmne(emneId, { termin } = {}) {
     if (!emneId) return [];
     const t = await tabell(TABELL_STUDENTER);
@@ -191,5 +206,6 @@ module.exports = {
     hentEmne,
     hentEmnerForUpn,
     hentStudenterForEmne,
+    hentAlleStudenter,
     hentAlleStudieprogrammer
 };
