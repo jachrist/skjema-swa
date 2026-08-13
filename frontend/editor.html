@@ -1920,9 +1920,22 @@
                 statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Analyserer — kan ta 15-30 sekunder…</div>';
                 analyserBtn.disabled = true;
                 try {
-                    const fd = new FormData();
-                    fd.append('fil', valgtFil);
-                    const res = await fetch('/api/ai/analyser-skjema', { method: 'POST', body: fd });
+                    // Send base64-i-JSON — mer robust enn multipart på Azure Functions
+                    const b64 = await new Promise((resolve, reject) => {
+                        const rd = new FileReader();
+                        rd.onload = () => resolve(String(rd.result).split(',')[1]);
+                        rd.onerror = () => reject(new Error('Kunne ikke lese fil'));
+                        rd.readAsDataURL(valgtFil);
+                    });
+                    const res = await fetch('/api/ai/analyser-skjema', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            filnavn: valgtFil.name,
+                            contentType: valgtFil.type || 'application/octet-stream',
+                            base64: b64
+                        })
+                    });
                     const svar = await res.json();
                     if (!res.ok || svar.status !== 'ok') {
                         throw new Error(svar.melding || `HTTP ${res.status}`);

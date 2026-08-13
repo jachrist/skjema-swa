@@ -174,17 +174,34 @@ app.http('aiAnalyserSkjema', {
         const modell = String(process.env.ANTHROPIC_MODELL || DEFAULT_MODELL).trim();
 
         try {
-            const fd = await request.formData();
-            const fil = fd.get('fil');
-            if (!fil || typeof fil === 'string') {
-                return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler fil (multipart-felt "fil")' } };
+            // Godta både multipart/form-data OG JSON { filnavn, contentType, base64 }.
+            // JSON-varianten er mer robust på tvers av Azure Functions-runtime-versjoner —
+            // vi opplevde at multipart-parsing feilte i prod-SWA med 500 uten JSON-respons.
+            const reqCt = String(request.headers.get('content-type') || '').toLowerCase();
+            let contentType, filnavn, buffer;
+
+            if (reqCt.includes('application/json')) {
+                const body = await request.json();
+                contentType = String(body?.contentType || '').toLowerCase();
+                filnavn = String(body?.filnavn || 'ukjent');
+                const b64Inn = String(body?.base64 || '');
+                if (!b64Inn) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler base64-felt i body' } };
+                try { buffer = Buffer.from(b64Inn, 'base64'); }
+                catch (e) { return { status: 400, jsonBody: { status: 'feil', melding: 'Ugyldig base64: ' + e.message } }; }
+            } else {
+                const fd = await request.formData();
+                const fil = fd.get('fil');
+                if (!fil || typeof fil === 'string') {
+                    return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler fil (multipart-felt "fil") eller JSON-body med base64' } };
+                }
+                contentType = fil.type || '';
+                filnavn = fil.name || 'ukjent';
+                buffer = Buffer.from(await fil.arrayBuffer());
             }
-            const contentType = fil.type || '';
-            const filnavn = fil.name || 'ukjent';
+
             if (!(contentType.startsWith('image/') || contentType === 'application/pdf')) {
                 return { status: 400, jsonBody: { status: 'feil', melding: `Ustøttet filtype: ${contentType || '(mangler)'} — bruk bilde eller PDF` } };
             }
-            const buffer = Buffer.from(await fil.arrayBuffer());
             if (buffer.length > MAKS_STORRELSE) {
                 return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (${Math.round(buffer.length / 1024 / 1024)} MB, maks ${MAKS_STORRELSE / 1024 / 1024} MB)` } };
             }
