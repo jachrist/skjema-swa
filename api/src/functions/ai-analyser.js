@@ -180,14 +180,29 @@ app.http('aiAnalyserSkjema', {
             const reqCt = String(request.headers.get('content-type') || '').toLowerCase();
             let contentType, filnavn, buffer;
 
+            // Multi-image-modus: JSON kan sende { filnavn, bilder: [{contentType, base64}] }
+            // Brukes når klient har konvertert PDF til side-bilder med pdf.js.
+            let bilderInn = null;
+
             if (reqCt.includes('application/json')) {
                 const body = await request.json();
-                contentType = String(body?.contentType || '').toLowerCase();
                 filnavn = String(body?.filnavn || 'ukjent');
-                const b64Inn = String(body?.base64 || '');
-                if (!b64Inn) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler base64-felt i body' } };
-                try { buffer = Buffer.from(b64Inn, 'base64'); }
-                catch (e) { return { status: 400, jsonBody: { status: 'feil', melding: 'Ugyldig base64: ' + e.message } }; }
+                if (Array.isArray(body?.bilder) && body.bilder.length > 0) {
+                    // Multi-image
+                    bilderInn = body.bilder.map(b => ({
+                        contentType: String(b?.contentType || 'image/png'),
+                        buffer: Buffer.from(String(b?.base64 || ''), 'base64')
+                    })).filter(b => b.buffer.length > 0);
+                    if (bilderInn.length === 0) return { status: 400, jsonBody: { status: 'feil', melding: 'Ingen gyldige bilder i "bilder"-array' } };
+                    contentType = 'multi-image';
+                    buffer = Buffer.concat(bilderInn.map(b => b.buffer));
+                } else {
+                    contentType = String(body?.contentType || '').toLowerCase();
+                    const b64Inn = String(body?.base64 || '');
+                    if (!b64Inn) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler base64-felt eller bilder-array i body' } };
+                    try { buffer = Buffer.from(b64Inn, 'base64'); }
+                    catch (e) { return { status: 400, jsonBody: { status: 'feil', melding: 'Ugyldig base64: ' + e.message } }; }
+                }
             } else {
                 const fd = await request.formData();
                 const fil = fd.get('fil');
@@ -199,23 +214,32 @@ app.http('aiAnalyserSkjema', {
                 buffer = Buffer.from(await fil.arrayBuffer());
             }
 
-            if (!(contentType.startsWith('image/') || contentType === 'application/pdf')) {
+            if (!(contentType === 'multi-image' || contentType.startsWith('image/') || contentType === 'application/pdf')) {
                 return { status: 400, jsonBody: { status: 'feil', melding: `Ustøttet filtype: ${contentType || '(mangler)'} — bruk bilde eller PDF` } };
             }
             if (buffer.length > MAKS_STORRELSE) {
                 return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (${Math.round(buffer.length / 1024 / 1024)} MB, maks ${MAKS_STORRELSE / 1024 / 1024} MB)` } };
             }
 
-            // Bygg Claude-payload. PDF og bilder har litt ulikt format i vision-API.
-            const b64 = buffer.toString('base64');
-            const kildeType = contentType === 'application/pdf' ? 'document' : 'image';
-            const innhold = [
-                {
-                    type: kildeType,
-                    source: { type: 'base64', media_type: contentType, data: b64 }
-                },
-                { type: 'text', text: PROMPT }
-            ];
+            // Bygg Claude-payload.
+            let innhold;
+            if (bilderInn) {
+                // Multi-image (PDF konvertert til side-bilder klientside)
+                innhold = [
+                    ...bilderInn.map(b => ({
+                        type: 'image',
+                        source: { type: 'base64', media_type: b.contentType, data: b.buffer.toString('base64') }
+                    })),
+                    { type: 'text', text: PROMPT + '\n\nMerk: Dette er flere sider fra samme skjema — kombiner innholdet til én samlet definisjon.' }
+                ];
+            } else {
+                const b64 = buffer.toString('base64');
+                const kildeType = contentType === 'application/pdf' ? 'document' : 'image';
+                innhold = [
+                    { type: kildeType, source: { type: 'base64', media_type: contentType, data: b64 } },
+                    { type: 'text', text: PROMPT }
+                ];
+            }
 
             context.log(`ai/analyser-skjema: ${upn} sender ${filnavn} (${buffer.length} bytes, ${contentType}) til ${modell}`);
             const start = Date.now();
