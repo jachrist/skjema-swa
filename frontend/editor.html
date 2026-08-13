@@ -653,7 +653,7 @@
                     <div class="rad">
                         <label>Fase</label>
                         <select id="f-fase" onchange="setFase(this.value)">
-                            <option value="Utvikling" ${data.Fase === 'Utvikling' ? 'selected' : ''}>Utvikling (kun admin)</option>
+                            <option value="Utvikling" ${data.Fase === 'Utvikling' ? 'selected' : ''}>Utvikling (admin + eiere)</option>
                             <option value="Produksjon" ${data.Fase === 'Produksjon' ? 'selected' : ''}>Produksjon (synlig for alle med tilgang)</option>
                         </select>
                     </div>

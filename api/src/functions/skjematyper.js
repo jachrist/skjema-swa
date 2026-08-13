@@ -90,14 +90,14 @@ app.http('mineSkjematyper', {
             }
 
             // Fase-filter:
-            //   Utvikling  — kun admin (skjult for alle andre)
+            //   Utvikling  — admin + eiere (skjult for vanlige publikum-brukere)
             //   Produksjon — alle med tilgang
-            // Historisk 'Test'-fase behandles som Utvikling (bare admin) — kan
-            // migreres via editor til enten Utvikling eller Produksjon.
+            // Historisk 'Test'-fase behandles som Utvikling.
             const filtrertPåFase = aktuelle.filter(t => {
                 const fase = t.JSON?.Fase || 'Produksjon';
                 if (fase === 'Produksjon') return true;
                 if (erAdmin(upn)) return true;
+                if (eierIder.has(String(t.id))) return true;
                 return false;
             });
 
