@@ -75,10 +75,15 @@ function erFeltreferanse(v) {
 }
 
 /**
- * Resolver $upn i en betingelses Verdi. Returnerer null hvis Verdi ikke kan
- * resolves (mangler upn eller er feltreferanse — pilot støtter ikke det ennå).
+ * Resolver $upn og feltreferanser i en betingelses Verdi.
+ * Returnerer null hvis Verdi ikke kan resolves (upn mangler, eller feltref
+ * peker på et felt som ikke har svar ennå).
+ *
+ * @param {object} betingelse
+ * @param {string} upn
+ * @param {object} [feltSvar]  — map fra "sek-felt" (unpadded) og UUID → svar-array
  */
-function resolverBetingelse(betingelse, upn) {
+function resolverBetingelse(betingelse, upn, feltSvar) {
     const v = betingelse.Verdi;
     if (v === '' || v === null || v === undefined) {
         return { ...betingelse, Verdi: '' };
@@ -88,7 +93,18 @@ function resolverBetingelse(betingelse, upn) {
         return { ...betingelse, Verdi: String(upn) };
     }
     if (erFeltreferanse(v)) {
-        // Pilot: feltreferanser hoppes over (kommer i fase 5 med dynamisk oppfrisking)
+        if (!feltSvar) return null;
+        // Prøv både rå og normalisert (fjern ledende nuller i felt-del)
+        const kandidater = [v];
+        const m = /^(\d+)-(\d+)$/.exec(v);
+        if (m) kandidater.push(`${Number(m[1])}-${Number(m[2])}`);
+        for (const k of kandidater) {
+            if (feltSvar[k] !== undefined) {
+                const svar = Array.isArray(feltSvar[k]) ? feltSvar[k] : [feltSvar[k]];
+                if (svar.length === 0 || svar[0] === '' || svar[0] == null) return null;
+                return { ...betingelse, Verdi: String(svar[0]) };
+            }
+        }
         return null;
     }
     return { ...betingelse, Verdi: String(v) };
@@ -98,7 +114,7 @@ function resolverBetingelse(betingelse, upn) {
  * Skann seksjoner og bygg liste over felt som skal ha Valg-array fylt fra masterdata.
  * Returnerer bare de forespørslene som kan resolves med bare $upn.
  */
-function hentFasteDataForespørsler(seksjoner, upn) {
+function hentFasteDataForespørsler(seksjoner, upn, feltSvar) {
     const resultat = [];
     for (const seksjon of (seksjoner || [])) {
         for (const felt of (seksjon.Felter || [])) {
@@ -111,7 +127,7 @@ function hentFasteDataForespørsler(seksjoner, upn) {
                 const løste = [];
                 let ok = true;
                 for (const b of og) {
-                    const r = resolverBetingelse(b, upn);
+                    const r = resolverBetingelse(b, upn, feltSvar);
                     if (!r) { ok = false; break; }
                     løste.push(r);
                 }
@@ -200,8 +216,8 @@ function unionDedup(lister) {
  * Hovedfunksjon: gå gjennom skjematype, hent alle FasteData-verdier og sett
  * inn i Valg-arrayer. Returnerer ny (immutabel) skjemadefinisjon.
  */
-async function hentOgSettFasteData(skjemadefinisjon, hentDropdownVerdier, upn, log = () => {}) {
-    const forespørsler = hentFasteDataForespørsler(skjemadefinisjon?.Seksjoner || [], upn);
+async function hentOgSettFasteData(skjemadefinisjon, hentDropdownVerdier, upn, log = () => {}, feltSvar) {
+    const forespørsler = hentFasteDataForespørsler(skjemadefinisjon?.Seksjoner || [], upn, feltSvar);
     if (forespørsler.length === 0) return skjemadefinisjon;
 
     const resultater = await Promise.all(forespørsler.map(async f => {

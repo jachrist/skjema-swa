@@ -602,6 +602,85 @@
             form.addEventListener('change', oppdaterVises);
             // Første evaluering (i tilfelle skjemaet har prefilled svar fra "Fortsett")
             oppdaterVises();
+            // Re-fetch FasteData for felt med feltreferanser når referert felt endres
+            form.addEventListener('change', reFetchFasteData);
+            // Kjør én gang initielt om noen prefilled verdier finnes
+            reFetchFasteData();
+        }
+
+        // Sporer siste feltverdier vi brukte for oppslag, så vi ikke re-fetches unødvendig
+        const _oppslagSisteSvar = new Map();
+
+        async function reFetchFasteData() {
+            if (previewModus) return; // sessionStorage-preview har ikke skjematypeId å slå opp på
+            if (!skjematype?.Seksjoner || !skjematypeId) return;
+            const seksjonerMedSvar = samleSeksjonerFraDom(skjematype.Seksjoner);
+            // Bygg { "sek-felt": [svar] }-map for alle utfylte felt
+            const feltSvar = {};
+            for (const s of seksjonerMedSvar) {
+                for (const f of (s.Felter || [])) {
+                    if (Array.isArray(f.Svar) && f.Svar.length > 0 && f.Svar[0] !== '') {
+                        feltSvar[`${s.Seksjon_nummer}-${String(f.Nummer).padStart(2, '0')}`] = f.Svar;
+                        feltSvar[`${s.Seksjon_nummer}-${Number(String(f.Nummer))}`] = f.Svar; // unpadded fallback
+                        if (f.Id) feltSvar[f.Id] = f.Svar;
+                    }
+                }
+            }
+            for (const seksjon of skjematype.Seksjoner) {
+                for (const felt of (seksjon.Felter || [])) {
+                    if (!felt.FasteData) continue;
+                    const refs = fangeFeltref(felt.FasteData);
+                    if (refs.length === 0) continue; // ingen dynamikk
+                    // Hash på referert svar for å avgjøre om vi må re-fetche
+                    const hash = refs.map(r => JSON.stringify(feltSvar[r] || null)).join('|');
+                    const nokkel = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    if (_oppslagSisteSvar.get(nokkel) === hash) continue;
+                    _oppslagSisteSvar.set(nokkel, hash);
+                    try {
+                        const res = await api.post('/api/oppslag', {
+                            skjematypeId,
+                            seksjon: Number(seksjon.Seksjon_nummer),
+                            felt: String(felt.Nummer),
+                            feltSvar
+                        });
+                        felt.Valg = res.Valg || [];
+                        // Re-render feltet (kun det, ikke hele skjema)
+                        reRenderEttFelt(seksjon, felt);
+                    } catch (e) {
+                        console.warn(`oppslag for felt ${nokkel} feilet:`, e.message);
+                    }
+                }
+            }
+        }
+
+        function fangeFeltref(fasteData) {
+            const referert = new Set();
+            const skann = (v) => {
+                if (typeof v === 'string' && /^\d+-\d+$/.test(v)) {
+                    const m = v.match(/^(\d+)-(\d+)$/);
+                    referert.add(`${Number(m[1])}-${Number(m[2])}`);
+                    referert.add(`${Number(m[1])}-${String(m[2]).padStart(2, '0')}`);
+                }
+            };
+            if (typeof fasteData === 'string') {
+                // pipe-format "Datakilde|Kolonne|Op|Verdi"
+                const deler = fasteData.split('|');
+                if (deler[3]) skann(deler[3].trim());
+            } else if (fasteData?.EllerAv) {
+                for (const g of fasteData.EllerAv) {
+                    for (const b of (g.OgAv || [])) skann(b.Verdi);
+                }
+            }
+            return [...referert];
+        }
+
+        function reRenderEttFelt(seksjon, felt) {
+            const feltEl = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .felt[data-felt-nummer="${felt.Nummer}"]`);
+            if (!feltEl) return;
+            const gammelSvar = hentSvarFraDom(`felt-${seksjon.Seksjon_nummer}-${felt.Nummer}`, felt.Type);
+            const nyRad = byggFelt(felt, seksjon.Seksjon_nummer, Number(feltEl.querySelector('.felt-nummer')?.textContent) || 0);
+            // Bevar tidligere svar der mulig — hvis svar-verdi fortsatt finnes i nye Valg
+            feltEl.replaceWith(nyRad);
         }
 
         function oppdaterVises() {

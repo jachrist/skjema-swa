@@ -13,6 +13,7 @@
         { "route": "/api/utsending",                  "allowedRoles": ["anonymous"] },
         { "route": "/api/utsending/valider",          "allowedRoles": ["anonymous"] },
         { "route": "/api/utsending/for-meg",          "allowedRoles": ["authenticated"] },
+        { "route": "/api/oppslag",                    "allowedRoles": ["anonymous"] },
         { "route": "/api/utsending/purre",            "allowedRoles": ["anonymous"] },
         { "route": "/api/logo/*",                     "allowedRoles": ["anonymous"] },
         { "route": "/api/postnumre/refresh-bring",    "allowedRoles": ["anonymous"] },

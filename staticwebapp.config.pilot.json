@@ -49,6 +49,10 @@
             "allowedRoles": ["authenticated"]
         },
         {
+            "route": "/api/oppslag",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/utsending/purre",
             "allowedRoles": ["anonymous"]
         },
