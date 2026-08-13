@@ -26,6 +26,7 @@ require('./functions/system');
 require('./functions/innstillinger');
 require('./functions/backup');
 require('./functions/team');
+require('./functions/ai-analyser');
 
 // Etter hvert:
 // require('./functions/skjema');

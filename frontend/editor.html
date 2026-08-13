@@ -627,6 +627,7 @@
                     <button class="knapp primær" onclick="lagre()">💾 Lagre</button>
                     ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}" target="_blank">👁 Test utfylling</a>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="kopier()">📋 Kopier</button>` : ''}
+                    <button class="knapp sekundær" onclick="apneAiImportModal()" title="Last opp bilde eller PDF av papirskjema — AI genererer definisjonen">🤖 Importer med AI…</button>
                     ${kanSlett ? `<button class="knapp danger" style="margin-left: auto;" onclick="aapneSlettModal()">🗑 Slett</button>` : ''}
                 </div>
             `;
@@ -1863,6 +1864,100 @@
                 if (e.key === 'Escape') { lukk(); document.removeEventListener('keydown', esc); }
             });
         }
+        // ==================== AI-import (analyser bilde/PDF) ====================
+        window.apneAiImportModal = () => {
+            const bakgrunn = document.createElement('div');
+            bakgrunn.className = 'meldingsmodal-bakgrunn';
+            bakgrunn.innerHTML = `
+                <div class="meldingsmodal-boks" style="max-width: 640px;">
+                    <h3 style="margin: 0 0 8px 0;">🤖 Importer papirskjema med AI</h3>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 12px 0;">
+                        Last opp et bilde eller en PDF av et papirskjema. AI analyserer det og genererer
+                        en skjemadefinisjon som erstatter det du har nå.
+                    </p>
+                    <div id="ai-drop" style="border: 2px dashed var(--input-border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: var(--bg-input);">
+                        <div style="font-size: 32px;">📄</div>
+                        <div style="margin-top: 8px; font-size: 14px;">Klikk her eller dra en fil hit</div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">JPG, PNG, GIF, WebP eller PDF — maks 20 MB</div>
+                        <input type="file" id="ai-input" accept="image/*,application/pdf" style="display: none;">
+                        <div id="ai-filnavn" style="font-size: 12px; color: var(--accent); margin-top: 8px;"></div>
+                    </div>
+                    <div id="ai-status" style="margin-top: 10px; min-height: 20px;"></div>
+                    <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;">
+                        <button class="knapp" data-handling="avbryt">Avbryt</button>
+                        <button class="knapp primær" id="ai-analyser-btn" disabled>Analyser med AI</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(bakgrunn);
+            const lukk = () => document.body.removeChild(bakgrunn);
+            const dropEl = bakgrunn.querySelector('#ai-drop');
+            const inputEl = bakgrunn.querySelector('#ai-input');
+            const filnavnEl = bakgrunn.querySelector('#ai-filnavn');
+            const statusEl = bakgrunn.querySelector('#ai-status');
+            const analyserBtn = bakgrunn.querySelector('#ai-analyser-btn');
+            let valgtFil = null;
+
+            const settFil = (f) => {
+                if (!f) return;
+                valgtFil = f;
+                filnavnEl.textContent = `${f.name} (${Math.round(f.size / 1024)} KB)`;
+                analyserBtn.disabled = false;
+            };
+            dropEl.addEventListener('click', () => inputEl.click());
+            inputEl.addEventListener('change', () => settFil(inputEl.files[0]));
+            dropEl.addEventListener('dragover', e => { e.preventDefault(); dropEl.style.borderColor = 'var(--accent)'; });
+            dropEl.addEventListener('dragleave', () => { dropEl.style.borderColor = 'var(--input-border)'; });
+            dropEl.addEventListener('drop', e => {
+                e.preventDefault(); dropEl.style.borderColor = 'var(--input-border)';
+                settFil(e.dataTransfer.files[0]);
+            });
+            bakgrunn.querySelector('[data-handling="avbryt"]').addEventListener('click', lukk);
+            bakgrunn.addEventListener('click', e => { if (e.target === bakgrunn) lukk(); });
+
+            analyserBtn.addEventListener('click', async () => {
+                if (!valgtFil) return;
+                statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Analyserer — kan ta 15-30 sekunder…</div>';
+                analyserBtn.disabled = true;
+                try {
+                    const fd = new FormData();
+                    fd.append('fil', valgtFil);
+                    const res = await fetch('/api/ai/analyser-skjema', { method: 'POST', body: fd });
+                    const svar = await res.json();
+                    if (!res.ok || svar.status !== 'ok') {
+                        throw new Error(svar.melding || `HTTP ${res.status}`);
+                    }
+                    const ny = svar.skjema || {};
+                    const antSek = ny.Seksjoner?.length || 0;
+                    const antFelt = (ny.Seksjoner || []).reduce((s, sek) => s + (sek.Felter?.length || 0), 0);
+                    if (!confirm(`AI genererte ${antSek} seksjon${antSek === 1 ? '' : 'er'} og ${antFelt} felt.\n\nDette vil ERSTATTE nåværende seksjons/felt-innhold i editoren (tilgang, behandling, varsling osv. bevares). Fortsette?`)) {
+                        statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">Avbrutt av bruker.</div>';
+                        analyserBtn.disabled = false;
+                        return;
+                    }
+                    // Bevar tilgangs- og behandlings-metadata
+                    if (ny.Skjema_navn) data.Skjema_navn = ny.Skjema_navn;
+                    if (ny.Skjemaforklaring) data.Skjemaforklaring = ny.Skjemaforklaring;
+                    // Sørg for stabile IDer på nye felt (samme som ved kopi)
+                    data.Seksjoner = (ny.Seksjoner || []).map(sek => ({
+                        ...sek,
+                        Felter: (sek.Felter || []).map(f => ({ ...f, Id: nyFeltId(), Svar: [] }))
+                    }));
+                    lukk();
+                    rendrer();
+                    alert(`✓ Importert ${antSek} seksjon${antSek === 1 ? '' : 'er'} og ${antFelt} felt. Husk å lagre.`);
+                } catch (e) {
+                    statusEl.innerHTML = `<div style="font-size: 13px; color: var(--danger);">Feil: ${escapeHtml(e.message)}</div>`;
+                    analyserBtn.disabled = false;
+                }
+            });
+        };
+
+        // Genererer en unik felt-Id (samme mønster som editor bruker ellers)
+        function nyFeltId() {
+            return 'f-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
+        }
+
         // Gevinstoppfølging: henter to bokser fra SystemInnstillinger og rendrer
         // Markdown-teksten med $lenke erstattet til en utsending-token-URL.
         // Prefill (invariant): felt 1-01 = gjeldende skjematype-id, 1-02 = navn.
