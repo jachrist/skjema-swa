@@ -1,29 +1,39 @@
 name: Refresh postnumre fra Bring
 
 # Bring oppdaterer postnummerregisteret ~1 gang per måned.
-# Vi kjører 2 ganger i året (15. januar og 15. juli 04:30 UTC) — postnr endres
-# sjelden nok til at det holder. Kan trigges manuelt via workflow_dispatch
-# eller fra admin-panelet (POST /api/postnumre/refresh-bring).
+# Vi kjører 2 ganger i året (15. januar og 15. juli 04:30 UTC).
+# Kjører mot både pilot og prod hvis begge env-vars er satt.
 
 on:
   schedule:
-    - cron: '30 4 15 1,7 *' # 04:30 UTC den 15. januar og 15. juli
+    - cron: '30 4 15 1,7 *'
   workflow_dispatch:
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: refresh (${{ matrix.env }})
     steps:
-      - name: Kall postnumre/refresh-bring
+      - name: Kall postnumre/refresh-bring (${{ matrix.env }})
         env:
-          SWA_URL: ${{ vars.SWA_URL }}
-          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
         run: |
           if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
-            echo "SWA_URL eller SCHEDULER_KEY mangler."
-            exit 1
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
           fi
-          echo "Kaller $SWA_URL/api/postnumre/refresh-bring …"
+          echo "Kaller $SWA_URL/api/postnumre/refresh-bring (${{ matrix.env }}) …"
           RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/postnumre/refresh-bring" \
             -H "x-scheduler-key: $SCHEDULER_KEY" \
             -H "Content-Type: application/json" \

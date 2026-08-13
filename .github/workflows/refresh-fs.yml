@@ -2,6 +2,7 @@ name: Refresh FS-data
 
 # SWA Managed Functions støtter ikke timer-triggere.
 # Denne workflowen kaller /api/refresh-fs på schedule i stedet.
+# Kjører mot både pilot og prod hvis begge env-vars er satt.
 
 on:
   schedule:
@@ -11,17 +12,28 @@ on:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: refresh (${{ matrix.env }})
     steps:
-      - name: Kall refresh-fs
+      - name: Kall refresh-fs (${{ matrix.env }})
         env:
-          SWA_URL: ${{ vars.SWA_URL }}
-          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
         run: |
           if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
-            echo "SWA_URL eller SCHEDULER_KEY mangler — kjør workflow_dispatch etter oppsett."
-            exit 1
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
           fi
-          echo "Kaller $SWA_URL/api/refresh-fs …"
+          echo "Kaller $SWA_URL/api/refresh-fs (${{ matrix.env }}) …"
           RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/refresh-fs" \
             -H "x-scheduler-key: $SCHEDULER_KEY" \
             -H "Content-Type: application/json")
