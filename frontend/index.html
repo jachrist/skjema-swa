@@ -303,14 +303,20 @@
         let otpMottaker = null; // e-post eller mobilnr (for ekstern-modus)
         let otpKanal = null; // 'epost' | 'sms'
         let utsendingModus = false;
+        let previewModus = false;
         let utsendingPrefilledKeys = new Set(); // "sek-felt-padded" → låst felt
         const params = new URLSearchParams(window.location.search);
         let skjematypeId = params.get('skjematype_id');
         const skjemaIdParam = params.get('skjema_id'); // satt hvis "Fortsett"
         const eksternModus = params.get('ekstern') === '1';
         const utsendingToken = params.get('utsending');
+        const previewParam = params.get('preview') === '1';
 
         async function init() {
+            if (previewParam) {
+                initPreview();
+                return;
+            }
             if (utsendingToken) {
                 await initUtsending();
                 return;
@@ -370,6 +376,48 @@
             } catch (e) {
                 visFeil('Kunne ikke laste skjema: ' + e.message);
             }
+        }
+
+        // Preview-modus: bruker har åpnet index.html?preview=1 fra editor.
+        // Skjematypen leses fra sessionStorage i stedet for fra API. Ingen
+        // innsending — 'Send inn'-knappen viser en varsel-melding.
+        function initPreview() {
+            previewModus = true;
+            const rå = sessionStorage.getItem('skjematype-preview');
+            if (!rå) {
+                visFeil('Ingen forhåndsvisnings-data i sessionStorage. Åpne fra editoren.');
+                return;
+            }
+            try {
+                skjematype = JSON.parse(rå);
+            } catch (e) {
+                visFeil('Kunne ikke lese forhåndsvisnings-data: ' + e.message);
+                return;
+            }
+            document.getElementById('upn').textContent = '(forhåndsvisning — ikke innsendbar)';
+            document.title = `Forhåndsvisning — ${skjematype?.Skjema_navn || ''}`;
+            rendrer();
+            // Overstyr knapper og handlere så bruker ikke kan sende inn
+            setTimeout(() => {
+                const submit = document.getElementById('submit-knapp');
+                if (submit) {
+                    submit.textContent = 'Forhåndsvisning — kan ikke sende inn';
+                    submit.disabled = true;
+                    submit.style.opacity = '0.6';
+                    submit.style.cursor = 'not-allowed';
+                }
+                const lagre = document.getElementById('lagre-knapp');
+                if (lagre) lagre.style.display = 'none';
+                // Legg til en tydelig banner
+                const banner = document.createElement('div');
+                banner.className = 'status-melding info';
+                banner.style.cssText += 'margin-bottom: 12px; font-weight: 600;';
+                banner.textContent = '👁 Forhåndsvisning fra editor — endringer er ikke lagret ennå.';
+                const innhold = document.getElementById('innhold');
+                if (innhold && innhold.parentNode) {
+                    innhold.parentNode.insertBefore(banner, innhold);
+                }
+            }, 50);
         }
 
         async function initUtsending() {

@@ -20,7 +20,6 @@
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
-const rollerStorage = require('../lib/roller-storage');
 const hendelser = require('../lib/hendelser-storage');
 
 const MAKS_STORRELSE = 20 * 1024 * 1024;
@@ -164,10 +163,8 @@ app.http('aiAnalyserSkjema', {
         const upn = hentInnloggetUpn(request);
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
 
-        // Samme regel som opprett-skjematype: admin eller medlem av 'Skjemaskaper'
-        const admin = erAdmin(upn);
-        const skjemaskaper = admin || await rollerStorage.erMedlem('Skjemaskaper', upn).catch(() => false);
-        if (!skjemaskaper) return { status: 403, jsonBody: { status: 'feil', melding: 'Krever admin eller rollen "Skjemaskaper"' } };
+        // Kun admin — begrenser tilgang siden funksjonen bruker eksterne AI-tokens
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'feil', melding: 'Krever admin' } };
 
         const apiKey = String(process.env.ANTHROPIC_API_KEY || '').trim();
         if (!apiKey) return { status: 503, jsonBody: { status: 'feil', melding: 'ANTHROPIC_API_KEY er ikke satt i backend' } };

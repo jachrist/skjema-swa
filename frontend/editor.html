@@ -550,6 +550,7 @@
         const kopiFraId = params.get('kopi_fra');
 
         let bruker = null;
+        let meg = null; // { upn, erAdmin, kanOppretteSkjematype } — hentes fra /api/whoami
         let data = null;
 
         async function init() {
@@ -559,6 +560,8 @@
                 return;
             }
             document.getElementById('upn').textContent = bruker.userDetails;
+            // Hent admin-status parallelt med resten
+            api.get('/api/whoami').then(w => { meg = w || {}; }).catch(() => { meg = {}; });
 
             // Hent rolle-grupper og team-navn før første render — dropdown i
             // tilgang-editor må ha data tilgjengelig når den bygges.
@@ -625,9 +628,10 @@
             const knappeLinje = `
                 <div class="knappelinje">
                     <button class="knapp primær" onclick="lagre()">💾 Lagre</button>
-                    ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}" target="_blank">👁 Test utfylling</a>` : ''}
+                    <button class="knapp sekundær" onclick="visForhandsvisning()" title="Åpne skjemaet i ny fane med gjeldende (ulagrede) endringer">👁 Vis skjema</button>
+                    ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}" target="_blank">🧪 Test utfylling (lagret)</a>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="kopier()">📋 Kopier</button>` : ''}
-                    <button class="knapp sekundær" onclick="apneAiImportModal()" title="Last opp bilde eller PDF av papirskjema — AI genererer definisjonen">🤖 Importer med AI…</button>
+                    ${meg?.erAdmin ? `<button class="knapp sekundær" onclick="apneAiImportModal()" title="Last opp bilde eller PDF av papirskjema — AI genererer definisjonen">🤖 Importer med AI…</button>` : ''}
                     ${kanSlett ? `<button class="knapp danger" style="margin-left: auto;" onclick="aapneSlettModal()">🗑 Slett</button>` : ''}
                 </div>
             `;
@@ -1864,6 +1868,22 @@
                 if (e.key === 'Escape') { lukk(); document.removeEventListener('keydown', esc); }
             });
         }
+        // ==================== Forhåndsvisning uten å lagre ====================
+        // Lagrer gjeldende data i sessionStorage og åpner index.html i ny fane
+        // med ?preview=1. index.html sjekker for denne flaggen og leser data
+        // derfra i stedet for å hente fra API.
+        window.visForhandsvisning = () => {
+            try {
+                const kopi = JSON.parse(JSON.stringify(data)); // trygg dyp-kopi
+                // Sørg for at feltene har nødvendig struktur for rendering.
+                // Legger på et markør-flagg som index.html sjekker.
+                sessionStorage.setItem('skjematype-preview', JSON.stringify(kopi));
+                window.open('/index.html?preview=1', '_blank', 'noopener');
+            } catch (e) {
+                alert('Kunne ikke åpne forhåndsvisning: ' + e.message);
+            }
+        };
+
         // ==================== AI-import (analyser bilde/PDF) ====================
         window.apneAiImportModal = () => {
             // Warm-up Function-runtime (cold start kan ellers gi timeout på 1. forsøk).
