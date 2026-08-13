@@ -1866,6 +1866,9 @@
         }
         // ==================== AI-import (analyser bilde/PDF) ====================
         window.apneAiImportModal = () => {
+            // Warm-up Function-runtime (cold start kan ellers gi timeout på 1. forsøk).
+            // Fire-and-forget — vi bryr oss ikke om svaret.
+            fetch('/api/ping').catch(() => {});
             const bakgrunn = document.createElement('div');
             bakgrunn.className = 'meldingsmodal-bakgrunn';
             bakgrunn.innerHTML = `
@@ -1943,12 +1946,25 @@
                         };
                     }
                     statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Analyserer med AI — kan ta 15-30 sekunder…</div>';
-                    const res = await fetch('/api/ai/analyser-skjema', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
-                    const svar = await res.json();
+                    // Auto-retry ved 500-timeout (typisk cold-start). Andre forsøk
+                    // med varm Function svarer normalt innen få sek.
+                    async function forsokAnalyse() {
+                        return fetch('/api/ai/analyser-skjema', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body)
+                        });
+                    }
+                    let res = await forsokAnalyse();
+                    if (res.status === 500 || res.status === 504) {
+                        statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Første forsøk tok for lang tid — prøver på nytt…</div>';
+                        res = await forsokAnalyse();
+                    }
+                    // Response kan være SWA sin "Backend call failure" (ikke JSON) — parse trygt
+                    const rawTekst = await res.text();
+                    let svar;
+                    try { svar = JSON.parse(rawTekst); }
+                    catch { throw new Error(`Uventet respons (HTTP ${res.status}): ${rawTekst.slice(0, 200)}`); }
                     if (!res.ok || svar.status !== 'ok') {
                         throw new Error(svar.melding || `HTTP ${res.status}`);
                     }
