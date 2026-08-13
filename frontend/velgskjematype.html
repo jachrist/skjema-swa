@@ -347,9 +347,6 @@
             <label class="fase-toggle aktiv" data-fase="Produksjon" id="fase-toggle-Produksjon" style="display: none;">
                 <input type="checkbox" value="Produksjon" checked onchange="onFaseEndret()"> Produksjon
             </label>
-            <label class="fase-toggle" data-fase="Test" id="fase-toggle-Test" style="display: none;">
-                <input type="checkbox" value="Test" onchange="onFaseEndret()"> Test
-            </label>
             <label class="fase-toggle" data-fase="Utvikling" id="fase-toggle-Utvikling" style="display: none;">
                 <input type="checkbox" value="Utvikling" onchange="onFaseEndret()"> Utvikling
             </label>
@@ -481,15 +478,13 @@
             // Vis kun toggler for faser bruker faktisk har skjematyper i.
             // Skjul hele raden hvis bare Produksjon finnes.
             const faserSomFinnes = new Set(alle.map(t => t.Fase || 'Produksjon'));
-            const harFlereFaser = faserSomFinnes.size > 1
-                || faserSomFinnes.has('Test')
-                || faserSomFinnes.has('Utvikling');
+            const harFlereFaser = faserSomFinnes.size > 1 || faserSomFinnes.has('Utvikling');
             if (!harFlereFaser) {
                 document.getElementById('fase-filter-rad').style.display = 'none';
                 return;
             }
             document.getElementById('fase-filter-rad').style.display = '';
-            ['Produksjon', 'Test', 'Utvikling'].forEach(fase => {
+            ['Produksjon', 'Utvikling'].forEach(fase => {
                 const t = document.getElementById(`fase-toggle-${fase}`);
                 if (t) t.style.display = faserSomFinnes.has(fase) ? '' : 'none';
             });
@@ -501,7 +496,7 @@
                     if (Array.isArray(lagret)) {
                         const gyldige = lagret.filter(f => faserSomFinnes.has(f));
                         if (gyldige.length > 0) {
-                            ['Produksjon', 'Test', 'Utvikling'].forEach(fase => {
+                            ['Produksjon', 'Utvikling'].forEach(fase => {
                                 const cb = document.querySelector(`#fase-toggle-${fase} input[type="checkbox"]`);
                                 if (cb) cb.checked = gyldige.includes(fase);
                             });
