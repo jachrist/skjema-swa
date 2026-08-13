@@ -438,8 +438,38 @@
                     mellomlagredeMap = m || {};
                     filtrer();
                 });
-                api.get('/api/mine-behandlinger').catch(() => ({})).then(b => {
+                api.get('/api/mine-behandlinger').catch(() => ({})).then(async b => {
                     behandlingerMap = b || {};
+                    // Inkluder skjematyper hvor bruker er behandler men ikke publikum/eier —
+                    // disse mangler i alle-listen fordi mineSkjematyper kun sjekker de to.
+                    const kjente = new Set(alle.map(t => String(t.Skjematype_id)));
+                    const manglende = Object.keys(behandlingerMap).filter(id => !kjente.has(String(id)));
+                    if (manglende.length > 0) {
+                        const nye = await Promise.all(manglende.map(id =>
+                            api.get(`/api/skjematyper/${encodeURIComponent(id)}`).catch(() => null)
+                        ));
+                        for (const st of nye) {
+                            if (!st) continue;
+                            // Mapper skjematype-JSON til kort-format (samme struktur som mineSkjematyper returnerer)
+                            const data = st;
+                            alle.push({
+                                Skjematype_id: data.Skjematype_id,
+                                Skjema_navn: data.Skjema_navn || '',
+                                Skjema_forklaring: data.Skjemaforklaring
+                                    ? { Verdi: data.Skjemaforklaring.Innhold || '', Format: data.Skjemaforklaring.Format || 'Tekst' }
+                                    : null,
+                                Logo_url: data.Logo_url || '',
+                                DIFLogo_URL: data.DIFLogo_URL || '',
+                                Fase: data.Fase || 'Produksjon',
+                                ErEier: false,
+                                KanFylle: false,
+                                ErIPeriode: true,
+                                Tilgjengelighetsperioder: data.Tilgjengelighetsperioder || [],
+                                AlleTilgang: data.Publikum?.AlleTilgang === true,
+                                ErKunBehandler: true // markør — brukes for å skjule Rediger osv.
+                            });
+                        }
+                    }
                     filtrer();
                 });
             } catch (e) {
@@ -665,6 +695,10 @@
             }
 
             const kollapsetKlasse = erKollapset(t.Skjematype_id) ? ' kollapset' : '';
+            const antBeh = (behandlingerMap[t.Skjematype_id] || []).length;
+            const behBadge = antBeh > 0
+                ? `<span class="fase-badge" style="background: #ff3b30;" title="${antBeh} skjema venter på deg som behandler">🔔 ${antBeh}</span>`
+                : '';
             return `
                 <div class="skjematype-kort${kollapsetKlasse}" data-skjematype-id="${escapeAttr(String(t.Skjematype_id))}">
                     <div class="kort-tittelrad" onclick="toggleKort('${escapeAttr(String(t.Skjematype_id))}')">
@@ -674,6 +708,7 @@
                             <small style="font-weight: 400; color: var(--text-secondary); font-size: 0.65em;">ID ${escapeHtml(String(t.Skjematype_id))}</small>
                         </h2>
                         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            ${behBadge}
                             ${t.AlleTilgang ? '<span class="fase-badge" style="background: #34c759;" title="Alle innloggede kan fylle ut">Åpen for alle</span>' : ''}
                             <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
                         </div>
