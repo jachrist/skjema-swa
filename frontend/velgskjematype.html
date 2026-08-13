@@ -357,21 +357,11 @@
             <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
         </div>
 
-        <div id="ny-skjematype-rad" style="margin-bottom: 14px; display: none; gap: 10px; align-items: center; flex-wrap: wrap;">
-            <a class="knapp primær" style="padding: 6px 14px; font-size: 13px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
-        </div>
-        <div style="margin-bottom: 14px; display: flex; gap: 8px; align-items: center;">
+        <div style="margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <button class="knapp sekundær" style="padding: 4px 12px; font-size: 12px;" onclick="apneAlleKort()">▾ Vis alle</button>
             <button class="knapp sekundær" style="padding: 4px 12px; font-size: 12px;" onclick="skjulAlleKort()">▸ Skjul alle</button>
-        </div>
-
-        <div id="admin-verktoy" style="display: none; margin-bottom: 18px; padding: 12px 16px; background: var(--forklaring-bg); border-radius: var(--radius-md); font-size: 13px; display: none; flex-wrap: wrap; gap: 10px; align-items: center;">
-            <strong style="color: var(--text-heading);">Admin:</strong>
-            <a class="knapp sekundær" style="padding: 6px 12px; font-size: 13px; text-decoration: none;" href="/admin.html">Admin-panel</a>
-            <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seed()">Seed eksempler</button>
-            <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seedPostnumre()">Seed postnumre</button>
-            <button class="knapp sekundær" style="padding: 6px 12px; font-size: 13px;" onclick="seedRoller()">Seed roller</button>
-            <span id="admin-status" style="color: var(--text-secondary);"></span>
+            <a id="knapp-ny-skjematype" class="knapp primær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
+            <a id="knapp-admin-panel" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none; margin-left: auto;" href="/admin.html">🔧 Admin-panel</a>
         </div>
 
         <div id="status" class="status-melding">Laster…</div>
@@ -410,10 +400,10 @@
             try {
                 const meg = await api.get('/api/whoami');
                 if (meg.erAdmin) {
-                    document.getElementById('admin-verktoy').style.display = 'block';
+                    document.getElementById('knapp-admin-panel').style.display = 'inline-flex';
                 }
                 if (meg.kanOppretteSkjematype) {
-                    document.getElementById('ny-skjematype-rad').style.display = 'flex';
+                    document.getElementById('knapp-ny-skjematype').style.display = 'inline-flex';
                 }
             } catch (_) { /* ikke kritisk */ }
 
@@ -510,49 +500,6 @@
                 t.classList.toggle('aktiv', cb && cb.checked);
             });
         }
-
-        window.seedRoller = async () => {
-            const statusEl = document.getElementById('admin-status');
-            statusEl.textContent = 'Seeder roller…';
-            statusEl.style.color = 'var(--text-secondary)';
-            try {
-                const svar = await api.post('/api/roller/seed', {});
-                statusEl.textContent = `${svar.antall} eksempel-roller lagt inn med deg som innehaver`;
-                statusEl.style.color = 'var(--badge-produksjon)';
-            } catch (e) {
-                statusEl.textContent = 'Feil: ' + e.message;
-                statusEl.style.color = '#d9534f';
-            }
-        };
-
-        window.seedPostnumre = async () => {
-            const statusEl = document.getElementById('admin-status');
-            statusEl.textContent = 'Seeder postnumre…';
-            statusEl.style.color = 'var(--text-secondary)';
-            try {
-                const svar = await api.post('/api/postnumre/seed', {});
-                statusEl.textContent = `${svar.antall} postnumre lagt inn`;
-                statusEl.style.color = 'var(--badge-produksjon)';
-            } catch (e) {
-                statusEl.textContent = 'Feil: ' + e.message;
-                statusEl.style.color = '#d9534f';
-            }
-        };
-
-        window.seed = async () => {
-            const statusEl = document.getElementById('admin-status');
-            statusEl.textContent = 'Seeder…';
-            statusEl.style.color = 'var(--text-secondary)';
-            try {
-                const svar = await api.post('/api/seed-eksempel', {});
-                statusEl.textContent = `Seeding OK — ${svar.antall} skjematyper (id ${svar.ider.join(', ')})`;
-                statusEl.style.color = 'var(--badge-produksjon)';
-                await lastListe();
-            } catch (e) {
-                statusEl.textContent = 'Seed feilet: ' + e.message;
-                statusEl.style.color = '#d9534f';
-            }
-        };
 
         function visStatus(tekst, klasse) {
             const el = document.getElementById('status');
