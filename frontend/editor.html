@@ -1874,10 +1874,12 @@
         // derfra i stedet for å hente fra API.
         window.visForhandsvisning = () => {
             try {
-                const kopi = JSON.parse(JSON.stringify(data)); // trygg dyp-kopi
-                // Sørg for at feltene har nødvendig struktur for rendering.
-                // Legger på et markør-flagg som index.html sjekker.
-                sessionStorage.setItem('skjematype-preview', JSON.stringify(kopi));
+                const kopi = JSON.parse(JSON.stringify(data));
+                // localStorage (ikke sessionStorage) — sessionStorage er per fane,
+                // den nye fanen har sin egen tom. localStorage deles på tvers.
+                // Rydder ved åpning så vi ikke får stale data.
+                localStorage.setItem('skjematype-preview', JSON.stringify(kopi));
+                localStorage.setItem('skjematype-preview-tid', String(Date.now()));
                 window.open('/index.html?preview=1', '_blank', 'noopener');
             } catch (e) {
                 alert('Kunne ikke åpne forhåndsvisning: ' + e.message);

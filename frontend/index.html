@@ -383,9 +383,17 @@
         // innsending — 'Send inn'-knappen viser en varsel-melding.
         function initPreview() {
             previewModus = true;
-            const rå = sessionStorage.getItem('skjematype-preview');
+            // localStorage — deles på tvers av faner. Sjekk tidsstempel så vi
+            // ikke bruker stale data hvis noe rart har skjedd.
+            const rå = localStorage.getItem('skjematype-preview');
+            const tid = Number(localStorage.getItem('skjematype-preview-tid') || 0);
+            const alderMin = tid ? (Date.now() - tid) / 60000 : 999;
             if (!rå) {
-                visFeil('Ingen forhåndsvisnings-data i sessionStorage. Åpne fra editoren.');
+                visFeil('Ingen forhåndsvisnings-data. Åpne fra editoren igjen.');
+                return;
+            }
+            if (alderMin > 60) {
+                visFeil('Forhåndsvisnings-data er over 1 time gammel. Åpne fra editoren igjen.');
                 return;
             }
             try {
