@@ -170,7 +170,7 @@ app.http('refreshFsStatus', {
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
         try {
             const t = tabellKlient('CacheMetadata');
-            const kilder = ['FS-Emner', 'FS-Studenter'];
+            const kilder = ['FS-Emner', 'FS-Studenter', 'FS-FilterStudent', 'FS-Klasser'];
             const status = {};
             for (const k of kilder) {
                 try {
@@ -184,7 +184,12 @@ app.http('refreshFsStatus', {
                         ferdig: e.Ferdig || null,
                         varighetSekunder: e.VarighetSekunder ?? null,
                         terminer: e.Terminer || null,
-                        kilde: e.Kilde || null
+                        kilde: e.Kilde || null,
+                        // Klasse-diagnostikk (kun satt på FS-Klasser)
+                        klasserFraFs: e.KlasserFraFs ?? null,
+                        klasserMedStudenter: e.KlasserMedStudenter ?? null,
+                        klasserUtenStudenter: e.KlasserUtenStudenter ?? null,
+                        klasserAvkortet: e.KlasserAvkortet ?? null
                     };
                 } catch (err) {
                     if (err.statusCode === 404) status[k] = { status: 'aldri kjørt' };

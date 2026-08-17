@@ -278,12 +278,20 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     // Klasser/kull/studieprogram — egen FS-spørring (spec §6)
     let klasseFilterRader = [];
     let klasseMetaRader = [];
+    let klasseDiag = { fraFs: 0, medStudenter: 0, utenStudenter: 0, avkortet: 0, feil: '' };
     try {
         const klasser = await fs.hentKlasser(KLASSER_PER_SIDE, STUDENTER_PER_KLASSE);
         log(`refresh-fs: hentet ${klasser.length} klasser fra FS`);
         const kr = transformerKlasser(klasser, generasjon, log);
         klasseFilterRader = kr.filterRader;
         klasseMetaRader = kr.metaRader;
+        klasseDiag = {
+            fraFs: klasser.length,
+            medStudenter: klasser.length - kr.hoppetOver,
+            utenStudenter: kr.hoppetOver,
+            avkortet: kr.avkortet,
+            feil: ''
+        };
         log(`refresh-fs: ${klasseFilterRader.length} klasse-filterrader, ` +
             `${klasseMetaRader.length} metarader, ${kr.hoppetOver} klasser uten studenter hoppet over`);
         if (kr.avkortet > 0) {
@@ -292,6 +300,7 @@ async function refreshFS(log = (...a) => console.log(...a)) {
         }
     } catch (e) {
         // Klasse-delen skal ikke velte emne-refreshen mens den er ny
+        klasseDiag.feil = String(e.message || e).slice(0, 500);
         log(`refresh-fs: FEIL i klasse-henting (emner er upåvirket): ${e.message}`);
     }
 
@@ -324,6 +333,17 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     await store.settMetadata('FS-Emner', { antallRader: emneRader.length, status: 'ok' });
     await store.settMetadata('FS-Studenter', { antallRader: studentRader.length, status: 'ok' });
     await store.settMetadata('FS-FilterStudent', { antallRader: alleFilterRader.length, status: 'ok' });
+    await store.settMetadata('FS-Klasser', {
+        antallRader: klasseMetaRader.length,
+        status: klasseDiag.feil ? 'feil' : 'ok',
+        feil: klasseDiag.feil,
+        ekstra: {
+            KlasserFraFs: klasseDiag.fraFs,
+            KlasserMedStudenter: klasseDiag.medStudenter,
+            KlasserUtenStudenter: klasseDiag.utenStudenter,
+            KlasserAvkortet: klasseDiag.avkortet
+        }
+    });
 
     const varighet = ((Date.now() - startTid) / 1000).toFixed(1);
     log(`refresh-fs: fullført på ${varighet} s`);

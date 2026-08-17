@@ -102,7 +102,8 @@ async function settMetadata(kilde, info) {
         SistOppdatert: new Date().toISOString(),
         AntallRader: info.antallRader ?? 0,
         Status: info.status || 'ok',
-        SistFeil: info.feil || ''
+        SistFeil: info.feil || '',
+        ...(info.ekstra || {})
     }, 'Replace');
 }
 
