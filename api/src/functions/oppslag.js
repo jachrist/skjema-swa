@@ -19,14 +19,15 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
-const { parseFasteData } = require('../lib/faste-data');
+const { parseFasteData, avkleFeltref } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 const utsendingToken = require('../lib/utsending-token');
 
 // Kopiert fra faste-data.js — resolverBetingelse med feltSvar-støtte
 function erFeltref(v) {
     if (typeof v !== 'string') return false;
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) || /^\d+-\d+$/.test(v);
+    const b = avkleFeltref(v);
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(b) || /^\d+-\d+$/.test(b);
 }
 
 function resolverBetingelse(betingelse, upn, feltSvar) {
@@ -35,8 +36,9 @@ function resolverBetingelse(betingelse, upn, feltSvar) {
     if (v === '$upn') return upn ? { ...betingelse, Verdi: String(upn) } : null;
     if (erFeltref(v)) {
         if (!feltSvar) return null;
-        const kandidater = [v];
-        const m = /^(\d+)-(\d+)$/.exec(v);
+        const rå = avkleFeltref(v);
+        const kandidater = [rå];
+        const m = /^(\d+)-(\d+)$/.exec(rå);
         if (m) kandidater.push(`${Number(m[1])}-${Number(m[2])}`);
         for (const k of kandidater) {
             if (feltSvar[k] !== undefined) {

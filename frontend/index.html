@@ -656,8 +656,12 @@
         function fangeFeltref(fasteData) {
             const referert = new Set();
             const skann = (v) => {
-                if (typeof v === 'string' && /^\d+-\d+$/.test(v)) {
-                    const m = v.match(/^(\d+)-(\d+)$/);
+                if (typeof v !== 'string') return;
+                // Feltref kan skrives med krøllparenteser ({1-01}) — kompakt legacy-notasjon
+                const t = v.trim();
+                const b = t.startsWith('{') && t.endsWith('}') ? t.slice(1, -1).trim() : t;
+                if (/^\d+-\d+$/.test(b)) {
+                    const m = b.match(/^(\d+)-(\d+)$/);
                     referert.add(`${Number(m[1])}-${Number(m[2])}`);
                     referert.add(`${Number(m[1])}-${String(m[2]).padStart(2, '0')}`);
                 }

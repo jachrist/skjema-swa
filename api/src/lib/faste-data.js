@@ -69,9 +69,22 @@ function parseFasteData(verdi) {
     return dnf;
 }
 
+/**
+ * Fjern krøllparenteser rundt en feltreferanse. Den kompakte legacy-notasjonen
+ * skriver dem med ({2-03}), og editoren lagrer verdien ordrett — uten dette
+ * ville "{2-03}" blitt tolket som en litteral tekstverdi, og filteret ville
+ * stille gitt null treff.
+ */
+function avkleFeltref(v) {
+    if (typeof v !== 'string') return v;
+    const t = v.trim();
+    return t.startsWith('{') && t.endsWith('}') ? t.slice(1, -1).trim() : t;
+}
+
 function erFeltreferanse(v) {
     if (typeof v !== 'string') return false;
-    return UUID_RE.test(v) || /^\d+-\d+$/.test(v);
+    const b = avkleFeltref(v);
+    return UUID_RE.test(b) || /^\d+-\d+$/.test(b);
 }
 
 /**
@@ -95,8 +108,9 @@ function resolverBetingelse(betingelse, upn, feltSvar) {
     if (erFeltreferanse(v)) {
         if (!feltSvar) return null;
         // Prøv både rå og normalisert (fjern ledende nuller i felt-del)
-        const kandidater = [v];
-        const m = /^(\d+)-(\d+)$/.exec(v);
+        const rå = avkleFeltref(v);
+        const kandidater = [rå];
+        const m = /^(\d+)-(\d+)$/.exec(rå);
         if (m) kandidater.push(`${Number(m[1])}-${Number(m[2])}`);
         for (const k of kandidater) {
             if (feltSvar[k] !== undefined) {
@@ -243,5 +257,7 @@ module.exports = {
     parseFasteData,
     hentFasteDataForespørsler,
     settFasteDataISkjema,
-    hentOgSettFasteData
+    hentOgSettFasteData,
+    avkleFeltref,
+    erFeltreferanse
 };
