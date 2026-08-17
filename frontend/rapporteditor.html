@@ -262,6 +262,7 @@
                 <select id="gruppePaa">
                     <option value="">— ingen gruppering —</option>
                 </select>
+                <button class="knapp sekundær liten" id="fjern-gruppering-knapp" onclick="fjernGruppering()" style="display:none;">× Fjern gruppering</button>
             </div>
             <div id="aggregater-liste"></div>
             <div class="legg-til" id="legg-til-aggregat-rad" style="display:none;">
@@ -561,6 +562,7 @@
                     </div>
                 `; }).join('');
             }
+            oppdaterFjernKnapp();
         }
 
         function oppdaterAvhengigheter() {
@@ -686,13 +688,26 @@
             renderAggregater();
         };
 
+        function oppdaterFjernKnapp() {
+            const har = !!(data.Gruppering && (data.Gruppering.gruppePaa || (data.Gruppering.aggregater || []).length > 0));
+            document.getElementById('fjern-gruppering-knapp').style.display = har ? '' : 'none';
+        }
+
         document.getElementById('gruppePaa').addEventListener('change', (e) => {
             if (!data.Gruppering) data.Gruppering = { gruppePaa: '', aggregater: [] };
             data.Gruppering.gruppePaa = e.target.value;
             if (!data.Gruppering.gruppePaa && (!data.Gruppering.aggregater || data.Gruppering.aggregater.length === 0)) {
                 data.Gruppering = null;
             }
+            oppdaterFjernKnapp();
         });
+
+        window.fjernGruppering = () => {
+            data.Gruppering = null;
+            document.getElementById('gruppePaa').value = '';
+            renderAggregater();
+            oppdaterFjernKnapp();
+        };
         document.getElementById('sortKolonne').addEventListener('change', (e) => {
             if (!e.target.value) { data.Sortering = null; return; }
             data.Sortering = { kolonneId: e.target.value, retning: document.getElementById('sortRetning').value };
