@@ -82,9 +82,9 @@ duplisering ville bare kunne komme ut av synk. De utledes ved behov med
 | `FK` | Betydning | `FV`-format | Eksempel-PK |
 |---|---|---|---|
 | `EK` | Emne | `{Termin}\|{EK}-{VK}` | `EK\|26H\|MILM2301-1` |
-| `KL` | Klasse | `{SP}\|{årstall}-{betegnelse}\|{klassekode}` | `KL\|FHS-AS\|2023-HØST\|ÅRS SKSK` |
-| `KU` | Kull | `{SP}\|{årstall}-{betegnelse}` | `KU\|FHS-AS\|2026-HØST` |
-| `SP` | Studieprogram | studieprogramkode | `SP\|FHS-AS` |
+| `KL` | Klasse | `{SP}\|{terminkort}\|{klassekode}` | `KL\|EA\|26H\|EA 26` |
+| `KU` | Kull | `{SP}\|{terminkort}` | `KU\|EA\|26H` |
+| `SP` | Studieprogram | studieprogramkode | `SP\|EA` |
 | `ALLE` | Alle studenter | tom | `ALLE\|` |
 
 Klasse- og kullnøklene er sammensatte fordi **klassekode ikke er unik** — se §6.
@@ -92,6 +92,16 @@ De følger FS' egen naturlige nøkkel. Den sammensatte verdien er stygg, men den
 vises aldri for brukeren: `Tekst` i dropdownen blir klassenavnet
 («Årsenhet SKSK 2023»), `Verdi` blir nøkkelen. Det er samme Tekst/Verdi-skille
 som resten av `oppslag.js` allerede bruker.
+
+`{terminkort}` er kullets start-termin gjennom `terminer.kortKode()` — samme
+form som `EK`-radene bruker (`26H`, `25V`). Det forutsetter
+`betegnelse { kode }` (`"HØST"`), ikke `navnAlleSprak.nb` (`"Høst"`):
+`kortKode` sammenligner mot `'VÅR'`/`'HØST'` i store bokstaver
+(`terminer.js:13-18`), så feil felt gir stille feil kortkode. Verifisert, §6b
+funn 7.
+
+`{SP}` kan **ikke** leses fra klasse-noden og må utledes fra studentenes
+`programStudierett` — med konsistenssjekk. Se §6b funn 8.
 
 Termin ligger **inne i `FV`** for emne, ikke foran `FK`. Ellers gjenskapes
 suffiks-problemet fra §1. Formatet `{Termin}|{EK}-{VK}` er allerede den
@@ -192,13 +202,33 @@ denne nøkkelen `KL`-partisjonen i §3 replikerer.
 ### Funn 2 — `erAktiv: true` er ikke et ferskhetsfilter
 
 Uttrekket returnerte klasser med kull fra 2007, 2010, 2012, 2013 og 2021 — alle
-med `erAktiv: true`, alle med `studenterIKlasse.nodes: []`. Kun klassen med kull
-2026 hadde studenter.
+med `erAktiv: true`, alle uten studenter i `nodes`. Kun klassen med kull 2026
+hadde studenter.
 
-Skal ikke dropdownen fylles med tjue år gamle klasser, må det filtreres. Det
-riktige kriteriet er **at klassen har minst én student** — tomme klasser er
-selvryddende, siden `studenterIKlasse` ser ut til å reflektere gjeldende
-studieretter.
+Kriteriet må være **at `studenterIKlasse.nodes` er ikke-tom**. Det skjer av seg
+selv: rader bygges fra `nodes`, så en tom klasse produserer ingen rader og
+dermed ingen partisjon. Ingen egen filtrering trengs.
+
+### Funn 2b — `totalCount` kan IKKE brukes som kriterium
+
+Verifisert 2026-08-17: klassen `A` / «Kull 57 - siste 2 år» (kull 2007) ga
+
+```json
+"studenterIKlasse": { "totalCount": 8, "nodes": [] }
+```
+
+— altså `totalCount: 8` med **tom** `nodes`, selv med `first: 1000`. De to
+tallene måler ikke det samme. `totalCount` teller trolig historiske
+klassemedlemskap, mens `nodes` kun returnerer dem med en gjeldende
+`programStudierett`.
+
+To konsekvenser:
+
+1. Bygg alltid rader fra `nodes`. Bruker man `totalCount` som «har studenter»-
+   test, får man med utgåtte klasser fra 2007.
+2. **Avkorting kan ikke oppdages ved å sammenligne `totalCount` med
+   `nodes.length`** — det ville gitt falsk alarm på hver eneste utgåtte klasse.
+   Riktig test er `nodes.length === first`.
 
 ### Funn 3 — ikke filtrer klasser på aktiv termin
 
@@ -221,6 +251,23 @@ Bruk «har studenter» (funn 2) som kriterium i stedet.
 - `klasser` paginerer (`hasNextPage: true` ved `first: 10`) — cursor-løkke som i
   `hentUndervisningsenheter` er nødvendig.
 
+### Funn 5 — `studenterIKlasse` avkorter stille uten `first`
+
+Bekreftet ved sammenligning av de to uttrekkene. Klassen `EA 26` har
+`totalCount: 11`. Uten `first` returnerte FS **10** studenter (siste var
+Storberget). Med `first: 1000` kom Håvard Almås med som nummer 11.
+
+FS har altså en implisitt sidestørrelse på 10 på denne relasjonen, uten feil
+eller advarsel. Hadde dette gått i produksjon utestet, ville hver klasse fått
+nøyaktig 10 studenter og resten forsvunnet lydløst. `first` er obligatorisk.
+
+### Funn 6 — studentens eget studieprogram er tilgjengelig
+
+`programStudierett.studieprogram` finnes og gir både `kode` (`"EA"`) og
+`navnAlleSprak.nb` (`"Bachelor i ingeniørfag, elektro/automasjon"`). Det løser
+det semantiske valget under: `SP`-radene bygges fra studentens egen studierett,
+ikke fra emnets `SK`/`SN`.
+
 ### Semantisk valg: studieprogram — nå løsbart
 
 `SK`/`SN` på `Emner`-radene er **emnets** studieprogramkobling
@@ -228,54 +275,42 @@ Bruk «har studenter» (funn 2) som kriterium i stedet.
 spørringen kan studentens eget program leses direkte, som er det riktige for
 filteret `Studenter{Studieprogram}`. Feltet må velges eksplisitt — se §6b.
 
-## 6b. Gjenstående verifisering
+## 6b. Verifisering fullført
 
-Følgende felter er ikke bekreftet ennå. Spørring å kjøre:
+Alle spørsmål besvart mot FS 2026-08-17.
 
-```graphql
-query KlasserVerifisering {
-  klasser(filter: {eierOrganisasjonskode: "1627", erAktiv: true}, first: 5) {
-    pageInfo { hasNextPage endCursor }
-    edges {
-      node {
-        kode
-        navnAlleSprak { und nb no }
-        studieprogram { kode navnAlleSprak { nb } }        # ← finnes feltet på klasse?
-        kull {
-          terminV2 { arstall betegnelse { kode } }          # kode, ikke id
-          navnAlleSprak { no nb }
-        }
-        studenterIKlasse(first: 1000) {                     # ← støttes «first»?
-          totalCount                                         # ← støttes «totalCount»?
-          nodes {
-            programStudierett {
-              studieprogram { kode navnAlleSprak { nb } }   # ← studentens eget program
-              student { personProfil { institusjonsEpost navn { fornavn etternavn } } }
-            }
-          }
-        }
-      }
-    }
-  }
-}
-```
+### Funn 7 — `betegnelse { kode }` gir `"HØST"`
 
-Tre spørsmål den skal svare på:
+Bekreftet: store bokstaver, som `kortKode` krever (`terminer.js:13-18`). Bruk
+`kode`, ikke `navnAlleSprak.nb` (som gir `"Høst"`).
 
-1. **Ligger studieprogram på klassen, på `programStudierett`, eller begge?**
-   Cursoren inneholder `"FHS-AS"`, så koblingen finnes — men ikke nødvendigvis
-   som et selekterbart felt på klasse-noden. `KL`/`KU`-nøklene i §3 forutsetter
-   at koden er tilgjengelig.
-2. **Paginerer `studenterIKlasse`?** Uten `first` kan FS ha en implisitt grense.
-   `studieretter` bruker `first: 1000` med `totalCount` (`fs-client.js:131-133`);
-   samme mønster bør brukes her, og `totalCount` sammenlignes med `nodes.length`
-   for å avdekke avkorting.
-3. **Er tomme klasser virkelig utgåtte?** Bekreftes ved å finne en klasse med
-   kull-termin 2024/2025 som fortsatt løper, og se at den har studenter. Det
-   validerer kriteriet fra funn 2.
+### Funn 8 — `studieprogram` finnes IKKE på klasse-noden
 
-Filter-mulighetene på rot-spørringen bør også introspiseres, i tilfelle FS kan
-gjøre avgrensningen serverside:
+Feltet er kun tilgjengelig via `programStudierett` på studenten. Klassens
+studieprogram må derfor **utledes fra studentene**.
+
+Det er trygt fordi FS' egen nøkkel for klasse inkluderer studieprogram
+(`[1627,"FHS-AS","HØST",2023,"ÅRS SKSK"]`, §6 funn 1) — en klasse-node er altså
+programspesifikk per konstruksjon, og studentene i den skal dele program. Alle
+elleve i `EA 26` hadde `EA`.
+
+Men antakelsen er ikke garantert av API-et, og brytes den, splittes klassen
+stille over to `KL`-partisjoner. Transformen skal derfor:
+
+1. Samle distinkte `programStudierett.studieprogram.kode` blant klassens
+   studenter.
+2. Er settet tomt → hopp over klassen (ingen studenter, se funn 2).
+3. Har settet **mer enn ett** element → `log()` en advarsel med klassekode,
+   termin og programmene. Radene skrives fortsatt, én per students eget
+   program; hver student forblir søkbar, men klassen får to oppføringer i
+   dropdownen. Advarselen er det som gjør avviket synlig.
+
+Uten steg 3 ville dette vært et lydløst datakvalitetsproblem som først dukket
+opp som «klassen mangler halvparten av studentene».
+
+### Valgfritt
+
+Kan avgrensningen gjøres serverside i stedet for i transformen?
 
 ```graphql
 query { __type(name: "QueryKlasserFilterInput") { inputFields { name type { name kind ofType { name } } } } }
@@ -312,10 +347,10 @@ noe steg.
 
 ## 9. Åpne spørsmål
 
-1. ~~**FS-feltnavn** for kull/klasse~~ — løst 2026-08-17, se §6. Gjenstår: de tre
-   punktene i §6b.
-2. ~~**Studieprogram-semantikk**~~ — løsbart via `programStudierett`; velg
-   studentens eget program. Bekreft feltet, se §6b.
+1. ~~**FS-feltnavn** for kull/klasse~~ — løst 2026-08-17. All verifisering
+   fullført, se §6 og §6b. Ingen FS-spørsmål gjenstår.
+2. ~~**Studieprogram-semantikk**~~ — løst: `programStudierett.studieprogram`
+   verifisert (§6, funn 6). `SP`-rader bygges fra studentens egen studierett.
 3. **Klasse over flere terminer.** Klassen er ikke termin-avgrenset slik emnet
    er — `EA 26-29` løper over tre år (§6, funn 3). Nøkkelen i §3 bruker derfor
    kullets start-termin, ikke inneværende. Konsekvens: bytter en student klasse
