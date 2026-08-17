@@ -28,6 +28,8 @@ require('./functions/backup');
 require('./functions/team');
 require('./functions/ai-analyser');
 require('./functions/oppslag');
+require('./functions/rapporttyper');
+require('./functions/rapport-kjor');
 
 // Etter hvert:
 // require('./functions/skjema');

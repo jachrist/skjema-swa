@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.72);
+            --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-input: rgba(255, 255, 255, 0.7);
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --gruppe-header: rgba(10, 132, 255, 0.08);
+            --glass-blur: blur(20px);
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.72);
+            --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-input: rgba(50, 55, 70, 0.6);
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --gruppe-header: rgba(10, 132, 255, 0.14);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-primary);
+            margin: 0; padding: 24px;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 1200px; margin: 0 auto;
+            background: var(--bg-container);
+            backdrop-filter: var(--glass-blur);
+            padding: 28px 32px; border-radius: 20px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+        .theme-toggle {
+            position: fixed; top: 16px; right: 20px;
+            background: var(--bg-container); border: 1px solid var(--border-color);
+            border-radius: 50%; width: 40px; height: 40px;
+            cursor: pointer; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .topp {
+            display: flex; align-items: flex-start; gap: 16px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 14px; margin-bottom: 14px;
+        }
+        h1 { font-size: 1.6em; margin: 0 0 4px; font-weight: 700; }
+        .beskrivelse { color: var(--text-secondary); font-size: 14px; margin: 4px 0 0; }
+        .meta-info { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
+        .toppknapper { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+        .knapp {
+            display: inline-flex; align-items: center; gap: 6px;
+            border: 0; border-radius: 10px;
+            padding: 8px 14px; font-size: 13px; font-weight: 600;
+            cursor: pointer; text-decoration: none;
+            font-family: inherit;
+        }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.primær:hover { filter: brightness(1.1); }
+        .knapp.sekundær { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+        .knapp.sekundær:hover { background: var(--accent-light); }
+
+        .filter-panel {
+            background: var(--bg-section); border: 1px solid var(--border-color);
+            border-radius: 14px; padding: 16px 18px; margin-bottom: 16px;
+        }
+        .filter-panel h3 { margin: 0 0 10px; font-size: 14px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+        .filter-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+            gap: 12px;
+        }
+        .filter-felt label {
+            display: block; font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;
+        }
+        .filter-felt input {
+            width: 100%; padding: 7px 10px; border: 1px solid var(--border-color);
+            border-radius: 8px; background: var(--bg-input); color: var(--text-primary);
+            font-family: inherit; font-size: 13px;
+        }
+        .filter-felt input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-light); }
+
+        .status-melding { padding: 14px; text-align: center; color: var(--text-secondary); font-size: 14px; }
+        .status-melding.feil { color: #d9534f; }
+
+        .resultat-tabell-omslutt {
+            overflow-x: auto; border: 1px solid var(--border-color);
+            border-radius: 12px; margin-top: 10px;
+            background: var(--bg-section);
+        }
+        table.rapport {
+            width: 100%; border-collapse: collapse; font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+        table.rapport th, table.rapport td {
+            padding: 8px 12px; text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+        table.rapport thead th {
+            background: var(--bg-container); font-weight: 600;
+            font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+            color: var(--text-secondary); position: sticky; top: 0;
+        }
+        table.rapport tbody tr:last-child td { border-bottom: 0; }
+        table.rapport td.tall, table.rapport th.tall { text-align: right; }
+
+        .gruppe { margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-section); overflow: hidden; }
+        .gruppe-header {
+            padding: 10px 14px;
+            background: var(--gruppe-header);
+            display: flex; justify-content: space-between; align-items: baseline;
+            cursor: pointer; user-select: none;
+        }
+        .gruppe-header .navn { font-weight: 600; }
+        .gruppe-header .agg { font-size: 12.5px; color: var(--text-secondary); display: flex; gap: 14px; flex-wrap: wrap; }
+        .gruppe-header .agg strong { color: var(--text-primary); }
+        .gruppe-innhold.kollapset { display: none; }
+        .gruppe-innhold table.rapport thead th { background: transparent; }
+
+        .totaler {
+            padding: 12px 16px; margin-top: 14px;
+            background: var(--bg-section); border: 1px solid var(--border-color);
+            border-radius: 12px;
+            display: flex; gap: 20px; flex-wrap: wrap; font-size: 13px;
+        }
+        .totaler strong { color: var(--text-primary); }
+
+        /* Print-optimering — PDF via nettleserens Skriv ut */
+        @media print {
+            body { background: white; color: black; padding: 12mm; }
+            .theme-toggle, .toppknapper, .filter-panel, .knapp { display: none !important; }
+            .container {
+                max-width: 100%; padding: 0; background: transparent; box-shadow: none;
+                border: 0; backdrop-filter: none;
+            }
+            .topp { border-bottom: 2px solid #000; }
+            h1 { color: black; }
+            .beskrivelse, .meta-info { color: #333; }
+            .resultat-tabell-omslutt, .gruppe, .totaler {
+                border: 1px solid #999 !important; background: white !important;
+                page-break-inside: avoid;
+            }
+            table.rapport thead th {
+                background: #eee !important; color: black !important;
+                border-bottom: 1px solid #666;
+            }
+            table.rapport tbody tr { page-break-inside: avoid; }
+            .gruppe-innhold.kollapset { display: block !important; }
+            .gruppe-header { background: #f4f4f4 !important; }
+            @page { size: A4 landscape; margin: 12mm; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">🌙</button>
+
+    <div class="container">
+        <div class="topp">
+            <div style="flex:1;">
+                <h1 id="tittel">Rapport</h1>
+                <div class="beskrivelse" id="beskrivelse"></div>
+                <div class="meta-info" id="meta-info"></div>
+            </div>
+            <div class="toppknapper">
+                <a class="knapp sekundær" href="/velgrapporttype.html">← Oversikten</a>
+                <a class="knapp sekundær" id="rediger-lenke" style="display:none;">Rediger</a>
+                <button class="knapp sekundær" onclick="window.print()" id="skriv-ut-knapp" style="display:none;">Skriv ut / PDF</button>
+                <button class="knapp primær" onclick="kjor()" id="kjor-knapp" style="display:none;">Kjør rapport</button>
+            </div>
+        </div>
+
+        <div id="filter-panel" class="filter-panel" style="display:none;">
+            <h3>Filtre</h3>
+            <div class="filter-grid" id="filter-grid"></div>
+        </div>
+
+        <div id="status" class="status-melding">Laster…</div>
+        <div id="resultat"></div>
+        <div id="totaler-boks" class="totaler" style="display:none;"></div>
+    </div>
+
+    <script type="module">
+        import { api } from './js/api-client.js';
+        import { hentInnloggetBruker } from './js/auth.js';
+
+        const params = new URLSearchParams(location.search);
+        const rapporttypeId = params.get('rapporttype_id') || '';
+
+        let rapporttype = null;
+
+        window.toggleTheme = () => {
+            const root = document.documentElement;
+            const ny = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            root.setAttribute('data-theme', ny);
+            localStorage.setItem('theme', ny);
+            document.getElementById('theme-btn').textContent = ny === 'dark' ? '☀️' : '🌙';
+        };
+        document.getElementById('theme-btn').textContent =
+            document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+
+        const STATUS_TEKST = { 0: 'Utkast', 1: 'Mellomlagret', 2: 'Innsendt', 3: 'Til revidering', 5: 'Avsluttet' };
+
+        function visStatus(tekst, klasse) {
+            const el = document.getElementById('status');
+            el.textContent = tekst;
+            el.className = 'status-melding' + (klasse ? ' ' + klasse : '');
+            el.style.display = tekst ? 'block' : 'none';
+        }
+
+        function formaterDato(v) {
+            if (!v) return '';
+            const d = new Date(v);
+            if (isNaN(d)) return String(v);
+            const pad = n => String(n).padStart(2, '0');
+            return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+        function formaterNummer(v) {
+            if (v === null || v === undefined || v === '') return '';
+            const n = Number(String(v).replace(',', '.'));
+            if (isNaN(n)) return String(v);
+            return n.toLocaleString('nb-NO', { maximumFractionDigits: 2 });
+        }
+        function formaterVerdi(v, kol) {
+            if (v === null || v === undefined) return '';
+            if (Array.isArray(v)) return v.map(x => formaterVerdi(x, { ...kol, format: kol.format === 'dato' ? 'dato' : null })).join(', ');
+            if (kol?.format === 'dato') return formaterDato(v);
+            if (kol?.format === 'status') return STATUS_TEKST[v] || String(v);
+            if (kol?.format === 'nummer') return formaterNummer(v);
+            return String(v);
+        }
+        function erTallKolonne(kol) { return kol?.format === 'nummer'; }
+
+        function escapeHtml(s) {
+            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        function byggFilterPanel() {
+            const grid = document.getElementById('filter-grid');
+            const filtre = rapporttype.Brukerfiltre || [];
+            if (filtre.length === 0) {
+                document.getElementById('filter-panel').style.display = 'none';
+                return;
+            }
+            document.getElementById('filter-panel').style.display = '';
+            grid.innerHTML = filtre.map(f => `
+                <div class="filter-felt">
+                    <label for="bf-${escapeHtml(f.id)}">${escapeHtml(f.navn)}</label>
+                    <input type="text" id="bf-${escapeHtml(f.id)}" data-filter-id="${escapeHtml(f.id)}"
+                        placeholder="${escapeHtml(hintTekst(f))}">
+                </div>
+            `).join('');
+        }
+        function hintTekst(f) {
+            const op = f.operator;
+            if (op === 'in' || op === 'notIn') return 'A, B, C';
+            if (op === 'between') return 'lav — se motoren';
+            return '';
+        }
+
+        function lesBrukerVerdier() {
+            const ut = {};
+            for (const el of document.querySelectorAll('[data-filter-id]')) {
+                const id = el.dataset.filterId;
+                const v = el.value.trim();
+                if (v) ut[id] = v;
+            }
+            return ut;
+        }
+
+        function radHtml(rad, kolonner) {
+            return `<tr>${kolonner.map(k => {
+                const cls = erTallKolonne(k) ? ' class="tall"' : '';
+                return `<td${cls}>${escapeHtml(formaterVerdi(rad.verdier[k.id], k))}</td>`;
+            }).join('')}</tr>`;
+        }
+
+        function tabellHtml(rader, kolonner) {
+            return `
+                <div class="resultat-tabell-omslutt">
+                    <table class="rapport">
+                        <thead>
+                            <tr>${kolonner.map(k => `<th${erTallKolonne(k) ? ' class="tall"' : ''}>${escapeHtml(k.navn)}</th>`).join('')}</tr>
+                        </thead>
+                        <tbody>
+                            ${rader.length === 0
+                                ? `<tr><td colspan="${kolonner.length}" style="text-align:center;color:var(--text-secondary);padding:20px;">Ingen data</td></tr>`
+                                : rader.map(r => radHtml(r, kolonner)).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        function grupperHtml(grupper, kolonner, gruppeKolNavn) {
+            return grupper.map((g, i) => {
+                const aggChips = Object.entries(g.aggregater || {}).map(([n, v]) => {
+                    const formatert = typeof v === 'number' ? formaterNummer(v) : (v ?? '');
+                    return `<span><strong>${escapeHtml(n)}:</strong> ${escapeHtml(formatert)}</span>`;
+                }).join('');
+                return `
+                    <div class="gruppe">
+                        <div class="gruppe-header" onclick="toggleGruppe(${i})">
+                            <div class="navn">${escapeHtml(gruppeKolNavn || 'Gruppe')}: ${escapeHtml(g.nokkel)} <span style="color:var(--text-secondary);font-weight:400;">(${g.antall})</span></div>
+                            <div class="agg">${aggChips}</div>
+                        </div>
+                        <div class="gruppe-innhold" data-gruppe-id="${i}">
+                            ${tabellHtml(g.rader, kolonner)}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        window.toggleGruppe = (i) => {
+            const el = document.querySelector(`[data-gruppe-id="${i}"]`);
+            if (el) el.classList.toggle('kollapset');
+        };
+
+        function render(resultat) {
+            const res = document.getElementById('resultat');
+            const kolonner = resultat.kolonner || [];
+            const gruppeKol = kolonner.find(k => k.id === resultat.meta.gruppertPaa);
+            const gruppeKolNavn = gruppeKol?.navn || resultat.meta.gruppertPaa;
+
+            if (resultat.grupper && resultat.grupper.length > 0) {
+                res.innerHTML = grupperHtml(resultat.grupper, kolonner, gruppeKolNavn);
+            } else {
+                res.innerHTML = tabellHtml(resultat.rader, kolonner);
+            }
+
+            // Totaler
+            const totBox = document.getElementById('totaler-boks');
+            const totaler = resultat.totaler || {};
+            const totEntries = Object.entries(totaler);
+            if (totEntries.length > 0) {
+                totBox.innerHTML = `<strong>Totalt:</strong> ${totEntries.map(([n, v]) => {
+                    const formatert = typeof v === 'number' ? formaterNummer(v) : (v ?? '');
+                    return `${escapeHtml(n)}: ${escapeHtml(formatert)}`;
+                }).join(' · ')} <span style="color:var(--text-secondary); margin-left:auto;">${resultat.meta.antallEtterFilter}/${resultat.meta.antallSkjemaer} skjemaer</span>`;
+                totBox.style.display = '';
+            } else {
+                totBox.innerHTML = `<span style="color:var(--text-secondary);">${resultat.meta.antallEtterFilter} av ${resultat.meta.antallSkjemaer} skjemaer</span>`;
+                totBox.style.display = '';
+            }
+
+            document.getElementById('meta-info').textContent =
+                `Kjørt ${formaterDato(resultat.meta.kjørtDato)} · kilde: ${resultat.rapport?.Kildeskjematype_navn || ''}`;
+            document.getElementById('skriv-ut-knapp').style.display = '';
+        }
+
+        window.kjor = async () => {
+            visStatus('Kjører rapport…');
+            document.getElementById('resultat').innerHTML = '';
+            document.getElementById('totaler-boks').style.display = 'none';
+            try {
+                const brukerVerdier = lesBrukerVerdier();
+                const res = await api.post('/api/rapport/kjor', { Rapporttype_id: rapporttypeId, brukerVerdier });
+                visStatus('');
+                render(res);
+            } catch (e) {
+                visStatus('Kunne ikke kjøre: ' + e.message, 'feil');
+            }
+        };
+
+        async function init() {
+            const bruker = await hentInnloggetBruker();
+            if (!bruker) {
+                window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
+                return;
+            }
+            if (!rapporttypeId) {
+                visStatus('Mangler rapporttype_id i URL', 'feil');
+                return;
+            }
+            try {
+                rapporttype = await api.get(`/api/rapporttyper/${encodeURIComponent(rapporttypeId)}`);
+                document.getElementById('tittel').textContent = rapporttype.Rapport_navn || 'Rapport';
+                document.title = `${rapporttype.Rapport_navn || 'Rapport'} — Rapport`;
+                document.getElementById('beskrivelse').textContent = rapporttype.Beskrivelse || '';
+
+                // Rediger-knapp — vises hvis bruker er eier (sjekkes via whoami + finn eier)
+                try {
+                    const meg = await api.get('/api/whoami');
+                    const upn = (meg?.userDetails || '').toLowerCase();
+                    const eiere = (rapporttype.Eiere?.Personer || []).map(p => String(p).toLowerCase());
+                    if (meg?.erAdmin || eiere.includes(upn)) {
+                        const lenke = document.getElementById('rediger-lenke');
+                        lenke.href = `/rapporteditor.html?rapporttype_id=${encodeURIComponent(rapporttypeId)}`;
+                        lenke.style.display = '';
+                    }
+                } catch (_) { /* ikke kritisk */ }
+
+                byggFilterPanel();
+                document.getElementById('kjor-knapp').style.display = '';
+                visStatus('Klar. Klikk «Kjør rapport» for å hente data.');
+            } catch (e) {
+                visStatus('Kunne ikke laste rapporttype: ' + e.message, 'feil');
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>

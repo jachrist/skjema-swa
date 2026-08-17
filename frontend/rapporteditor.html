@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rapport-editor</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.72);
+            --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-input: rgba(255, 255, 255, 0.7);
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --text-heading: #0a84ff;
+            --border-color: rgba(0, 0, 0, 0.08);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --danger: #d9534f;
+            --danger-bg: rgba(217, 83, 79, 0.1);
+            --glass-blur: blur(20px);
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 18px;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.72);
+            --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-input: rgba(50, 55, 70, 0.6);
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+            --accent-light: rgba(10, 132, 255, 0.2);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-page);
+            color: var(--text-primary);
+            margin: 0; padding: 24px;
+            line-height: 1.55;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 960px; margin: 0 auto;
+            background: var(--bg-container);
+            backdrop-filter: var(--glass-blur);
+            padding: 32px; border-radius: 24px;
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+        }
+        .theme-toggle {
+            position: fixed; top: 16px; right: 20px;
+            background: var(--bg-container); border: 1px solid var(--border-color);
+            border-radius: 50%; width: 40px; height: 40px;
+            cursor: pointer; font-size: 18px;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .topp {
+            display: flex; align-items: center; gap: 16px;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 12px; margin-bottom: 16px;
+        }
+        h1 { font-size: 1.7em; margin: 0; flex: 1; font-weight: 700; }
+        h2 { font-size: 1.1em; margin: 0 0 12px; color: var(--text-heading); }
+        .brukerinfo { display: flex; gap: 12px; font-size: 13px; color: var(--text-secondary); align-items: center; }
+        .link-knapp { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
+        .link-knapp:hover { background: var(--accent-light); }
+
+        section { background: var(--bg-section); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 18px 20px; margin-bottom: 16px; }
+        .rad { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+        .rad label { font-size: 13px; color: var(--text-secondary); min-width: 100px; }
+        .rad input[type="text"], .rad select, .rad textarea {
+            background: var(--bg-input); border: 1px solid var(--border-color);
+            color: var(--text-primary); padding: 8px 10px; border-radius: var(--radius-sm);
+            font-size: 14px; flex: 1; min-width: 180px;
+            font-family: inherit;
+        }
+        .rad textarea { min-height: 60px; resize: vertical; }
+        .rad input:focus, .rad select:focus, .rad textarea:focus {
+            outline: none; border-color: var(--accent);
+            box-shadow: 0 0 0 3px var(--accent-light);
+        }
+
+        .liste-element {
+            display: grid;
+            grid-template-columns: 24px 1fr auto;
+            gap: 10px; align-items: center;
+            padding: 10px 12px; margin-bottom: 8px;
+            background: var(--bg-input); border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+            font-size: 13px;
+        }
+        .liste-element .nr { font-weight: 600; color: var(--text-secondary); }
+        .liste-element .desc { display: flex; flex-direction: column; gap: 2px; }
+        .liste-element .desc .primær { font-weight: 500; color: var(--text-primary); }
+        .liste-element .desc .sekundær { font-size: 11.5px; color: var(--text-secondary); }
+        .liste-element .handlinger { display: flex; gap: 4px; }
+        .liste-element .handlinger button {
+            background: transparent; border: 1px solid var(--border-color);
+            color: var(--text-secondary); padding: 3px 8px;
+            border-radius: 4px; font-size: 11px; cursor: pointer;
+        }
+        .liste-element .handlinger button:hover { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+        .tom-melding { padding: 12px; text-align: center; color: var(--text-secondary); font-style: italic; font-size: 13px; }
+
+        .knapp {
+            display: inline-flex; align-items: center; gap: 6px;
+            border: 0; border-radius: var(--radius-sm);
+            padding: 9px 16px; font-size: 14px; font-weight: 600;
+            cursor: pointer; text-decoration: none;
+            transition: filter 0.15s;
+            font-family: inherit;
+        }
+        .knapp.primær { background: var(--accent); color: white; }
+        .knapp.primær:hover { filter: brightness(1.1); }
+        .knapp.sekundær { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+        .knapp.sekundær:hover { background: var(--accent-light); }
+        .knapp.fare { background: var(--danger); color: white; }
+        .knapp.fare:hover { filter: brightness(1.1); }
+        .knapp.liten { padding: 5px 10px; font-size: 12px; }
+
+        .knapperad-bunn {
+            display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end;
+            padding-top: 16px; border-top: 1px solid var(--border-color); margin-top: 16px;
+        }
+        .knapperad-bunn .venstre { margin-right: auto; }
+
+        .status-melding {
+            padding: 12px 16px; border-radius: var(--radius-sm);
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+        .status-melding.info { background: var(--accent-light); color: var(--accent); }
+        .status-melding.feil { background: var(--danger-bg); color: var(--danger); }
+        .status-melding.ok { background: rgba(52, 199, 89, 0.12); color: #34c759; }
+
+        .info-boks {
+            padding: 10px 14px; margin-top: 8px;
+            background: rgba(255, 149, 0, 0.08);
+            border-left: 3px solid #ff9500;
+            border-radius: 6px;
+            font-size: 13px; color: var(--text-primary);
+        }
+        details { margin-top: 12px; }
+        summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); user-select: none; }
+        summary:hover { color: var(--accent); }
+
+        /* Legg-til-rad (inline mini-form) */
+        .legg-til {
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            margin-top: 8px; padding: 10px; background: var(--bg-input);
+            border-radius: var(--radius-sm); border: 1px dashed var(--border-color);
+        }
+        .legg-til select, .legg-til input {
+            background: var(--bg-container); border: 1px solid var(--border-color);
+            color: var(--text-primary); padding: 6px 10px; border-radius: 6px;
+            font-size: 13px; font-family: inherit;
+        }
+        .legg-til input { min-width: 140px; }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">🌙</button>
+
+    <div class="container">
+        <div class="topp">
+            <h1 id="tittel">Ny rapporttype</h1>
+            <div class="brukerinfo">
+                <span id="upn">…</span>
+                <button class="link-knapp" onclick="logUt()">Logg ut</button>
+                <a class="link-knapp" href="/velgrapporttype.html">Til oversikten</a>
+            </div>
+        </div>
+
+        <div id="status" class="status-melding info" style="display:none;"></div>
+
+        <section>
+            <h2>Grunnleggende</h2>
+            <div class="rad">
+                <label for="navn">Rapport-navn</label>
+                <input type="text" id="navn" placeholder="F.eks. Emneevaluering pr. semester">
+            </div>
+            <div class="rad">
+                <label for="beskrivelse">Beskrivelse</label>
+                <textarea id="beskrivelse" placeholder="Vises på rapportportalen"></textarea>
+            </div>
+            <div class="rad">
+                <label for="fase">Fase</label>
+                <select id="fase">
+                    <option value="Utvikling">Utvikling — kun eiere ser den</option>
+                    <option value="Produksjon" selected>Produksjon — alle med tilgang ser den</option>
+                </select>
+            </div>
+            <div class="rad">
+                <label for="kildeskjematype">Kildeskjematype</label>
+                <select id="kildeskjematype">
+                    <option value="">— velg —</option>
+                </select>
+            </div>
+            <div id="kilde-info" class="info-boks" style="display:none;"></div>
+        </section>
+
+        <section>
+            <h2>Kolonner</h2>
+            <div id="kolonner-liste"></div>
+            <div class="legg-til" id="legg-til-kolonne-rad" style="display:none;">
+                <select id="ny-kolonne-type">
+                    <option value="meta">Meta</option>
+                    <option value="svar">Svar på felt</option>
+                </select>
+                <select id="ny-kolonne-kilde"></select>
+                <input type="text" id="ny-kolonne-navn" placeholder="Vist navn (valgfritt)">
+                <button class="knapp primær liten" onclick="leggTilKolonne()">Legg til</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>Innebygde filtre <small style="font-weight:400;color:var(--text-secondary);">— alltid aktive, bruker ser dem ikke</small></h2>
+            <div id="innebygde-liste"></div>
+            <div class="legg-til" id="legg-til-innebygd-rad" style="display:none;">
+                <select id="ny-innebygd-type">
+                    <option value="meta">Meta</option>
+                    <option value="svar">Svar på felt</option>
+                </select>
+                <select id="ny-innebygd-kilde"></select>
+                <select id="ny-innebygd-operator"></select>
+                <input type="text" id="ny-innebygd-verdi" placeholder="Verdi">
+                <input type="text" id="ny-innebygd-verdi2" placeholder="…til (for mellom)" style="display:none;">
+                <button class="knapp primær liten" onclick="leggTilInnebygd()">Legg til</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>Brukerfiltre <small style="font-weight:400;color:var(--text-secondary);">— bruker justerer før kjøring</small></h2>
+            <div id="bruker-liste"></div>
+            <div class="legg-til" id="legg-til-bruker-rad" style="display:none;">
+                <input type="text" id="ny-bruker-navn" placeholder="Navn (f.eks. Termin)">
+                <select id="ny-bruker-type">
+                    <option value="meta">Meta</option>
+                    <option value="svar">Svar på felt</option>
+                </select>
+                <select id="ny-bruker-kilde"></select>
+                <select id="ny-bruker-operator"></select>
+                <button class="knapp primær liten" onclick="leggTilBruker()">Legg til</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>Gruppering og aggregater <small style="font-weight:400;color:var(--text-secondary);">— valgfritt</small></h2>
+            <div class="rad">
+                <label for="gruppePaa">Grupper på</label>
+                <select id="gruppePaa">
+                    <option value="">— ingen gruppering —</option>
+                </select>
+            </div>
+            <div id="aggregater-liste"></div>
+            <div class="legg-til" id="legg-til-aggregat-rad" style="display:none;">
+                <select id="ny-aggregat-type">
+                    <option value="count">Antall</option>
+                    <option value="countIkkeTomt">Antall ikke-tomme</option>
+                    <option value="sum">Sum</option>
+                    <option value="snitt">Gjennomsnitt</option>
+                    <option value="min">Minimum</option>
+                    <option value="maks">Maksimum</option>
+                </select>
+                <select id="ny-aggregat-kolonne"></select>
+                <input type="text" id="ny-aggregat-navn" placeholder="Vist navn (valgfritt)">
+                <button class="knapp primær liten" onclick="leggTilAggregat()">Legg til</button>
+            </div>
+        </section>
+
+        <section>
+            <h2>Sortering</h2>
+            <div class="rad">
+                <label for="sortKolonne">Sorter på</label>
+                <select id="sortKolonne">
+                    <option value="">— ingen —</option>
+                </select>
+                <select id="sortRetning" style="max-width:140px;">
+                    <option value="asc">Stigende</option>
+                    <option value="desc">Synkende</option>
+                </select>
+            </div>
+        </section>
+
+        <section>
+            <h2>Publikum</h2>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Hvem kan kjøre rapporten.</div>
+            <div id="publikum-editor"></div>
+        </section>
+
+        <section>
+            <h2>Eiere</h2>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px;">Hvem kan redigere og slette rapporttypen.</div>
+            <div id="eiere-editor"></div>
+        </section>
+
+        <div class="knapperad-bunn">
+            <button class="knapp fare venstre" onclick="slett()" id="slett-knapp" style="display:none;">Slett</button>
+            <button class="knapp sekundær" onclick="forhandsvis()" id="forhands-knapp" disabled>Forhåndsvis</button>
+            <button class="knapp primær" onclick="lagre()">Lagre</button>
+        </div>
+    </div>
+
+    <script type="module">
+        import { api } from './js/api-client.js';
+        import { hentInnloggetBruker, logUt as authLogUt } from './js/auth.js';
+        import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn } from './js/tilgang-editor.js';
+
+        const params = new URLSearchParams(location.search);
+        const rapporttypeId = params.get('rapporttype_id') || '';
+
+        let data = {
+            Rapporttype_id: '',
+            Rapport_navn: '',
+            Beskrivelse: '',
+            Fase: 'Produksjon',
+            Kildeskjematype_id: '',
+            Kolonner: [],
+            Innebygde_filtre: [],
+            Brukerfiltre: [],
+            Gruppering: null,
+            Sortering: null,
+            Publikum: { Personer: [], Roller: [], Team: [], AlleTilgang: false },
+            Eiere: { Personer: [], Roller: [], Team: [] }
+        };
+        let kildeDef = null; // fullt objekt for valgt kildeskjematype
+
+        const META_ALTERNATIVER = [
+            { verdi: 'Skjema_id', tekst: 'Skjema-ID' },
+            { verdi: 'Skjema_navn', tekst: 'Skjema-navn' },
+            { verdi: 'Innsender_Epost', tekst: 'Innsender (e-post)' },
+            { verdi: 'Skjema_status', tekst: 'Status (kode)' },
+            { verdi: 'Opprettet', tekst: 'Opprettet' },
+            { verdi: 'Sist_endret', tekst: 'Sist endret' }
+        ];
+        const OPERATOR_ALTERNATIVER = [
+            { verdi: 'eq', tekst: 'er lik' },
+            { verdi: 'neq', tekst: 'er ikke lik' },
+            { verdi: 'contains', tekst: 'inneholder' },
+            { verdi: 'startsWith', tekst: 'starter med' },
+            { verdi: 'endsWith', tekst: 'slutter med' },
+            { verdi: 'in', tekst: 'er en av (komma-separert)' },
+            { verdi: 'notIn', tekst: 'er ikke en av' },
+            { verdi: 'gt', tekst: 'større enn' },
+            { verdi: 'gte', tekst: 'større enn eller lik' },
+            { verdi: 'lt', tekst: 'mindre enn' },
+            { verdi: 'lte', tekst: 'mindre enn eller lik' },
+            { verdi: 'between', tekst: 'mellom' },
+            { verdi: 'tomt', tekst: 'er tom' },
+            { verdi: 'ikkeTomt', tekst: 'er ikke tom' }
+        ];
+
+        window.toggleTheme = () => {
+            const root = document.documentElement;
+            const ny = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            root.setAttribute('data-theme', ny);
+            localStorage.setItem('theme', ny);
+            document.getElementById('theme-btn').textContent = ny === 'dark' ? '☀️' : '🌙';
+        };
+        document.getElementById('theme-btn').textContent =
+            document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
+        window.logUt = () => authLogUt('/');
+
+        function visStatus(tekst, type) {
+            const el = document.getElementById('status');
+            el.textContent = tekst;
+            el.className = 'status-melding ' + (type || 'info');
+            el.style.display = tekst ? 'block' : 'none';
+            if (tekst && type === 'ok') setTimeout(() => { el.style.display = 'none'; }, 3000);
+        }
+
+        function fyllOperator(sel) {
+            sel.innerHTML = OPERATOR_ALTERNATIVER.map(o => `<option value="${o.verdi}">${o.tekst}</option>`).join('');
+        }
+
+        function fyllMeta(sel) {
+            sel.innerHTML = META_ALTERNATIVER.map(o => `<option value="${o.verdi}">${o.tekst}</option>`).join('');
+        }
+
+        function svarAlternativer() {
+            if (!kildeDef?.Seksjoner) return [];
+            const ut = [];
+            for (const s of kildeDef.Seksjoner) {
+                const sekNr = String(s.Seksjon_nummer);
+                const sekNavn = s.Seksjon_overskrift || `Seksjon ${sekNr}`;
+                for (const f of (s.Felter || [])) {
+                    if (f.Type === 'Informasjon') continue;
+                    const feltNr = String(f.Nummer).padStart(2, '0');
+                    const tekst = (f.Tekst?.Innhold || f.Tekst || '').toString().substring(0, 60);
+                    ut.push({
+                        verdi: `${sekNr}|${feltNr}`,
+                        tekst: `${sekNr}.${feltNr} — ${tekst} (${f.Type})`,
+                        sekNr, feltNr, feltType: f.Type
+                    });
+                }
+            }
+            return ut;
+        }
+
+        function fyllSvarKilde(sel) {
+            const alt = svarAlternativer();
+            sel.innerHTML = alt.map(o => `<option value="${o.verdi}">${o.tekst}</option>`).join('');
+        }
+
+        function oppdaterKildeSelects() {
+            // Kolonne-kilde
+            const kolTypeSel = document.getElementById('ny-kolonne-type');
+            const kolKildeSel = document.getElementById('ny-kolonne-kilde');
+            const settKolKilde = () => {
+                if (kolTypeSel.value === 'meta') fyllMeta(kolKildeSel);
+                else fyllSvarKilde(kolKildeSel);
+            };
+            kolTypeSel.onchange = settKolKilde;
+            settKolKilde();
+
+            // Innebygd-filter
+            const innTypeSel = document.getElementById('ny-innebygd-type');
+            const innKildeSel = document.getElementById('ny-innebygd-kilde');
+            const innOpSel = document.getElementById('ny-innebygd-operator');
+            fyllOperator(innOpSel);
+            innOpSel.onchange = () => {
+                document.getElementById('ny-innebygd-verdi2').style.display = innOpSel.value === 'between' ? '' : 'none';
+                const trengerVerdi = !['tomt', 'ikkeTomt'].includes(innOpSel.value);
+                document.getElementById('ny-innebygd-verdi').style.display = trengerVerdi ? '' : 'none';
+            };
+            const settInnKilde = () => {
+                if (innTypeSel.value === 'meta') fyllMeta(innKildeSel);
+                else fyllSvarKilde(innKildeSel);
+            };
+            innTypeSel.onchange = settInnKilde;
+            settInnKilde();
+
+            // Bruker-filter
+            const brukTypeSel = document.getElementById('ny-bruker-type');
+            const brukKildeSel = document.getElementById('ny-bruker-kilde');
+            const brukOpSel = document.getElementById('ny-bruker-operator');
+            fyllOperator(brukOpSel);
+            const settBrukKilde = () => {
+                if (brukTypeSel.value === 'meta') fyllMeta(brukKildeSel);
+                else fyllSvarKilde(brukKildeSel);
+            };
+            brukTypeSel.onchange = settBrukKilde;
+            settBrukKilde();
+
+            // Vis legg-til-radene
+            document.getElementById('legg-til-kolonne-rad').style.display = kildeDef ? '' : 'none';
+            document.getElementById('legg-til-innebygd-rad').style.display = kildeDef ? '' : 'none';
+            document.getElementById('legg-til-bruker-rad').style.display = kildeDef ? '' : 'none';
+        }
+
+        function metaNavn(kilde) {
+            return META_ALTERNATIVER.find(a => a.verdi === kilde)?.tekst || kilde;
+        }
+        function svarKildeNavn(sekNr, feltNr) {
+            const alt = svarAlternativer().find(a => a.sekNr === String(sekNr) && a.feltNr === String(feltNr).padStart(2, '0'));
+            return alt?.tekst || `${sekNr}.${String(feltNr).padStart(2, '0')}`;
+        }
+        function kildeVisning(item) {
+            if (item.type === 'meta') return metaNavn(item.kilde);
+            return svarKildeNavn(item.seksjon, item.felt);
+        }
+        function operatorTekst(op) {
+            return OPERATOR_ALTERNATIVER.find(o => o.verdi === op)?.tekst || op;
+        }
+
+        function renderKolonner() {
+            const container = document.getElementById('kolonner-liste');
+            if (data.Kolonner.length === 0) {
+                container.innerHTML = '<div class="tom-melding">Ingen kolonner ennå.</div>';
+            } else {
+                container.innerHTML = data.Kolonner.map((k, i) => `
+                    <div class="liste-element">
+                        <div class="nr">${i + 1}</div>
+                        <div class="desc">
+                            <div class="primær">${escapeHtml(k.navn || k.id)}</div>
+                            <div class="sekundær">${escapeHtml(kildeVisning(k))}</div>
+                        </div>
+                        <div class="handlinger">
+                            ${i > 0 ? `<button onclick="flyttKolonne(${i}, -1)">↑</button>` : ''}
+                            ${i < data.Kolonner.length - 1 ? `<button onclick="flyttKolonne(${i}, 1)">↓</button>` : ''}
+                            <button onclick="slettKolonne(${i})">Fjern</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+            oppdaterAvhengigheter();
+        }
+
+        function renderInnebygde() {
+            const container = document.getElementById('innebygde-liste');
+            if (data.Innebygde_filtre.length === 0) {
+                container.innerHTML = '<div class="tom-melding">Ingen innebygde filtre.</div>';
+            } else {
+                container.innerHTML = data.Innebygde_filtre.map((f, i) => {
+                    const verdiTekst = ['tomt', 'ikkeTomt'].includes(f.operator) ? ''
+                        : (f.operator === 'between' ? `${f.verdi} — ${f.verdi2}` : String(f.verdi ?? ''));
+                    return `
+                    <div class="liste-element">
+                        <div class="nr">${i + 1}</div>
+                        <div class="desc">
+                            <div class="primær">${escapeHtml(kildeVisning(f))} <em style="color:var(--text-secondary);font-weight:400;">${escapeHtml(operatorTekst(f.operator))}</em> ${escapeHtml(verdiTekst)}</div>
+                        </div>
+                        <div class="handlinger">
+                            <button onclick="slettInnebygd(${i})">Fjern</button>
+                        </div>
+                    </div>
+                `; }).join('');
+            }
+        }
+
+        function renderBruker() {
+            const container = document.getElementById('bruker-liste');
+            if (data.Brukerfiltre.length === 0) {
+                container.innerHTML = '<div class="tom-melding">Ingen bruker-justerbare filtre.</div>';
+            } else {
+                container.innerHTML = data.Brukerfiltre.map((f, i) => `
+                    <div class="liste-element">
+                        <div class="nr">${i + 1}</div>
+                        <div class="desc">
+                            <div class="primær">${escapeHtml(f.navn || f.id)}</div>
+                            <div class="sekundær">${escapeHtml(kildeVisning(f))} — ${escapeHtml(operatorTekst(f.operator))}</div>
+                        </div>
+                        <div class="handlinger">
+                            <button onclick="slettBruker(${i})">Fjern</button>
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function renderAggregater() {
+            const container = document.getElementById('aggregater-liste');
+            const agg = data.Gruppering?.aggregater || [];
+            if (agg.length === 0) {
+                container.innerHTML = '<div class="tom-melding">Ingen aggregater.</div>';
+            } else {
+                container.innerHTML = agg.map((a, i) => {
+                    const kol = data.Kolonner.find(k => k.id === a.kolonneId);
+                    return `
+                    <div class="liste-element">
+                        <div class="nr">${i + 1}</div>
+                        <div class="desc">
+                            <div class="primær">${escapeHtml(a.navn || `${a.type}(${a.kolonneId})`)}</div>
+                            <div class="sekundær">${escapeHtml(a.type)} på ${escapeHtml(kol?.navn || a.kolonneId)}</div>
+                        </div>
+                        <div class="handlinger">
+                            <button onclick="slettAggregat(${i})">Fjern</button>
+                        </div>
+                    </div>
+                `; }).join('');
+            }
+        }
+
+        function oppdaterAvhengigheter() {
+            // Fyll gruppePaa + sortKolonne + aggregat-kolonne med gjeldende kolonner
+            const kolAlt = ['<option value="">— ingen —</option>']
+                .concat(data.Kolonner.map(k => `<option value="${escapeHtml(k.id)}">${escapeHtml(k.navn || k.id)}</option>`));
+            const gpEl = document.getElementById('gruppePaa');
+            const skEl = document.getElementById('sortKolonne');
+            const akEl = document.getElementById('ny-aggregat-kolonne');
+            const gpValg = data.Gruppering?.gruppePaa || '';
+            const skValg = data.Sortering?.kolonneId || '';
+            gpEl.innerHTML = kolAlt.join('');
+            skEl.innerHTML = kolAlt.join('');
+            akEl.innerHTML = data.Kolonner.length === 0
+                ? '<option value="">— (ingen kolonner)</option>'
+                : data.Kolonner.map(k => `<option value="${escapeHtml(k.id)}">${escapeHtml(k.navn || k.id)}</option>`).join('');
+            gpEl.value = gpValg;
+            skEl.value = skValg;
+            document.getElementById('sortRetning').value = data.Sortering?.retning || 'asc';
+            document.getElementById('legg-til-aggregat-rad').style.display = data.Kolonner.length > 0 ? '' : 'none';
+        }
+
+        function idFor(prefix) {
+            let n = 1;
+            while (data.Kolonner.some(k => k.id === `${prefix}${n}`)
+                || data.Brukerfiltre.some(f => f.id === `${prefix}${n}`)) n++;
+            return `${prefix}${n}`;
+        }
+
+        window.leggTilKolonne = () => {
+            if (!kildeDef) return;
+            const type = document.getElementById('ny-kolonne-type').value;
+            const kilde = document.getElementById('ny-kolonne-kilde').value;
+            const navn = document.getElementById('ny-kolonne-navn').value.trim();
+            if (!kilde) return;
+            let kol;
+            if (type === 'meta') {
+                kol = { id: idFor('kol'), navn: navn || metaNavn(kilde), type: 'meta', kilde };
+                if (kilde === 'Opprettet' || kilde === 'Sist_endret') kol.format = 'dato';
+                if (kilde === 'Skjema_status') kol.format = 'status';
+            } else {
+                const [sek, felt] = kilde.split('|');
+                const alt = svarAlternativer().find(a => a.sekNr === sek && a.feltNr === felt);
+                kol = { id: idFor('kol'), navn: navn || (alt ? alt.tekst.replace(/\s*\([^)]*\)$/, '') : `${sek}.${felt}`), type: 'svar', seksjon: sek, felt };
+                if (alt?.feltType === 'Tall' || alt?.feltType === 'Valuta' || alt?.feltType === 'Skala') kol.format = 'nummer';
+                if (alt?.feltType === 'Dato') kol.format = 'dato';
+            }
+            data.Kolonner.push(kol);
+            document.getElementById('ny-kolonne-navn').value = '';
+            renderKolonner();
+        };
+
+        window.leggTilInnebygd = () => {
+            if (!kildeDef) return;
+            const type = document.getElementById('ny-innebygd-type').value;
+            const kilde = document.getElementById('ny-innebygd-kilde').value;
+            const operator = document.getElementById('ny-innebygd-operator').value;
+            const verdi = document.getElementById('ny-innebygd-verdi').value;
+            const verdi2 = document.getElementById('ny-innebygd-verdi2').value;
+            if (!kilde) return;
+            const filter = type === 'meta'
+                ? { type: 'meta', kilde, operator }
+                : { type: 'svar', seksjon: kilde.split('|')[0], felt: kilde.split('|')[1], operator };
+            if (!['tomt', 'ikkeTomt'].includes(operator)) filter.verdi = verdi;
+            if (operator === 'between') filter.verdi2 = verdi2;
+            data.Innebygde_filtre.push(filter);
+            document.getElementById('ny-innebygd-verdi').value = '';
+            document.getElementById('ny-innebygd-verdi2').value = '';
+            renderInnebygde();
+        };
+
+        window.leggTilBruker = () => {
+            if (!kildeDef) return;
+            const navn = document.getElementById('ny-bruker-navn').value.trim();
+            const type = document.getElementById('ny-bruker-type').value;
+            const kilde = document.getElementById('ny-bruker-kilde').value;
+            const operator = document.getElementById('ny-bruker-operator').value;
+            if (!navn || !kilde) { visStatus('Bruker-filter krever navn og kilde', 'feil'); return; }
+            const filter = type === 'meta'
+                ? { id: idFor('bf'), navn, type: 'meta', kilde, operator }
+                : { id: idFor('bf'), navn, type: 'svar', seksjon: kilde.split('|')[0], felt: kilde.split('|')[1], operator };
+            data.Brukerfiltre.push(filter);
+            document.getElementById('ny-bruker-navn').value = '';
+            renderBruker();
+        };
+
+        window.leggTilAggregat = () => {
+            const type = document.getElementById('ny-aggregat-type').value;
+            const kolonneId = document.getElementById('ny-aggregat-kolonne').value;
+            const navn = document.getElementById('ny-aggregat-navn').value.trim();
+            if (!kolonneId) return;
+            if (!data.Gruppering) data.Gruppering = { gruppePaa: '', aggregater: [] };
+            data.Gruppering.aggregater.push({ type, kolonneId, navn });
+            document.getElementById('ny-aggregat-navn').value = '';
+            renderAggregater();
+        };
+
+        window.flyttKolonne = (i, delta) => {
+            const ny = i + delta;
+            if (ny < 0 || ny >= data.Kolonner.length) return;
+            const t = data.Kolonner[i];
+            data.Kolonner[i] = data.Kolonner[ny];
+            data.Kolonner[ny] = t;
+            renderKolonner();
+        };
+        window.slettKolonne = (i) => {
+            const k = data.Kolonner[i];
+            data.Kolonner.splice(i, 1);
+            // Rydd referanser i gruppering, sortering, aggregater
+            if (data.Gruppering?.gruppePaa === k.id) data.Gruppering.gruppePaa = '';
+            if (data.Sortering?.kolonneId === k.id) data.Sortering = null;
+            if (data.Gruppering?.aggregater) {
+                data.Gruppering.aggregater = data.Gruppering.aggregater.filter(a => a.kolonneId !== k.id);
+            }
+            renderKolonner();
+            renderAggregater();
+        };
+        window.slettInnebygd = (i) => { data.Innebygde_filtre.splice(i, 1); renderInnebygde(); };
+        window.slettBruker = (i) => { data.Brukerfiltre.splice(i, 1); renderBruker(); };
+        window.slettAggregat = (i) => {
+            if (!data.Gruppering) return;
+            data.Gruppering.aggregater.splice(i, 1);
+            renderAggregater();
+        };
+
+        document.getElementById('gruppePaa').addEventListener('change', (e) => {
+            if (!data.Gruppering) data.Gruppering = { gruppePaa: '', aggregater: [] };
+            data.Gruppering.gruppePaa = e.target.value;
+            if (!data.Gruppering.gruppePaa && (!data.Gruppering.aggregater || data.Gruppering.aggregater.length === 0)) {
+                data.Gruppering = null;
+            }
+        });
+        document.getElementById('sortKolonne').addEventListener('change', (e) => {
+            if (!e.target.value) { data.Sortering = null; return; }
+            data.Sortering = { kolonneId: e.target.value, retning: document.getElementById('sortRetning').value };
+        });
+        document.getElementById('sortRetning').addEventListener('change', (e) => {
+            if (data.Sortering) data.Sortering.retning = e.target.value;
+        });
+
+        async function lastKildeDef(id) {
+            if (!id) { kildeDef = null; oppdaterKildeSelects(); return; }
+            try {
+                kildeDef = await api.get(`/api/skjematyper/${encodeURIComponent(id)}?rå=1`);
+                const info = document.getElementById('kilde-info');
+                const antFelt = (kildeDef.Seksjoner || []).reduce((s, seksjon) => s + (seksjon.Felter?.length || 0), 0);
+                info.textContent = `${kildeDef.Skjema_navn || id} — ${kildeDef.Seksjoner?.length || 0} seksjoner, ${antFelt} felter tilgjengelig.`;
+                info.style.display = '';
+                oppdaterKildeSelects();
+                renderKolonner();
+                renderInnebygde();
+                renderBruker();
+                renderAggregater();
+                document.getElementById('forhands-knapp').disabled = !rapporttypeId;
+            } catch (e) {
+                visStatus(`Kunne ikke laste kildeskjematype: ${e.message}`, 'feil');
+            }
+        }
+
+        document.getElementById('kildeskjematype').addEventListener('change', (e) => {
+            data.Kildeskjematype_id = e.target.value;
+            lastKildeDef(e.target.value);
+        });
+
+        let publikumEditor, eiereEditor;
+
+        window.lagre = async () => {
+            data.Rapport_navn = document.getElementById('navn').value.trim();
+            data.Beskrivelse = document.getElementById('beskrivelse').value;
+            data.Fase = document.getElementById('fase').value;
+            data.Kildeskjematype_id = document.getElementById('kildeskjematype').value;
+            if (!data.Rapport_navn) { visStatus('Rapport-navn er påkrevd', 'feil'); return; }
+            if (!data.Kildeskjematype_id) { visStatus('Kildeskjematype er påkrevd', 'feil'); return; }
+            try {
+                const res = await api.post('/api/rapporttyper', data);
+                visStatus('Lagret ✓', 'ok');
+                if (!data.Rapporttype_id) {
+                    // Nytt: redirect til edit-visning med id i url
+                    const nyId = res.Rapporttype_id;
+                    setTimeout(() => { location.href = `/rapporteditor.html?rapporttype_id=${encodeURIComponent(nyId)}`; }, 500);
+                }
+                data.Rapporttype_id = res.Rapporttype_id;
+                document.getElementById('slett-knapp').style.display = '';
+                document.getElementById('forhands-knapp').disabled = false;
+            } catch (e) {
+                visStatus(`Kunne ikke lagre: ${e.message}`, 'feil');
+            }
+        };
+
+        window.slett = async () => {
+            if (!data.Rapporttype_id) return;
+            if (!confirm(`Slette rapporttypen "${data.Rapport_navn}"?`)) return;
+            try {
+                await api.del(`/api/rapporttyper/${encodeURIComponent(data.Rapporttype_id)}`);
+                location.href = '/velgrapporttype.html';
+            } catch (e) {
+                visStatus(`Kunne ikke slette: ${e.message}`, 'feil');
+            }
+        };
+
+        window.forhandsvis = () => {
+            if (!data.Rapporttype_id) return;
+            window.open(`/rapport.html?rapporttype_id=${encodeURIComponent(data.Rapporttype_id)}`, '_blank');
+        };
+
+        function escapeHtml(s) {
+            return String(s ?? '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        async function init() {
+            const bruker = await hentInnloggetBruker();
+            if (!bruker) {
+                window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
+                return;
+            }
+            document.getElementById('upn').textContent = bruker.userDetails;
+
+            // Last skjematyper for kildevalg
+            try {
+                const alle = await api.get('/api/skjematyper');
+                const sel = document.getElementById('kildeskjematype');
+                sel.innerHTML = '<option value="">— velg —</option>' +
+                    alle.filter(t => t.ErEier)
+                        .map(t => `<option value="${escapeHtml(t.Skjematype_id)}">${escapeHtml(t.Skjema_navn)} (ID ${escapeHtml(t.Skjematype_id)})</option>`)
+                        .join('');
+            } catch (e) {
+                visStatus('Kunne ikke laste skjematyper: ' + e.message, 'feil');
+            }
+
+            // Bygg tilgang-editorer
+            const [rolleGrupper, teamNavn] = await Promise.all([
+                hentRolleGrupper(api).catch(() => []),
+                hentTeamNavn(api).catch(() => [])
+            ]);
+            publikumEditor = byggTilgangEditor(document.getElementById('publikum-editor'), data.Publikum, {
+                kompakt: true, api, rolleGrupper, teamNavn, visAlleTilgang: true,
+                onEndring: (ny) => { data.Publikum = ny; }
+            });
+            eiereEditor = byggTilgangEditor(document.getElementById('eiere-editor'), data.Eiere, {
+                kompakt: true, api, rolleGrupper, teamNavn,
+                onEndring: (ny) => { data.Eiere = ny; }
+            });
+
+            if (rapporttypeId) {
+                try {
+                    const eksisterende = await api.get(`/api/rapporttyper/${encodeURIComponent(rapporttypeId)}`);
+                    data = {
+                        ...data,
+                        ...eksisterende,
+                        Publikum: { Personer: [], Roller: [], Team: [], AlleTilgang: false, ...(eksisterende.Publikum || {}) },
+                        Eiere: { Personer: [], Roller: [], Team: [], ...(eksisterende.Eiere || {}) }
+                    };
+                    document.getElementById('navn').value = data.Rapport_navn || '';
+                    document.getElementById('beskrivelse').value = data.Beskrivelse || '';
+                    document.getElementById('fase').value = data.Fase || 'Produksjon';
+                    document.getElementById('kildeskjematype').value = data.Kildeskjematype_id || '';
+                    document.getElementById('tittel').textContent = data.Rapport_navn || 'Rapporttype';
+                    document.getElementById('slett-knapp').style.display = '';
+                    document.getElementById('forhands-knapp').disabled = false;
+                    // Rebuild tilgang-editors with loaded values
+                    publikumEditor = byggTilgangEditor(document.getElementById('publikum-editor'), data.Publikum, {
+                        kompakt: true, api, rolleGrupper, teamNavn, visAlleTilgang: true,
+                        onEndring: (ny) => { data.Publikum = ny; }
+                    });
+                    eiereEditor = byggTilgangEditor(document.getElementById('eiere-editor'), data.Eiere, {
+                        kompakt: true, api, rolleGrupper, teamNavn,
+                        onEndring: (ny) => { data.Eiere = ny; }
+                    });
+                    if (data.Kildeskjematype_id) await lastKildeDef(data.Kildeskjematype_id);
+                } catch (e) {
+                    visStatus(`Kunne ikke laste rapporttype: ${e.message}`, 'feil');
+                }
+            }
+        }
+
+        init();
+    </script>
+</body>
+</html>
