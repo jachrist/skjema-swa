@@ -334,7 +334,7 @@
     <div class="container">
         <div class="topp">
             <h1>Velg skjema</h1>
-            <a class="knapp sekundær" style="padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/velgrapporttype.html">📊 Rapporter</a>
+            <a id="knapp-rapporter" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/velgrapporttype.html">📊 Rapporter</a>
             <div class="brukerinfo">
                 <span class="upn" id="upn">…</span>
                 <button class="link-knapp" onclick="logUt()">Logg ut</button>
@@ -405,6 +405,7 @@
                 }
                 if (meg.kanOppretteSkjematype) {
                     document.getElementById('knapp-ny-skjematype').style.display = 'inline-flex';
+                    document.getElementById('knapp-rapporter').style.display = 'inline-flex';
                 }
             } catch (_) { /* ikke kritisk */ }
 
