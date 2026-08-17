@@ -21,6 +21,10 @@ const ROLLE_HOVEDLAERER = 'HOVEDLÆRER';
 // Azure Table property tåler 32 KiB — 30 KiB som trygg grense
 const LU_MAX_LENGDE = 30000;
 
+// FS avkorter studenterIKlasse stille ved 10 uten «first» (spec §6 funn 5).
+const STUDENTER_PER_KLASSE = 1000;
+const KLASSER_PER_SIDE = 50;
+
 function normaliserLuHtml(html) {
     if (!html) return '';
     return String(html)
@@ -50,9 +54,26 @@ function delAvPersonRoller(personroller, rolleKode) {
     })).filter(p => p.EP);
 }
 
-function transformer(undervisningsenheter) {
+/**
+ * Bygg FilterStudent-rader for én student under én filterkategori.
+ * Se docs/FILTERSTUDENT-SPEC.md §3.
+ */
+function filterRad(fk, fv, student, generasjon) {
+    return {
+        partitionKey: store.filterPk(fk, fv),
+        rowKey: String(student.EP).toLowerCase(),
+        FN: student.FN || '',
+        EN: student.EN || '',
+        EP: student.EP,
+        Termin: student.Termin || '',
+        G: generasjon
+    };
+}
+
+function transformer(undervisningsenheter, generasjon = '') {
     const emneRader = [];
     const studentRader = [];
+    const filterRader = [];
 
     for (const u of undervisningsenheter) {
         const tArstall = u.termin?.arstall;
@@ -96,9 +117,117 @@ function transformer(undervisningsenheter) {
                 EN: profil.navn?.etternavn || '',
                 EP: epost
             });
+
+            const student = {
+                FN: profil.navn?.fornavn || '',
+                EN: profil.navn?.etternavn || '',
+                EP: epost,
+                Termin: terminKort
+            };
+            // EK-radene er dagens EmneStudenter-rader med prefiks på nøkkelen.
+            filterRader.push(filterRad('EK', `${terminKort}|${ek}-${vk}`, student, generasjon));
+            filterRader.push(filterRad('ALLE', '', student, generasjon));
         }
     }
-    return { emneRader, studentRader };
+    return { emneRader, studentRader, filterRader };
+}
+
+/**
+ * Transformer klasser fra FS til FilterStudent-rader (KL/KU/SP/ALLE) samt
+ * metadata-rader for klasse- og kull-dropdownene.
+ *
+ * Klassens studieprogram kan ikke leses fra klasse-noden i FS og utledes
+ * derfor fra studentenes egne studieretter — se spec §6b funn 8. Er det mer
+ * enn ett program i en klasse, brytes antakelsen og det logges.
+ */
+function transformerKlasser(klasser, generasjon = '', log = () => {}) {
+    const filterRader = [];
+    const metaRader = [];
+    // Kull spenner over flere klasser, så metadata må akkumuleres — ellers
+    // overskriver siste klasse antallet fra de foregående.
+    const kullMeta = new Map();
+    let hoppetOver = 0;
+    let avkortet = 0;
+
+    for (const k of klasser) {
+        const kode = k?.kode;
+        if (!kode) continue;
+
+        const arstall = k.kull?.terminV2?.arstall;
+        const betegnelse = k.kull?.terminV2?.betegnelse?.kode;
+        if (!arstall || !betegnelse) continue;
+        const terminKort = terminer.kortKode(arstall, betegnelse);
+
+        const noder = k.studenterIKlasse?.nodes || [];
+        // Tomme klasser er utgåtte — de rydder seg selv bort ved at de ikke
+        // produserer rader. totalCount kan IKKE brukes her (spec §6 funn 2b).
+        if (noder.length === 0) { hoppetOver++; continue; }
+        if (noder.length >= STUDENTER_PER_KLASSE) avkortet++;
+
+        const klasseNavn = k.navnAlleSprak?.und || kode;
+        const kullNavn = k.kull?.navnAlleSprak?.no || '';
+
+        const studenter = [];
+        const programmer = new Set();
+        for (const n of noder) {
+            const ps = n?.programStudierett;
+            const profil = ps?.student?.personProfil;
+            const epost = profil?.institusjonsEpost || '';
+            const sp = ps?.studieprogram?.kode || '';
+            if (!epost || !sp) continue;
+            programmer.add(sp);
+            studenter.push({
+                FN: profil.navn?.fornavn || '',
+                EN: profil.navn?.etternavn || '',
+                EP: epost,
+                Termin: terminKort,
+                SP: sp,
+                SN: ps.studieprogram?.navnAlleSprak?.nb || ''
+            });
+        }
+        if (studenter.length === 0) { hoppetOver++; continue; }
+
+        if (programmer.size > 1) {
+            log(`refresh-fs: ADVARSEL — klasse "${kode}" (${terminKort}) har studenter fra ` +
+                `flere studieprogram: ${[...programmer].join(', ')}. Klassen splittes over ` +
+                `like mange KL-partisjoner. Se docs/FILTERSTUDENT-SPEC.md §6b funn 8.`);
+        }
+
+        for (const s of studenter) {
+            filterRader.push(filterRad('KL', `${s.SP}|${terminKort}|${kode}`, s, generasjon));
+            filterRader.push(filterRad('KU', `${s.SP}|${terminKort}`, s, generasjon));
+            filterRader.push(filterRad('SP', s.SP, s, generasjon));
+            filterRader.push(filterRad('ALLE', '', s, generasjon));
+        }
+
+        // Metadata for dropdownene — én rad per (klasse, program) og (kull, program)
+        for (const sp of programmer) {
+            const antall = studenter.filter(s => s.SP === sp).length;
+            const sn = studenter.find(s => s.SP === sp)?.SN || '';
+            metaRader.push({
+                partitionKey: 'KLASSE',
+                rowKey: store.trygtNokkelledd(`${sp}|${terminKort}|${kode}`),
+                Navn: `${klasseNavn} (${sp}, ${terminKort})`,
+                SP: sp, Termin: terminKort, Antall: antall, G: generasjon
+            });
+            const kullNokkel = store.trygtNokkelledd(`${sp}|${terminKort}`);
+            const eksisterende = kullMeta.get(kullNokkel);
+            if (eksisterende) {
+                eksisterende.Antall += antall;
+                if (!eksisterende.Navn && kullNavn) eksisterende.Navn = `${kullNavn} (${terminKort})`;
+            } else {
+                kullMeta.set(kullNokkel, {
+                    partitionKey: 'KULL',
+                    rowKey: kullNokkel,
+                    Navn: `${kullNavn || sn || sp} (${terminKort})`,
+                    SP: sp, Termin: terminKort, Antall: antall, G: generasjon
+                });
+            }
+        }
+    }
+
+    metaRader.push(...kullMeta.values());
+    return { filterRader, metaRader, hoppetOver, avkortet };
 }
 
 async function ryddGamleTerminer(aktiveKortKoder) {
@@ -140,8 +269,31 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     const enheter = await fs.hentUndervisningsenheter(terminIder, 200, luTermin);
     log(`refresh-fs: hentet ${enheter.length} undervisningsenheter fra FS`);
 
-    const { emneRader, studentRader } = transformer(enheter);
+    // Generasjonsmarkør for FilterStudent-ryddingen (spec §5)
+    const generasjon = new Date().toISOString();
+
+    const { emneRader, studentRader, filterRader: emneFilterRader } = transformer(enheter, generasjon);
     log(`refresh-fs: ${emneRader.length} emne-rader, ${studentRader.length} student-rader`);
+
+    // Klasser/kull/studieprogram — egen FS-spørring (spec §6)
+    let klasseFilterRader = [];
+    let klasseMetaRader = [];
+    try {
+        const klasser = await fs.hentKlasser(KLASSER_PER_SIDE, STUDENTER_PER_KLASSE);
+        log(`refresh-fs: hentet ${klasser.length} klasser fra FS`);
+        const kr = transformerKlasser(klasser, generasjon, log);
+        klasseFilterRader = kr.filterRader;
+        klasseMetaRader = kr.metaRader;
+        log(`refresh-fs: ${klasseFilterRader.length} klasse-filterrader, ` +
+            `${klasseMetaRader.length} metarader, ${kr.hoppetOver} klasser uten studenter hoppet over`);
+        if (kr.avkortet > 0) {
+            log(`refresh-fs: ADVARSEL — ${kr.avkortet} klasse(r) traff grensen på ` +
+                `${STUDENTER_PER_KLASSE} studenter og kan være avkortet`);
+        }
+    } catch (e) {
+        // Klasse-delen skal ikke velte emne-refreshen mens den er ny
+        log(`refresh-fs: FEIL i klasse-henting (emner er upåvirket): ${e.message}`);
+    }
 
     const aktiveKortKoder = aktive.map(t => t.kort);
     for (const tk of aktiveKortKoder) {
@@ -157,8 +309,21 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     await store.upsertBatch(store.TABELL_STUDENTER, studentRader);
     await ryddGamleTerminer(aktiveKortKoder);
 
+    // FilterStudent: skriv ALLE nye rader først, rydd så bort forrige
+    // generasjon. Rekkefølgen gir null tomt vindu for brukerne (spec §5).
+    const alleFilterRader = [...emneFilterRader, ...klasseFilterRader, ...klasseMetaRader];
+    let filterSlettet = 0;
+    if (alleFilterRader.length > 0) {
+        const { lagret } = await store.upsertBatch(store.TABELL_FILTERSTUDENT, alleFilterRader);
+        filterSlettet = await store.slettGamleGenerasjoner(store.TABELL_FILTERSTUDENT, generasjon);
+        log(`refresh-fs: FilterStudent — ${lagret} rader skrevet, ${filterSlettet} gamle slettet`);
+    } else {
+        log('refresh-fs: ADVARSEL — ingen FilterStudent-rader bygget, hopper over rydding');
+    }
+
     await store.settMetadata('FS-Emner', { antallRader: emneRader.length, status: 'ok' });
     await store.settMetadata('FS-Studenter', { antallRader: studentRader.length, status: 'ok' });
+    await store.settMetadata('FS-FilterStudent', { antallRader: alleFilterRader.length, status: 'ok' });
 
     const varighet = ((Date.now() - startTid) / 1000).toFixed(1);
     log(`refresh-fs: fullført på ${varighet} s`);
@@ -166,8 +331,11 @@ async function refreshFS(log = (...a) => console.log(...a)) {
         terminer: aktiveKortKoder,
         antallEmner: emneRader.length,
         antallStudenter: studentRader.length,
+        antallFilterRader: alleFilterRader.length,
+        antallKlasseRader: klasseFilterRader.length,
+        antallSlettetGammel: filterSlettet,
         varighetSekunder: Number(varighet)
     };
 }
 
-module.exports = { refreshFS, transformer, normaliserLuHtml };
+module.exports = { refreshFS, transformer, transformerKlasser, normaliserLuHtml };

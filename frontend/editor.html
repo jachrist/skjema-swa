@@ -534,8 +534,21 @@
                 navn: 'Studenter',
                 beskrivelse: 'Studenter (fra FS)',
                 filtre: [
-                    { navn: 'Emne', beskrivelse: 'Studenter på et emne. Verdi: "{Termin}|{EK}-{VK}" eller "{EK}-{VK}" (f.eks. "26V|MILM2301-1").' }
+                    { navn: 'Emne', beskrivelse: 'Studenter på et emne. Verdi: "{Termin}|{EK}-{VK}" eller "{EK}-{VK}" (f.eks. "26V|MILM2301-1").' },
+                    { navn: 'Klasse', beskrivelse: 'Studenter i en klasse. Verdi: bruk feltreferanse til et Klasser-felt (f.eks. "EA|26H|EA 26").' },
+                    { navn: 'Kull', beskrivelse: 'Studenter i et kull. Verdi: bruk feltreferanse til et Kull-felt (f.eks. "EA|26H").' },
+                    { navn: 'Studieprogram', beskrivelse: 'Studenter på et studieprogram. Verdi: studieprogramkode (f.eks. "EA").' }
                 ]
+            },
+            {
+                navn: 'Klasser',
+                beskrivelse: 'Aktive klasser med studenter (fra FS). Bruk sammen med Studenter{Klasse}.',
+                filtre: []
+            },
+            {
+                navn: 'Kull',
+                beskrivelse: 'Aktive kull med studenter (fra FS). Bruk sammen med Studenter{Kull}.',
+                filtre: []
             },
             {
                 navn: 'Studieprogrammer',

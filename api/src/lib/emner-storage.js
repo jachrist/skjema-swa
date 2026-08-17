@@ -14,7 +14,32 @@ const { odata } = require('@azure/data-tables');
 
 const TABELL_EMNER = 'Emner';
 const TABELL_STUDENTER = 'EmneStudenter';
+const TABELL_FILTERSTUDENT = 'FilterStudent';
 const TABELL_META = 'CacheMetadata';
+
+// Tegn som ikke er lovlige i PartitionKey/RowKey i Azure Table Storage.
+// Klassekoder og -navn kommer fra FS og er friere enn emnekoder, så de
+// må vaskes før de brukes som nøkkelledd.
+
+function trygtNokkelledd(s) {
+    let ut = '';
+    for (const tegn of String(s ?? '')) {
+        if (tegn === '/' || tegn === '\\' || tegn === '#' || tegn === '?') { ut += '_'; continue; }
+        const kode = tegn.codePointAt(0);
+        if (kode < 0x20 || (kode >= 0x7F && kode <= 0x9F)) { ut += '_'; continue; }
+        ut += tegn;
+    }
+    return ut.trim();
+}
+
+/**
+ * Bygg PartitionKey for FilterStudent: "{FK}|{FV}", eller bare "{FK}"
+ * når filterverdien er tom (gjelder ALLE-partisjonen).
+ */
+function filterPk(fk, fv) {
+    const v = trygtNokkelledd(fv);
+    return v ? `${trygtNokkelledd(fk)}|${v}` : trygtNokkelledd(fk);
+}
 
 async function tabell(navn) {
     const t = tabellKlient(navn);
@@ -182,6 +207,75 @@ async function hentStudenterForEmne(emneId, { termin } = {}) {
     return result;
 }
 
+// ---------------- FilterStudent ----------------
+
+/**
+ * Studenter for ett filter — én partisjonsspørring.
+ *
+ * @param {string} fk  filterkategori: EK | KL | KU | SP | ALLE
+ * @param {string} fv  filterverdi (tom for ALLE)
+ */
+async function hentStudenterForFilter(fk, fv) {
+    const t = await tabell(TABELL_FILTERSTUDENT);
+    const pk = filterPk(fk, fv);
+    const result = [];
+    for await (const row of t.listEntities({ queryOptions: { filter: odata`PartitionKey eq ${pk}` } })) {
+        result.push({
+            EP: row.EP,
+            FN: row.FN,
+            EN: row.EN,
+            Termin: row.Termin || ''
+        });
+    }
+    return result;
+}
+
+/**
+ * Metadata-oppslag for dropdown-lister: klasser og kull.
+ * Ligger som egne partisjoner i samme tabell (PK="KLASSE" / "KULL"),
+ * med RowKey = filterverdien som Studenter-filteret skal ta imot.
+ */
+async function hentFilterMeta(partisjon) {
+    const t = await tabell(TABELL_FILTERSTUDENT);
+    const result = [];
+    for await (const row of t.listEntities({ queryOptions: { filter: odata`PartitionKey eq ${partisjon}` } })) {
+        result.push({
+            Verdi: row.rowKey,
+            Navn: row.Navn || row.rowKey,
+            SP: row.SP || '',
+            Termin: row.Termin || '',
+            Antall: row.Antall ?? 0
+        });
+    }
+    return result;
+}
+
+/**
+ * Slett alle rader som ikke tilhører gjeldende generasjon.
+ *
+ * Kalles ETTER at nye rader er skrevet, slik at det aldri finnes et vindu
+ * der tabellen er tom for brukerne. Full enumerering, men kun i nattjobben —
+ * samme kostnadsklasse som listPartisjoner() allerede har.
+ */
+async function slettGamleGenerasjoner(navn, gjeldendeG) {
+    const t = await tabell(navn);
+    const perPk = new Map();
+    for await (const e of t.listEntities()) {
+        if (e.G === gjeldendeG) continue;
+        if (!perPk.has(e.partitionKey)) perPk.set(e.partitionKey, []);
+        perPk.get(e.partitionKey).push({ partitionKey: e.partitionKey, rowKey: e.rowKey });
+    }
+    let slettet = 0;
+    for (const gruppe of perPk.values()) {
+        for (let i = 0; i < gruppe.length; i += 100) {
+            const chunk = gruppe.slice(i, i + 100);
+            await t.submitTransaction(chunk.map(x => ['delete', x]));
+            slettet += chunk.length;
+        }
+    }
+    return slettet;
+}
+
 async function hentAlleStudieprogrammer() {
     const alle = await hentAlleEmner();
     const set = new Map();
@@ -198,8 +292,12 @@ async function hentAlleStudieprogrammer() {
 module.exports = {
     TABELL_EMNER,
     TABELL_STUDENTER,
+    TABELL_FILTERSTUDENT,
+    filterPk,
+    trygtNokkelledd,
     listPartisjoner,
     slettAlleIPartisjon,
+    slettGamleGenerasjoner,
     upsertBatch,
     settMetadata,
     hentAlleEmner,
@@ -207,5 +305,7 @@ module.exports = {
     hentEmnerForUpn,
     hentStudenterForEmne,
     hentAlleStudenter,
+    hentStudenterForFilter,
+    hentFilterMeta,
     hentAlleStudieprogrammer
 };

@@ -173,7 +173,75 @@ async function hentUndervisningsenheter(terminIder, sidestorrelse = 200, luTermi
     return alle;
 }
 
+/**
+ * Hent alle aktive klasser med kull og studenter. Paginerer via cursor.
+ *
+ * Feltvalg er begrenset til det som er verifisert mot FS 2026-08-17
+ * (se docs/FILTERSTUDENT-SPEC.md §6):
+ *   - klasse.navnAlleSprak.und   — klassenavnet ligger under "und", ikke "nb"
+ *   - kull.navnAlleSprak.no      — kullnavnet under "no"
+ *   - betegnelse.kode            — gir "HØST" (navnAlleSprak.nb gir "Høst",
+ *                                  som ikke matcher terminer.kortKode)
+ *
+ * studenterIKlasse MÅ ha «first» — uten den avkorter FS stille ved 10.
+ */
+async function hentKlasser(sidestorrelse = 50, studenterPerKlasse = 1000) {
+    const query = `
+        query Klasser($first: Int!, $after: String, $studFirst: Int!, $eier: String!) {
+            klasser(
+                filter: { eierOrganisasjonskode: $eier, erAktiv: true }
+                first: $first
+                after: $after
+            ) {
+                pageInfo { hasNextPage endCursor }
+                nodes {
+                    kode
+                    navnAlleSprak { und }
+                    kull {
+                        terminV2 { arstall betegnelse { kode } }
+                        navnAlleSprak { no }
+                    }
+                    studenterIKlasse(first: $studFirst) {
+                        totalCount
+                        nodes {
+                            programStudierett {
+                                studieprogram { kode navnAlleSprak { nb } }
+                                student {
+                                    personProfil {
+                                        navn { fornavn etternavn }
+                                        institusjonsEpost
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    `;
+
+    const alle = [];
+    let cursor = '';
+    let harMer = true;
+
+    while (harMer) {
+        const data = await kallGraphQl(query, {
+            first: sidestorrelse,
+            after: cursor || null,
+            studFirst: studenterPerKlasse,
+            eier: FS_EIER_ORG_KODE
+        });
+        const side = data.klasser;
+        alle.push(...(side?.nodes || []));
+        harMer = side?.pageInfo?.hasNextPage === true;
+        cursor = side?.pageInfo?.endCursor || '';
+        if (harMer && !cursor) break;
+    }
+    return alle;
+}
+
 module.exports = {
     hentTerminer,
-    hentUndervisningsenheter
+    hentUndervisningsenheter,
+    hentKlasser
 };

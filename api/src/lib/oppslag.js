@@ -15,6 +15,7 @@ const postnumreStorage = require('./postnumre-storage');
 const skjemaStorage = require('./skjema-storage');
 const rollerStorage = require('./roller-storage');
 const emnerStorage = require('./emner-storage');
+const terminer = require('./terminer');
 
 const IKKE_IMPLEMENTERT = new Set([
     'Team', 'Avdelinger'
@@ -38,6 +39,10 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
             return await _hentEmner(filterbegrep, filterverdi);
         case 'Studenter':
             return await _hentStudenter(filterbegrep, filterverdi);
+        case 'Klasser':
+            return await _hentKlasser();
+        case 'Kull':
+            return await _hentKull();
         case 'Studieprogrammer':
             return await _hentStudieprogrammer();
         default:
@@ -88,7 +93,7 @@ async function _hentPersoner(filterbegrep, filterverdi, log) {
     }
     if (filterbegrep === 'EmneStudenter') {
         if (!filterverdi) return [];
-        const studenter = await emnerStorage.hentStudenterForEmne(filterverdi);
+        const studenter = await _studenterForEmne(String(filterverdi));
         return studenter.map(s => ({
             Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
             Verdi: s.EP,
@@ -117,26 +122,72 @@ async function _hentEmner(filterbegrep, filterverdi) {
     });
 }
 
-async function _hentStudenter(filterbegrep, filterverdi) {
-    // Filter: Emne={EK}-{VK}. Uten filter: alle unike studenter (dedup på UPN).
-    let studenter;
-    if (filterbegrep === 'Emne' && filterverdi) {
-        studenter = await emnerStorage.hentStudenterForEmne(String(filterverdi));
-    } else {
-        studenter = await emnerStorage.hentAlleStudenter();
+// Filterbegrep i skjemadefinisjonene → filterkategori i FilterStudent-tabellen
+const STUDENT_FILTERKATEGORI = {
+    Emne: 'EK',
+    Klasse: 'KL',
+    Kull: 'KU',
+    Studieprogram: 'SP'
+};
+
+/**
+ * Studenter for ett emne. Verdien kan være "{Termin}|{EK}-{VK}" eller bare
+ * "{EK}-{VK}" — sistnevnte er formatet eldre skjemadefinisjoner bruker, og
+ * kan ikke slås opp direkte fordi terminen er en del av partisjonsnøkkelen.
+ * Da spørres de aktive terminene i stedet (tre partisjonsspørringer).
+ */
+async function _studenterForEmne(verdi) {
+    if (verdi.includes('|')) {
+        return await emnerStorage.hentStudenterForFilter('EK', verdi);
     }
-    // Dedupliser: samme student kan være på flere emner
+    const aktive = terminer.aktiveTerminer();
+    const treff = await Promise.all(
+        aktive.map(t => emnerStorage.hentStudenterForFilter('EK', `${t.kort}|${verdi}`))
+    );
+    return treff.flat();
+}
+
+async function _hentStudenter(filterbegrep, filterverdi) {
+    // Filtre: Emne, Klasse, Kull, Studieprogram. Uten filter: alle studenter.
+    let studenter;
+    const fk = STUDENT_FILTERKATEGORI[filterbegrep];
+
+    if (fk === 'EK' && filterverdi) {
+        studenter = await _studenterForEmne(String(filterverdi));
+    } else if (fk && filterverdi) {
+        studenter = await emnerStorage.hentStudenterForFilter(fk, String(filterverdi));
+    } else {
+        studenter = await emnerStorage.hentStudenterForFilter('ALLE', '');
+    }
+
+    // Dedupliser: samme student kan ligge under flere terminer/emner
     const dedup = new Map();
     for (const s of studenter) {
         const nokkel = String(s.EP || '').toLowerCase();
         if (!nokkel || dedup.has(nokkel)) continue;
         dedup.set(nokkel, s);
     }
-    return [...dedup.values()].map(s => ({
-        Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
-        Verdi: s.EP,
-        FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
-    }));
+    return [...dedup.values()]
+        .map(s => ({
+            Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Verdi: s.EP,
+            FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
+        }))
+        .sort((a, b) => a.Tekst.localeCompare(b.Tekst, 'nb'));
+}
+
+async function _hentKlasser() {
+    const alle = await emnerStorage.hentFilterMeta('KLASSE');
+    return alle
+        .map(k => ({ Tekst: `${k.Navn} — ${k.Antall} studenter`, Verdi: k.Verdi, SP: k.SP, Termin: k.Termin }))
+        .sort((a, b) => a.Tekst.localeCompare(b.Tekst, 'nb'));
+}
+
+async function _hentKull() {
+    const alle = await emnerStorage.hentFilterMeta('KULL');
+    return alle
+        .map(k => ({ Tekst: k.Navn, Verdi: k.Verdi, SP: k.SP, Termin: k.Termin }))
+        .sort((a, b) => a.Tekst.localeCompare(b.Tekst, 'nb'));
 }
 
 async function _hentStudieprogrammer() {
