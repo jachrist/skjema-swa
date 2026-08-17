@@ -6,15 +6,29 @@
  *   POST   /api/rapporttyper           — opprett/oppdater (admin eller Skjemaskaper)
  *   DELETE /api/rapporttyper/:id       — slett (eier eller admin)
  *
- * Auth via SWA. Bruker samme tilgangsmodell som skjematyper (Publikum/Eiere).
+ * Auth via SWA. Bruker samme tilgangsmodell som skjematyper (Publikum/Eiere),
+ * men hele rapport-funksjonaliteten er i tillegg låst til admin/Skjemaskaper
+ * mens den er i Utvikling-fase — se `krevSkjemaskaper`.
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const rapportStorage = require('../lib/rapport-storage');
 const skjemaStorage = require('../lib/skjema-storage');
-const { filtrerTyperPåTilgang } = require('../lib/tilgang');
-const rollerStorage = require('../lib/roller-storage');
+const { filtrerTyperPåTilgang, erSkjemaskaper } = require('../lib/tilgang');
 const hendelser = require('../lib/hendelser-storage');
+
+/**
+ * Felles inngangssjekk for alle rapport-endepunkt: innlogget + admin/Skjemaskaper.
+ * Returnerer { upn } ved OK, eller { svar } med ferdig HTTP-respons ved avvisning.
+ */
+async function krevSkjemaskaper(request) {
+    const upn = hentInnloggetUpn(request);
+    if (!upn) return { svar: { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } } };
+    if (!await erSkjemaskaper(upn)) {
+        return { svar: { status: 403, jsonBody: { status: 'avvist', melding: 'Rapporter er foreløpig forbeholdt admin og rollen "Skjemaskaper"' } } };
+    }
+    return { upn };
+}
 
 async function nesteRapporttypeId() {
     const alle = await rapportStorage.hentAlleRapporttyper();
@@ -53,8 +67,8 @@ app.http('mineRapporttyper', {
     authLevel: 'anonymous',
     route: 'rapporttyper',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        const { upn, svar } = await krevSkjemaskaper(request);
+        if (svar) return svar;
 
         try {
             const alle = await rapportStorage.hentAlleRapporttyper();
@@ -101,8 +115,8 @@ app.http('hentRapporttype', {
     authLevel: 'anonymous',
     route: 'rapporttyper/{id}',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        const { upn, svar } = await krevSkjemaskaper(request);
+        if (svar) return svar;
 
         try {
             const id = request.params.id;
@@ -131,18 +145,14 @@ app.http('lagreRapporttype', {
     authLevel: 'anonymous',
     route: 'rapporttyper',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        const { upn, svar } = await krevSkjemaskaper(request);
+        if (svar) return svar;
 
         try {
             const body = await request.json();
             let erNy = false;
             if (!body.Rapporttype_id) {
-                const admin = erAdmin(upn);
-                const skjemaskaper = admin || await rollerStorage.erMedlem('Skjemaskaper', upn);
-                if (!skjemaskaper) {
-                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin eller rollen "Skjemaskaper" for å opprette ny rapporttype' } };
-                }
+                // Selve opprettelses-kravet (admin/Skjemaskaper) dekkes av krevSkjemaskaper
                 body.Rapporttype_id = await nesteRapporttypeId();
                 erNy = true;
                 if (!body.Eiere || typeof body.Eiere !== 'object') body.Eiere = { Personer: [], Roller: [], Team: [] };
@@ -186,8 +196,8 @@ app.http('slettRapporttype', {
     authLevel: 'anonymous',
     route: 'rapporttyper/{id}',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        const { upn, svar } = await krevSkjemaskaper(request);
+        if (svar) return svar;
 
         try {
             const id = request.params.id;

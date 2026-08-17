@@ -274,7 +274,11 @@
                 alle = await api.get('/api/rapporttyper');
                 filtrer();
             } catch (e) {
-                visStatus('Kunne ikke hente rapporttyper: ' + e.message, 'feil');
+                if (e.status === 403) {
+                    visStatus('Rapporter er foreløpig forbeholdt brukere med rollen "Skjemaskaper". Ta kontakt med systemansvarlig hvis du trenger tilgang.', 'feil');
+                } else {
+                    visStatus('Kunne ikke hente rapporttyper: ' + e.message, 'feil');
+                }
             }
         }
 

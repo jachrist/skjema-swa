@@ -8,6 +8,24 @@
  */
 const rollerStorage = require('./roller-storage');
 const teamStorage = require('./team-storage');
+const { erAdmin } = require('./auth');
+
+/**
+ * Skjemaskaper-gate: admin, eller medlem av rollen "Skjemaskaper" (uansett omfang).
+ *
+ * Brukes til å avgjøre hvem som får bruke rapport-funksjonaliteten i det hele
+ * tatt — i tillegg til den vanlige Publikum/Eiere-tilgangen per rapporttype.
+ * Feiler lukket: hvis rolleoppslaget kaster, gis ikke tilgang.
+ *
+ * @param {string} upn
+ * @returns {Promise<boolean>}
+ */
+async function erSkjemaskaper(upn) {
+    if (!upn) return false;
+    if (erAdmin(upn)) return true;
+    try { return await rollerStorage.erMedlem('Skjemaskaper', upn); }
+    catch (_) { return false; }
+}
 
 /**
  * Sjekk om upn har direkte tilgang via Personer-listen i en tilgangsstruktur.
@@ -94,5 +112,6 @@ module.exports = {
     harPersonligTilgang,
     harRolleTilgang,
     harTeamTilgang,
-    filtrerTyperPåTilgang
+    filtrerTyperPåTilgang,
+    erSkjemaskaper
 };

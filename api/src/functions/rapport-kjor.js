@@ -4,7 +4,8 @@
  *   POST /api/rapport/kjor
  *   Body: { Rapporttype_id, brukerVerdier?: { <filterId>: <verdi> } }
  *
- * Krever publikum- eller eier-tilgang på rapporttypen. Motoren opererer på
+ * Krever admin/Skjemaskaper (rapport-funksjonaliteten er i Utvikling-fase) i
+ * tillegg til publikum- eller eier-tilgang på rapporttypen. Motoren opererer på
  * dekrypterte, fullt formaterte skjemaer.
  */
 const { app } = require('@azure/functions');
@@ -12,7 +13,7 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const rapportStorage = require('../lib/rapport-storage');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
-const { filtrerTyperPåTilgang } = require('../lib/tilgang');
+const { filtrerTyperPåTilgang, erSkjemaskaper } = require('../lib/tilgang');
 const kryptering = require('../lib/kryptering');
 const nokkelStorage = require('../lib/nokkel-storage');
 const rapportMotor = require('../lib/rapport-motor');
@@ -36,6 +37,9 @@ app.http('kjorRapport', {
     handler: async (request, context) => {
         const upn = hentInnloggetUpn(request);
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!await erSkjemaskaper(upn)) {
+            return { status: 403, jsonBody: { status: 'avvist', melding: 'Rapporter er foreløpig forbeholdt admin og rollen "Skjemaskaper"' } };
+        }
 
         try {
             const body = await request.json();

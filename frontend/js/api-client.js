@@ -22,7 +22,9 @@ async function utfør(path, options = {}, { hopperOver401 = false } = {}) {
     }
     if (!r.ok) {
         const feil = await les(r);
-        throw new Error(typeof feil === 'string' ? feil : (feil.melding || `${r.status} ${r.statusText}`));
+        const e = new Error(typeof feil === 'string' ? feil : (feil.melding || `${r.status} ${r.statusText}`));
+        e.status = r.status;
+        throw e;
     }
     return await les(r);
 }
