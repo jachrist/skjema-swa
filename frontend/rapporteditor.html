@@ -282,8 +282,8 @@
                 </select>
                 <select id="ny-innebygd-kilde"></select>
                 <select id="ny-innebygd-operator"></select>
-                <input type="text" id="ny-innebygd-verdi" placeholder="Verdi">
-                <input type="text" id="ny-innebygd-verdi2" placeholder="…til (for mellom)" style="display:none;">
+                <input type="text" id="ny-innebygd-verdi" placeholder="Verdi (dato: idag, idag+7, idag-30)">
+                <input type="text" id="ny-innebygd-verdi2" placeholder="…til (dato: idag+N)" style="display:none;">
                 <button class="knapp primær liten" onclick="leggTilInnebygd()">Legg til</button>
             </div>
         </section>
@@ -420,18 +420,18 @@
             { verdi: 'Sist_endret', tekst: 'Sist endret' }
         ];
         const OPERATOR_ALTERNATIVER = [
-            { verdi: 'eq', tekst: 'er lik' },
-            { verdi: 'neq', tekst: 'er ikke lik' },
+            { verdi: 'eq', tekst: '= (er lik)' },
+            { verdi: 'neq', tekst: '≠ (er ikke lik)' },
+            { verdi: 'gt', tekst: '> (større / senere)' },
+            { verdi: 'gte', tekst: '≥ (større-eller-lik / senere-eller-lik)' },
+            { verdi: 'lt', tekst: '< (mindre / tidligere)' },
+            { verdi: 'lte', tekst: '≤ (mindre-eller-lik / tidligere-eller-lik)' },
+            { verdi: 'between', tekst: '⇔ mellom' },
             { verdi: 'contains', tekst: 'inneholder' },
             { verdi: 'startsWith', tekst: 'starter med' },
             { verdi: 'endsWith', tekst: 'slutter med' },
             { verdi: 'in', tekst: 'er en av (komma-separert)' },
             { verdi: 'notIn', tekst: 'er ikke en av' },
-            { verdi: 'gt', tekst: 'større enn' },
-            { verdi: 'gte', tekst: 'større enn eller lik' },
-            { verdi: 'lt', tekst: 'mindre enn' },
-            { verdi: 'lte', tekst: 'mindre enn eller lik' },
-            { verdi: 'between', tekst: 'mellom' },
             { verdi: 'tomt', tekst: 'er tom' },
             { verdi: 'ikkeTomt', tekst: 'er ikke tom' }
         ];

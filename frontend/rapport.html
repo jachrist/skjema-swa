@@ -276,7 +276,8 @@
         function hintTekst(f) {
             const op = f.operator;
             if (op === 'in' || op === 'notIn') return 'A, B, C';
-            if (op === 'between') return 'lav — se motoren';
+            if (op === 'between') return 'fra-verdi (dato: idag-7)';
+            if (['eq','neq','gt','gte','lt','lte'].includes(op)) return 'verdi (dato: idag, idag+7)';
             return '';
         }
 

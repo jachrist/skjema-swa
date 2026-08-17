@@ -110,18 +110,27 @@ function verdiMatcher(rå, operator, ref, ref2) {
     for (const v of arr) {
         const nv = normaliserForSammenligning(v);
         const nref = normaliserForSammenligning(ref);
+        // Dato-toleranse: ref "YYYY-MM-DD" matcher verdier som starter med samme dato
+        // (typisk ISO-tidsstempel "2026-08-17T08:00:00Z" mot dato "2026-08-17").
+        const refErDato = /^\d{4}-\d{2}-\d{2}$/.test(String(ref ?? '').trim());
+        const vErTidsstempel = refErDato && /^\d{4}-\d{2}-\d{2}[T ]/.test(String(v ?? ''));
         switch (operator) {
-            case 'eq': if (nv === nref) return true; break;
-            case 'neq': if (nv !== nref) return true; break;
+            case 'eq':
+                if (nv === nref) return true;
+                if (vErTidsstempel && String(v).startsWith(String(ref).trim())) return true;
+                break;
+            case 'neq':
+                if (nv !== nref && !(vErTidsstempel && String(v).startsWith(String(ref).trim()))) return true;
+                break;
             case 'contains': if (nv.includes(nref)) return true; break;
             case 'startsWith': if (nv.startsWith(nref)) return true; break;
             case 'endsWith': if (nv.endsWith(nref)) return true; break;
             case 'tomt': if (nv === '') return true; break;
             case 'ikkeTomt': if (nv !== '') return true; break;
-            case 'gt': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b) && a > b) return true; break; }
-            case 'gte': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b) && a >= b) return true; break; }
-            case 'lt': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b) && a < b) return true; break; }
-            case 'lte': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b) && a <= b) return true; break; }
+            case 'gt': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b)) { if (a > b) return true; } else if (String(v) > String(ref)) return true; break; }
+            case 'gte': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b)) { if (a >= b) return true; } else if (String(v) >= String(ref)) return true; break; }
+            case 'lt': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b)) { if (a < b) return true; } else if (String(v) < String(ref)) return true; break; }
+            case 'lte': { const a = tilTall(v), b = tilTall(ref); if (!isNaN(a) && !isNaN(b)) { if (a <= b) return true; } else if (String(v) <= String(ref)) return true; break; }
             case 'between': {
                 const a = tilTall(v), lo = tilTall(ref), hi = tilTall(ref2);
                 if (!isNaN(a) && !isNaN(lo) && !isNaN(hi) && a >= lo && a <= hi) return true;
