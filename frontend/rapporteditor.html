@@ -197,8 +197,8 @@
             <div class="rad">
                 <label for="fase">Fase</label>
                 <select id="fase">
-                    <option value="Utvikling">Utvikling — kun eiere ser den</option>
-                    <option value="Produksjon" selected>Produksjon — alle med tilgang ser den</option>
+                    <option value="Utvikling" selected>Utvikling — kun eiere ser den</option>
+                    <option value="Produksjon">Produksjon — alle med tilgang ser den</option>
                 </select>
             </div>
             <div class="rad">
@@ -397,7 +397,8 @@
                 for (const f of (s.Felter || [])) {
                     if (f.Type === 'Informasjon') continue;
                     const feltNr = String(f.Nummer).padStart(2, '0');
-                    const tekst = (f.Tekst?.Innhold || f.Tekst || '').toString().substring(0, 60);
+                    const rå = f.Tekst?.Verdi || f.Tekst?.Innhold || '';
+                    const tekst = String(rå).replace(/[*_`#]/g, '').split('\n')[0].trim().substring(0, 60) || '(uten tittel)';
                     ut.push({
                         verdi: `${sekNr}|${feltNr}`,
                         tekst: `${sekNr}.${feltNr} — ${tekst} (${f.Type})`,
@@ -829,7 +830,25 @@
                         kompakt: true, api, rolleGrupper, teamNavn,
                         onEndring: (ny) => { data.Eiere = ny; }
                     });
-                    if (data.Kildeskjematype_id) await lastKildeDef(data.Kildeskjematype_id);
+                    if (data.Kildeskjematype_id) {
+                        await lastKildeDef(data.Kildeskjematype_id);
+                        // Rydd opp kolonner som fikk "[object Object]" som navn i tidligere versjon
+                        const alt = svarAlternativer();
+                        let ryddet = 0;
+                        for (const kol of data.Kolonner) {
+                            if (kol.type === 'svar' && (kol.navn || '').includes('[object Object]')) {
+                                const m = alt.find(a => a.sekNr === kol.seksjon && a.feltNr === String(kol.felt).padStart(2, '0'));
+                                if (m) {
+                                    kol.navn = m.tekst.replace(/\s*\([^)]*\)$/, '');
+                                    ryddet++;
+                                }
+                            }
+                        }
+                        if (ryddet > 0) {
+                            renderKolonner();
+                            visStatus(`Ryddet ${ryddet} kolonnenavn. Klikk Lagre for å beholde endringene.`, 'info');
+                        }
+                    }
                 } catch (e) {
                     visStatus(`Kunne ikke laste rapporttype: ${e.message}`, 'feil');
                 }
