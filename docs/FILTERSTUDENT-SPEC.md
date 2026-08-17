@@ -82,10 +82,16 @@ duplisering ville bare kunne komme ut av synk. De utledes ved behov med
 | `FK` | Betydning | `FV`-format | Eksempel-PK |
 |---|---|---|---|
 | `EK` | Emne | `{Termin}\|{EK}-{VK}` | `EK\|26H\|MILM2301-1` |
-| `KL` | Klasse | klassekode | `KL\|Klasse 4` |
-| `KU` | Kull | kullkode | `KU\|H26` |
-| `SP` | Studieprogram | studieprogramkode | `SP\|MILM` |
+| `KL` | Klasse | `{SP}\|{årstall}-{betegnelse}\|{klassekode}` | `KL\|FHS-AS\|2023-HØST\|ÅRS SKSK` |
+| `KU` | Kull | `{SP}\|{årstall}-{betegnelse}` | `KU\|FHS-AS\|2026-HØST` |
+| `SP` | Studieprogram | studieprogramkode | `SP\|FHS-AS` |
 | `ALLE` | Alle studenter | tom | `ALLE\|` |
+
+Klasse- og kullnøklene er sammensatte fordi **klassekode ikke er unik** — se §6.
+De følger FS' egen naturlige nøkkel. Den sammensatte verdien er stygg, men den
+vises aldri for brukeren: `Tekst` i dropdownen blir klassenavnet
+(«Årsenhet SKSK 2023»), `Verdi` blir nøkkelen. Det er samme Tekst/Verdi-skille
+som resten av `oppslag.js` allerede bruker.
 
 Termin ligger **inne i `FV`** for emne, ikke foran `FK`. Ellers gjenskapes
 suffiks-problemet fra §1. Formatet `{Termin}|{EK}-{VK}` er allerede den
@@ -155,53 +161,132 @@ en full enumerering i dagens refresh (`refresh-fs.js:150`).
 Alternativet er blå/grønn med to tabeller og en peker i `CacheMetadata`. Mer
 robust, men mer maskineri enn dette trenger.
 
-## 6. Datakilder i FS — må verifiseres
+## 6. Datakilder i FS — funn fra `klasser`-spørringen
 
-Dagens spørring henter studenter via
-`undervisningsenheter → studieretter → student → personProfil`
-(`fs-client.js:131-141`). Kun `student` plukkes ut av studierett-noden.
+Klasse/kull/student hentes **ikke** via `undervisningsenheter`, men via en egen
+rot-spørring `klasser(filter: {eierOrganisasjonskode, erAktiv})`. Verifisert mot
+FS 2026-08-17. Stien til student er:
 
-I FS' datamodell er **studieretten** stedet der studieprogram, kull og klasse
-henger. Feltnavnene er **ikke verifisert** — de må bekreftes mot skjemaet før
-transformasjonen skrives. Introspeksjon:
-
-```graphql
-query { __type(name: "Studierett") { fields { name type { name kind ofType { name } } } } }
+```
+klasse → studenterIKlasse → programStudierett → student → personProfil
 ```
 
-Kjøres mot `FS_API_URL` med samme Basic auth og `Feature-Flags: beta,experimental`
-som `kallGraphQl` bruker. Hvis typenavnet ikke er `Studierett`, list opp typene
-via `__schema { types { name } }` først.
+Dette blir altså en **andre FS-spørring** i refresh-jobben, uavhengig av dagens
+`hentUndervisningsenheter`. Emne-dimensjonen (`EK`) bygges som før.
 
-Antatt utvidelse av spørringen, med forbehold om feltnavn:
+### Funn 1 — klassekode er ikke unik
+
+I et uttrekk på 10 klasser forekom `kode: "A"` fem ganger (Kull 57/61/62/63 og
+Årsenhet KS 2021) og `"ÅRS SKSK"` to ganger (2021 og 2023). Klassekode alene kan
+ikke brukes som filterverdi.
+
+`endCursor` fra samme spørring avslører FS' egen naturlige nøkkel — base64 av:
+
+```json
+[1627, "FHS-AS", "HØST", 2023, "ÅRS SKSK"]
+```
+
+altså `(eierorg, studieprogram, terminbetegnelse, årstall, klassekode)`. Det er
+denne nøkkelen `KL`-partisjonen i §3 replikerer.
+
+### Funn 2 — `erAktiv: true` er ikke et ferskhetsfilter
+
+Uttrekket returnerte klasser med kull fra 2007, 2010, 2012, 2013 og 2021 — alle
+med `erAktiv: true`, alle med `studenterIKlasse.nodes: []`. Kun klassen med kull
+2026 hadde studenter.
+
+Skal ikke dropdownen fylles med tjue år gamle klasser, må det filtreres. Det
+riktige kriteriet er **at klassen har minst én student** — tomme klasser er
+selvryddende, siden `studenterIKlasse` ser ut til å reflektere gjeldende
+studieretter.
+
+### Funn 3 — ikke filtrer klasser på aktiv termin
+
+Fristende, men galt: `kull.terminV2` er kullets **start**-termin, ikke
+inneværende. Klassen `EA 26` heter `EA 26-29` og løper altså over tre år. Et
+kull startet i 2024 har aktive studenter i dag, men start-termin utenfor
+vinduet forrige/inneværende/neste som `terminer.aktiveTerminer()` beregner.
+Filtrering på aktiv termin ville stilltiende utelatt pågående klasser.
+
+Bruk «har studenter» (funn 2) som kriterium i stedet.
+
+### Funn 4 — feltdetaljer
+
+- `betegnelse { id }` gir en ugjennomsiktig FS-id (`MTE3OjE2MjcsSMOYU1Q` =
+  `117:1627,HØST`). Bruk `betegnelse { kode }`, slik `hentTerminer` allerede gjør
+  (`fs-client.js:62`).
+- Språknøklene er inkonsistente: klassenavn ligger under `navnAlleSprak.und`,
+  kullnavn under `.no`, mens emner bruker `.nb` (`fs-client.js:125`). Transformen
+  trenger en fallback-kjede `nb → no → und`.
+- `klasser` paginerer (`hasNextPage: true` ved `first: 10`) — cursor-løkke som i
+  `hentUndervisningsenheter` er nødvendig.
+
+### Semantisk valg: studieprogram — nå løsbart
+
+`SK`/`SN` på `Emner`-radene er **emnets** studieprogramkobling
+(`fs-client.js:127-129`), ikke studentens. Med `programStudierett` i denne
+spørringen kan studentens eget program leses direkte, som er det riktige for
+filteret `Studenter{Studieprogram}`. Feltet må velges eksplisitt — se §6b.
+
+## 6b. Gjenstående verifisering
+
+Følgende felter er ikke bekreftet ennå. Spørring å kjøre:
 
 ```graphql
-studieretter(first: 1000) {
-    nodes {
-        student { personProfil { navn { etternavn fornavn } institusjonsEpost } }
-        studieprogram { kode navnAlleSprak { nb } }   # ← verifiser
-        kull { kode }                                  # ← verifiser
-        klasse { kode }                                # ← verifiser
+query KlasserVerifisering {
+  klasser(filter: {eierOrganisasjonskode: "1627", erAktiv: true}, first: 5) {
+    pageInfo { hasNextPage endCursor }
+    edges {
+      node {
+        kode
+        navnAlleSprak { und nb no }
+        studieprogram { kode navnAlleSprak { nb } }        # ← finnes feltet på klasse?
+        kull {
+          terminV2 { arstall betegnelse { kode } }          # kode, ikke id
+          navnAlleSprak { no nb }
+        }
+        studenterIKlasse(first: 1000) {                     # ← støttes «first»?
+          totalCount                                         # ← støttes «totalCount»?
+          nodes {
+            programStudierett {
+              studieprogram { kode navnAlleSprak { nb } }   # ← studentens eget program
+              student { personProfil { institusjonsEpost navn { fornavn etternavn } } }
+            }
+          }
+        }
+      }
     }
+  }
 }
 ```
 
-### Semantisk valg: studieprogram
+Tre spørsmål den skal svare på:
 
-`SK`/`SN` finnes allerede på `Emner`-radene, men det er **emnets**
-studieprogramkobling (`fs-client.js:127-129`), ikke studentens. En student på et
-emne kan tilhøre et annet program enn emnet er koblet til.
+1. **Ligger studieprogram på klassen, på `programStudierett`, eller begge?**
+   Cursoren inneholder `"FHS-AS"`, så koblingen finnes — men ikke nødvendigvis
+   som et selekterbart felt på klasse-noden. `KL`/`KU`-nøklene i §3 forutsetter
+   at koden er tilgjengelig.
+2. **Paginerer `studenterIKlasse`?** Uten `first` kan FS ha en implisitt grense.
+   `studieretter` bruker `first: 1000` med `totalCount` (`fs-client.js:131-133`);
+   samme mønster bør brukes her, og `totalCount` sammenlignes med `nodes.length`
+   for å avdekke avkorting.
+3. **Er tomme klasser virkelig utgåtte?** Bekreftes ved å finne en klasse med
+   kull-termin 2024/2025 som fortsatt løper, og se at den har studenter. Det
+   validerer kriteriet fra funn 2.
 
-For filteret `Studenter{Studieprogram}` er det studentens eget program via
-studieretten som er riktig. Dette bør bekreftes med kunden — det er en reell
-forskjell, ikke en teknisk detalj.
+Filter-mulighetene på rot-spørringen bør også introspiseres, i tilfelle FS kan
+gjøre avgrensningen serverside:
+
+```graphql
+query { __type(name: "QueryKlasserFilterInput") { inputFields { name type { name kind ofType { name } } } } }
+```
 
 ## 7. Kodeendringer
 
 | Fil | Endring |
 |---|---|
-| `api/src/lib/fs-client.js` | Utvid `studieretter`-seleksjonen med studieprogram/kull/klasse (etter introspeksjon) |
-| `api/src/lib/refresh-fs.js` | `transformer()` produserer `filterRader` (EK/KL/KU/SP/ALLE) i stedet for `studentRader`; ny generasjonsbasert rydding |
+| `api/src/lib/fs-client.js` | Ny `hentKlasser()` — egen rot-spørring med cursor-paginering (ikke en utvidelse av `hentUndervisningsenheter`) |
+| `api/src/lib/refresh-fs.js` | Ny fase som henter klasser; `transformer()` produserer `filterRader` (EK/KL/KU/SP/ALLE) i stedet for `studentRader`; ny generasjonsbasert rydding |
 | `api/src/lib/emner-storage.js` | `TABELL_FILTERSTUDENT`, ny `hentStudenterForFilter(fk, fv)`; behold gamle funksjoner til cutover er verifisert |
 | `api/src/lib/oppslag.js` | `_hentStudenter` mapper filterbegrep → `(FK, FV)`; `Personer.EmneStudenter` (linje 89-97) legges om til samme funksjon |
 | `frontend/editor.html` | Nye filtre under datakilden `Studenter` i `DATAKILDER` (linje 533-539): Klasse, Kull, Studieprogram |
@@ -227,12 +312,23 @@ noe steg.
 
 ## 9. Åpne spørsmål
 
-1. **FS-feltnavn** for kull/klasse/studieprogram på studierett — må introspiseres.
-2. **Studieprogram-semantikk** — studentens (studierett) eller emnets? Se §6.
-3. **Klasse/kull per termin?** Hvis en student bytter klasse mellom terminer, må
-   `FV` termin-prefikses som for emne (`KL|26H|Klasse 4`). Avklares mot FS-data.
+1. ~~**FS-feltnavn** for kull/klasse~~ — løst 2026-08-17, se §6. Gjenstår: de tre
+   punktene i §6b.
+2. ~~**Studieprogram-semantikk**~~ — løsbart via `programStudierett`; velg
+   studentens eget program. Bekreft feltet, se §6b.
+3. **Klasse over flere terminer.** Klassen er ikke termin-avgrenset slik emnet
+   er — `EA 26-29` løper over tre år (§6, funn 3). Nøkkelen i §3 bruker derfor
+   kullets start-termin, ikke inneværende. Konsekvens: bytter en student klasse
+   underveis, får hen ny `KL`-rad, og den gamle ryddes av
+   generasjonsmekanismen i §5. Det er ønsket oppførsel, men bør bekreftes mot
+   hvordan FS faktisk representerer klassebytte.
 4. **Studentvolum** — tallene i §4 er antakelser. Faktisk volum bør leses av
    `CacheMetadata` (`FS-Studenter.AntallRader`) før dimensjonering konkluderes.
 5. **Caching** — `oppslag.js` har ingen caching i dag; hvert dropdown-treff går
    rett i storage. En TTL-cache i prosessen ville hjulpet uansett modell, men er
    uavhengig av denne endringen.
+6. **Skal tomme klasser med i `Klasser`-dropdownen?** Kriteriet i §6 funn 2
+   fjerner dem. Hvis en klasse skal kunne velges *før* studenter er meldt inn,
+   trengs et annet kriterium — men da må dropdownen bygges fra en egen
+   klasse-tabell, ikke fra `FilterStudent`, som per definisjon kun har rader der
+   det finnes studenter.
