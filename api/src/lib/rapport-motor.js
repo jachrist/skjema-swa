@@ -142,9 +142,34 @@ function verdiMatcher(rå, operator, ref, ref2) {
     return false;
 }
 
+/**
+ * Løs dynamiske verdi-tokens til konkrete verdier.
+ * Støtter "idag", "idag+N", "idag-N" (N = antall dager) → YYYY-MM-DD.
+ * Enkeltverdi-transformasjon; komma-lister fra 'in'/'notIn' løses element for element.
+ */
+function resolverDynVerdi(v) {
+    if (v === undefined || v === null) return v;
+    if (typeof v !== 'string') return v;
+    const idag = /^idag([+-]\d+)?$/i.exec(v.trim());
+    if (idag) {
+        const delta = idag[1] ? parseInt(idag[1], 10) : 0;
+        const d = new Date();
+        d.setDate(d.getDate() + delta);
+        return d.toISOString().slice(0, 10);
+    }
+    // Komma-liste med tokens
+    if (v.includes(',')) {
+        const deler = v.split(',').map(s => s.trim());
+        if (deler.some(d => /^idag([+-]\d+)?$/i.test(d))) {
+            return deler.map(resolverDynVerdi).join(',');
+        }
+    }
+    return v;
+}
+
 function passererFilter(skjema, filter) {
     const rå = hentRåVerdi(skjema, filter);
-    return verdiMatcher(rå, filter.operator, filter.verdi, filter.verdi2);
+    return verdiMatcher(rå, filter.operator, resolverDynVerdi(filter.verdi), resolverDynVerdi(filter.verdi2));
 }
 
 function passererAlle(skjema, filtre) {
@@ -270,4 +295,4 @@ function kjør(spec, skjemaer, brukerVerdier = {}) {
     };
 }
 
-module.exports = { kjør, hentFeltSvar, hentMetaVerdi, hentRåVerdi, verdiMatcher, beregnAggregat, STATUS_TEKST };
+module.exports = { kjør, hentFeltSvar, hentMetaVerdi, hentRåVerdi, verdiMatcher, beregnAggregat, resolverDynVerdi, STATUS_TEKST };

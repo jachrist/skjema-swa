@@ -263,13 +263,15 @@
                 return;
             }
             document.getElementById('filter-panel').style.display = '';
-            grid.innerHTML = filtre.map(f => `
+            grid.innerHTML = filtre.map(f => {
+                const forhaandsverdi = params.get(`bf_${f.id}`) || '';
+                return `
                 <div class="filter-felt">
                     <label for="bf-${escapeHtml(f.id)}">${escapeHtml(f.navn)}</label>
                     <input type="text" id="bf-${escapeHtml(f.id)}" data-filter-id="${escapeHtml(f.id)}"
-                        placeholder="${escapeHtml(hintTekst(f))}">
+                        placeholder="${escapeHtml(hintTekst(f))}" value="${escapeHtml(forhaandsverdi)}">
                 </div>
-            `).join('');
+            `;}).join('');
         }
         function hintTekst(f) {
             const op = f.operator;
@@ -413,7 +415,15 @@
 
                 byggFilterPanel();
                 document.getElementById('kjor-knapp').style.display = '';
-                visStatus('Klar. Klikk «Kjør rapport» for å hente data.');
+
+                // Auto-kjør hvis kjør=1 i URL (typisk fra bokmerket lenke)
+                const skalAutoKjore = params.get('kjør') === '1' || params.get('kjor') === '1';
+                if (skalAutoKjore) {
+                    visStatus('Kjører rapport med forhåndssatte filtre…');
+                    kjor();
+                } else {
+                    visStatus('Klar. Klikk «Kjør rapport» for å hente data.');
+                }
             } catch (e) {
                 visStatus('Kunne ikke laste rapporttype: ' + e.message, 'feil');
             }

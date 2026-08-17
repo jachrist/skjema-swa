@@ -155,6 +155,54 @@
         summary { cursor: pointer; font-size: 13px; color: var(--text-secondary); user-select: none; }
         summary:hover { color: var(--accent); }
 
+        /* Modal for lenkegenerator */
+        .modal-bak {
+            position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.4);
+            display: none; align-items: center; justify-content: center;
+            z-index: 1000;
+        }
+        .modal-bak.aktiv { display: flex; }
+        .modal-boks {
+            background: var(--bg-container);
+            backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px 28px;
+            max-width: 640px; width: 92vw;
+            max-height: 88vh; overflow: auto;
+            box-shadow: var(--shadow);
+        }
+        .modal-boks h2 { margin: 0 0 12px; font-size: 18px; }
+        .modal-boks .lenke-preview {
+            background: var(--bg-input); border: 1px solid var(--border-color);
+            padding: 10px 12px; border-radius: 8px;
+            word-break: break-all; font-family: ui-monospace, Menlo, Consolas, monospace;
+            font-size: 12px; color: var(--text-primary);
+            margin-top: 8px; user-select: all;
+        }
+        .modal-boks .filter-rad {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end;
+            padding: 8px 0; border-top: 1px solid var(--border-color);
+        }
+        .modal-boks .filter-rad:first-of-type { border-top: 0; }
+        .modal-boks .filter-rad label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
+        .modal-boks .filter-rad small { color: var(--text-secondary); font-size: 11px; display: block; margin-top: 2px; }
+        .modal-boks input[type="text"] {
+            width: 100%; padding: 7px 10px;
+            border: 1px solid var(--border-color); border-radius: 8px;
+            background: var(--bg-input); color: var(--text-primary);
+            font-family: inherit; font-size: 13px;
+        }
+        .modal-boks .modal-knapperad {
+            display: flex; gap: 8px; justify-content: flex-end;
+            margin-top: 16px; padding-top: 14px;
+            border-top: 1px solid var(--border-color);
+        }
+        .modal-boks .kopier-status {
+            color: #34c759; font-size: 12px; margin-right: auto; align-self: center;
+        }
+
         /* Legg-til-rad (inline mini-form) */
         .legg-til {
             display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
@@ -308,8 +356,34 @@
 
         <div class="knapperad-bunn">
             <button class="knapp fare venstre" onclick="slett()" id="slett-knapp" style="display:none;">Slett</button>
+            <button class="knapp sekundær" onclick="apneLenkeGenerator()" id="lenke-knapp" disabled>Generer lenke…</button>
             <button class="knapp sekundær" onclick="forhandsvis()" id="forhands-knapp" disabled>Forhåndsvis</button>
             <button class="knapp primær" onclick="lagre()">Lagre</button>
+        </div>
+    </div>
+
+    <div class="modal-bak" id="lenke-modal">
+        <div class="modal-boks">
+            <h2>Generer bokmerkbar lenke</h2>
+            <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 8px;">
+                Sett forhåndsverdier for brukerfiltrene under. Lenka åpner rapporten
+                og kjører den automatisk med disse verdiene. La et felt være tomt for å ikke låse det.
+            </p>
+            <div class="info-boks" style="margin-bottom: 10px;">
+                <strong>Datofilter:</strong> bruk <code>idag</code>, <code>idag+7</code> eller <code>idag-30</code>
+                — verdien beregnes hver gang lenka åpnes.
+            </div>
+            <div id="lenke-filter-liste"></div>
+            <div>
+                <label style="font-size: 12px; color: var(--text-secondary);">Generert URL:</label>
+                <div class="lenke-preview" id="lenke-preview">—</div>
+            </div>
+            <div class="modal-knapperad">
+                <span class="kopier-status" id="kopier-status" style="display:none;">Kopiert ✓</span>
+                <button class="knapp sekundær" onclick="lukkLenkeGenerator()">Lukk</button>
+                <button class="knapp sekundær" onclick="apneLenka()">Åpne i ny fane</button>
+                <button class="knapp primær" onclick="kopierLenke()">Kopier lenke</button>
+            </div>
         </div>
     </div>
 
@@ -489,6 +563,7 @@
                             <div class="sekundær">${escapeHtml(kildeVisning(k))}</div>
                         </div>
                         <div class="handlinger">
+                            <button onclick="endreKolonneNavn(${i})" title="Endre vist navn">Endre</button>
                             ${i > 0 ? `<button onclick="flyttKolonne(${i}, -1)">↑</button>` : ''}
                             ${i < data.Kolonner.length - 1 ? `<button onclick="flyttKolonne(${i}, 1)">↓</button>` : ''}
                             <button onclick="slettKolonne(${i})">Fjern</button>
@@ -660,6 +735,16 @@
             renderAggregater();
         };
 
+        window.endreKolonneNavn = (i) => {
+            const kol = data.Kolonner[i];
+            if (!kol) return;
+            const nytt = prompt('Vist navn for kolonnen:', kol.navn || '');
+            if (nytt === null) return; // avbrutt
+            kol.navn = nytt.trim() || (kol.type === 'meta' ? metaNavn(kol.kilde) : svarKildeNavn(kol.seksjon, kol.felt));
+            renderKolonner();
+            renderAggregater();
+        };
+
         window.flyttKolonne = (i, delta) => {
             const ny = i + delta;
             if (ny < 0 || ny >= data.Kolonner.length) return;
@@ -730,6 +815,7 @@
                 renderBruker();
                 renderAggregater();
                 document.getElementById('forhands-knapp').disabled = !rapporttypeId;
+                document.getElementById('lenke-knapp').disabled = !rapporttypeId;
             } catch (e) {
                 visStatus(`Kunne ikke laste kildeskjematype: ${e.message}`, 'feil');
             }
@@ -760,6 +846,7 @@
                 data.Rapporttype_id = res.Rapporttype_id;
                 document.getElementById('slett-knapp').style.display = '';
                 document.getElementById('forhands-knapp').disabled = false;
+                document.getElementById('lenke-knapp').disabled = false;
             } catch (e) {
                 visStatus(`Kunne ikke lagre: ${e.message}`, 'feil');
             }
@@ -780,6 +867,79 @@
             if (!data.Rapporttype_id) return;
             window.open(`/rapport.html?rapporttype_id=${encodeURIComponent(data.Rapporttype_id)}`, '_blank');
         };
+
+        function byggLenke() {
+            if (!data.Rapporttype_id) return '';
+            const p = new URLSearchParams();
+            p.set('rapporttype_id', data.Rapporttype_id);
+            p.set('kjør', '1');
+            for (const f of (data.Brukerfiltre || [])) {
+                const el = document.getElementById(`lenke-bf-${f.id}`);
+                const v = el?.value.trim();
+                if (v) p.set(`bf_${f.id}`, v);
+            }
+            return `${location.origin}/rapport.html?${p.toString()}`;
+        }
+
+        function oppdaterLenkePreview() {
+            document.getElementById('lenke-preview').textContent = byggLenke() || '—';
+            document.getElementById('kopier-status').style.display = 'none';
+        }
+
+        window.apneLenkeGenerator = () => {
+            if (!data.Rapporttype_id) { visStatus('Lagre rapporttypen først', 'feil'); return; }
+            const liste = document.getElementById('lenke-filter-liste');
+            const filtre = data.Brukerfiltre || [];
+            if (filtre.length === 0) {
+                liste.innerHTML = '<div class="tom-melding">Ingen brukerfiltre definert. Lenka vil bare åpne rapporten uten forhåndsverdier.</div>';
+            } else {
+                liste.innerHTML = filtre.map(f => `
+                    <div class="filter-rad">
+                        <div>
+                            <label>${escapeHtml(f.navn)}</label>
+                            <small>${escapeHtml(kildeVisning(f))} — ${escapeHtml(operatorTekst(f.operator))}</small>
+                        </div>
+                        <div>
+                            <input type="text" id="lenke-bf-${escapeHtml(f.id)}" placeholder="Verdi (la stå tom for åpen)" oninput="oppdaterLenkePreview()">
+                        </div>
+                    </div>
+                `).join('');
+            }
+            oppdaterLenkePreview();
+            document.getElementById('lenke-modal').classList.add('aktiv');
+        };
+        window.oppdaterLenkePreview = oppdaterLenkePreview;
+
+        window.lukkLenkeGenerator = () => {
+            document.getElementById('lenke-modal').classList.remove('aktiv');
+        };
+
+        window.kopierLenke = async () => {
+            const l = byggLenke();
+            if (!l) return;
+            try {
+                await navigator.clipboard.writeText(l);
+                const el = document.getElementById('kopier-status');
+                el.style.display = '';
+                setTimeout(() => { el.style.display = 'none'; }, 2500);
+            } catch {
+                // Fallback: select preview slik at bruker kan Ctrl+C
+                const range = document.createRange();
+                range.selectNodeContents(document.getElementById('lenke-preview'));
+                const sel = window.getSelection();
+                sel.removeAllRanges(); sel.addRange(range);
+            }
+        };
+
+        window.apneLenka = () => {
+            const l = byggLenke();
+            if (l) window.open(l, '_blank');
+        };
+
+        // Lukk modal ved klikk utenfor boksen
+        document.getElementById('lenke-modal').addEventListener('click', (e) => {
+            if (e.target === document.getElementById('lenke-modal')) lukkLenkeGenerator();
+        });
 
         function escapeHtml(s) {
             return String(s ?? '')
@@ -836,6 +996,7 @@
                     document.getElementById('tittel').textContent = data.Rapport_navn || 'Rapporttype';
                     document.getElementById('slett-knapp').style.display = '';
                     document.getElementById('forhands-knapp').disabled = false;
+                    document.getElementById('lenke-knapp').disabled = false;
                     // Rebuild tilgang-editors with loaded values
                     publikumEditor = byggTilgangEditor(document.getElementById('publikum-editor'), data.Publikum, {
                         kompakt: true, api, rolleGrupper, teamNavn, visAlleTilgang: true,
