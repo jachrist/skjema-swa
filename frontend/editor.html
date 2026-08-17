@@ -1700,12 +1700,17 @@
                 case 'Flervalg-dropdown': {
                     const valg = felt.Valg || [];
                     const skalaHar = felt.Type === 'Skala';
-                    const maksInput = felt.Type === 'Flervalg-knapper' ? `
+                    const erFlervalg = felt.Type === 'Flervalg-knapper' || felt.Type === 'Flervalg-dropdown';
+                    const maksHjelp = felt.Type === 'Flervalg-dropdown'
+                        ? '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">1 = vanlig nedtrekksliste. Over 1 gir «legg til»-velger med valgte som chips under.</div>'
+                        : '';
+                    const maksInput = erFlervalg ? `
                         <div style="margin-top: 8px;">
                             <label>Maks antall valg</label>
                             <input type="number" min="1" value="${felt.Max_valg || 1}"
                                 oninput="setFeltProp(${sIdx}, ${fIdx}, 'Max_valg', Number(this.value) || 1)"
                                 style="width: 80px;">
+                            ${maksHjelp}
                         </div>
                     ` : '';
                     typeConfig = `

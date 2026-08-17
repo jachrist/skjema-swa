@@ -102,7 +102,7 @@ export function byggEditWidget(felt, feltId, initialSvar = []) {
         case 'Tidspunkt': return _lagTimeInput(feltId, førsteSvar);
         case 'Skala': return _lagSkala(felt, feltId, førsteSvar);
         case 'Flervalg-knapper': return _lagFlervalgKnapper(felt, feltId, initialSvar);
-        case 'Flervalg-dropdown': return _lagFlervalgDropdown(felt, feltId, førsteSvar);
+        case 'Flervalg-dropdown': return _lagFlervalgDropdown(felt, feltId, initialSvar);
         case 'Opplasting': return _lagOpplasting(felt, feltId, initialSvar);
         default: return _lagUkjentType(felt.Type);
     }
@@ -445,7 +445,135 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
     return container;
 }
 
-function _lagFlervalgDropdown(felt, feltId, valgtVerdi) {
+/**
+ * Flervalg-dropdown. Max_valg styrer UI:
+ *   1  → vanlig <select> (uendret oppførsel)
+ *   >1 → «legg til»-velger med valgte som chips under, samme mønster som
+ *        tilgang-editoren. State ligger på wrapper-elementet (._valgte),
+ *        slik Opplasting-widgeten også gjør.
+ */
+function _lagFlervalgDropdown(felt, feltId, initialSvar = []) {
+    const svar = (Array.isArray(initialSvar) ? initialSvar : [initialSvar])
+        .filter(v => v !== '' && v != null)
+        .map(String);
+    const maks = Math.max(1, Number(felt.Max_valg) || 1);
+    return maks === 1
+        ? _lagEnkeltDropdown(felt, feltId, svar[0] ?? '')
+        : _lagChipsDropdown(felt, feltId, svar, maks);
+}
+
+function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
+    const valgListe = felt.Valg || [];
+    const verdiAv = (valg) => String(valg.Verdi ?? valg.Tekst);
+    const tekstFor = (v) => {
+        const t = valgListe.find(x => verdiAv(x) === String(v));
+        return t ? (t.Tekst ?? String(v)) : String(v);
+    };
+
+    const wrap = document.createElement('div');
+    wrap.className = 'flervalg-chips';
+    wrap.dataset.feltId = feltId;
+    wrap.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+
+    // Behold kun verdier som fortsatt finnes i valglista — Valg kan ha endret
+    // seg siden svaret ble lagret (FasteData er dynamisk)
+    const gyldige = new Set(valgListe.map(verdiAv));
+    wrap._valgte = initialSvar.filter(v => gyldige.has(v));
+
+    const sel = document.createElement('select');
+    sel.id = `${feltId}-velger`;
+    sel.style.cssText = 'width: 100%;';
+
+    const chips = document.createElement('div');
+    chips.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+
+    const teller = document.createElement('div');
+    teller.style.cssText = 'font-size: 12px; color: var(--text-secondary, #6e6e73);';
+
+    let sok = null;
+    if (valgListe.length > 10) {
+        sok = document.createElement('input');
+        sok.type = 'text';
+        sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
+        sok.style.cssText = 'padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
+        sok.addEventListener('input', () => {
+            const q = sok.value.trim().toLowerCase();
+            for (const opt of sel.querySelectorAll('option')) {
+                if (opt.value === '') { opt.hidden = false; continue; }
+                opt.hidden = q !== '' && !opt.textContent.toLowerCase().includes(q);
+            }
+        });
+    }
+
+    function meldEndring() {
+        // Chip-fjerning er et knappeklikk og gir ingen change-hendelse av seg
+        // selv — men skjemaet lytter delegert på 'change' for å oppdatere
+        // vilkår og re-hente avhengige FasteData-felt.
+        wrap.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function tegn() {
+        const fullt = wrap._valgte.length >= maks;
+
+        sel.innerHTML = '';
+        const tom = document.createElement('option');
+        tom.value = '';
+        tom.textContent = fullt ? `— maks ${maks} valgt —` : '+ legg til…';
+        sel.appendChild(tom);
+        for (const valg of valgListe) {
+            const v = verdiAv(valg);
+            if (wrap._valgte.includes(v)) continue;
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = valg.Tekst;
+            sel.appendChild(opt);
+        }
+        sel.value = '';
+        sel.disabled = fullt;
+
+        chips.innerHTML = '';
+        for (const v of wrap._valgte) {
+            const chip = document.createElement('span');
+            chip.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; ' +
+                'background: var(--accent-light, rgba(10,132,255,0.12)); color: var(--accent, #0a84ff); ' +
+                'border-radius: 12px; font-size: 13px;';
+            const t = document.createElement('span');
+            t.textContent = tekstFor(v);
+            const x = document.createElement('button');
+            x.type = 'button';
+            x.textContent = '×';
+            x.setAttribute('aria-label', `Fjern ${tekstFor(v)}`);
+            x.style.cssText = 'background: none; border: 0; color: inherit; cursor: pointer; ' +
+                'font-size: 15px; line-height: 1; padding: 0;';
+            x.addEventListener('click', () => {
+                wrap._valgte = wrap._valgte.filter(k => k !== v);
+                tegn();
+                meldEndring();
+            });
+            chip.append(t, x);
+            chips.appendChild(chip);
+        }
+
+        teller.textContent = `${wrap._valgte.length} av ${maks} valgt`;
+        if (sok) sok.style.display = fullt ? 'none' : '';
+    }
+
+    sel.addEventListener('change', () => {
+        const v = sel.value;
+        if (!v || wrap._valgte.length >= maks) return;
+        if (!wrap._valgte.includes(v)) wrap._valgte.push(v);
+        if (sok) sok.value = '';
+        tegn();
+        // sel sin egen change bobler allerede opp til skjemaet
+    });
+
+    if (sok) wrap.appendChild(sok);
+    wrap.append(sel, chips, teller);
+    tegn();
+    return wrap;
+}
+
+function _lagEnkeltDropdown(felt, feltId, valgtVerdi) {
     const sel = document.createElement('select');
     sel.id = feltId;
     sel.name = feltId;
@@ -822,6 +950,12 @@ export function hentSvarFraDom(feltId, type) {
     if (type === 'Flervalg-knapper') {
         const checked = document.querySelectorAll(`input[name="${feltId}[]"]:checked`);
         return Array.from(checked).map(cb => cb.value);
+    }
+    if (type === 'Flervalg-dropdown') {
+        // Max_valg > 1 rendres som chips-widget med state på wrapperen.
+        // Max_valg = 1 er et vanlig <select> og faller gjennom til generisk lesing.
+        const wrap = document.querySelector(`.flervalg-chips[data-felt-id="${feltId}"]`);
+        if (wrap) return [...(wrap._valgte || [])];
     }
     if (type === 'Skala') {
         const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
