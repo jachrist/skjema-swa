@@ -513,9 +513,15 @@
                 ]
             },
             {
+                navn: 'Team',
+                beskrivelse: 'Team-navn fra Teammedlemskap-cachen — for valg av team (ikke medlem)',
+                filtre: []
+            },
+            {
                 navn: 'Personer',
-                beskrivelse: 'Personer — henter fra rolleinnehavere eller emne-tilknytninger',
+                beskrivelse: 'Personer. Uten filter: alle kjente teammedlemmer (ett team omfatter alle FHS-brukere). Navn vises for dem som også har en rolle — øvrige vises med e-postadresse.',
                 filtre: [
+                    { navn: 'Team', beskrivelse: 'Medlemmer av ett team. Verdi: team-navn slik det står i Teammedlemskap.' },
                     { navn: 'Rolle', beskrivelse: 'Innehavere av en rolle. Verdi: "Rolle(Omfang)" eller "Rolle".' },
                     { navn: 'EmneLarere', beskrivelse: 'Lærere for et emne (fra FS). Verdi: emnekode (f.eks. "CBU2501" eller "CBU2501-1").' },
                     { navn: 'EmneHovedlarere', beskrivelse: 'Hovedlærere for et emne (fra FS). Verdi: emnekode.' },

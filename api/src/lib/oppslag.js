@@ -5,20 +5,24 @@
  * Returnerer alltid array av { Tekst, Verdi, ... } objekter.
  *
  * Datakilder implementert:
- *   - Postnumre        (via postnumre-storage)
- *   - Skjematyper      (via skjema-storage)
+ *   - Postnumre        (postnumre-storage)
+ *   - Skjematyper      (skjema-storage)
+ *   - Roller, Personer (roller-storage + team-storage)
+ *   - Team             (team-storage)
+ *   - Emner, Studenter, Klasser, Kull, Studieprogrammer (emner-storage / FS)
  *
- * Datakilder som venter på masterdata-modul (fase 5) — returnerer tom liste + log:
- *   - Personer, Roller, Team, Emner, Studenter, Avdelinger, Studieprogrammer
+ * Datakilder som ikke er implementert — returnerer tom liste + log:
+ *   - Avdelinger
  */
 const postnumreStorage = require('./postnumre-storage');
 const skjemaStorage = require('./skjema-storage');
 const rollerStorage = require('./roller-storage');
 const emnerStorage = require('./emner-storage');
+const teamStorage = require('./team-storage');
 const terminer = require('./terminer');
 
 const IKKE_IMPLEMENTERT = new Set([
-    'Team', 'Avdelinger'
+    'Avdelinger'
 ]);
 
 /**
@@ -39,6 +43,8 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
             return await _hentEmner(filterbegrep, filterverdi);
         case 'Studenter':
             return await _hentStudenter(filterbegrep, filterverdi);
+        case 'Team':
+            return await _hentTeam();
         case 'Klasser':
             return await _hentKlasser();
         case 'Kull':
@@ -70,12 +76,22 @@ async function _hentRolleGrupper(filterbegrep, filterverdi) {
     }));
 }
 
+/**
+ * «Etternavn, Fornavn (e-post)» — eller bare e-posten når navn mangler.
+ * Alle Personer-grenene bruker denne, så en person ser lik ut uansett
+ * hvilket filter som hentet vedkommende.
+ */
+function _personVisning(EN, FN, EP) {
+    const navn = [EN, FN].map(s => String(s || '').trim()).filter(Boolean).join(', ');
+    return navn ? `${navn} (${EP})` : String(EP || '');
+}
+
 async function _hentPersoner(filterbegrep, filterverdi, log) {
     if (filterbegrep === 'Rolle') {
         if (!filterverdi) return [];
         const innehavere = await rollerStorage.hentInnehavere(filterverdi);
         return innehavere.map(p => ({
-            Tekst: `${p.EN}, ${p.FN} (${p.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Tekst: _personVisning(p.EN, p.FN, p.EP),
             Verdi: p.EP,
             FN: p.FN, EN: p.EN, EP: p.EP, Omfang: p.Omfang
         }));
@@ -86,7 +102,7 @@ async function _hentPersoner(filterbegrep, filterverdi, log) {
         if (!emne) return [];
         const kilde = filterbegrep === 'EmneLarere' ? emne.Larere : emne.Hovedlarere;
         return (kilde || []).map(p => ({
-            Tekst: `${p.EN}, ${p.FN} (${p.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Tekst: _personVisning(p.EN, p.FN, p.EP),
             Verdi: p.EP,
             FN: p.FN, EN: p.EN, EP: p.EP
         }));
@@ -95,13 +111,53 @@ async function _hentPersoner(filterbegrep, filterverdi, log) {
         if (!filterverdi) return [];
         const studenter = await _studenterForEmne(String(filterverdi));
         return studenter.map(s => ({
-            Tekst: `${s.EN}, ${s.FN} (${s.EP})`.replace(/^, /, '').replace(/^ \(/, '('),
+            Tekst: _personVisning(s.EN, s.FN, s.EP),
             Verdi: s.EP,
             FN: s.FN, EN: s.EN, EP: s.EP, Termin: s.Termin
         }));
     }
+    if (filterbegrep === 'Team') {
+        if (!filterverdi) return [];
+        return await _personerFraUpner(await teamStorage.hentMedlemmer(String(filterverdi)));
+    }
+    if (!filterbegrep) {
+        // Uten filter: alle kjente teammedlemmer. Ett av teamene inneholder
+        // samtlige FHS-brukere, så unionen er i praksis «alle personer».
+        // Erstattes av et Entra-oppslag når løsningen utvides til flere
+        // enheter i Forsvaret.
+        return await _personerFraUpner(await teamStorage.hentAlleMedlemmer());
+    }
     log(`oppslag: Personer med filterbegrep "${filterbegrep}" er ikke implementert ennå`);
     return [];
+}
+
+/**
+ * Gjør en liste UPN-er om til dropdown-verdier. Teamcachen har bare UPN, så
+ * navn hentes fra Rollemedlemskap der de finnes — de øvrige vises med UPN.
+ */
+async function _personerFraUpner(upner) {
+    if (!upner || upner.length === 0) return [];
+    let navn = new Map();
+    try {
+        navn = await rollerStorage.hentNavnekart();
+    } catch (_) {
+        // Navn er pynt — en feil her skal ikke tømme lista
+    }
+    return upner
+        .map(upn => {
+            const n = navn.get(String(upn).trim().toLowerCase());
+            return {
+                Tekst: _personVisning(n?.EN, n?.FN, upn),
+                Verdi: String(upn),
+                FN: n?.FN || '', EN: n?.EN || '', EP: String(upn)
+            };
+        })
+        .sort((a, b) => a.Tekst.localeCompare(b.Tekst, 'no'));
+}
+
+async function _hentTeam() {
+    const navn = await teamStorage.hentAlleTeamNavn();
+    return navn.map(n => ({ Tekst: n, Verdi: n }));
 }
 
 async function _hentEmner(filterbegrep, filterverdi) {

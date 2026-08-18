@@ -66,6 +66,31 @@ async function hentAlleGrupper() {
 }
 
 /**
+ * UPN → { FN, EN } for alle rolleinnehavere med registrert navn.
+ *
+ * Teamcachen lagrer bare UPN (Power Automate sender ikke navn), så dette er
+ * eneste kilde til visningsnavn for personer som ikke er studenter. Tabellen
+ * er liten, og kartet bygges med én gjennomgang.
+ */
+async function hentNavnekart() {
+    const t = await tabell();
+    const kart = new Map();
+    try {
+        for await (const e of t.listEntities({ queryOptions: { select: ['RowKey', 'FN', 'EN'] } })) {
+            if (!e.FN && !e.EN) continue;
+            const rk = String(e.rowKey || '');
+            const del = rk.indexOf('|');
+            const upn = (del > -1 ? rk.substring(del + 1) : rk).trim().toLowerCase();
+            if (!upn || kart.has(upn)) continue;
+            kart.set(upn, { FN: e.FN || '', EN: e.EN || '' });
+        }
+    } catch (e) {
+        if (e.statusCode !== 404) throw e;
+    }
+    return kart;
+}
+
+/**
  * Hent innehavere for en gitt rolle+omfang. Rollestreng-format:
  *   "Rolle" — alle omfang
  *   "Rolle(Omfang)" — spesifikt omfang
@@ -128,6 +153,7 @@ async function fjernInnehaver({ Rolle, Omfang = '', UPN }) {
 
 module.exports = {
     hentAlleGrupper,
+    hentNavnekart,
     hentInnehavere,
     erMedlem,
     leggTilInnehaver,

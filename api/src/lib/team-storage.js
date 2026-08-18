@@ -66,6 +66,25 @@ async function hentAlleTeamNavn() {
     return [...set].sort((a, b) => a.localeCompare(b, 'no'));
 }
 
+/**
+ * Distinkte UPN-er på tvers av alle team. Brukes som «alle personer systemet
+ * kjenner» inntil et Entra-oppslag kommer på plass — ett av teamene inneholder
+ * alle FHS-brukere.
+ */
+async function hentAlleMedlemmer() {
+    const t = await tabell();
+    const set = new Set();
+    try {
+        for await (const e of t.listEntities({ queryOptions: { select: ['RowKey'] } })) {
+            const upn = String(e.rowKey || '').trim().toLowerCase();
+            if (upn) set.add(upn);
+        }
+    } catch (e) {
+        if (e.statusCode !== 404) throw e;
+    }
+    return [...set];
+}
+
 function normaliserMedlem(m) {
     if (typeof m === 'string') return m.trim().toLowerCase();
     if (typeof m === 'object' && m !== null) {
@@ -149,4 +168,4 @@ async function slettTeam(teamNavn) {
     return slettet;
 }
 
-module.exports = { erMedlem, hentMedlemmer, hentAlleTeamNavn, erstattTeam, erstattBatch, slettTeam };
+module.exports = { erMedlem, hentMedlemmer, hentAlleMedlemmer, hentAlleTeamNavn, erstattTeam, erstattBatch, slettTeam };
