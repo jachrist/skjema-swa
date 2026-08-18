@@ -20,17 +20,23 @@ const hendelser = require('../lib/hendelser-storage');
 function autorisert(request) {
     // Både innlogget bruker OG (PA-flyt med x-flow-key) tillates
     const konfigurert = String(process.env.FLOW_CALLBACK_KEY || '').trim();
-    const gitt = request.headers.get('x-flow-key') || '';
-    if (konfigurert && gitt.length === konfigurert.length) {
-        try {
-            if (crypto.timingSafeEqual(Buffer.from(gitt), Buffer.from(konfigurert))) {
-                return { ok: true, kilde: 'flyt' };
-            }
-        } catch (_) {}
+    // Trim også den innkommende — PA legger lett på linjeskift når verdien
+    // kommer fra en variabel eller Compose.
+    const gitt = String(request.headers.get('x-flow-key') || '').trim();
+
+    if (gitt) {
+        if (!konfigurert) return { ok: false, grunn: 'FLOW_CALLBACK_KEY er ikke satt på serveren' };
+        // Hash før sammenligning: da er lengdene alltid like, og timingSafeEqual
+        // kan brukes uten å kreve at nøklene er like lange på forhånd.
+        const a = crypto.createHash('sha256').update(gitt).digest();
+        const b = crypto.createHash('sha256').update(konfigurert).digest();
+        if (crypto.timingSafeEqual(a, b)) return { ok: true, kilde: 'flyt' };
+        return { ok: false, grunn: 'x-flow-key stemmer ikke med FLOW_CALLBACK_KEY' };
     }
+
     const upn = hentInnloggetUpn(request);
     if (upn && erAdmin(upn)) return { ok: true, kilde: upn };
-    return { ok: false };
+    return { ok: false, grunn: upn ? 'Krever admin' : 'Mangler x-flow-key, og ingen innlogget bruker' };
 }
 
 app.http('teamNavnList', {
@@ -71,7 +77,7 @@ app.http('teamErstatt', {
     route: 'cache/teammedlemskap',
     handler: async (request, context) => {
         const auth = autorisert(request);
-        if (!auth.ok) return { status: 401, jsonBody: { status: 'feil', melding: 'Krever admin eller x-flow-key' } };
+        if (!auth.ok) return { status: 401, jsonBody: { status: 'feil', melding: auth.grunn || 'Krever admin eller x-flow-key' } };
         try {
             const body = await request.json();
             let grupper;
