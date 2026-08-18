@@ -105,7 +105,7 @@ $select=userPrincipalName,givenName,surname,displayName
   "status": "ok",
   "antallTeam": 1,
   "resultater": [
-    { "Team": "FHS Alle ansatte", "modus": "erstatt", "antallMedlemmer": 842, "antallMedNavn": 842, "antallNavnBeholdt": 0 }
+    { "Team": "FHS Alle ansatte", "modus": "erstatt", "antallMedlemmer": 842, "antallMedNavn": 842, "antallNavnBeholdt": 0, "antallFjernet": 0 }
   ]
 }
 ```

@@ -166,10 +166,39 @@ function medlemsliste(medlemmer) {
     return [];
 }
 
+// Table Storage tar maks 100 operasjoner per transaksjon, og alle må ha samme
+// PartitionKey — som her er team-navnet.
+const BATCH_STORRELSE = 100;
+
 /**
- * Erstatt medlemskap for ett team. Med append=false slettes alle
- * eksisterende rader for teamet før nye upserts. Med append=true beholdes
- * eksisterende (brukes når PA sender store lister i flere chunker).
+ * Kjører operasjoner i transaksjoner i stedet for én HTTP-runde per rad.
+ * Et team på 800+ medlemmer ble ellers 1600 sekvensielle kall, og forespørselen
+ * rakk ikke gjennom SWA sin tidsgrense på 45 sekunder.
+ */
+async function kjorTransaksjoner(t, operasjoner) {
+    for (let i = 0; i < operasjoner.length; i += BATCH_STORRELSE) {
+        const bolk = operasjoner.slice(i, i + BATCH_STORRELSE);
+        try {
+            await t.submitTransaction(bolk);
+        } catch (_) {
+            // En transaksjon er alt-eller-ingenting. Faller tilbake til
+            // enkeltoperasjoner slik at én rad ikke velter hele bolken.
+            for (const [handling, entitet, modus] of bolk) {
+                try {
+                    if (handling === 'delete') await t.deleteEntity(entitet.partitionKey, entitet.rowKey);
+                    else await t.upsertEntity(entitet, modus || 'Replace');
+                } catch (err) {
+                    if (err.statusCode !== 404) throw err;
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Erstatt medlemskap for ett team. Med append=false fjernes medlemmer som
+ * ikke er med i den nye lista. Med append=true beholdes de (brukes når PA
+ * sender store lister i flere chunker).
  */
 async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
     const navn = String(teamNavn || '').trim();
@@ -177,20 +206,16 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
     const t = await tabell();
     const nu = new Date().toISOString();
 
-    // Les eksisterende rader først (og slett dem hvis append=false). Navn tas
-    // vare på for medlemmer som fortsatt er med, men som kommer inn uten navn —
-    // slik at en flyt som ennå ikke er lagt om ikke sletter navn en annen flyt
-    // har lagret. To flyter skriver hit: cron-refresh og lazy-load.
-    const tidligereNavn = new Map();
+    // Les eksisterende rader først. Navn tas vare på for medlemmer som fortsatt
+    // er med, men som kommer inn uten navn — slik at en flyt som ennå ikke er
+    // lagt om ikke sletter navn en annen flyt har lagret. To flyter skriver
+    // hit: cron-refresh og lazy-load.
+    const eksisterende = new Map();
     const filter = odata`PartitionKey eq ${navn}`;
     try {
         for await (const e of t.listEntities({ queryOptions: { filter, select: ['PartitionKey', 'RowKey', 'FN', 'EN', 'Navn'] } })) {
             const m = radTilMedlem(e);
-            if (m.EP && (m.FN || m.EN || m.Navn)) tidligereNavn.set(m.EP, m);
-            if (!append) {
-                try { await t.deleteEntity(e.partitionKey, e.rowKey); }
-                catch (err) { if (err.statusCode !== 404) throw err; }
-            }
+            if (m.EP) eksisterende.set(m.EP, m);
         }
     } catch (e) {
         if (e.statusCode !== 404) throw e;
@@ -206,7 +231,17 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
         if (!fins || (!fins.FN && !fins.EN && !fins.Navn)) perUpn.set(norm.EP, norm);
     }
 
-    let skrevet = 0;
+    const operasjoner = [];
+
+    // Bare rader som faktisk forsvinner må slettes — de som blir med skrives
+    // uansett over av upserten under.
+    if (!append) {
+        for (const ep of eksisterende.keys()) {
+            if (!perUpn.has(ep)) operasjoner.push(['delete', { partitionKey: navn, rowKey: ep }]);
+        }
+    }
+    const fjernet = operasjoner.length;
+
     let medNavn = 0;
     let beholdt = 0;
     for (const m of perUpn.values()) {
@@ -214,19 +249,25 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
         if (FN || EN || Navn) {
             medNavn++;
         } else {
-            const gammel = tidligereNavn.get(m.EP);
-            if (gammel) { ({ FN, EN, Navn } = gammel); beholdt++; }
+            const gammel = eksisterende.get(m.EP);
+            if (gammel && (gammel.FN || gammel.EN || gammel.Navn)) {
+                ({ FN, EN, Navn } = gammel);
+                beholdt++;
+            }
         }
-        await t.upsertEntity({
+        operasjoner.push(['upsert', {
             partitionKey: navn, rowKey: m.EP,
             FN, EN, Navn,
             SistOppdatert: nu
-        }, 'Replace');
-        skrevet++;
+        }, 'Replace']);
     }
+
+    await kjorTransaksjoner(t, operasjoner);
+
     return {
         Team: navn, modus: append ? 'append' : 'erstatt',
-        antallMedlemmer: skrevet, antallMedNavn: medNavn, antallNavnBeholdt: beholdt
+        antallMedlemmer: perUpn.size, antallMedNavn: medNavn,
+        antallNavnBeholdt: beholdt, antallFjernet: fjernet
     };
 }
 
