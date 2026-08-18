@@ -77,12 +77,14 @@ async function _hentRolleGrupper(filterbegrep, filterverdi) {
 }
 
 /**
- * «Etternavn, Fornavn (e-post)» — eller bare e-posten når navn mangler.
+ * «Etternavn, Fornavn (e-post)» — eller «Visningsnavn (e-post)» når bare
+ * displayName finnes, eller bare e-posten når vi ikke har noe navn.
  * Alle Personer-grenene bruker denne, så en person ser lik ut uansett
  * hvilket filter som hentet vedkommende.
  */
-function _personVisning(EN, FN, EP) {
-    const navn = [EN, FN].map(s => String(s || '').trim()).filter(Boolean).join(', ');
+function _personVisning(EN, FN, EP, Navn = '') {
+    const delt = [EN, FN].map(s => String(s || '').trim()).filter(Boolean).join(', ');
+    const navn = delt || String(Navn || '').trim();
     return navn ? `${navn} (${EP})` : String(EP || '');
 }
 
@@ -118,38 +120,49 @@ async function _hentPersoner(filterbegrep, filterverdi, log) {
     }
     if (filterbegrep === 'Team') {
         if (!filterverdi) return [];
-        return await _personerFraUpner(await teamStorage.hentMedlemmer(String(filterverdi)));
+        return await _personerFraTeam(await teamStorage.hentMedlemmerDetaljert(String(filterverdi)));
     }
     if (!filterbegrep) {
         // Uten filter: alle kjente teammedlemmer. Ett av teamene inneholder
         // samtlige FHS-brukere, så unionen er i praksis «alle personer».
         // Erstattes av et Entra-oppslag når løsningen utvides til flere
         // enheter i Forsvaret.
-        return await _personerFraUpner(await teamStorage.hentAlleMedlemmer());
+        return await _personerFraTeam(await teamStorage.hentAlleMedlemmer());
     }
     log(`oppslag: Personer med filterbegrep "${filterbegrep}" er ikke implementert ennå`);
     return [];
 }
 
 /**
- * Gjør en liste UPN-er om til dropdown-verdier. Teamcachen har bare UPN, så
- * navn hentes fra Rollemedlemskap der de finnes — de øvrige vises med UPN.
+ * Gjør teammedlemmer om til dropdown-verdier.
+ *
+ * Navn kommer fra teamcachen når PA-flyten har sendt dem. For rader lagret før
+ * flyten ble utvidet — og for team der navn mangler — faller vi tilbake på
+ * Rollemedlemskap, som har navn for alle rolleinnehavere. Uten treff der vises
+ * UPN alene.
  */
-async function _personerFraUpner(upner) {
-    if (!upner || upner.length === 0) return [];
-    let navn = new Map();
-    try {
-        navn = await rollerStorage.hentNavnekart();
-    } catch (_) {
-        // Navn er pynt — en feil her skal ikke tømme lista
+async function _personerFraTeam(medlemmer) {
+    if (!medlemmer || medlemmer.length === 0) return [];
+
+    const manglerNavn = medlemmer.some(m => !m.FN && !m.EN && !m.Navn);
+    let reserve = new Map();
+    if (manglerNavn) {
+        try {
+            reserve = await rollerStorage.hentNavnekart();
+        } catch (_) {
+            // Navn er pynt — en feil her skal ikke tømme lista
+        }
     }
-    return upner
-        .map(upn => {
-            const n = navn.get(String(upn).trim().toLowerCase());
+
+    return medlemmer
+        .map(m => {
+            const r = (!m.FN && !m.EN && !m.Navn) ? reserve.get(m.EP) : null;
+            const FN = m.FN || r?.FN || '';
+            const EN = m.EN || r?.EN || '';
             return {
-                Tekst: _personVisning(n?.EN, n?.FN, upn),
-                Verdi: String(upn),
-                FN: n?.FN || '', EN: n?.EN || '', EP: String(upn)
+                Tekst: _personVisning(EN, FN, m.EP, m.Navn),
+                Verdi: m.EP,
+                FN, EN, EP: m.EP
             };
         })
         .sort((a, b) => a.Tekst.localeCompare(b.Tekst, 'no'));

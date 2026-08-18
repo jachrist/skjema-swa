@@ -66,32 +66,89 @@ async function hentAlleTeamNavn() {
     return [...set].sort((a, b) => a.localeCompare(b, 'no'));
 }
 
+function radTilMedlem(e) {
+    return {
+        EP: String(e.rowKey || '').trim().toLowerCase(),
+        FN: e.FN || '',
+        EN: e.EN || '',
+        Navn: e.Navn || ''
+    };
+}
+
 /**
- * Distinkte UPN-er på tvers av alle team. Brukes som «alle personer systemet
- * kjenner» inntil et Entra-oppslag kommer på plass — ett av teamene inneholder
- * alle FHS-brukere.
+ * Medlemmer av ett team med navn (der flyten har sendt dem).
+ */
+async function hentMedlemmerDetaljert(team) {
+    if (!team) return [];
+    const t = await tabell();
+    const ut = [];
+    const filter = odata`PartitionKey eq ${String(team)}`;
+    for await (const e of t.listEntities({ queryOptions: { filter } })) {
+        const m = radTilMedlem(e);
+        if (m.EP) ut.push(m);
+    }
+    return ut;
+}
+
+/**
+ * Distinkte medlemmer på tvers av alle team. Brukes som «alle personer
+ * systemet kjenner» inntil et Entra-oppslag kommer på plass — ett av teamene
+ * inneholder alle FHS-brukere.
  */
 async function hentAlleMedlemmer() {
     const t = await tabell();
-    const set = new Set();
+    const perUpn = new Map();
     try {
-        for await (const e of t.listEntities({ queryOptions: { select: ['RowKey'] } })) {
-            const upn = String(e.rowKey || '').trim().toLowerCase();
-            if (upn) set.add(upn);
+        for await (const e of t.listEntities()) {
+            const m = radTilMedlem(e);
+            if (!m.EP) continue;
+            // Samme person kan ligge i flere team — behold raden som har navn
+            const fins = perUpn.get(m.EP);
+            if (!fins || (!fins.FN && !fins.EN && !fins.Navn)) perUpn.set(m.EP, m);
         }
     } catch (e) {
         if (e.statusCode !== 404) throw e;
     }
-    return [...set];
+    return [...perUpn.values()];
 }
 
-function normaliserMedlem(m) {
-    if (typeof m === 'string') return m.trim().toLowerCase();
-    if (typeof m === 'object' && m !== null) {
-        const kandidater = [m.Upn, m.upn, m.userPrincipalName, m.UserPrincipalName, m.mail, m.Mail, m.email, m.Email];
-        for (const k of kandidater) if (k) return String(k).trim().toLowerCase();
+function forste(...verdier) {
+    for (const v of verdier) {
+        const s = String(v ?? '').trim();
+        if (s) return s;
     }
     return '';
+}
+
+/**
+ * Normaliserer ett medlem fra PA-flyten til { EP, FN, EN, Navn }.
+ *
+ * Godtar både vår egen navngivning (Upn/FN/EN) og Graph sin (userPrincipalName/
+ * givenName/surname/displayName), slik at flyten kan sende brukerobjektet fra
+ * Graph rett videre uten en mellomliggende Select. En ren streng godtas
+ * fortsatt — det var formatet før navn ble tatt med.
+ *
+ * Returnerer null hvis UPN mangler.
+ */
+function normaliserMedlem(m) {
+    if (typeof m === 'string') {
+        const ep = m.trim().toLowerCase();
+        return ep ? { EP: ep, FN: '', EN: '', Navn: '' } : null;
+    }
+    if (typeof m !== 'object' || m === null) return null;
+
+    const ep = forste(m.Upn, m.upn, m.UPN, m.userPrincipalName, m.UserPrincipalName,
+        m.mail, m.Mail, m.email, m.Email, m.EP).toLowerCase();
+    if (!ep) return null;
+
+    return {
+        EP: ep,
+        FN: forste(m.FN, m.Fornavn, m.givenName, m.GivenName),
+        EN: forste(m.EN, m.Etternavn, m.surname, m.Surname),
+        // Visningsnavn lagres som det er. Å utlede for-/etternavn fra det ville
+        // vært gjetting — «Nordmann, Ola» og «Ola Nordmann» er begge vanlige.
+        Navn: forste(m.Navn, m.displayName, m.DisplayName)
+    };
 }
 
 /**
@@ -114,17 +171,28 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
         }
     }
 
-    const upns = new Set();
+    // Dedupliser på UPN. Kommer samme person flere ganger, vinner den raden
+    // som faktisk har navn — flyten kan sende både berikede og bare rene UPN-er.
+    const perUpn = new Map();
     for (const m of (Array.isArray(medlemmer) ? medlemmer : [])) {
-        const upn = normaliserMedlem(m);
-        if (upn) upns.add(upn);
+        const norm = normaliserMedlem(m);
+        if (!norm) continue;
+        const fins = perUpn.get(norm.EP);
+        if (!fins || (!fins.FN && !fins.EN && !fins.Navn)) perUpn.set(norm.EP, norm);
     }
+
     let skrevet = 0;
-    for (const upn of upns) {
-        await t.upsertEntity({ partitionKey: navn, rowKey: upn, SistOppdatert: nu }, 'Replace');
+    let medNavn = 0;
+    for (const m of perUpn.values()) {
+        await t.upsertEntity({
+            partitionKey: navn, rowKey: m.EP,
+            FN: m.FN, EN: m.EN, Navn: m.Navn,
+            SistOppdatert: nu
+        }, 'Replace');
         skrevet++;
+        if (m.FN || m.EN || m.Navn) medNavn++;
     }
-    return { Team: navn, modus: append ? 'append' : 'erstatt', antallMedlemmer: skrevet };
+    return { Team: navn, modus: append ? 'append' : 'erstatt', antallMedlemmer: skrevet, antallMedNavn: medNavn };
 }
 
 /**
@@ -168,4 +236,13 @@ async function slettTeam(teamNavn) {
     return slettet;
 }
 
-module.exports = { erMedlem, hentMedlemmer, hentAlleMedlemmer, hentAlleTeamNavn, erstattTeam, erstattBatch, slettTeam };
+module.exports = {
+    erMedlem,
+    hentMedlemmer,
+    hentMedlemmerDetaljert,
+    hentAlleMedlemmer,
+    hentAlleTeamNavn,
+    erstattTeam,
+    erstattBatch,
+    slettTeam
+};
