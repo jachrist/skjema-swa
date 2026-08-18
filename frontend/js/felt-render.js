@@ -377,11 +377,30 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
     const container = document.createElement('div');
     container.className = 'flervalg-knapper';
     container.dataset.feltId = feltId;
-    const maks = felt.Max_valg || 1;
+    // MerkAlle opphever grensa — samme regel som i dropdownen.
+    const maks = felt.MerkAlle ? Infinity : (felt.Max_valg || 1);
     let antallValgt = 0;
     // Ikke noe søkefelt her — alle knappene er synlige samtidig, så et søk som
     // skjuler dem er mer forvirrende enn nyttig. Søk hører hjemme i dropdownen.
     const valgListe = felt.Valg || [];
+
+    let merkAlle = null;
+    let fjernAlle = null;
+    if (felt.MerkAlle) {
+        _sikreDropdownStil();
+        const verktoy = document.createElement('div');
+        verktoy.className = 'dropdown-verktoy';
+        verktoy.style.cssText = 'width: 100%; margin: 0 0 4px 0;';
+        merkAlle = document.createElement('button');
+        merkAlle.type = 'button';
+        merkAlle.textContent = 'Merk alle';
+        fjernAlle = document.createElement('button');
+        fjernAlle.type = 'button';
+        fjernAlle.textContent = 'Fjern alle';
+        verktoy.append(merkAlle, fjernAlle);
+        container.appendChild(verktoy);
+    }
+
     for (const valg of valgListe) {
         const label = document.createElement('label');
         label.className = 'flervalg-knapp';
@@ -429,244 +448,346 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
     if (antallValgt >= maks) {
         container.querySelectorAll('.flervalg-knapp input:not(:checked)').forEach(c => { c.disabled = true; });
     }
+
+    if (merkAlle) {
+        const settAlle = (på) => {
+            antallValgt = 0;
+            container.querySelectorAll('.flervalg-knapp').forEach(k => {
+                const c = k.querySelector('input');
+                c.checked = på;
+                c.disabled = false;
+                k.classList.toggle('selected', på);
+                if (på) antallValgt++;
+            });
+            oppdaterVerktoy();
+            // Knappeklikk gir ingen change-hendelse av seg selv, men skjemaet
+            // lytter delegert på 'change' for vilkår og avhengige FasteData-felt.
+            container.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+        merkAlle.addEventListener('click', () => settAlle(true));
+        fjernAlle.addEventListener('click', () => settAlle(false));
+        container.addEventListener('change', oppdaterVerktoy);
+        oppdaterVerktoy();
+    }
+
+    function oppdaterVerktoy() {
+        if (!merkAlle) return;
+        const valgte = container.querySelectorAll('.flervalg-knapp input:checked').length;
+        merkAlle.disabled = valgte >= valgListe.length;
+        fjernAlle.disabled = valgte === 0;
+    }
+
     return container;
 }
 
 /**
- * Flervalg-dropdown. Max_valg styrer UI:
- *   1  → vanlig <select> (uendret oppførsel)
- *   >1 → «legg til»-velger med valgte som chips under, samme mønster som
- *        tilgang-editoren. State ligger på wrapper-elementet (._valgte),
- *        slik Opplasting-widgeten også gjør.
+ * Flervalg-dropdown — kombiboks etter mønster fra referanse-appen.
+ *
+ * Søkefeltet ER kontrollen: klikk/fokus åpner ei liste med klikkbare
+ * alternativer, skriving filtrerer lista, og valgte alternativer vises som
+ * chips under. Et nativt <select> ble forsøkt først, men der kan ikke
+ * alternativer filtreres pålitelig — «hidden» på <option> ignoreres blant
+ * annet av Safari.
+ *
+ *   felt.Max_valg  — øvre grense for antall valg (1 = enkeltvalg)
+ *   felt.MerkAlle  — viser «Merk alle / Fjern alle» og opphever grensa
+ *
+ * State ligger på wrapper-elementet (._valgte), slik Opplasting-widgeten
+ * også gjør, og leses av hentSvarFraDom.
  */
-function _lagFlervalgDropdown(felt, feltId, initialSvar = []) {
-    const svar = (Array.isArray(initialSvar) ? initialSvar : [initialSvar])
-        .filter(v => v !== '' && v != null)
-        .map(String);
-    const maks = Math.max(1, Number(felt.Max_valg) || 1);
-    return maks === 1
-        ? _lagEnkeltDropdown(felt, feltId, svar[0] ?? '')
-        : _lagChipsDropdown(felt, feltId, svar, maks);
+
+const DROPDOWN_STIL_ID = 'felt-render-dropdown-stil';
+
+// Widgeten er selvstendig: den tar med seg sin egen CSS i stedet for å kreve
+// at hver side definerer klassene. Hover og popup lar seg ikke uttrykke med
+// inline style.
+function _sikreDropdownStil() {
+    if (document.getElementById(DROPDOWN_STIL_ID)) return;
+    const stil = document.createElement('style');
+    stil.id = DROPDOWN_STIL_ID;
+    stil.textContent = `
+.dropdown-container { position: relative; }
+.dropdown-felt { position: relative; }
+.dropdown-search {
+    width: 100%; padding: 12px 40px 12px 16px; font-size: 15px; cursor: pointer;
+    border: 1px solid var(--input-border, #d1d1d6); border-radius: var(--radius-sm, 8px);
+    background: var(--bg-input, #fff); color: var(--text-primary, #1c1c1e);
+    outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dropdown-search:focus {
+    border-color: var(--accent, #0a84ff);
+    box-shadow: 0 0 0 4px var(--accent-light, rgba(10, 132, 255, 0.12));
+}
+.dropdown-search:disabled { opacity: 0.6; cursor: not-allowed; }
+.dropdown-felt::after {
+    content: ''; position: absolute; top: 50%; right: 14px; width: 9px; height: 9px;
+    border-right: 2px solid var(--text-secondary, #6e6e73);
+    border-bottom: 2px solid var(--text-secondary, #6e6e73);
+    transform: translateY(-75%) rotate(45deg);
+    pointer-events: none; transition: transform 0.2s;
+}
+.dropdown-felt:has(.dropdown-list.open)::after { transform: translateY(-25%) rotate(-135deg); }
+.dropdown-list {
+    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+    max-height: 260px; overflow-y: auto; display: none; z-index: 100;
+    background: var(--bg-input, #fff);
+    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+    border-radius: var(--radius-sm, 8px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+}
+.dropdown-list.open { display: block; }
+.dropdown-option {
+    padding: 11px 16px; cursor: pointer; font-size: 14px;
+    color: var(--text-primary, #1c1c1e); transition: background 0.15s;
+}
+.dropdown-option:hover { background: var(--accent-light, rgba(10, 132, 255, 0.12)); }
+.dropdown-option.selected { background: var(--accent, #0a84ff); color: #fff; }
+.dropdown-option.disabled { opacity: 0.4; cursor: not-allowed; }
+.dropdown-option.skjult { display: none; }
+.dropdown-tom {
+    padding: 12px 16px; font-size: 13px; font-style: italic; text-align: center;
+    color: var(--text-secondary, #6e6e73);
+}
+.valgte-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.valgte-chips:empty { margin-top: 0; }
+.dropdown-chip {
+    display: flex; align-items: center; gap: 6px; padding: 6px 14px;
+    border-radius: 20px; font-size: 0.88em; font-weight: 500;
+    background: var(--accent-light, rgba(10, 132, 255, 0.12));
+    color: var(--accent, #0a84ff);
+    border: 1px solid rgba(10, 132, 255, 0.2);
+}
+.dropdown-chip-fjern {
+    cursor: pointer; font-weight: 700; font-size: 1.1em; opacity: 0.6;
+    background: none; border: 0; color: inherit; padding: 0; line-height: 1;
+}
+.dropdown-chip-fjern:hover { opacity: 1; }
+.dropdown-verktoy { display: flex; gap: 8px; margin-top: 8px; }
+.dropdown-verktoy button {
+    padding: 4px 10px; font-size: 12px; cursor: pointer;
+    border: 1px solid var(--border-color, rgba(0, 0, 0, 0.1));
+    border-radius: 4px; background: var(--bg-input, #fff);
+    color: var(--text-primary, #1c1c1e);
+}
+.dropdown-verktoy button:disabled { opacity: 0.45; cursor: default; }
+.dropdown-info { margin-top: 6px; font-size: 12px; color: var(--text-secondary, #6e6e73); }
+`;
+    document.head.appendChild(stil);
 }
 
-function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
+function _lagFlervalgDropdown(felt, feltId, initialSvar = []) {
+    _sikreDropdownStil();
+
     const valgListe = felt.Valg || [];
     const verdiAv = (valg) => String(valg.Verdi ?? valg.Tekst);
     const tekstFor = (v) => {
         const t = valgListe.find(x => verdiAv(x) === String(v));
         return t ? (t.Tekst ?? String(v)) : String(v);
     };
+    // MerkAlle opphever grensa — det er meningsløst å tilby «Merk alle» og
+    // samtidig stoppe på et tak. Samme regel som i referanse-appen.
+    const maks = felt.MerkAlle ? Infinity : Math.max(1, Number(felt.Max_valg) || 1);
 
-    const wrap = document.createElement('div');
-    wrap.className = 'flervalg-chips';
-    wrap.dataset.feltId = feltId;
-    wrap.style.cssText = 'display: flex; flex-direction: column; gap: 6px;';
+    const container = document.createElement('div');
+    container.className = 'dropdown-container';
+    container.dataset.feltId = feltId;
 
     // Behold kun verdier som fortsatt finnes i valglista — Valg kan ha endret
     // seg siden svaret ble lagret (FasteData er dynamisk)
     const gyldige = new Set(valgListe.map(verdiAv));
-    wrap._valgte = initialSvar.filter(v => gyldige.has(v));
+    container._valgte = (Array.isArray(initialSvar) ? initialSvar : [initialSvar])
+        .filter(v => v !== '' && v != null)
+        .map(String)
+        .filter(v => gyldige.has(v));
 
-    const sel = document.createElement('select');
-    sel.id = `${feltId}-velger`;
-    sel.style.cssText = 'width: 100%;';
+    const feltboks = document.createElement('div');
+    feltboks.className = 'dropdown-felt';
+
+    const sok = document.createElement('input');
+    sok.type = 'text';
+    sok.className = 'dropdown-search';
+    sok.id = `${feltId}-sok`;
+    sok.autocomplete = 'off';
+    sok.placeholder = 'Velg fra listen…';
+    sok.setAttribute('role', 'combobox');
+    sok.setAttribute('aria-expanded', 'false');
+
+    const liste = document.createElement('div');
+    liste.className = 'dropdown-list';
+    liste.setAttribute('role', 'listbox');
+
+    feltboks.append(sok, liste);
+    container.appendChild(feltboks);
+
+    if (valgListe.length === 0) {
+        const tom = document.createElement('div');
+        tom.className = 'dropdown-tom';
+        tom.textContent = 'Ingen alternativer er definert';
+        liste.appendChild(tom);
+        sok.placeholder = '(Ingen alternativer)';
+        sok.disabled = true;
+    }
+
+    const opsjoner = valgListe.map(valg => {
+        const v = verdiAv(valg);
+        const o = document.createElement('div');
+        o.className = 'dropdown-option';
+        o.textContent = valg.Tekst ?? v;
+        o.dataset.value = v;
+        o.setAttribute('role', 'option');
+        // Uten dette rekker blur å lukke lista før klikket registreres
+        o.addEventListener('mousedown', (e) => e.preventDefault());
+        o.addEventListener('click', () => velg(v));
+        liste.appendChild(o);
+        return o;
+    });
+
+    let merkAlle = null;
+    let fjernAlle = null;
+    if (felt.MerkAlle) {
+        const verktoy = document.createElement('div');
+        verktoy.className = 'dropdown-verktoy';
+        merkAlle = document.createElement('button');
+        merkAlle.type = 'button';
+        merkAlle.textContent = 'Merk alle';
+        fjernAlle = document.createElement('button');
+        fjernAlle.type = 'button';
+        fjernAlle.textContent = 'Fjern alle';
+        verktoy.append(merkAlle, fjernAlle);
+        container.appendChild(verktoy);
+    }
 
     const chips = document.createElement('div');
-    chips.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
+    chips.className = 'valgte-chips';
+    container.appendChild(chips);
 
-    const bunnrad = document.createElement('div');
-    bunnrad.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+    const info = document.createElement('div');
+    info.className = 'dropdown-info';
+    if (maks > 1) container.appendChild(info);
 
-    const teller = document.createElement('div');
-    teller.style.cssText = 'font-size: 12px; color: var(--text-secondary, #6e6e73); flex: 1;';
-
-    const knappStil = 'font-size: 12px; padding: 2px 8px; border: 1px solid var(--input-border, #d1d1d6); ' +
-        'border-radius: 6px; background: none; color: inherit; cursor: pointer;';
-    const merkAlle = document.createElement('button');
-    merkAlle.type = 'button';
-    merkAlle.textContent = 'Merk alle';
-    merkAlle.style.cssText = knappStil;
-    const fjernAlle = document.createElement('button');
-    fjernAlle.type = 'button';
-    fjernAlle.textContent = 'Fjern alle';
-    fjernAlle.style.cssText = knappStil;
-    bunnrad.append(teller, merkAlle, fjernAlle);
-
-    // Søketeksten holdes utenfor DOM-en fordi tegn() bygger opsjonslista på
-    // nytt: filtrering ved å sette `hidden` på <option> virker ikke i alle
-    // nettlesere (Safari ignorerer det), så vi må faktisk utelate elementene.
-    let query = '';
-    let sok = null;
-    if (valgListe.length > 10) {
-        sok = document.createElement('input');
-        sok.type = 'text';
-        sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
-        sok.style.cssText = 'padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
-        sok.addEventListener('input', () => {
-            query = sok.value.trim().toLowerCase();
-            tegn();
-        });
-    }
-
-    // Ikke-valgte alternativer som søket slipper gjennom — grunnlaget både for
-    // opsjonslista og for «Merk alle».
-    function kandidater() {
-        return valgListe
-            .map(verdiAv)
-            .filter(v => !wrap._valgte.includes(v))
-            .filter(v => !query || String(tekstFor(v)).toLowerCase().includes(query));
-    }
+    // ---- oppførsel ----
 
     function meldEndring() {
-        // Chip-fjerning er et knappeklikk og gir ingen change-hendelse av seg
-        // selv — men skjemaet lytter delegert på 'change' for å oppdatere
+        // Kombiboksen er ikke et <select>, så ingen native change-hendelse
+        // oppstår. Skjemaet lytter delegert på 'change' for å oppdatere
         // vilkår og re-hente avhengige FasteData-felt.
-        wrap.dispatchEvent(new Event('change', { bubbles: true }));
+        container.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    function velg(v) {
+        const i = container._valgte.indexOf(v);
+        if (i > -1) {
+            container._valgte.splice(i, 1);
+        } else if (maks === 1) {
+            // Enkeltvalg: nytt valg erstatter det gamle. Å kreve at brukeren
+            // først fjerner chipen ville vært unødig tungvint.
+            container._valgte = [v];
+            lukk();
+        } else if (container._valgte.length < maks) {
+            container._valgte.push(v);
+        } else {
+            return; // taket er nådd
+        }
+        tegn();
+        meldEndring();
+    }
+
+    function apne() {
+        if (sok.disabled) return;
+        liste.classList.add('open');
+        sok.setAttribute('aria-expanded', 'true');
+    }
+
+    function lukk() {
+        liste.classList.remove('open');
+        sok.setAttribute('aria-expanded', 'false');
+        if (sok.value) { sok.value = ''; filtrer(); }
+    }
+
+    function filtrer() {
+        const q = sok.value.trim().toLowerCase();
+        for (const o of opsjoner) {
+            o.classList.toggle('skjult', Boolean(q) && !o.textContent.toLowerCase().includes(q));
+        }
+    }
+
+    function synlige() {
+        return opsjoner.filter(o => !o.classList.contains('skjult'));
     }
 
     function tegn() {
-        const fullt = wrap._valgte.length >= maks;
-        const ledige = kandidater();
-
-        sel.innerHTML = '';
-        const tom = document.createElement('option');
-        tom.value = '';
-        tom.textContent = fullt
-            ? `— maks ${maks} valgt —`
-            : (query && ledige.length === 0 ? '— ingen treff —' : '+ legg til…');
-        sel.appendChild(tom);
-        for (const v of ledige) {
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = tekstFor(v);
-            sel.appendChild(opt);
+        const fullt = container._valgte.length >= maks;
+        for (const o of opsjoner) {
+            const valgt = container._valgte.includes(o.dataset.value);
+            o.classList.toggle('selected', valgt);
+            o.setAttribute('aria-selected', valgt ? 'true' : 'false');
+            // Ved enkeltvalg skal man kunne bytte, ikke låses fast
+            o.classList.toggle('disabled', fullt && !valgt && maks > 1);
         }
-        sel.value = '';
-        sel.disabled = fullt;
 
-        chips.innerHTML = '';
-        for (const v of wrap._valgte) {
+        chips.textContent = '';
+        for (const v of container._valgte) {
             const chip = document.createElement('span');
-            chip.style.cssText = 'display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; ' +
-                'background: var(--accent-light, rgba(10,132,255,0.12)); color: var(--accent, #0a84ff); ' +
-                'border-radius: 12px; font-size: 13px;';
+            chip.className = 'dropdown-chip';
             const t = document.createElement('span');
             t.textContent = tekstFor(v);
             const x = document.createElement('button');
             x.type = 'button';
+            x.className = 'dropdown-chip-fjern';
             x.textContent = '×';
             x.setAttribute('aria-label', `Fjern ${tekstFor(v)}`);
-            x.style.cssText = 'background: none; border: 0; color: inherit; cursor: pointer; ' +
-                'font-size: 15px; line-height: 1; padding: 0;';
-            x.addEventListener('click', () => {
-                wrap._valgte = wrap._valgte.filter(k => k !== v);
-                tegn();
-                meldEndring();
-            });
+            x.addEventListener('click', () => velg(v));
             chip.append(t, x);
             chips.appendChild(chip);
         }
 
-        teller.textContent = `${wrap._valgte.length} av ${maks} valgt`;
-        merkAlle.disabled = fullt || ledige.length === 0;
-        merkAlle.title = maks < valgListe.length
-            ? `Merker så mange det er plass til (maks ${maks})`
-            : 'Merk alle alternativer';
-        merkAlle.style.opacity = merkAlle.disabled ? '0.45' : '';
-        fjernAlle.disabled = wrap._valgte.length === 0;
-        fjernAlle.style.opacity = fjernAlle.disabled ? '0.45' : '';
-        if (sok) sok.style.display = fullt ? 'none' : '';
+        if (maks > 1) {
+            info.textContent = maks === Infinity
+                ? `${container._valgte.length} valgt`
+                : `${container._valgte.length} av maks ${maks} valgt`;
+        }
+        if (merkAlle) merkAlle.disabled = container._valgte.length >= valgListe.length;
+        if (fjernAlle) fjernAlle.disabled = container._valgte.length === 0;
     }
 
-    sel.addEventListener('change', () => {
-        const v = sel.value;
-        if (!v || wrap._valgte.length >= maks) return;
-        if (!wrap._valgte.includes(v)) wrap._valgte.push(v);
-        if (sok) { sok.value = ''; query = ''; }
-        tegn();
-        // sel sin egen change bobler allerede opp til skjemaet
-    });
-
-    merkAlle.addEventListener('click', () => {
-        // Med et aktivt søk merkes bare treffene — det er den lesningen som
-        // stemmer med det brukeren faktisk ser i lista.
-        const før = wrap._valgte.length;
-        for (const v of kandidater()) {
-            if (wrap._valgte.length >= maks) break;
-            wrap._valgte.push(v);
+    sok.addEventListener('focus', apne);
+    sok.addEventListener('click', apne);
+    sok.addEventListener('input', () => { apne(); filtrer(); });
+    // Kort forsinkelse så et klikk i lista rekker å bli registrert
+    sok.addEventListener('blur', () => setTimeout(lukk, 150));
+    sok.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { lukk(); return; }
+        if (e.key === 'Enter') {
+            // Uten dette ville Enter i et tekstfelt sendt inn skjemaet
+            e.preventDefault();
+            const kandidat = synlige().find(o => !o.classList.contains('disabled'));
+            if (kandidat) velg(kandidat.dataset.value);
         }
-        if (wrap._valgte.length === før) return;
-        tegn();
-        meldEndring();
     });
 
-    fjernAlle.addEventListener('click', () => {
-        if (wrap._valgte.length === 0) return;
-        wrap._valgte = [];
-        tegn();
-        meldEndring();
-    });
+    if (merkAlle) {
+        merkAlle.addEventListener('click', () => {
+            // Med et aktivt søk merkes bare treffene — det er den lesningen som
+            // stemmer med det brukeren faktisk ser i lista.
+            const før = container._valgte.length;
+            for (const o of synlige()) {
+                const v = o.dataset.value;
+                if (!container._valgte.includes(v)) container._valgte.push(v);
+            }
+            if (container._valgte.length === før) return;
+            tegn();
+            meldEndring();
+        });
+        fjernAlle.addEventListener('click', () => {
+            if (container._valgte.length === 0) return;
+            container._valgte = [];
+            tegn();
+            meldEndring();
+        });
+    }
 
-    if (sok) wrap.appendChild(sok);
-    wrap.append(sel, chips, bunnrad);
     tegn();
-    return wrap;
-}
-
-function _lagEnkeltDropdown(felt, feltId, valgtVerdi) {
-    const valgListe = felt.Valg || [];
-    const sel = document.createElement('select');
-    sel.id = feltId;
-    sel.name = feltId;
-
-    // Bakoverkompatibel selection: lagret svar kan være enten Verdi eller Tekst
-    let valgt = '';
-    for (const valg of valgListe) {
-        const v = String(valg.Verdi ?? valg.Tekst);
-        if (v === valgtVerdi || valg.Tekst === valgtVerdi) { valgt = v; break; }
-    }
-
-    // Opsjonslista bygges på nytt ved hvert søk. Å sette `hidden` på <option>
-    // virker ikke i alle nettlesere (Safari ignorerer det), så filtrering må
-    // skje ved å faktisk utelate elementene.
-    function tegnOpsjoner() {
-        const q = sok ? sok.value.trim().toLowerCase() : '';
-        sel.innerHTML = '';
-        const tom = document.createElement('option');
-        tom.value = '';
-        tom.textContent = '— velg —';
-        sel.appendChild(tom);
-        for (const valg of valgListe) {
-            // Bruker Verdi som value når finnes (FasteData: UPN/kode), Tekst til visning.
-            const v = String(valg.Verdi ?? valg.Tekst);
-            // Den valgte verdien blir alltid med — ellers ville et søk som ikke
-            // treffer den stille nullstille svaret.
-            if (q && v !== valgt && !String(valg.Tekst ?? v).toLowerCase().includes(q)) continue;
-            const opt = document.createElement('option');
-            opt.value = v;
-            opt.textContent = valg.Tekst;
-            sel.appendChild(opt);
-        }
-        sel.value = valgt;
-    }
-    sel.addEventListener('change', () => { valgt = sel.value; });
-
-    // Legg til søk hvis mange valg — bygger søkbar wrapper rundt <select>
-    let sok = null;
-    if (valgListe.length > 10) {
-        const wrap = document.createElement('div');
-        wrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
-        sok = document.createElement('input');
-        sok.type = 'text';
-        sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
-        sok.style.cssText = 'padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
-        sok.addEventListener('input', tegnOpsjoner);
-        tegnOpsjoner();
-        wrap.append(sok, sel);
-        return wrap;
-    }
-    tegnOpsjoner();
-    return sel;
+    return container;
 }
 
 /**
@@ -1010,10 +1131,9 @@ export function hentSvarFraDom(feltId, type) {
         return Array.from(checked).map(cb => cb.value);
     }
     if (type === 'Flervalg-dropdown') {
-        // Max_valg > 1 rendres som chips-widget med state på wrapperen.
-        // Max_valg = 1 er et vanlig <select> og faller gjennom til generisk lesing.
-        const wrap = document.querySelector(`.flervalg-chips[data-felt-id="${feltId}"]`);
-        if (wrap) return [...(wrap._valgte || [])];
+        // Kombiboks — state ligger på wrapperen, ikke i et <select>.
+        const wrap = document.querySelector(`.dropdown-container[data-felt-id="${feltId}"]`);
+        return wrap ? [...(wrap._valgte || [])] : [];
     }
     if (type === 'Skala') {
         const valgt = document.querySelector(`input[name="${feltId}"]:checked`);
