@@ -279,7 +279,8 @@
     <div class="container">
         <div class="topplinje">
             <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
-                <img id="dif-logo" alt="" style="display: none; max-height: 100px; max-width: 100px; object-fit: contain;">
+                <!-- Venstre for tittelen står systemmerket (js/systemtopp.js) — den plassen
+                     er reservert for graderingsmerkingen og kan ikke overstyres per skjema. -->
                 <h1 id="tittel" style="flex: 1;">Laster skjema…</h1>
                 <img id="logo" alt="" style="display: none; max-height: 50px; max-width: 140px; object-fit: contain;">
             </div>
@@ -562,11 +563,6 @@
             if (logoEl && skjematype.Logo_url) {
                 logoEl.src = skjematype.Logo_url;
                 logoEl.style.display = '';
-            }
-            const difLogoEl = document.getElementById('dif-logo');
-            if (difLogoEl && skjematype.DIFLogo_URL) {
-                difLogoEl.src = skjematype.DIFLogo_URL;
-                difLogoEl.style.display = '';
             }
 
             if (skjematype.Skjemaforklaring?.Innhold) {
@@ -964,5 +960,6 @@
 
         init();
     </script>
+    <script type="module" src="/js/systemtopp.js"></script>
 </body>
 </html>

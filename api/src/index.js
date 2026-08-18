@@ -22,6 +22,7 @@ require('./functions/nokkel');
 require('./functions/hendelser');
 require('./functions/utsending');
 require('./functions/logo');
+require('./functions/systemlogo');
 require('./functions/system');
 require('./functions/innstillinger');
 require('./functions/backup');

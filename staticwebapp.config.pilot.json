@@ -61,6 +61,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/systemlogo",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/postnumre/refresh-bring",
             "allowedRoles": ["anonymous"]
         },
@@ -101,7 +105,7 @@
         "rewrite": "/index.html",
         "exclude": ["/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"]
     },
-      "auth": {
+    "auth": {
         "identityProviders": {
             "azureActiveDirectory": {
                 "registration": {
@@ -110,7 +114,8 @@
                     "clientSecretSettingName": "AAD_CLIENT_SECRET"
                 }
             }
-        },
+        }
+    },
     "responseOverrides": {
         "401": {
             "statusCode": 302,

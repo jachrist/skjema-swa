@@ -16,6 +16,7 @@
         { "route": "/api/oppslag",                    "allowedRoles": ["anonymous"] },
         { "route": "/api/utsending/purre",            "allowedRoles": ["anonymous"] },
         { "route": "/api/logo/*",                     "allowedRoles": ["anonymous"] },
+        { "route": "/api/systemlogo",                 "allowedRoles": ["anonymous"] },
         { "route": "/api/postnumre/refresh-bring",    "allowedRoles": ["anonymous"] },
         { "route": "/api/backup/kjor",                "allowedRoles": ["anonymous"] },
         { "route": "/api/cache/teammedlemskap",       "allowedRoles": ["anonymous"] },

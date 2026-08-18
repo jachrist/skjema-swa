@@ -799,6 +799,27 @@
         function rendrLogoer() {
             document.getElementById('innhold').innerHTML = `
                 <div class="panel">
+                    <h2>Systemmerking</h2>
+                    <p style="font-size: 13px; color: var(--text-secondary); margin: 0 0 12px 0;">
+                        Vises øverst til venstre på <strong>alle</strong> sider, til venstre for overskriften.
+                        Er ingen logo valgt, vises tekstvarianten under i stedet.
+                    </p>
+                    <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+                        <div id="sm-preview" style="height: 60px; min-width: 90px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 6px; padding: 4px;">
+                            <span style="font-size: 12px; color: var(--text-secondary);">Laster…</span>
+                        </div>
+                        <div style="flex: 1; min-width: 220px; display: flex; flex-direction: column; gap: 6px;">
+                            <input type="text" id="sm-tittel" placeholder="FHS Skjemasystem" style="margin: 0;">
+                            <input type="text" id="sm-advarsel" placeholder="Kun ugraderte data" style="margin: 0;">
+                        </div>
+                        <div style="display: flex; gap: 6px;">
+                            <button class="knapp" onclick="systemmerkeLagreTekst()">Lagre tekst</button>
+                            <button class="knapp sekundær danger" onclick="systemmerkeFjernLogo()">Fjern logo</button>
+                        </div>
+                    </div>
+                    <div id="sm-status" style="margin-top: 10px; font-size: 13px;"></div>
+                </div>
+                <div class="panel">
                     <h2>Last opp ny logo</h2>
                     <div id="l-drop" style="border: 2px dashed var(--input-border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: var(--bg-input);">
                         <div style="font-size: 32px;">🖼</div>
@@ -826,8 +847,71 @@
                 e.preventDefault(); drop.style.borderColor = 'var(--input-border)';
                 logoOpplast(e.dataTransfer.files);
             });
-            logoLast();
+            // Systemmerket først: logo-gridet markerer hvilken logo som er valgt,
+            // så det må være kjent før gridet tegnes.
+            systemmerkeLast().finally(() => logoLast());
         }
+
+        // ---- Systemmerking (logo + advarsel som vises på alle sider) ----
+
+        let systemmerke = { filnavn: '', url: '', tittel: '', advarsel: '' };
+
+        async function systemmerkeLast() {
+            try {
+                systemmerke = await api.get('/api/systemlogo');
+            } catch (e) {
+                document.getElementById('sm-status').innerHTML = `<span class="feilmelding">${escHtml(e.message)}</span>`;
+                return;
+            }
+            document.getElementById('sm-tittel').value = systemmerke.tittel || '';
+            document.getElementById('sm-advarsel').value = systemmerke.advarsel || '';
+            systemmerkeTegnPreview();
+            // Bare tegn på nytt hvis gridet allerede har innhold — ellers ville
+            // vi overskrive «Laster…» med «Ingen logoer» før lista er hentet.
+            if (logoAlle.length) logoRender(logoAlle);
+        }
+
+        function systemmerkeTegnPreview() {
+            const p = document.getElementById('sm-preview');
+            if (!p) return;
+            p.innerHTML = systemmerke.url
+                ? `<img src="${escAttr(systemmerke.url)}" alt="" style="max-width: 130px; max-height: 100%; object-fit: contain;">`
+                : '<span style="font-size: 12px; color: var(--text-secondary);">Ingen logo</span>';
+        }
+
+        window.systemmerkeVelg = async (navn) => {
+            const status = document.getElementById('sm-status');
+            try {
+                await api.post('/api/innstillinger', { Nokkel: 'SystemLogo', Verdi: navn });
+                await systemmerkeLast();
+                status.innerHTML = `<span style="color: var(--suksess, green);">Systemlogo satt til «${escHtml(navn)}».</span>`;
+            } catch (e) {
+                status.innerHTML = `<span class="feilmelding">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        window.systemmerkeFjernLogo = async () => {
+            const status = document.getElementById('sm-status');
+            try {
+                await api.post('/api/innstillinger', { Nokkel: 'SystemLogo', Verdi: '' });
+                await systemmerkeLast();
+                status.innerHTML = '<span style="color: var(--text-secondary);">Logo fjernet — tekstvarianten vises nå.</span>';
+            } catch (e) {
+                status.innerHTML = `<span class="feilmelding">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        window.systemmerkeLagreTekst = async () => {
+            const status = document.getElementById('sm-status');
+            try {
+                await api.post('/api/innstillinger', { Nokkel: 'SystemTittel', Verdi: document.getElementById('sm-tittel').value.trim() });
+                await api.post('/api/innstillinger', { Nokkel: 'SystemAdvarsel', Verdi: document.getElementById('sm-advarsel').value.trim() });
+                await systemmerkeLast();
+                status.innerHTML = '<span style="color: var(--suksess, green);">Tekst lagret.</span>';
+            } catch (e) {
+                status.innerHTML = `<span class="feilmelding">${escHtml(e.message)}</span>`;
+            }
+        };
 
         let logoAlle = [];
 
@@ -853,18 +937,21 @@
                 grid.innerHTML = '<div class="tom-melding" style="grid-column: 1/-1;">Ingen logoer.</div>';
                 return;
             }
-            grid.innerHTML = liste.map(l => `
-                <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; background: var(--bg-container); display: flex; flex-direction: column; gap: 6px;">
+            grid.innerHTML = liste.map(l => {
+                const erSystem = l.navn === systemmerke.filnavn;
+                return `
+                <div style="border: 2px solid ${erSystem ? 'var(--accent)' : 'var(--border-color)'}; border-radius: 8px; padding: 10px; background: var(--bg-container); display: flex; flex-direction: column; gap: 6px;">
                     <div style="height: 80px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border-radius: 4px; padding: 4px;">
                         <img src="${escAttr(l.url)}" alt="${escAttr(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                     </div>
                     <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(l.navn)}">${escHtml(l.navn)}</div>
+                    <button class="knapp mini" onclick="systemmerkeVelg('${escAttr(l.navn)}')" ${erSystem ? 'disabled style="opacity: 0.5;"' : ''}>${erSystem ? '✓ Systemlogo' : 'Bruk som systemlogo'}</button>
                     <div style="display: flex; gap: 4px;">
                         <button class="knapp mini" onclick="logoKopierUrl('${escAttr(l.navn)}')">Kopier URL</button>
                         <button class="knapp mini danger" onclick="logoSlett('${escAttr(l.navn)}')">Slett</button>
                     </div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         }
 
         async function logoOpplast(filer) {
@@ -887,9 +974,18 @@
         }
 
         window.logoSlett = async (navn) => {
-            if (!confirm(`Slette logoen "${navn}"?`)) return;
+            const erSystem = navn === systemmerke.filnavn;
+            const spm = erSystem
+                ? `"${navn}" er valgt som systemlogo. Slette den? Systemmerkingen faller da tilbake til tekstvarianten.`
+                : `Slette logoen "${navn}"?`;
+            if (!confirm(spm)) return;
             try {
                 await api.del('/api/logoer/' + encodeURIComponent(navn));
+                // Rydd innstillingen så vi ikke sitter igjen med en peker til en fil som er borte
+                if (erSystem) {
+                    await api.post('/api/innstillinger', { Nokkel: 'SystemLogo', Verdi: '' });
+                    await systemmerkeLast();
+                }
                 await logoLast();
             } catch (e) { alert('Kunne ikke slette: ' + e.message); }
         };
@@ -1489,5 +1585,6 @@
 
         init();
     </script>
+    <script type="module" src="/js/systemtopp.js"></script>
 </body>
 </html>

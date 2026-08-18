@@ -37,6 +37,46 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/utsending",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/utsending/valider",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/utsending/for-meg",
+            "allowedRoles": ["authenticated"]
+        },
+        {
+            "route": "/api/oppslag",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/utsending/purre",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/logo/*",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/systemlogo",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/postnumre/refresh-bring",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/backup/kjor",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/cache/teammedlemskap",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },
@@ -46,14 +86,6 @@
         },
         {
             "route": "/migrer.html",
-            "allowedRoles": ["admin"]
-        },
-        {
-            "route": "/nokkeladmin.html",
-            "allowedRoles": ["authenticated"]
-        },
-        {
-            "route": "/rolleadmin.html",
             "allowedRoles": ["admin"]
         },
         {
@@ -73,7 +105,7 @@
         "rewrite": "/index.html",
         "exclude": ["/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"]
     },
-      "auth": {
+    "auth": {
         "identityProviders": {
             "azureActiveDirectory": {
                 "registration": {
@@ -82,7 +114,8 @@
                     "clientSecretSettingName": "AAD_CLIENT_SECRET"
                 }
             }
-        },
+        }
+    },
     "responseOverrides": {
         "401": {
             "statusCode": 302,

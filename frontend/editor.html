@@ -671,17 +671,7 @@
                         </select>
                     </div>
                     <div class="rad">
-                        <label>DIF-logo (venstre) <small>(større logo til venstre for tittelen, f.eks. avdelings/våpen-merke)</small></label>
-                        <div style="display: flex; gap: 8px; align-items: center;">
-                            <img id="f-diflogo-preview" src="${escapeAttr(data.DIFLogo_URL || '')}" alt=""
-                                style="height: 50px; max-width: 100px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.DIFLogo_URL ? '' : 'display: none;'}">
-                            <span id="f-diflogo-navn" style="font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${data.DIFLogo_URL ? escapeHtml(data.DIFLogo_URL.split('/').pop()) : '(ingen valgt)'}</span>
-                            <button class="knapp sekundær" style="font-size: 12px; padding: 4px 10px;" onclick="velgLogoModal('DIFLogo_URL')">Velg logo…</button>
-                            <button class="knapp sekundær" style="font-size: 12px; padding: 4px 8px;" onclick="setDIFLogo('')" title="Fjern logo">✕</button>
-                        </div>
-                    </div>
-                    <div class="rad">
-                        <label>Logo (høyre) <small>(vises til høyre for tittelen — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>)</small></label>
+                        <label>Logo (høyre) <small>(vises til høyre for tittelen — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>. Plassen til venstre er reservert for systemmerkingen.)</small></label>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <img id="f-logo-preview" src="${escapeAttr(data.Logo_url || '')}" alt=""
                                 style="height: 40px; max-width: 120px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.Logo_url ? '' : 'display: none;'}">
@@ -1830,18 +1820,13 @@
             data.Logo_url = v || '';
             oppdaterLogoPreview('f-logo-preview', 'f-logo-navn', v);
         };
-        window.setDIFLogo = v => {
-            data.DIFLogo_URL = v || '';
-            oppdaterLogoPreview('f-diflogo-preview', 'f-diflogo-navn', v);
-        };
-        // Åpne modal med logo-grid — feltNavn = 'Logo_url' eller 'DIFLogo_URL'
+        // Åpne modal med logo-grid. Bare Logo_url (høyre side) er valgbar —
+        // plassen til venstre for tittelen er reservert for systemmerkingen.
         window.velgLogoModal = async (feltNavn) => {
             let logoer = [];
             try { logoer = await api.get('/api/logoer'); }
             catch (e) { alert('Kunne ikke laste logoer: ' + e.message); return; }
-            const gjeldende = data[feltNavn] || '';
-            const setter = feltNavn === 'DIFLogo_URL' ? setDIFLogo : setLogo;
-            apneLogoGrid(logoer, gjeldende, (valgt) => setter(valgt));
+            apneLogoGrid(logoer, data[feltNavn] || '', (valgt) => setLogo(valgt));
         };
         function apneLogoGrid(logoer, gjeldende, callback) {
             const bakgrunn = document.createElement('div');
@@ -2350,5 +2335,6 @@
 
         init();
     </script>
+    <script type="module" src="/js/systemtopp.js"></script>
 </body>
 </html>

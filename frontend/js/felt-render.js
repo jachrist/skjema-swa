@@ -379,22 +379,9 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
     container.dataset.feltId = feltId;
     const maks = felt.Max_valg || 1;
     let antallValgt = 0;
-    // Legg til søkefelt hvis mange valg (>10) — filtrerer synlige labels
+    // Ikke noe søkefelt her — alle knappene er synlige samtidig, så et søk som
+    // skjuler dem er mer forvirrende enn nyttig. Søk hører hjemme i dropdownen.
     const valgListe = felt.Valg || [];
-    if (valgListe.length > 10) {
-        const sok = document.createElement('input');
-        sok.type = 'text';
-        sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
-        sok.style.cssText = 'width: 100%; padding: 4px 8px; margin-bottom: 6px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
-        sok.addEventListener('input', () => {
-            const q = sok.value.trim().toLowerCase();
-            container.querySelectorAll('label.flervalg-knapp').forEach(lbl => {
-                const t = (lbl.querySelector('span')?.textContent || '').toLowerCase();
-                lbl.style.display = q === '' || t.includes(q) ? '' : 'none';
-            });
-        });
-        container.appendChild(sok);
-    }
     for (const valg of valgListe) {
         const label = document.createElement('label');
         label.className = 'flervalg-knapp';
@@ -487,9 +474,28 @@ function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
     const chips = document.createElement('div');
     chips.style.cssText = 'display: flex; flex-wrap: wrap; gap: 6px;';
 
-    const teller = document.createElement('div');
-    teller.style.cssText = 'font-size: 12px; color: var(--text-secondary, #6e6e73);';
+    const bunnrad = document.createElement('div');
+    bunnrad.style.cssText = 'display: flex; align-items: center; gap: 8px;';
 
+    const teller = document.createElement('div');
+    teller.style.cssText = 'font-size: 12px; color: var(--text-secondary, #6e6e73); flex: 1;';
+
+    const knappStil = 'font-size: 12px; padding: 2px 8px; border: 1px solid var(--input-border, #d1d1d6); ' +
+        'border-radius: 6px; background: none; color: inherit; cursor: pointer;';
+    const merkAlle = document.createElement('button');
+    merkAlle.type = 'button';
+    merkAlle.textContent = 'Merk alle';
+    merkAlle.style.cssText = knappStil;
+    const fjernAlle = document.createElement('button');
+    fjernAlle.type = 'button';
+    fjernAlle.textContent = 'Fjern alle';
+    fjernAlle.style.cssText = knappStil;
+    bunnrad.append(teller, merkAlle, fjernAlle);
+
+    // Søketeksten holdes utenfor DOM-en fordi tegn() bygger opsjonslista på
+    // nytt: filtrering ved å sette `hidden` på <option> virker ikke i alle
+    // nettlesere (Safari ignorerer det), så vi må faktisk utelate elementene.
+    let query = '';
     let sok = null;
     if (valgListe.length > 10) {
         sok = document.createElement('input');
@@ -497,12 +503,18 @@ function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
         sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
         sok.style.cssText = 'padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
         sok.addEventListener('input', () => {
-            const q = sok.value.trim().toLowerCase();
-            for (const opt of sel.querySelectorAll('option')) {
-                if (opt.value === '') { opt.hidden = false; continue; }
-                opt.hidden = q !== '' && !opt.textContent.toLowerCase().includes(q);
-            }
+            query = sok.value.trim().toLowerCase();
+            tegn();
         });
+    }
+
+    // Ikke-valgte alternativer som søket slipper gjennom — grunnlaget både for
+    // opsjonslista og for «Merk alle».
+    function kandidater() {
+        return valgListe
+            .map(verdiAv)
+            .filter(v => !wrap._valgte.includes(v))
+            .filter(v => !query || String(tekstFor(v)).toLowerCase().includes(query));
     }
 
     function meldEndring() {
@@ -514,18 +526,19 @@ function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
 
     function tegn() {
         const fullt = wrap._valgte.length >= maks;
+        const ledige = kandidater();
 
         sel.innerHTML = '';
         const tom = document.createElement('option');
         tom.value = '';
-        tom.textContent = fullt ? `— maks ${maks} valgt —` : '+ legg til…';
+        tom.textContent = fullt
+            ? `— maks ${maks} valgt —`
+            : (query && ledige.length === 0 ? '— ingen treff —' : '+ legg til…');
         sel.appendChild(tom);
-        for (const valg of valgListe) {
-            const v = verdiAv(valg);
-            if (wrap._valgte.includes(v)) continue;
+        for (const v of ledige) {
             const opt = document.createElement('option');
             opt.value = v;
-            opt.textContent = valg.Tekst;
+            opt.textContent = tekstFor(v);
             sel.appendChild(opt);
         }
         sel.value = '';
@@ -555,6 +568,13 @@ function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
         }
 
         teller.textContent = `${wrap._valgte.length} av ${maks} valgt`;
+        merkAlle.disabled = fullt || ledige.length === 0;
+        merkAlle.title = maks < valgListe.length
+            ? `Merker så mange det er plass til (maks ${maks})`
+            : 'Merk alle alternativer';
+        merkAlle.style.opacity = merkAlle.disabled ? '0.45' : '';
+        fjernAlle.disabled = wrap._valgte.length === 0;
+        fjernAlle.style.opacity = fjernAlle.disabled ? '0.45' : '';
         if (sok) sok.style.display = fullt ? 'none' : '';
     }
 
@@ -562,52 +582,90 @@ function _lagChipsDropdown(felt, feltId, initialSvar, maks) {
         const v = sel.value;
         if (!v || wrap._valgte.length >= maks) return;
         if (!wrap._valgte.includes(v)) wrap._valgte.push(v);
-        if (sok) sok.value = '';
+        if (sok) { sok.value = ''; query = ''; }
         tegn();
         // sel sin egen change bobler allerede opp til skjemaet
     });
 
+    merkAlle.addEventListener('click', () => {
+        // Med et aktivt søk merkes bare treffene — det er den lesningen som
+        // stemmer med det brukeren faktisk ser i lista.
+        const før = wrap._valgte.length;
+        for (const v of kandidater()) {
+            if (wrap._valgte.length >= maks) break;
+            wrap._valgte.push(v);
+        }
+        if (wrap._valgte.length === før) return;
+        tegn();
+        meldEndring();
+    });
+
+    fjernAlle.addEventListener('click', () => {
+        if (wrap._valgte.length === 0) return;
+        wrap._valgte = [];
+        tegn();
+        meldEndring();
+    });
+
     if (sok) wrap.appendChild(sok);
-    wrap.append(sel, chips, teller);
+    wrap.append(sel, chips, bunnrad);
     tegn();
     return wrap;
 }
 
 function _lagEnkeltDropdown(felt, feltId, valgtVerdi) {
+    const valgListe = felt.Valg || [];
     const sel = document.createElement('select');
     sel.id = feltId;
     sel.name = feltId;
-    const tom = document.createElement('option');
-    tom.value = '';
-    tom.textContent = '— velg —';
-    sel.appendChild(tom);
-    for (const valg of (felt.Valg || [])) {
-        const opt = document.createElement('option');
-        // Bruker Verdi som value når finnes (FasteData: UPN/kode), Tekst til visning.
-        opt.value = valg.Verdi ?? valg.Tekst;
-        opt.textContent = valg.Tekst;
-        // Bakoverkompatibel selection: match mot enten Verdi eller Tekst
-        if (opt.value === valgtVerdi || valg.Tekst === valgtVerdi) opt.selected = true;
-        sel.appendChild(opt);
+
+    // Bakoverkompatibel selection: lagret svar kan være enten Verdi eller Tekst
+    let valgt = '';
+    for (const valg of valgListe) {
+        const v = String(valg.Verdi ?? valg.Tekst);
+        if (v === valgtVerdi || valg.Tekst === valgtVerdi) { valgt = v; break; }
     }
+
+    // Opsjonslista bygges på nytt ved hvert søk. Å sette `hidden` på <option>
+    // virker ikke i alle nettlesere (Safari ignorerer det), så filtrering må
+    // skje ved å faktisk utelate elementene.
+    function tegnOpsjoner() {
+        const q = sok ? sok.value.trim().toLowerCase() : '';
+        sel.innerHTML = '';
+        const tom = document.createElement('option');
+        tom.value = '';
+        tom.textContent = '— velg —';
+        sel.appendChild(tom);
+        for (const valg of valgListe) {
+            // Bruker Verdi som value når finnes (FasteData: UPN/kode), Tekst til visning.
+            const v = String(valg.Verdi ?? valg.Tekst);
+            // Den valgte verdien blir alltid med — ellers ville et søk som ikke
+            // treffer den stille nullstille svaret.
+            if (q && v !== valgt && !String(valg.Tekst ?? v).toLowerCase().includes(q)) continue;
+            const opt = document.createElement('option');
+            opt.value = v;
+            opt.textContent = valg.Tekst;
+            sel.appendChild(opt);
+        }
+        sel.value = valgt;
+    }
+    sel.addEventListener('change', () => { valgt = sel.value; });
+
     // Legg til søk hvis mange valg — bygger søkbar wrapper rundt <select>
-    if ((felt.Valg || []).length > 10) {
+    let sok = null;
+    if (valgListe.length > 10) {
         const wrap = document.createElement('div');
         wrap.style.cssText = 'display: flex; flex-direction: column; gap: 4px;';
-        const sok = document.createElement('input');
+        sok = document.createElement('input');
         sok.type = 'text';
-        sok.placeholder = `🔍 Filtrer (${felt.Valg.length} valg)…`;
+        sok.placeholder = `🔍 Filtrer (${valgListe.length} valg)…`;
         sok.style.cssText = 'padding: 4px 8px; font-size: 13px; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;';
-        sok.addEventListener('input', () => {
-            const q = sok.value.trim().toLowerCase();
-            for (const opt of sel.querySelectorAll('option')) {
-                if (opt.value === '') { opt.hidden = false; continue; }
-                opt.hidden = q !== '' && !opt.textContent.toLowerCase().includes(q);
-            }
-        });
+        sok.addEventListener('input', tegnOpsjoner);
+        tegnOpsjoner();
         wrap.append(sok, sel);
         return wrap;
     }
+    tegnOpsjoner();
     return sel;
 }
 
