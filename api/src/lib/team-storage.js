@@ -152,6 +152,21 @@ function normaliserMedlem(m) {
 }
 
 /**
+ * Godtar både en ren array og en connector-/Graph-innpakning ({ value: [...] }
+ * eller { Medlemmer: [...] }), slik at PA kan sende resultatet fra connectoren
+ * videre uendret.
+ */
+function medlemsliste(medlemmer) {
+    if (Array.isArray(medlemmer)) return medlemmer;
+    if (medlemmer && typeof medlemmer === 'object') {
+        for (const n of ['value', 'Value', 'Medlemmer', 'medlemmer', 'members', 'Members']) {
+            if (Array.isArray(medlemmer[n])) return medlemmer[n];
+        }
+    }
+    return [];
+}
+
+/**
  * Erstatt medlemskap for ett team. Med append=false slettes alle
  * eksisterende rader for teamet før nye upserts. Med append=true beholdes
  * eksisterende (brukes når PA sender store lister i flere chunker).
@@ -184,7 +199,7 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
     // Dedupliser på UPN. Kommer samme person flere ganger, vinner den raden
     // som faktisk har navn — flyten kan sende både berikede og bare rene UPN-er.
     const perUpn = new Map();
-    for (const m of (Array.isArray(medlemmer) ? medlemmer : [])) {
+    for (const m of medlemsliste(medlemmer)) {
         const norm = normaliserMedlem(m);
         if (!norm) continue;
         const fins = perUpn.get(norm.EP);
@@ -228,7 +243,7 @@ async function erstattBatch(grupper) {
         const nokkel = navn.toLowerCase();
         if (!sammenslatt.has(nokkel)) sammenslatt.set(nokkel, { Team: navn, Medlemmer: [], appendAlle: true });
         const entry = sammenslatt.get(nokkel);
-        entry.Medlemmer.push(...(Array.isArray(g.Medlemmer) ? g.Medlemmer : []));
+        entry.Medlemmer.push(...medlemsliste(g.Medlemmer));
         if (g.append !== true) entry.appendAlle = false;
     }
     const resultater = [];

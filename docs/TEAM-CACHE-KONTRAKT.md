@@ -64,7 +64,16 @@ videre uten en mellomliggende `Select`. Første ikke-tomme verdi vinner.
 | **Etternavn** | `surname`, `EN`, `Etternavn` |
 | **Visningsnavn** | `displayName`, `Navn` |
 
-Medlemmer uten UPN hoppes over. UPN lagres i små bokstaver.
+Medlemmer uten UPN hoppes over — nestede grupper og andre objekter uten
+brukerprinsipal forsvinner altså av seg selv. UPN lagres i små bokstaver.
+
+**Ekstra felt ignoreres.** Resultatet fra PA-connectoren (eller et rått
+Graph-svar) kan sendes videre uendret, med `id`, `jobTitle`, `@odata.type` og
+alt annet med. `Medlemmer` kan også være selve connector-outputen med
+innpakning — `{ "value": [ ... ] }` og `{ "Medlemmer": [ ... ] }` pakkes ut
+automatisk.
+
+Står både `userPrincipalName` og `mail` i objektet, vinner `userPrincipalName`.
 
 En ren streng godtas fortsatt som medlem og tolkes som UPN uten navn:
 

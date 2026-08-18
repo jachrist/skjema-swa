@@ -182,7 +182,8 @@ app.http('teamLastMedlemmer', {
                 return { status: resp.status, jsonBody: { status: 'feil', melding: `PA-flyt HTTP ${resp.status}`, detaljer: tekst.slice(0, 500) } };
             }
             const flytSvar = await resp.json().catch(() => ({}));
-            const medlemmer = Array.isArray(flytSvar) ? flytSvar : (Array.isArray(flytSvar.Medlemmer) ? flytSvar.Medlemmer : []);
+            // erstattTeam pakker selv ut { value: [...] } / { Medlemmer: [...] }
+            const medlemmer = flytSvar;
 
             const res = await teamStorage.erstattTeam(teamNavn, medlemmer, { append: false });
             hendelser.logg({
