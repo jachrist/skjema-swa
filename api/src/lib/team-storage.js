@@ -162,13 +162,23 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
     const t = await tabell();
     const nu = new Date().toISOString();
 
-    if (!append) {
-        // Slett eksisterende for teamet
-        const filter = odata`PartitionKey eq ${navn}`;
-        for await (const e of t.listEntities({ queryOptions: { filter, select: ['PartitionKey', 'RowKey'] } })) {
-            try { await t.deleteEntity(e.partitionKey, e.rowKey); }
-            catch (err) { if (err.statusCode !== 404) throw err; }
+    // Les eksisterende rader først (og slett dem hvis append=false). Navn tas
+    // vare på for medlemmer som fortsatt er med, men som kommer inn uten navn —
+    // slik at en flyt som ennå ikke er lagt om ikke sletter navn en annen flyt
+    // har lagret. To flyter skriver hit: cron-refresh og lazy-load.
+    const tidligereNavn = new Map();
+    const filter = odata`PartitionKey eq ${navn}`;
+    try {
+        for await (const e of t.listEntities({ queryOptions: { filter, select: ['PartitionKey', 'RowKey', 'FN', 'EN', 'Navn'] } })) {
+            const m = radTilMedlem(e);
+            if (m.EP && (m.FN || m.EN || m.Navn)) tidligereNavn.set(m.EP, m);
+            if (!append) {
+                try { await t.deleteEntity(e.partitionKey, e.rowKey); }
+                catch (err) { if (err.statusCode !== 404) throw err; }
+            }
         }
+    } catch (e) {
+        if (e.statusCode !== 404) throw e;
     }
 
     // Dedupliser på UPN. Kommer samme person flere ganger, vinner den raden
@@ -183,16 +193,26 @@ async function erstattTeam(teamNavn, medlemmer, { append = false } = {}) {
 
     let skrevet = 0;
     let medNavn = 0;
+    let beholdt = 0;
     for (const m of perUpn.values()) {
+        let { FN, EN, Navn } = m;
+        if (FN || EN || Navn) {
+            medNavn++;
+        } else {
+            const gammel = tidligereNavn.get(m.EP);
+            if (gammel) { ({ FN, EN, Navn } = gammel); beholdt++; }
+        }
         await t.upsertEntity({
             partitionKey: navn, rowKey: m.EP,
-            FN: m.FN, EN: m.EN, Navn: m.Navn,
+            FN, EN, Navn,
             SistOppdatert: nu
         }, 'Replace');
         skrevet++;
-        if (m.FN || m.EN || m.Navn) medNavn++;
     }
-    return { Team: navn, modus: append ? 'append' : 'erstatt', antallMedlemmer: skrevet, antallMedNavn: medNavn };
+    return {
+        Team: navn, modus: append ? 'append' : 'erstatt',
+        antallMedlemmer: skrevet, antallMedNavn: medNavn, antallNavnBeholdt: beholdt
+    };
 }
 
 /**

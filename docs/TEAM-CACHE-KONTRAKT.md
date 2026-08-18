@@ -96,13 +96,40 @@ $select=userPrincipalName,givenName,surname,displayName
   "status": "ok",
   "antallTeam": 1,
   "resultater": [
-    { "Team": "FHS Alle ansatte", "modus": "erstatt", "antallMedlemmer": 842, "antallMedNavn": 842 }
+    { "Team": "FHS Alle ansatte", "modus": "erstatt", "antallMedlemmer": 842, "antallMedNavn": 842, "antallNavnBeholdt": 0 }
   ]
 }
 ```
 
-`antallMedNavn` er nyttig som kontroll etter at flyten er lagt om: er den 0 mens
-`antallMedlemmer` er høy, kommer navnene ikke gjennom.
+`antallMedNavn` teller medlemmer der navn kom med i denne forespørselen, og er
+kontrollen etter at en flyt er lagt om: er den 0 mens `antallMedlemmer` er høy,
+kommer navnene ikke gjennom.
+
+`antallNavnBeholdt` teller medlemmer som kom inn uten navn, men der vi beholdt
+navnet som allerede lå lagret — se neste avsnitt.
+
+---
+
+## Begge skrivende flyter må legges om
+
+To flyter skriver til denne tabellen:
+
+| Flyt | Vei inn |
+|---|---|
+| Periodisk refresh | POSTer til `/api/cache/teammedlemskap` |
+| Lazy-load fra editoren | API-et kaller `TEAM_LAST_MEDLEMMER_FLOW_URL`, og cacher svaret |
+
+Begge går gjennom den samme erstatt-logikken med `append: false`, så begge må
+sende navn for at alle medlemmer skal få det.
+
+Rekkefølgen spiller likevel ingen rolle: kommer et medlem inn uten navn, og det
+allerede ligger et navn lagret på samme UPN i samme team, beholdes det gamle
+navnet (`antallNavnBeholdt`). En flyt som ennå ikke er lagt om sletter derfor
+ikke navn den andre har lagt inn. Navn som faktisk sendes overskriver alltid det
+lagrede, så navneendringer i Entra slår gjennom.
+
+Det som mangler til begge er lagt om, er navn på personer som *bare* den ikke-
+oppdaterte flyten har sett — nye medlemmer lastet via lazy-load, for eksempel.
 
 ---
 
