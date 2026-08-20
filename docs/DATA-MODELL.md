@@ -109,6 +109,18 @@ Filterverdi kan være:
 
 Se `api/src/lib/faste-data.js` + `api/src/lib/masterdata/oppslag.js`.
 
+### Rolleoppslag og omfang
+
+Datakilden `Roller` filtreres på `Rolle` (rollenavn), `Omfang`, eller begge —
+omfang alene er ikke entydig, siden samme klasse kan ha flere roller. To
+betingelser i samme OG-gruppe snittes på verdi.
+
+Omfang sammenlignes **normalisert**: siste ledd etter `|` på begge sider
+(`api/src/lib/omfang.js`). Kildene `Klasser` og `Kull` leverer sammensatte
+nøkler (`"FHSBA|22H|KS Kull Rønneberg 22-25"`), mens rollelista vedlikeholdes på
+ren kode. Det samme gjelder omfanget i `Personer`-filteret `Rolle(Omfang)` og i
+dynamiske rolleomfang på behandlingssteg.
+
 ## Behandlingssteg — dynamisk rolleomfang
 
 Et steg peker på behandlere via `Personer`, `Roller` og `Team`. Rollestrenger er

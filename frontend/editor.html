@@ -507,9 +507,10 @@
             },
             {
                 navn: 'Roller',
-                beskrivelse: 'Distinkte (Rolle, Omfang)-par — for valg av rolle (ikke innehaver)',
+                beskrivelse: 'Distinkte (Rolle, Omfang)-par — for valg av rolle (ikke innehaver). Kombiner Rolle og Omfang for et entydig treff.',
                 filtre: [
-                    { navn: 'Omfang', beskrivelse: 'Roller med spesifikt omfang. Verdi: omfang-tekst (f.eks. "MILM2301").' }
+                    { navn: 'Rolle', beskrivelse: 'Roller med et bestemt navn. Verdi: rollenavn (f.eks. "Klassesjef").' },
+                    { navn: 'Omfang', beskrivelse: 'Roller med spesifikt omfang. Verdi: omfang-tekst (f.eks. "MILM2301") eller feltreferanse til et Klasser-/Kull-felt — den sammensatte nøkkelen matches mot siste ledd.' }
                 ]
             },
             {
@@ -522,7 +523,7 @@
                 beskrivelse: 'Personer. Uten filter: alle kjente teammedlemmer (ett team omfatter alle FHS-brukere). Navn vises for dem som også har en rolle — øvrige vises med e-postadresse.',
                 filtre: [
                     { navn: 'Team', beskrivelse: 'Medlemmer av ett team. Verdi: team-navn slik det står i Teammedlemskap.' },
-                    { navn: 'Rolle', beskrivelse: 'Innehavere av en rolle. Verdi: "Rolle(Omfang)" eller "Rolle".' },
+                    { navn: 'Rolle', beskrivelse: 'Innehavere av en rolle. Verdi: "Rolle(Omfang)" eller "Rolle". Omfanget matches mot siste ledd, så en sammensatt klassenøkkel treffer også.' },
                     { navn: 'EmneLarere', beskrivelse: 'Lærere for et emne (fra FS). Verdi: emnekode (f.eks. "CBU2501" eller "CBU2501-1").' },
                     { navn: 'EmneHovedlarere', beskrivelse: 'Hovedlærere for et emne (fra FS). Verdi: emnekode.' },
                     { navn: 'EmneStudenter', beskrivelse: 'Studenter på et emne (fra FS). Verdi: emnekode.' }

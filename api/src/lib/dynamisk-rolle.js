@@ -27,6 +27,7 @@
  * nøkkelen ikke gjør det — så vi bruker siste ledd etter «|».
  */
 const { finnSvarForFeltRef, finnSvarForFeltViaId } = require('./placeholder');
+const { normaliserOmfang } = require('./omfang');
 const rollerStorage = require('./roller-storage');
 
 const FELTREF = /\{([^}]+)\}/g;
@@ -35,16 +36,6 @@ const POSISJONELL = /^(\d+)-(\d+)$/;
 /** En rollestreng er dynamisk hvis den inneholder minst én feltreferanse. */
 function erDynamisk(rolleStreng) {
     return /\{[^}]+\}/.test(String(rolleStreng || ''));
-}
-
-/**
- * Siste ledd etter «|». Gjør sammensatte FasteData-nøkler
- * ("BMIL|2025H|MILM23-1") om til den delen rollelista vedlikeholdes på.
- */
-function sisteLedd(verdi) {
-    const s = String(verdi ?? '').trim();
-    const i = s.lastIndexOf('|');
-    return (i >= 0 ? s.slice(i + 1) : s).trim();
 }
 
 function slaOppSvar(ref, seksjoner) {
@@ -63,7 +54,7 @@ function ekspanderRolleStreng(rolleStreng, seksjoner) {
     const mal = String(rolleStreng || '');
     let ulost = false;
     const lost = mal.replace(FELTREF, (_treff, ref) => {
-        const verdi = sisteLedd(slaOppSvar(String(ref).trim(), seksjoner));
+        const verdi = normaliserOmfang(slaOppSvar(String(ref).trim(), seksjoner));
         if (!verdi) { ulost = true; return ''; }
         return verdi;
     });
@@ -155,7 +146,6 @@ async function sikreBehandler(skjema, log = () => {}) {
 
 module.exports = {
     erDynamisk,
-    sisteLedd,
     ekspanderRolleStreng,
     ekspanderBehandling,
     sikreBehandler
