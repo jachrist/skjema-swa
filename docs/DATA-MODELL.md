@@ -108,3 +108,42 @@ Filterverdi kan være:
 - UUID/S-FF-referanse til annet felt i skjemaet
 
 Se `api/src/lib/faste-data.js` + `api/src/lib/masterdata/oppslag.js`.
+
+## Behandlingssteg — dynamisk rolleomfang
+
+Et steg peker på behandlere via `Personer`, `Roller` og `Team`. Rollestrenger er
+`"Rolle"` eller `"Rolle(Omfang)"`.
+
+Omfanget kan hentes fra innsenderens eget svar — «behandleren er klassesjefen
+for klassen kadetten oppga»:
+
+```json
+{
+  "Steg": 1,
+  "Stegnavn": "Klassesjefens vurdering",
+  "Roller": ["Klassesjef({2-01})"],
+  "Reserverolle": "Sjef(Befalsskolen)"
+}
+```
+
+Ved innsending (`POST /api/skjemaer`, status → 2) skjer følgende i
+`api/src/lib/dynamisk-rolle.js`:
+
+1. Feltreferansen (`{<seksjon>-<felt>}` eller `{<UUID>}`) slås opp i svarene.
+2. Er verdien en sammensatt FasteData-nøkkel (`"BMIL|2025H|MILM23-1"`), brukes
+   siste ledd — rollelista vedlikeholdes på ren klassekode.
+3. Malen lagres i `RollerMal`, resultatet skrives til `Roller`:
+   `"Klassesjef(MILM23-1)"`.
+4. Har ingen av stegets roller innehavere, legges `Reserverolle` til i tillegg,
+   og hendelsen `behandling.uten-behandler` logges.
+
+Ekspansjonen skjer **én gang**, ved innsending — ikke ved hvert oppslag. På
+skjematyper med `Krypteres: "Svar"|"Alt"` ligger svaret som chiffertekst, og
+tilgangssjekken kjører før dekryptering. Sendes skjemaet inn på nytt etter
+ompuss, ekspanderes det på nytt fra `RollerMal`.
+
+Det er rollestrengen — ikke personene — som fryses: legges klassesjefen inn i
+rollelista i etterkant, får steget behandler uten at skjemaet må røres.
+
+Er feltet ubesvart, beholdes malen uendret i `Roller` (steget får ingen
+behandler, og `behandling.rolle.ekspandert` logger det som uløst).

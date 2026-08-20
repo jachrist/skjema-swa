@@ -6,12 +6,17 @@
  *   const editor = byggTilgangEditor(container, verdi, {
  *       kompakt: false,           // true = mindre padding, mindre tekst
  *       onEndring: (ny) => { data.Publikum = ny; },
- *       rolleGrupper: [...]       // fra /api/roller/grupper (cachet)
+ *       rolleGrupper: [...],      // fra /api/roller/grupper (cachet)
+ *       feltReferanser: [...]     // {ref, tekst} — slår på dynamisk rolle
  *   });
  *
  * Personer: fritt-tekst chip-liste (e-postadresser)
  * Roller:   dropdown fra rolleGrupper + chip-liste (format: "Rolle" eller "Rolle(Omfang)")
  * Team:     fritt-tekst chip-liste (kommer med Graph API — foreløpig manuell tekst)
+ *
+ * Dynamisk rolle: er `feltReferanser` satt (kun meningsfullt for behandlingssteg),
+ * kan omfanget hentes fra et svar i skjemaet — "Klassesjef({2-01})". Referansen
+ * løses opp ved innsending, se api/src/lib/dynamisk-rolle.js.
  */
 
 let _rolleGrupperCache = null;
@@ -45,6 +50,7 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     const onEndring = options.onEndring || (() => {});
     const rolleGrupper = options.rolleGrupper || [];
     const teamNavn = options.teamNavn || [];
+    const feltReferanser = options.feltReferanser || [];
     const api = options.api || null; // brukes for Søk eksternt-flyten
     // visAlleTilgang: true → viser en 'Åpen for alle innloggede'-checkbox
     // øverst som overstyrer person/rolle/team-sjekker. Kun meningsfull for
@@ -66,7 +72,15 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     function rolleTilVisning(r) {
         // "Emneansvarlig(CBU2501)" → "Emneansvarlig — CBU2501"
         const m = /^(.+?)\((.+)\)$/.exec(String(r || '').trim());
-        return m ? `${m[1].trim()} — ${m[2].trim()}` : String(r);
+        if (!m) return String(r);
+        const navn = m[1].trim();
+        const omfang = m[2].trim();
+        // Dynamisk omfang vises med feltets tekst, ikke referansekoden — det er
+        // feltet redaktøren kjenner igjen.
+        const ref = /^\{(.+)\}$/.exec(omfang);
+        if (!ref) return `${navn} — ${omfang}`;
+        const felt = feltReferanser.find(f => f.ref === ref[1]);
+        return `${navn} — omfang fra ${felt ? `«${felt.tekst}»` : `svar {${ref[1]}}`}`;
     }
 
     function grupperTilRolleStreng(g) {
@@ -148,11 +162,74 @@ export function byggTilgangEditor(container, verdi, options = {}) {
             }
         }));
 
+        if (feltReferanser.length > 0) sek.appendChild(byggDynamiskRolle());
+
         // Chip-liste for valgte roller
         sek.appendChild(byggChipListe('Roller', state.Roller, () => false, null, {
             visning: rolleTilVisning
         }));
         return sek;
+    }
+
+    // ==================== Dynamisk rolle ====================
+    // "Klassesjef" + feltet «Klasse» → "Klassesjef({2-01})". Rollenavnet er
+    // fritekst med forslag, fordi rollen kan være tom i rollelista når
+    // skjematypen settes opp (klassesjefer legges inn manuelt per termin).
+    function byggDynamiskRolle() {
+        const boks = document.createElement('div');
+        boks.style.cssText = 'display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0;';
+
+        const rolleNavn = [...new Set(rolleGrupper.map(g => g.Rolle).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'nb'));
+        const listeId = `dyn-rolle-${Math.random().toString(36).slice(2, 9)}`;
+        const datalist = document.createElement('datalist');
+        datalist.id = listeId;
+        for (const n of rolleNavn) {
+            const o = document.createElement('option');
+            o.value = n;
+            datalist.appendChild(o);
+        }
+
+        const navnInput = document.createElement('input');
+        navnInput.type = 'text';
+        navnInput.setAttribute('list', listeId);
+        navnInput.placeholder = 'Rollenavn (f.eks. Klassesjef)';
+        navnInput.style.cssText = `flex: 1; min-width: 140px; padding: 3px 8px; font-size: ${kompakt ? '12px' : '13px'}; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;`;
+
+        const feltSelect = document.createElement('select');
+        feltSelect.style.cssText = `flex: 1; min-width: 160px; padding: 3px 8px; font-size: ${kompakt ? '12px' : '13px'}; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;`;
+        const tom = document.createElement('option');
+        tom.value = '';
+        tom.textContent = 'omfang fra felt…';
+        feltSelect.appendChild(tom);
+        for (const f of feltReferanser) {
+            const o = document.createElement('option');
+            o.value = f.ref;
+            o.textContent = f.tekst;
+            feltSelect.appendChild(o);
+        }
+
+        const knapp = document.createElement('button');
+        knapp.type = 'button';
+        knapp.textContent = '+ Dynamisk rolle';
+        knapp.title = 'Omfanget hentes fra innsenderens svar når skjemaet sendes inn';
+        knapp.style.cssText = 'padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
+        knapp.addEventListener('click', () => {
+            const navn = navnInput.value.trim();
+            const ref = feltSelect.value;
+            if (!navn || !ref) {
+                alert('Velg både rollenavn og felt.');
+                return;
+            }
+            const streng = `${navn}({${ref}})`;
+            if (!state.Roller.includes(streng)) {
+                state.Roller.push(streng);
+                ferdig();
+                render();
+            }
+        });
+
+        boks.append(datalist, navnInput, feltSelect, knapp);
+        return boks;
     }
 
     // ==================== Team ====================

@@ -548,7 +548,7 @@
             },
             {
                 navn: 'Klasser',
-                beskrivelse: 'Aktive klasser med studenter (fra FS). Bruk sammen med Studenter{Klasse}.',
+                beskrivelse: 'Aktive klasser med studenter (fra FS). Bruk sammen med Studenter{Klasse}, eller som omfang for en dynamisk rolle på et behandlingssteg (klassekoden plukkes ut av verdien).',
                 filtre: []
             },
             {
@@ -958,14 +958,28 @@
                     byggTilgangEditor(tSlot, tilgang, {
                         kompakt: true,
                         rolleGrupper, teamNavn, api,
+                        // Alle skjemafelter kan gi omfang til en dynamisk rolle —
+                        // også felter i seksjoner etter dette steget, siden hele
+                        // skjemaet er utfylt før behandlingen starter.
+                        feltReferanser: samleFelterFør(data.Seksjoner.length - 1, -1),
                         onEndring: (ny) => {
+                            const hadde = harDynamiskRolle(steg);
                             steg.Personer = ny.Personer;
                             steg.Roller = ny.Roller;
                             steg.Team = ny.Team;
+                            // Reserverolle-raden hører til dynamiske steg — tegn
+                            // steget på nytt når den første kom til eller siste gikk bort.
+                            if (harDynamiskRolle(steg) !== hadde) rendrerBehandling();
                         }
                     });
                 }
             });
+        }
+
+        // Speiler erDynamisk() i api/src/lib/dynamisk-rolle.js — en rollestreng
+        // med feltreferanse i omfanget, f.eks. "Klassesjef({2-01})".
+        function harDynamiskRolle(steg) {
+            return (steg?.Roller || []).some(r => /\{[^}]+\}/.test(String(r)));
         }
 
         function samleReferanserForSteg(stegIdx) {
@@ -1021,6 +1035,22 @@
                 </div>
             `;
 
+            // Reserverolle er bare relevant for steg med dynamisk rolleomfang —
+            // et fast omfang har enten innehavere eller ikke, uavhengig av svaret.
+            const reserveValg = rolleGrupper.map(g => ({
+                verdi: g.Omfang ? `${g.Rolle}(${g.Omfang})` : g.Rolle,
+                tekst: g.Omfang ? `${g.Rolle} — ${g.Omfang}` : g.Rolle
+            }));
+            // En lagret reserverolle som har mistet alle innehavere er ikke med i
+            // rolleGrupper. Ta den med likevel — ellers ville den falt bort stille
+            // neste gang noen rørte nedtrekket.
+            if (steg.Reserverolle && !reserveValg.some(o => o.verdi === steg.Reserverolle)) {
+                reserveValg.unshift({ verdi: steg.Reserverolle, tekst: `${steg.Reserverolle} (uten innehavere)` });
+            }
+            const reserveOptions = reserveValg.map(o =>
+                `<option value="${escapeAttr(o.verdi)}" ${steg.Reserverolle === o.verdi ? 'selected' : ''}>${escapeHtml(o.tekst)}</option>`
+            ).join('');
+
             const varsling = Array.isArray(steg.Varsling) ? steg.Varsling : ['epost'];
             const tbTekst = steg.TilBehandler?.Emne ? '✏️ Egen melding' : 'Standardmelding';
             const varslingHtml = `
@@ -1068,6 +1098,16 @@
                         <label>Behandlere</label>
                         <div class="tilgang-slot" data-slot="steg-tilgang-${idx}"></div>
                     </div>
+
+                    ${harDynamiskRolle(steg) ? `
+                    <div class="rad">
+                        <label>Reserverolle <small>(brukes hvis den dynamiske rollen ikke har innehavere ved innsending — f.eks. klasse uten registrert klassesjef)</small></label>
+                        <select onchange="setStegReserverolle(${idx}, this.value)">
+                            <option value="">(ingen — steget står uten behandler til rollen fylles)</option>
+                            ${reserveOptions}
+                        </select>
+                    </div>
+                    ` : ''}
 
                     <div class="rad">
                         <label>Krav ved flere behandlere</label>
@@ -1162,6 +1202,11 @@
         };
         window.setStegFlytParametere = (idx, v) => {
             data.Behandling[idx].Flyt_parametere = String(v || '');
+        };
+        window.setStegReserverolle = (idx, v) => {
+            const verdi = String(v || '').trim();
+            if (verdi) data.Behandling[idx].Reserverolle = verdi;
+            else delete data.Behandling[idx].Reserverolle;
         };
 
         window.setVarslingKanal = (stegIdx, kanal, aktivert) => {

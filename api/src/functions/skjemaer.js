@@ -19,6 +19,7 @@ const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
+const dynamiskRolle = require('../lib/dynamisk-rolle');
 const varsling = require('../lib/varsling');
 const { kallEksternFlyt } = require('../lib/ekstern-flyt');
 const { oppdaterSPListe } = require('../lib/sp-liste');
@@ -714,6 +715,36 @@ app.http('lagreSkjema', {
                 skjemaData.Behandling = behandlingArvet;
             }
 
+            // Ved innsending: frys dynamiske rolleomfang («Klassesjef({2-01})» →
+            // «Klassesjef(MILM23-1)») mens svarene ennå er i klartekst. Må skje
+            // før krypteringen under, og før varslingen som leser steg.Roller.
+            const erInnsending = skjemaData.Skjema_status === 2
+                && (erNytt || (eksisterende?.Skjema_status || 0) !== 2);
+            if (erInnsending && Array.isArray(skjemaData.Behandling)) {
+                try {
+                    const { ekspanderte, uloste } = dynamiskRolle.ekspanderBehandling(skjemaData);
+                    for (const e of ekspanderte) {
+                        context.log(`dynamisk-rolle: steg ${e.steg} "${e.mal}" → "${e.rolle}"`);
+                    }
+                    for (const u of uloste) {
+                        context.log(`dynamisk-rolle: steg ${u.steg} "${u.mal}" — feltet er ubesvart, malen beholdes`);
+                    }
+                    if (ekspanderte.length > 0 || uloste.length > 0) {
+                        hendelser.logg({
+                            Type: 'behandling.rolle.ekspandert', Aktor: innsenderId,
+                            ObjektType: 'skjema', ObjektId: skjemaId,
+                            Melding: `Løste opp ${ekspanderte.length} dynamisk${ekspanderte.length === 1 ? ' rolle' : 'e roller'}` +
+                                (uloste.length ? `, ${uloste.length} uløst` : ''),
+                            Detaljer: { ekspanderte, uloste }
+                        });
+                    }
+                } catch (e) {
+                    // Ekspansjon skal ikke velte en innsending — steget beholder
+                    // malen og fanges opp av hendelsesloggen over.
+                    context.log(`dynamisk-rolle: ekspansjon feilet — ${e.message}`);
+                }
+            }
+
             // Ved innsending: kjør skip-logikk så steg som ikke oppfyller vilkår
             // markeres som "Hoppet over" med én gang, og skjemaet kan lukkes hvis alt skippes.
             // NB: alleStegFerdig() returnerer true for 0 steg — så skjematyper uten
@@ -724,6 +755,28 @@ app.http('lagreSkjema', {
                 }
                 if (alleStegFerdig(skjemaData)) {
                     skjemaData.Skjema_status = 5;
+                }
+            }
+
+            // Rollelista for klassesjefer vedlikeholdes manuelt — fang opp steg
+            // som ellers ville blitt stående uten behandler. Etter skip-logikken,
+            // så steg som uansett ikke skal kjøre ikke gir falsk alarm.
+            if (erInnsending && Array.isArray(skjemaData.Behandling)) {
+                try {
+                    const mangler = await dynamiskRolle.sikreBehandler(skjemaData, (m) => context.log(m));
+                    for (const m of mangler) {
+                        context.log(`dynamisk-rolle: steg ${m.steg} har ingen innehavere (${m.roller.join(', ')})` +
+                            (m.dekket ? ` — reserverolle "${m.reserverolle}" lagt til` : ' — INGEN reserverolle satt'));
+                        hendelser.logg({
+                            Type: 'behandling.uten-behandler', Aktor: innsenderId,
+                            ObjektType: 'skjema', ObjektId: skjemaId,
+                            Melding: `Steg ${m.steg} manglet behandler` +
+                                (m.dekket ? ` — reserverolle "${m.reserverolle}" brukt` : ' — ingen reserverolle satt'),
+                            Detaljer: m
+                        });
+                    }
+                } catch (e) {
+                    context.log(`dynamisk-rolle: behandler-sjekk feilet — ${e.message}`);
                 }
             }
 
@@ -774,6 +827,9 @@ app.http('lagreSkjema', {
 
             // Varsling ved innsending (status 2 = Innsendt, ellers mellomlagring)
             // Fire-and-forget så feil i SMTP ikke feiler hovedhandlingen.
+            // NB: samme uttrykk som erInnsending over, men evaluert etter skip-
+            // logikken. Et skjema der alle steg ble hoppet over står nå med
+            // status 5 og varsles ikke — bevisst forskjell, ikke duplisering.
             const bleInnsendt = skjemaData.Skjema_status === 2 && (erNytt || (eksisterende?.Skjema_status || 0) !== 2);
             if (bleInnsendt) {
                 const st = await skjemaStorage.hentSkjematype(skjematypeId);
