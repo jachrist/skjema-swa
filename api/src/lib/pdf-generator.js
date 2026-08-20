@@ -226,7 +226,12 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
         let visningsTeller = 0;
         for (const felt of felter) {
             visningsTeller++;
-            const svar = Array.isArray(felt.Svar) ? felt.Svar.filter(s => s !== '') : [];
+            // Par verdi med lagret visningstekst FØR tomme lukes bort, ellers
+            // forskyves tekstene i forhold til verdiene.
+            const lagretTekst = Array.isArray(felt.SvarTekst) ? felt.SvarTekst : null;
+            const svar = (Array.isArray(felt.Svar) ? felt.Svar : [])
+                .map((v, i) => (lagretTekst && lagretTekst[i]) ? String(lagretTekst[i]) : v)
+                .filter(s => s !== '');
             if (svar.length === 0) continue;
 
             const nokkel = `${sekNr}-${String(felt.Nummer).padStart(2, '0')}`;

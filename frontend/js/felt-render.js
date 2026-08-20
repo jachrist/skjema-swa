@@ -1036,7 +1036,7 @@ function _lagUkjentType(type) {
  * @param {array}  svar — svar-array (Opplasting krever ekstra kontekst — bruk byggReadonlyVisningOpplasting)
  * @param {object} [ctx] — { skjematypeId, skjemaId } for Opplasting-type
  */
-export function byggReadonlyVisning(felt, svar = [], ctx = null) {
+export function byggReadonlyVisning(felt, svar = [], ctx = null, svarTekst = null) {
     if (felt.Type === 'Informasjon') {
         return _lagInformasjon(felt);
     }
@@ -1055,18 +1055,26 @@ export function byggReadonlyVisning(felt, svar = [], ctx = null) {
         return svarEl;
     }
 
+    // Lagret visningstekst vinner over råverdien: en klasse er lagret som
+    // FS-nøkkelen "FHSBA|22H|A" og en person som UPN, mens skjemaet skal vise
+    // det innsenderen faktisk valgte i nedtrekket.
+    const vis = (v, i) => {
+        const t = Array.isArray(svarTekst) ? svarTekst[i] : null;
+        return t ? String(t) : formatSvarVerdi(felt, v);
+    };
+
     if (!svar || svar.length === 0 || (svar.length === 1 && svar[0] === '')) {
         svarEl.classList.add('tomt');
         svarEl.textContent = '(ikke besvart)';
     } else if (svar.length === 1) {
-        svarEl.textContent = formatSvarVerdi(felt, svar[0]);
+        svarEl.textContent = vis(svar[0], 0);
     } else {
         const ul = document.createElement('ul');
-        for (const v of svar) {
+        svar.forEach((v, i) => {
             const li = document.createElement('li');
-            li.textContent = formatSvarVerdi(felt, v);
+            li.textContent = vis(v, i);
             ul.appendChild(li);
-        }
+        });
         svarEl.appendChild(ul);
     }
     return svarEl;
@@ -1090,8 +1098,44 @@ export function formatSvarVerdi(felt, verdi) {
         case 'Valuta': return _formatterValuta(s);
         case 'Fodselsnummer': return _formatterFodselsnummer(s);
         case 'Kontonummer': return _formatterKontonummer(s);
-        default: return s;
+        // Valglister lagrer Verdi (kode/UPN) og viser Tekst. Slår opp i
+        // valglista når den er tilgjengelig — dekker skjemaer lagret før
+        // SvarTekst ble innført, så lenge valgene fortsatt kan hentes.
+        default: return _tekstFraValg(felt, s) ?? s;
     }
+}
+
+/**
+ * Visningsteksten for én verdi i feltets valgliste, eller null når verdien
+ * ikke finnes der. Valg er enten strenger (statiske alternativer) eller
+ * { Tekst, Verdi }-objekter (FasteData).
+ */
+function _tekstFraValg(felt, verdi) {
+    if (!Array.isArray(felt?.Valg) || felt.Valg.length === 0) return null;
+    const s = String(verdi);
+    for (const v of felt.Valg) {
+        if (v == null) continue;
+        if (typeof v === 'string') {
+            if (v === s) return v;
+            continue;
+        }
+        if (String(v.Verdi ?? v.Tekst ?? '') === s) return String(v.Tekst ?? s);
+    }
+    return null;
+}
+
+/**
+ * Visningstekstene for et svar, til lagring sammen med verdiene.
+ *
+ * Returnerer null når feltet ikke har valgliste, eller når teksten uansett er
+ * lik verdien — da er det ingenting å ta vare på. Kalles ved innsending, mens
+ * valglista fortsatt er den innsenderen så: FS-data og roller endrer seg, og
+ * arkivet skal vise det som faktisk ble valgt.
+ */
+export function svarTekstFor(felt, svar = []) {
+    if (!Array.isArray(svar) || svar.length === 0) return null;
+    const tekster = svar.map(v => _tekstFraValg(felt, v) ?? '');
+    return tekster.some((t, i) => t && t !== String(svar[i])) ? tekster : null;
 }
 
 function _formatterDato(iso) {

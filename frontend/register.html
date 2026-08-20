@@ -410,7 +410,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline } from './js/felt-render.js';
+        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
@@ -635,9 +635,13 @@
 
             // Bygg svar-lookup fra skjemaet
             const svarMap = new Map();
+            const tekstMap = new Map();
             for (const seksjon of (s.Seksjoner || [])) {
                 for (const felt of (seksjon.Felter || [])) {
-                    svarMap.set(`${seksjon.Nummer}-${felt.Nummer}`, felt.Svar || []);
+                    const n = `${seksjon.Nummer}-${felt.Nummer}`;
+                    svarMap.set(n, felt.Svar || []);
+                    // Lagret visningstekst — klassenavn og personnavn i stedet for koder
+                    if (Array.isArray(felt.SvarTekst)) tekstMap.set(n, felt.SvarTekst);
                 }
             }
 
@@ -712,8 +716,9 @@
                 for (const felt of (seksjon.Felter || [])) {
                     if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
-                    const svar = svarMap.get(`${seksjon.Seksjon_nummer}-${felt.Nummer}`) || [];
-                    sDiv.appendChild(byggFeltRad(felt, seksjon.Seksjon_nummer, visningsNr, svar, state.redigerer));
+                    const n = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    sDiv.appendChild(byggFeltRad(felt, seksjon.Seksjon_nummer, visningsNr,
+                        svarMap.get(n) || [], state.redigerer, tekstMap.get(n) || null));
                 }
                 hoyre.appendChild(sDiv);
             }
@@ -811,7 +816,7 @@
             return { tekst, farge: '#34c759' };
         }
 
-        function byggFeltRad(felt, seksjonNr, visningsNr, svar, redigerer) {
+        function byggFeltRad(felt, seksjonNr, visningsNr, svar, redigerer, svarTekst = null) {
             const div = document.createElement('div');
             div.className = 'felt';
             if (felt.Type !== 'Informasjon') {
@@ -835,7 +840,7 @@
                 }
                 div.appendChild(byggEditWidget(felt, feltId, svar));
             } else {
-                div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId: state.valgtId }));
+                div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId: state.valgtId }, svarTekst));
             }
             return div;
         }
@@ -902,12 +907,16 @@
                 for (const felt of (seksjon.Felter || [])) {
                     if (felt.Type === 'Informasjon') continue;
                     const feltId = `edit-${seksjon.Seksjon_nummer}-${felt.Nummer}`;
-                    seksjonUt.Felter.push({
+                    const svarVerdi = hentSvarFraDom(feltId, felt.Type);
+                    const feltUt = {
                         Id: felt.Id,
                         Nummer: felt.Nummer,
                         Type: felt.Type,
-                        Svar: hentSvarFraDom(feltId, felt.Type)
-                    });
+                        Svar: svarVerdi
+                    };
+                    const tekster = svarTekstFor(felt, svarVerdi);
+                    if (tekster) feltUt.SvarTekst = tekster;
+                    seksjonUt.Felter.push(feltUt);
                 }
                 nyeSeksjoner.push(seksjonUt);
             }

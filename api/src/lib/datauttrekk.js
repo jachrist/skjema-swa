@@ -50,7 +50,7 @@ function trekkUtSvar(skjema, definisjon) {
                 const nokkel = `${sekNr}-${feltNrPadded}`;
                 const tekst = spmTekster[nokkel];
                 if (!tekst) continue;
-                rad[tekst] = svarTilStreng(f.Svar);
+                rad[tekst] = svarTilStreng(f.Svar, f.SvarTekst);
             }
         }
     }
@@ -62,18 +62,30 @@ function trekkUtSvar(skjema, definisjon) {
             const nokkel = `${sekNr}-${feltNrPadded}`;
             const tekst = spmTekster[nokkel];
             if (!tekst) continue;
-            rad[tekst] = svarTilStreng(s.sva);
+            rad[tekst] = svarTilStreng(s.sva, s.svt);
         }
     }
 
     return rad;
 }
 
-function svarTilStreng(sva) {
+/**
+ * @param sva  svarverdiene
+ * @param svt  lagret visningstekst, om feltet har valgliste — klassenavn i
+ *             stedet for FS-nøkkel, personnavn i stedet for UPN. Uttrekket skal
+ *             leses av mennesker, så teksten vinner når den finnes.
+ */
+function svarTilStreng(sva, svt) {
     if (sva == null) return '';
     // Kryptert svar (ikke-array streng med iv:tag:ciphertext-format) — vis som markør
     if (typeof sva === 'string' && sva.split(':').length === 3) return '[Kryptert]';
-    if (Array.isArray(sva)) return sva.filter(v => v != null && v !== '').join('; ');
+    if (Array.isArray(sva)) {
+        const tekst = Array.isArray(svt) ? svt : null;
+        return sva
+            .map((v, i) => (tekst && tekst[i]) ? String(tekst[i]) : v)
+            .filter(v => v != null && v !== '')
+            .join('; ');
+    }
     return String(sva);
 }
 

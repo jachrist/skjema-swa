@@ -294,7 +294,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
 
@@ -791,12 +791,18 @@
                     // Skjulte felter får tomt svar — brukeren skal ikke bli bundet av gamle verdier
                     // som ikke lenger er relevante for hoved-flyten.
                     const svarVerdi = feltSkjult ? [] : hentSvarFraDom(feltId, felt.Type);
-                    seksjonUt.Felter.push({
+                    const feltUt = {
                         Id: felt.Id,
                         Nummer: felt.Nummer,
                         Type: felt.Type,
                         Svar: svarVerdi
-                    });
+                    };
+                    // Ta vare på det som sto i nedtrekket. Verdien er en kode
+                    // (FS-nøkkel, UPN), og valglista kan være borte eller endret
+                    // når skjemaet leses igjen — arkivet skal vise det som ble valgt.
+                    const tekster = svarTekstFor(felt, svarVerdi);
+                    if (tekster) feltUt.SvarTekst = tekster;
+                    seksjonUt.Felter.push(feltUt);
                 }
                 svar.Seksjoner.push(seksjonUt);
             }

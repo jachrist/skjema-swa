@@ -169,3 +169,31 @@ rollelista i etterkant, får steget behandler uten at skjemaet må røres.
 
 Er feltet ubesvart, beholdes malen uendret i `Roller` (steget får ingen
 behandler, og `behandling.rolle.ekspandert` logger det som uløst).
+
+## Visningstekst for valglister (`SvarTekst` / `svt`)
+
+Valglister lagrer **verdien**, ikke teksten: en klasse blir FS-nøkkelen
+`"FHSBA|22H|A"`, en person blir UPN, en rolle blir `"Klassesjef(...)"`. Ved
+innsending lagres derfor også teksten som sto i nedtrekket:
+
+```json
+{ "Nummer": 1, "Type": "Flervalg-dropdown",
+  "Svar": ["FHSBA|22H|A"],
+  "SvarTekst": ["KS Kull Rønneberg 22-25"] }
+```
+
+Kompakt format bruker `svt` ved siden av `sva`. Feltet skrives bare når teksten
+skiller seg fra verdien (`svarTekstFor()` i `frontend/js/felt-render.js`), så
+fritekstfelt får det aldri.
+
+`SvarTekst` er svarinnhold og krypteres på lik linje med `Svar` — den kan
+inneholde navn.
+
+Teksten lagres fordi valglista er ferskvare: FS-data oppdateres, roller endres,
+og filtrerte lister (`Studenter{Klasse}`) kan ikke gjenskapes uten svarene de
+var filtrert på. Arkivet skal vise det innsenderen faktisk valgte.
+
+Visning bruker teksten når den finnes, ellers slås verdien opp i feltets
+`Valg`-liste, ellers vises råverdien. Det gjelder behandlingssiden, visning,
+register, PDF og datauttrekk. Rapportmotoren filtrerer fortsatt på **verdien** —
+filtre skal matche det som er lagret, ikke visningsteksten.

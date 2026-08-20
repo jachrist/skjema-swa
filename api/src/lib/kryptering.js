@@ -40,6 +40,10 @@ function krypterKompaktSvar(skjema, nokkelBuffer) {
         if (svar.sva && Array.isArray(svar.sva) && svar.sva.length > 0) {
             svar.sva = krypterStreng(JSON.stringify(svar.sva), nokkelBuffer);
         }
+        // Visningsteksten er like sensitiv som verdien — den inneholder navn.
+        if (svar.svt && Array.isArray(svar.svt) && svar.svt.length > 0) {
+            svar.svt = krypterStreng(JSON.stringify(svar.svt), nokkelBuffer);
+        }
     }
     kopi.Kryptert = true;
     return kopi;
@@ -51,6 +55,9 @@ function krypterFulltSvar(skjema, nokkelBuffer) {
         for (const felt of (seksjon.Felter || [])) {
             if (felt.Svar && Array.isArray(felt.Svar) && felt.Svar.length > 0) {
                 felt.Svar = krypterStreng(JSON.stringify(felt.Svar), nokkelBuffer);
+            }
+            if (felt.SvarTekst && Array.isArray(felt.SvarTekst) && felt.SvarTekst.length > 0) {
+                felt.SvarTekst = krypterStreng(JSON.stringify(felt.SvarTekst), nokkelBuffer);
             }
         }
     }
@@ -76,6 +83,11 @@ function dekrypterFulltSvar(skjema, nokkelBuffer) {
                     felt.Svar = JSON.parse(dekrypterStreng(felt.Svar, nokkelBuffer));
                 } catch (_) { /* la stå kryptert hvis dekryptering feiler */ }
             }
+            if (typeof felt.SvarTekst === 'string' && felt.SvarTekst.includes(':')) {
+                try {
+                    felt.SvarTekst = JSON.parse(dekrypterStreng(felt.SvarTekst, nokkelBuffer));
+                } catch (_) { /* la stå kryptert */ }
+            }
         }
     }
     delete kopi.Kryptert;
@@ -89,6 +101,11 @@ function dekrypterKompaktSvar(skjema, nokkelBuffer) {
         if (typeof svar.sva === 'string' && svar.sva.includes(':')) {
             try {
                 svar.sva = JSON.parse(dekrypterStreng(svar.sva, nokkelBuffer));
+            } catch (_) { /* la stå kryptert */ }
+        }
+        if (typeof svar.svt === 'string' && svar.svt.includes(':')) {
+            try {
+                svar.svt = JSON.parse(dekrypterStreng(svar.svt, nokkelBuffer));
             } catch (_) { /* la stå kryptert */ }
         }
     }

@@ -367,9 +367,14 @@
 
             // 3) Skjemaet read-only
             const svarMap = new Map();
+            const tekstMap = new Map();
             for (const seksjon of (skjema.Seksjoner || [])) {
                 for (const felt of (seksjon.Felter || [])) {
-                    svarMap.set(`${seksjon.Nummer}-${felt.Nummer}`, felt.Svar || []);
+                    const n = `${seksjon.Nummer}-${felt.Nummer}`;
+                    svarMap.set(n, felt.Svar || []);
+                    // Lagret visningstekst — klassenavn i stedet for FS-nøkkel,
+                    // personnavn i stedet for UPN.
+                    if (Array.isArray(felt.SvarTekst)) tekstMap.set(n, felt.SvarTekst);
                 }
             }
             const seksjonerMedSvar = (skjematype.Seksjoner || []).map(sek => ({
@@ -393,8 +398,8 @@
                 for (const felt of (seksjon.Felter || [])) {
                     if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
-                    const svar = svarMap.get(`${seksjon.Seksjon_nummer}-${felt.Nummer}`) || [];
-                    div.appendChild(byggFelt(felt, visningsNr, svar));
+                    const n = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    div.appendChild(byggFelt(felt, visningsNr, svarMap.get(n) || [], tekstMap.get(n) || null));
                 }
                 innhold.appendChild(div);
             }
@@ -703,7 +708,7 @@
             return { tekst, farge: '#34c759' };
         }
 
-        function byggFelt(felt, visningsNr, svar) {
+        function byggFelt(felt, visningsNr, svar, svarTekst = null) {
             const div = document.createElement('div');
             div.className = 'felt';
             if (felt.Type !== 'Informasjon') {
@@ -718,7 +723,7 @@
                     div.appendChild(u);
                 }
             }
-            div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId }));
+            div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId }, svarTekst));
             return div;
         }
 

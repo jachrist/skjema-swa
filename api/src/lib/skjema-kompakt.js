@@ -43,11 +43,15 @@ function komprimerSkjema(fulltSkjema) {
         for (const felt of (seksjon.Felter || [])) {
             if (felt.Type === 'Informasjon') continue;
             if (!felt.Svar || felt.Svar.length === 0) continue;
-            svar.push({
+            const rad = {
                 sek: sekNr,
                 spm: String(felt.Nummer).padStart(2, '0'),
                 sva: felt.Svar
-            });
+            };
+            // Visningstekst for valglister (klassenavn, personnavn) — lagres bare
+            // når den skiller seg fra verdien. Se svarTekstFor() i felt-render.js.
+            if (Array.isArray(felt.SvarTekst) && felt.SvarTekst.length > 0) rad.svt = felt.SvarTekst;
+            svar.push(rad);
         }
     }
     kompakt.Svar = svar;
@@ -71,8 +75,11 @@ function ekspanderSkjema(kompaktSvar, skjemadefinisjon) {
     if (kompaktSvar.vedlegg) fullt.vedlegg = kompaktSvar.vedlegg;
 
     const svarMap = new Map();
+    const tekstMap = new Map();
     for (const s of kompaktSvar.Svar) {
-        svarMap.set(`${s.sek}-${String(s.spm).padStart(2, '0')}`, s.sva);
+        const n = `${s.sek}-${String(s.spm).padStart(2, '0')}`;
+        svarMap.set(n, s.sva);
+        if (Array.isArray(s.svt)) tekstMap.set(n, s.svt);
     }
 
     for (const seksjon of (fullt.Seksjoner || [])) {
@@ -81,6 +88,7 @@ function ekspanderSkjema(kompaktSvar, skjemadefinisjon) {
             if (felt.Type === 'Informasjon') continue;
             const nøkkel = `${sekNr}-${String(felt.Nummer).padStart(2, '0')}`;
             felt.Svar = svarMap.has(nøkkel) ? svarMap.get(nøkkel) : [];
+            if (tekstMap.has(nøkkel)) felt.SvarTekst = tekstMap.get(nøkkel);
         }
     }
     return fullt;

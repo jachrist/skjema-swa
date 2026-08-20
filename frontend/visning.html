@@ -273,10 +273,13 @@
 
             // Bygg lookup: skjema.Seksjoner har svar; skjematype.Seksjoner har definisjonen
             const svarMap = new Map();
+            const tekstMap = new Map();
             for (const seksjon of (skjema.Seksjoner || [])) {
                 for (const felt of (seksjon.Felter || [])) {
                     const key = `${seksjon.Nummer}-${felt.Nummer}`;
                     svarMap.set(key, felt.Svar || []);
+                    // Lagret visningstekst — klassenavn og personnavn i stedet for koder
+                    if (Array.isArray(felt.SvarTekst)) tekstMap.set(key, felt.SvarTekst);
                 }
             }
 
@@ -325,7 +328,7 @@
                     if (felt.Type !== 'Informasjon') visningsNr++;
                     const key = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
                     const svar = svarMap.get(key) || [];
-                    div.appendChild(byggFelt(felt, visningsNr, svar, skjema.Skjematype_id, skjema.Skjema_id));
+                    div.appendChild(byggFelt(felt, visningsNr, svar, skjema.Skjematype_id, skjema.Skjema_id, tekstMap.get(key) || null));
                 }
                 innhold.appendChild(div);
             }
@@ -410,7 +413,7 @@
             return { tekst, farge: '#34c759' };
         }
 
-        function byggFelt(felt, visningsNr, svar, skjematypeId, skjemaId) {
+        function byggFelt(felt, visningsNr, svar, skjematypeId, skjemaId, svarTekst = null) {
             const div = document.createElement('div');
             div.className = 'felt';
 
@@ -426,7 +429,7 @@
                     div.appendChild(u);
                 }
             }
-            div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId }));
+            div.appendChild(byggReadonlyVisning(felt, svar, { skjematypeId, skjemaId }, svarTekst));
             return div;
         }
 
