@@ -14,15 +14,15 @@
  * Datakilder som ikke er implementert — returnerer tom liste + log:
  *   - Avdelinger
  *
- * Omfang sammenlignes normalisert (siste ledd etter «|»), slik at en verdi som
- * kommer fra et Klasser-/Kull-felt treffer rollelistas rene kode. Se omfang.js.
+ * Omfang matches mot alle formene en klasse kan ha i rollelista — hele
+ * FS-nøkkelen, klassenavnet eller klassekoden. Se omfang.js.
  */
 const postnumreStorage = require('./postnumre-storage');
 const skjemaStorage = require('./skjema-storage');
 const rollerStorage = require('./roller-storage');
 const emnerStorage = require('./emner-storage');
 const teamStorage = require('./team-storage');
-const { normaliserOmfang } = require('./omfang');
+const { hentOmfangsalias } = require('./omfang');
 const terminer = require('./terminer');
 
 const IKKE_IMPLEMENTERT = new Set([
@@ -66,13 +66,23 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
 }
 
 /**
- * "Klassesjef(FHSBA|22H|KS Kull Rønneberg 22-25)" → "Klassesjef(KS Kull Rønneberg 22-25)".
- * Rolle uten omfang slippes gjennom uendret.
+ * Innehavere for en rollestreng, med alias-fallback på omfanget.
+ *
+ * Kommer omfanget fra et Klasser-/Kull-felt, er det FS-nøkkelen
+ * ("FHSBA|22H|A") mens rollelista gjerne har klassenavnet admin så i
+ * nedtrekket. Vi prøver formene i tur og returnerer første treff.
  */
-function normaliserRolleStreng(rolleStreng) {
+async function hentInnehavereForRolle(rolleStreng) {
     const s = String(rolleStreng || '').trim();
     const m = /^(.+?)\((.+)\)$/.exec(s);
-    return m ? `${m[1].trim()}(${normaliserOmfang(m[2])})` : s;
+    if (!m) return await rollerStorage.hentInnehavere(s);
+
+    const navn = m[1].trim();
+    for (const omfang of await hentOmfangsalias(m[2])) {
+        const innehavere = await rollerStorage.hentInnehavere(`${navn}(${omfang})`);
+        if (innehavere.length > 0) return innehavere;
+    }
+    return [];
 }
 
 async function _hentRolleGrupper(filterbegrep, filterverdi) {
@@ -80,11 +90,10 @@ async function _hentRolleGrupper(filterbegrep, filterverdi) {
     const alle = await rollerStorage.hentAlleGrupper();
     let filtrerte = alle;
     if (filterbegrep === 'Omfang' && filterverdi) {
-        // Begge sider normaliseres: kommer verdien fra et Klasser/Kull-felt, er
-        // den en sammensatt nøkkel ("FHSBA|22H|KS Kull Rønneberg 22-25") mens
-        // rollelista har ren klassekode.
-        const sok = normaliserOmfang(filterverdi).toLowerCase();
-        filtrerte = alle.filter(g => normaliserOmfang(g.Omfang).toLowerCase() === sok);
+        // Matcher mot alle formene omfanget kan ha i rollelista: hele
+        // FS-nøkkelen, klassenavnet, eller klassekoden alene.
+        const alias = new Set((await hentOmfangsalias(filterverdi)).map(a => a.toLowerCase()));
+        filtrerte = alle.filter(g => alias.has(String(g.Omfang || '').trim().toLowerCase()));
     }
     if (filterbegrep === 'Rolle' && filterverdi) {
         // Omfang alene er ikke entydig — samme klasse kan ha flere roller.
@@ -114,7 +123,7 @@ function _personVisning(EN, FN, EP, Navn = '') {
 async function _hentPersoner(filterbegrep, filterverdi, log) {
     if (filterbegrep === 'Rolle') {
         if (!filterverdi) return [];
-        const innehavere = await rollerStorage.hentInnehavere(normaliserRolleStreng(filterverdi));
+        const innehavere = await hentInnehavereForRolle(filterverdi);
         return innehavere.map(p => ({
             Tekst: _personVisning(p.EN, p.FN, p.EP),
             Verdi: p.EP,

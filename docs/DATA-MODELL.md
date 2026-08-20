@@ -115,11 +115,20 @@ Datakilden `Roller` filtreres på `Rolle` (rollenavn), `Omfang`, eller begge —
 omfang alene er ikke entydig, siden samme klasse kan ha flere roller. To
 betingelser i samme OG-gruppe snittes på verdi.
 
-Omfang sammenlignes **normalisert**: siste ledd etter `|` på begge sider
-(`api/src/lib/omfang.js`). Kildene `Klasser` og `Kull` leverer sammensatte
-nøkler (`"FHSBA|22H|KS Kull Rønneberg 22-25"`), mens rollelista vedlikeholdes på
-ren kode. Det samme gjelder omfanget i `Personer`-filteret `Rolle(Omfang)` og i
-dynamiske rolleomfang på behandlingssteg.
+Omfang matches mot **alias** (`api/src/lib/omfang.js`). Kildene `Klasser` og
+`Kull` leverer FS' naturlige nøkkel som verdi — `"FHSBA|22H|A"`, altså
+`{studieprogram}|{kullets start-termin}|{klassekode}` — mens rollelista
+vedlikeholdes for hånd, der admin typisk skriver klassenavnet slik det står i
+nedtrekket. Oppslaget prøver derfor, i denne rekkefølgen:
+
+1. hele nøkkelen — unik og stabil (terminen er kullets start, ikke inneværende)
+2. klasse-/kullnavnet fra FilterStudent-metadata (`"KS Kull Rønneberg 22-25"`)
+3. klassekoden alene — **ikke unik**, se FILTERSTUDENT-SPEC.md §6 funn 1, og
+   godtas bare som alias for den klassen oppslaget gjelder
+
+Kallere som skal treffe én rolle (`Personer`-filteret `Rolle(Omfang)`, dynamisk
+behandler) prøver formene i tur og tar første treff. Filtre matcher mot hele
+settet.
 
 ## Behandlingssteg — dynamisk rolleomfang
 
@@ -142,8 +151,9 @@ Ved innsending (`POST /api/skjemaer`, status → 2) skjer følgende i
 `api/src/lib/dynamisk-rolle.js`:
 
 1. Feltreferansen (`{<seksjon>-<felt>}` eller `{<UUID>}`) slås opp i svarene.
-2. Er verdien en sammensatt FasteData-nøkkel (`"BMIL|2025H|MILM23-1"`), brukes
-   siste ledd — rollelista vedlikeholdes på ren klassekode.
+2. Er verdien en sammensatt FS-nøkkel, prøves alias-formene over, og den som
+   faktisk har innehavere velges. Finnes ingen, brukes klassenavnet — den mest
+   lesbare formen — så hendelsesloggen viser admin hvilken rolle som mangler.
 3. Malen lagres i `RollerMal`, resultatet skrives til `Roller`:
    `"Klassesjef(MILM23-1)"`.
 4. Har ingen av stegets roller innehavere, legges `Reserverolle` til i tillegg,

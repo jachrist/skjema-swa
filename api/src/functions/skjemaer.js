@@ -722,9 +722,10 @@ app.http('lagreSkjema', {
                 && (erNytt || (eksisterende?.Skjema_status || 0) !== 2);
             if (erInnsending && Array.isArray(skjemaData.Behandling)) {
                 try {
-                    const { ekspanderte, uloste } = dynamiskRolle.ekspanderBehandling(skjemaData);
+                    const { ekspanderte, uloste } = await dynamiskRolle.ekspanderBehandling(skjemaData);
                     for (const e of ekspanderte) {
-                        context.log(`dynamisk-rolle: steg ${e.steg} "${e.mal}" → "${e.rolle}"`);
+                        context.log(`dynamisk-rolle: steg ${e.steg} "${e.mal}" → "${e.rolle}"` +
+                            (e.vurderte?.length > 1 ? ` (vurderte: ${e.vurderte.join(', ')})` : ''));
                     }
                     for (const u of uloste) {
                         context.log(`dynamisk-rolle: steg ${u.steg} "${u.mal}" — feltet er ubesvart, malen beholdes`);
