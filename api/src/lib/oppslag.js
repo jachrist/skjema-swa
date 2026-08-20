@@ -279,8 +279,11 @@ async function _hentStudenter(filterbegrep, filterverdi) {
 
 async function _hentKlasser() {
     const alle = await emnerStorage.hentFilterMeta('KLASSE');
+    // Teksten lagres på skjemaet som visningstekst (SvarTekst), så den skal
+    // være klassens navn alene. Antallet er øyeblikksdata og hører ikke hjemme
+    // i et arkivert svar — det følger med som eget felt for den som vil bruke det.
     return alle
-        .map(k => ({ Tekst: `${k.Navn} — ${k.Antall} studenter`, Verdi: k.Verdi, SP: k.SP, Termin: k.Termin }))
+        .map(k => ({ Tekst: k.Navn, Verdi: k.Verdi, SP: k.SP, Termin: k.Termin, Antall: k.Antall }))
         .sort((a, b) => a.Tekst.localeCompare(b.Tekst, 'nb'));
 }
 
