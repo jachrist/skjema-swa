@@ -19,38 +19,12 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
-const { parseFasteData, avkleFeltref } = require('../lib/faste-data');
+// Resolving og filtersemantikk deles med faste-data.js. Endepunktet hadde
+// tidligere egne kopier, og OG-gruppa der brukte bare første betingelse — så
+// «Rolle=Klassesjef OG Omfang={1-01}» ga alle klassesjefene i stedet for én.
+const { parseFasteData, resolverBetingelse, hentForOgGruppe, unionDedup } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 const utsendingToken = require('../lib/utsending-token');
-
-// Kopiert fra faste-data.js — resolverBetingelse med feltSvar-støtte
-function erFeltref(v) {
-    if (typeof v !== 'string') return false;
-    const b = avkleFeltref(v);
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(b) || /^\d+-\d+$/.test(b);
-}
-
-function resolverBetingelse(betingelse, upn, feltSvar) {
-    const v = betingelse.Verdi;
-    if (v === '' || v == null) return { ...betingelse, Verdi: '' };
-    if (v === '$upn') return upn ? { ...betingelse, Verdi: String(upn) } : null;
-    if (erFeltref(v)) {
-        if (!feltSvar) return null;
-        const rå = avkleFeltref(v);
-        const kandidater = [rå];
-        const m = /^(\d+)-(\d+)$/.exec(rå);
-        if (m) kandidater.push(`${Number(m[1])}-${Number(m[2])}`);
-        for (const k of kandidater) {
-            if (feltSvar[k] !== undefined) {
-                const svar = Array.isArray(feltSvar[k]) ? feltSvar[k] : [feltSvar[k]];
-                if (svar.length === 0 || svar[0] === '' || svar[0] == null) return null;
-                return { ...betingelse, Verdi: String(svar[0]) };
-            }
-        }
-        return null;
-    }
-    return { ...betingelse, Verdi: String(v) };
-}
 
 app.http('oppslagDynamisk', {
     methods: ['POST'],
@@ -116,26 +90,14 @@ app.http('oppslagDynamisk', {
             const log = (m) => context.log(m);
             let rådata = [];
             if (resolverteGrupper.length === 0) {
-                rådata = await hentDropdownVerdier(dnf.Datakilde, null, null, null, log);
+                rådata = await hentForOgGruppe(dnf.Datakilde, [], hentDropdownVerdier, log);
             } else {
-                // Union av alle OR-grupper (samme som hentOgSettFasteData)
-                const alle = new Map();
+                // OG-gruppe: alle betingelsene snittes. Union på tvers av gruppene.
+                const grupperesultater = [];
                 for (const gruppe of resolverteGrupper) {
-                    // OG-gruppe: bruker første kolonne som filter (matcher unionsemantikken i faste-data)
-                    const førsteKrit = gruppe[0] || {};
-                    const del = await hentDropdownVerdier(
-                        dnf.Datakilde,
-                        førsteKrit.Kolonne || null,
-                        førsteKrit.Operator || '=',
-                        førsteKrit.Verdi != null ? String(førsteKrit.Verdi) : null,
-                        log
-                    );
-                    for (const v of (del || [])) {
-                        const key = String(v.Verdi ?? v.Tekst ?? JSON.stringify(v));
-                        if (!alle.has(key)) alle.set(key, v);
-                    }
+                    grupperesultater.push(await hentForOgGruppe(dnf.Datakilde, gruppe, hentDropdownVerdier, log));
                 }
-                rådata = [...alle.values()];
+                rådata = unionDedup(grupperesultater);
             }
 
             return { jsonBody: { Valg: rådata } };

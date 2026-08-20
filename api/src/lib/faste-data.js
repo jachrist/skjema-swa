@@ -259,5 +259,10 @@ module.exports = {
     settFasteDataISkjema,
     hentOgSettFasteData,
     avkleFeltref,
-    erFeltreferanse
+    erFeltreferanse,
+    // Deles med POST /api/oppslag, som gjør den samme resolvingen mot
+    // feltverdier fra klienten. Egne kopier der har drevet fra hverandre før.
+    resolverBetingelse,
+    hentForOgGruppe,
+    unionDedup
 };
