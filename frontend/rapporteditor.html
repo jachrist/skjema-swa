@@ -394,6 +394,10 @@
 
         const params = new URLSearchParams(location.search);
         const rapporttypeId = params.get('rapporttype_id') || '';
+        // Ny rapport startet fra et skjematype-kort på velgskjematype.html —
+        // kildeskjematypen settes da automatisk. Ignoreres når vi åpner en
+        // eksisterende rapporttype, som har sin egen lagrede kilde.
+        const forhandsvalgtSkjematype = params.get('skjematype_id') || '';
 
         let data = {
             Rapporttype_id: '',
@@ -964,6 +968,17 @@
                         .join('');
             } catch (e) {
                 visStatus('Kunne ikke laste skjematyper: ' + e.message, 'feil');
+            }
+
+            if (!rapporttypeId && forhandsvalgtSkjematype) {
+                const sel = document.getElementById('kildeskjematype');
+                if ([...sel.options].some(o => o.value === forhandsvalgtSkjematype)) {
+                    sel.value = forhandsvalgtSkjematype;
+                    data.Kildeskjematype_id = forhandsvalgtSkjematype;
+                    await lastKildeDef(forhandsvalgtSkjematype);
+                } else {
+                    visStatus('Du er ikke eier av skjematypen rapporten skulle bygges på — velg kilde selv.', 'feil');
+                }
             }
 
             // Bygg tilgang-editorer

@@ -375,6 +375,8 @@
         import { hentInnloggetBruker, logUt as authLogUt } from './js/auth.js';
 
         let alle = [];
+        // Rapporter er låst til admin/Skjemaskaper — settes fra /api/whoami før lista rendres.
+        let kanLageRapport = false;
 
         window.toggleTheme = () => {
             const root = document.documentElement;
@@ -404,6 +406,7 @@
                     document.getElementById('knapp-admin-panel').style.display = 'inline-flex';
                 }
                 if (meg.kanOppretteSkjematype) {
+                    kanLageRapport = true;
                     document.getElementById('knapp-ny-skjematype').style.display = 'inline-flex';
                     document.getElementById('knapp-rapporter').style.display = 'inline-flex';
                 }
@@ -576,6 +579,9 @@
                 knapper.push(`<a class="knapp sekundær" href="/register.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}&status=5">Arkiv</a>`);
                 knapper.push(`<a class="knapp sekundær" href="/datauttrekk.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}">Datauttrekk</a>`);
                 knapper.push(`<a class="knapp sekundær" href="/editor.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}">Rediger</a>`);
+                if (kanLageRapport) {
+                    knapper.push(`<a class="knapp sekundær" href="/rapporteditor.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}" title="Ny rapporttype med denne skjematypen som kilde">📊 Ny rapport</a>`);
+                }
             }
             const knapperadHtml = knapper.length
                 ? `<div class="knapperad">${knapper.join('')}</div>`
