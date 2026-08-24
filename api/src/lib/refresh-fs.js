@@ -26,34 +26,74 @@ const STUDENTER_PER_KLASSE = 1000;
 const KLASSER_PER_SIDE = 50;
 
 /**
- * FS leverer beskrivelsene i sitt eget markup-format: <list listType="...">,
- * <listItem>, <bold>, <italic>. Oversettes til vanlig HTML.
+ * FS leverer beskrivelsene i sitt eget markup-format: <p>, <list listType="...">,
+ * <listItem>, <bold>, <italic>. Teksten skal vises i et informasjonsfelt, og de
+ * feltene rendres som Markdown (se parseMarkdown i frontend/js/felt-render.js) —
+ * derfor konverteres den hele veien til Markdown ved innlesing, ikke til HTML.
  *
- * Rekkefølgen er vesentlig: <listItem> må tas først, ellers spiser det
- * generelle <list...>-mønsteret den også og gjør listepunktene til <ul>.
- * Listeblokkene byttes parvis så en nummerert liste får </ol>, ikke </ul>.
+ * Rekkefølgen er vesentlig: <listItem> må tas før det generelle
+ * <list...>-mønsteret, ellers spiser det listepunktene også.
  */
-function normaliserLuHtml(html) {
+function avkodEntiteter(s) {
+    return s
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>')
+        .replace(/&quot;/gi, '"')
+        .replace(/&apos;/gi, "'")
+        .replace(/&#(\d+);/g, (_m, kode) => String.fromCodePoint(Number(kode)))
+        .replace(/&#x([0-9a-f]+);/gi, (_m, kode) => String.fromCodePoint(parseInt(kode, 16)));
+}
+
+function luTilMarkdown(html) {
     if (!html) return '';
-    return String(html)
-        .replace(/<listItem\s*>/gi, '<li>')
-        .replace(/<\/listItem\s*>/gi, '</li>')
-        .replace(/<list\s+listType="numbered"\s*>([\s\S]*?)<\/list\s*>/gi, '<ol>$1</ol>')
-        .replace(/<list[^>]*>([\s\S]*?)<\/list\s*>/gi, '<ul>$1</ul>')
-        // Rester hvis en blokk mangler sluttag
-        .replace(/<list[^>]*>/gi, '<ul>')
-        .replace(/<\/list\s*>/gi, '</ul>')
-        .replace(/<bold\s*>/gi, '<strong>').replace(/<\/bold\s*>/gi, '</strong>')
-        .replace(/<italic\s*>/gi, '<em>').replace(/<\/italic\s*>/gi, '</em>');
+    let s = String(html);
+
+    // Uthevinger først — de kan stå inne i både avsnitt og listepunkter
+    s = s.replace(/<(bold|strong)\s*>([\s\S]*?)<\/\1\s*>/gi, (_m, _t, inn) => `**${inn.trim()}**`);
+    s = s.replace(/<(italic|em)\s*>([\s\S]*?)<\/\1\s*>/gi, (_m, _t, inn) => `*${inn.trim()}*`);
+
+    // Lister: hver <listItem> blir en linje, med riktig markør for listetypen
+    s = s.replace(/<list([^>]*)>([\s\S]*?)<\/list\s*>/gi, (_m, attributter, innhold) => {
+        const nummerert = /listType\s*=\s*"numbered"/i.test(attributter);
+        const punkter = [];
+        innhold.replace(/<listItem\s*>([\s\S]*?)<\/listItem\s*>/gi, (_p, tekst) => {
+            const ren = tekst.replace(/<[^>]+>/g, '').trim();
+            if (ren) punkter.push(ren);
+            return '';
+        });
+        if (punkter.length === 0) return '\n';
+        const linjer = punkter.map((t, i) => (nummerert ? `${i + 1}. ${t}` : `- ${t}`));
+        return '\n\n' + linjer.join('\n') + '\n\n';
+    });
+
+    // Avsnitt og linjeskift
+    s = s.replace(/<br\s*\/?>/gi, '\n');
+    s = s.replace(/<\/p\s*>/gi, '\n\n');
+    s = s.replace(/<p[^>]*>/gi, '');
+
+    // Rester av markup vi ikke kjenner
+    s = s.replace(/<[^>]+>/g, '');
+    s = avkodEntiteter(s);
+
+    // Rydd whitespace: maks én blank linje, ingen etterslepende mellomrom
+    return s
+        .split('\n')
+        .map(l => l.replace(/[ \t]+$/g, '').replace(/^[ \t]+/, ''))
+        .join('\n')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
 }
 
 function utledLu(emne) {
     const noder = emne?.beskrivelsesavsnitt?.nodes || [];
     if (noder.length === 0) return '';
-    const samlet = noder.map(n => n?.innhold || '').filter(Boolean).join('<br><br>');
-    const norm = normaliserLuHtml(samlet);
-    if (norm.length > LU_MAX_LENGDE) return norm.slice(0, LU_MAX_LENGDE - 10) + '…</p>';
-    return norm;
+    const deler = noder.map(n => luTilMarkdown(n?.innhold || '')).filter(Boolean);
+    if (deler.length === 0) return '';
+    const samlet = deler.join('\n\n');
+    if (samlet.length > LU_MAX_LENGDE) return samlet.slice(0, LU_MAX_LENGDE - 1) + '…';
+    return samlet;
 }
 
 function delAvPersonRoller(personroller, rolleKode) {

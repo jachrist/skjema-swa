@@ -107,3 +107,49 @@ app.http('oppslagDynamisk', {
         }
     }
 });
+
+/**
+ * GET /api/emner/{termin}/{emneId}/beskrivelse
+ *
+ * Emnebeskrivelsen fra FS (tekstkategori E-FHSLUB) som Markdown, klar til å
+ * settes inn i et informasjonsfelt. Ligger utenfor dropdown-oppslagene med
+ * vilje: teksten er lang, og skal ikke sendes med for hvert emne i en liste.
+ *
+ * termin  = kort termin-kode, f.eks. "26H"
+ * emneId  = "{EK}-{VK}", f.eks. "CBU1503-1"
+ *
+ * Auth: innlogget bruker.
+ */
+app.http('hentEmnebeskrivelse', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'emner/{termin}/{emneId}/beskrivelse',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const emnerStorage = require('../lib/emner-storage');
+            const termin = String(request.params.termin || '').trim();
+            const emneId = String(request.params.emneId || '').trim();
+            if (!emneId) return { status: 400, jsonBody: { status: 'feil', melding: 'emneId mangler' } };
+
+            const emne = await emnerStorage.hentEmne(termin, emneId);
+            if (!emne) return { status: 404, jsonBody: { status: 'feil', melding: `Fant ikke emne ${emneId} i termin ${termin || '(alle)'}` } };
+
+            return {
+                jsonBody: {
+                    EK: emne.EK,
+                    VK: emne.VK,
+                    EN: emne.EN,
+                    Termin: emne.Termin,
+                    Format: 'Markdown',
+                    Beskrivelse: emne.LU || ''
+                }
+            };
+        } catch (e) {
+            context.log('emnebeskrivelse FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
