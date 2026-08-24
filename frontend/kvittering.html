@@ -99,10 +99,21 @@
             border: 1px solid var(--accent);
         }
         .knapp.sekundær:hover { background: var(--accent-light); }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="topprad">
+            <span></span>
+            <div id="systemmerke-plass"></div>
+        </div>
         <div class="ikon">✓</div>
         <h1>Skjema er sendt inn</h1>
         <p class="undertittel">Takk for innsendingen.</p>

@@ -66,10 +66,20 @@
             display: flex; align-items: center; justify-content: center;
         }
         .topp {
-            display: flex; align-items: center; gap: 16px;
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 12px; margin-bottom: 16px;
         }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.7em; margin: 0; flex: 1; font-weight: 700; }
         h2 { font-size: 1.1em; margin: 0 0 12px; color: var(--text-heading); }
         .brukerinfo { display: flex; gap: 12px; font-size: 13px; color: var(--text-secondary); align-items: center; }
@@ -221,13 +231,16 @@
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">🌙</button>
 
     <div class="container">
-        <div class="topp">
-            <h1 id="tittel">Ny rapporttype</h1>
+        <div class="topprad">
+            <a class="tilbake-lenke" href="/velgrapporttype.html">← Til rapportoversikten</a>
             <div class="brukerinfo">
                 <span id="upn">…</span>
                 <button class="link-knapp" onclick="logUt()">Logg ut</button>
-                <a class="link-knapp" href="/velgrapporttype.html">Til oversikten</a>
             </div>
+        </div>
+        <div class="topp">
+            <div class="tittelrad"><h1 id="tittel">Ny rapporttype</h1></div>
+            <div id="systemmerke-plass"></div>
         </div>
 
         <div id="status" class="status-melding info" style="display:none;"></div>

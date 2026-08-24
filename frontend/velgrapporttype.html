@@ -67,10 +67,20 @@
             border: 1px solid var(--border-color);
         }
         .topp {
-            display: flex; align-items: center; gap: 16px;
+            display: flex; align-items: center; justify-content: space-between; gap: 16px;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 12px; margin-bottom: 8px;
         }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.8em; margin: 0; flex: 1; font-weight: 700; letter-spacing: -0.02em; }
         .brukerinfo { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--text-secondary); }
         .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
@@ -148,13 +158,16 @@
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">🌙</button>
 
     <div class="container">
-        <div class="topp">
-            <h1>Velg rapport</h1>
+        <div class="topprad">
+            <a class="tilbake-lenke" href="/velgskjematype.html">← Til skjemaoversikten</a>
             <div class="brukerinfo">
                 <span class="upn" id="upn">…</span>
                 <button class="link-knapp" onclick="logUt()">Logg ut</button>
-                <a class="link-knapp" href="/velgskjematype.html">Skjemaer →</a>
             </div>
+        </div>
+        <div class="topp">
+            <div class="tittelrad"><h1>Velg rapport</h1></div>
+            <div id="systemmerke-plass"></div>
         </div>
 
         <p class="undertittel">Rapporttyper du har tilgang til.</p>
@@ -171,7 +184,6 @@
 
         <div style="margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <a id="knapp-ny-rapporttype" class="knapp primær" style="display: none; padding: 4px 12px; font-size: 12px;" href="/rapporteditor.html">+ Ny rapporttype</a>
-            <a class="knapp sekundær" style="padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/velgskjematype.html" title="Tilbake til skjemaene">← Skjemaer</a>
         </div>
 
         <div id="status" class="status-melding">Laster…</div>

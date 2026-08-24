@@ -69,17 +69,25 @@
             box-shadow: var(--shadow);
             border: 1px solid var(--border-color);
         }
-        .tilbake { color: var(--accent); text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 8px; }
-        .tilbake:hover { text-decoration: underline; }
 
         .topplinje {
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: space-between;
             gap: 16px;
             margin-bottom: 4px;
             flex-wrap: wrap;
         }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.5em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
         .brukerinfo { font-size: 13px; color: var(--text-secondary); }
         .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
@@ -483,10 +491,13 @@
 </head>
 <body>
     <div class="container">
-        <a href="/velgskjematype.html" class="tilbake">← Til skjemaoversikten</a>
-        <div class="topplinje">
-            <h1 id="tittel">Ny skjematype</h1>
+        <div class="topprad">
+            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
             <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
+        </div>
+        <div class="topplinje">
+            <div class="tittelrad"><h1 id="tittel">Ny skjematype</h1></div>
+            <div id="systemmerke-plass"></div>
         </div>
 
         <div id="innhold" class="laster">Laster…</div>

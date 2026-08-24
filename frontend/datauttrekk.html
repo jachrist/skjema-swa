@@ -65,13 +65,22 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 14px;
             margin-bottom: 20px;
             padding-bottom: 16px;
             border-bottom: 1px solid var(--border-color);
         }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         .topplinje h1 { margin: 0; font-size: 22px; }
-        .tilbake { color: var(--accent); text-decoration: none; font-size: 13px; }
-        .tilbake:hover { text-decoration: underline; }
 
         .panel {
             padding: 18px 20px;
@@ -157,14 +166,15 @@
 </head>
 <body>
     <div class="container">
-        <div class="topplinje">
-            <div>
-                <a href="/velgskjematype.html" class="tilbake">← Til skjemaportalen</a>
-                <h1 id="tittel">Datauttrekk</h1>
-            </div>
-            <div style="text-align: right; font-size: 13px; color: var(--text-secondary);">
+        <div class="topprad">
+            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
+            <div style="font-size: 13px; color: var(--text-secondary);">
                 <div id="upn"></div>
             </div>
+        </div>
+        <div class="topplinje">
+            <div class="tittelrad"><h1 id="tittel">Datauttrekk</h1></div>
+            <div id="systemmerke-plass"></div>
         </div>
 
         <div class="panel">

@@ -60,22 +60,24 @@
             box-shadow: var(--shadow);
             border: 1px solid var(--border-color);
         }
-        .tilbake {
-            color: var(--accent);
-            text-decoration: none;
-            font-size: 14px;
-            margin-bottom: 12px;
-            display: inline-block;
-        }
-        .tilbake:hover { text-decoration: underline; }
 
         .topplinje {
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: space-between;
-            gap: 12px;
+            gap: 14px;
             margin-bottom: 4px;
         }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.7em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
 
         .meta-rad {
@@ -193,9 +195,13 @@
 </head>
 <body>
     <div class="container">
-        <a href="#" class="tilbake" id="tilbake">← Tilbake</a>
+        <div class="topprad">
+            <a href="#" class="tilbake-lenke" id="tilbake">← Tilbake</a>
+            <span></span>
+        </div>
         <div class="topplinje">
-            <h1 id="tittel">Laster…</h1>
+            <div class="tittelrad"><h1 id="tittel">Laster…</h1></div>
+            <div id="systemmerke-plass"></div>
         </div>
         <div class="meta-rad" id="meta"></div>
 

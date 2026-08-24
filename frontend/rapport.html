@@ -60,10 +60,20 @@
             display: flex; align-items: center; justify-content: center;
         }
         .topp {
-            display: flex; align-items: flex-start; gap: 16px;
+            display: flex; align-items: flex-start; justify-content: space-between; gap: 16px;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 14px; margin-bottom: 14px;
         }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.6em; margin: 0 0 4px; font-weight: 700; }
         .beskrivelse { color: var(--text-secondary); font-size: 14px; margin: 4px 0 0; }
         .meta-info { color: var(--text-secondary); font-size: 12px; margin-top: 4px; }
@@ -176,18 +186,21 @@
     <button class="theme-toggle" onclick="toggleTheme()" id="theme-btn">🌙</button>
 
     <div class="container">
-        <div class="topp">
-            <div style="flex:1;">
-                <h1 id="tittel">Rapport</h1>
-                <div class="beskrivelse" id="beskrivelse"></div>
-                <div class="meta-info" id="meta-info"></div>
-            </div>
+        <div class="topprad">
+            <a class="tilbake-lenke" href="/velgrapporttype.html">← Til rapportoversikten</a>
             <div class="toppknapper">
-                <a class="knapp sekundær" href="/velgrapporttype.html">← Oversikten</a>
                 <a class="knapp sekundær" id="rediger-lenke" style="display:none;">Rediger</a>
                 <button class="knapp sekundær" onclick="window.print()" id="skriv-ut-knapp" style="display:none;">Skriv ut / PDF</button>
                 <button class="knapp primær" onclick="kjor()" id="kjor-knapp" style="display:none;">Kjør rapport</button>
             </div>
+        </div>
+        <div class="topp">
+            <div style="flex:1; min-width:0;">
+                <h1 id="tittel">Rapport</h1>
+                <div class="beskrivelse" id="beskrivelse"></div>
+                <div class="meta-info" id="meta-info"></div>
+            </div>
+            <div id="systemmerke-plass"></div>
         </div>
 
         <div id="filter-panel" class="filter-panel" style="display:none;">

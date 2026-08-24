@@ -61,8 +61,17 @@
             box-shadow: var(--shadow);
             border: 1px solid var(--border-color);
         }
-        .tilbake { color: var(--accent); text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 8px; }
-        .topplinje { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .topplinje { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; }
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
+        .tilbake-lenke:hover { text-decoration: underline; }
+        .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.5em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
         .brukerinfo { font-size: 13px; color: var(--text-secondary); }
         .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
@@ -263,13 +272,16 @@
 </head>
 <body>
     <div class="container">
-        <a href="/velgskjematype.html" class="tilbake">← Til skjemaoversikten</a>
-        <div class="topplinje">
-            <h1 id="tittel">Behandle skjema</h1>
+        <div class="topprad">
+            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
             <div class="brukerinfo">
                 <button id="pdf-knapp" class="modal-knapp" style="margin-right: 12px; display: none;" onclick="lastNedPdf()">📄 Last ned PDF</button>
                 <span class="upn" id="upn">…</span>
             </div>
+        </div>
+        <div class="topplinje">
+            <div class="tittelrad"><h1 id="tittel">Behandle skjema</h1></div>
+            <div id="systemmerke-plass"></div>
         </div>
         <div class="meta" id="meta"></div>
         <div id="innhold" class="laster">Laster skjema…</div>
