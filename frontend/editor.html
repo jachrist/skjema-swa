@@ -228,7 +228,7 @@
         }
         .felt-topp {
             display: grid;
-            grid-template-columns: 70px 1fr 160px auto;
+            grid-template-columns: 92px 1fr 160px auto;
             gap: 10px;
             align-items: center;
             margin-bottom: 8px;
@@ -246,6 +246,28 @@
             font-weight: 700;
         }
         .felt-config { padding-left: 6px; border-left: 3px solid var(--accent); margin-top: 8px; padding-top: 4px; padding-bottom: 4px; }
+
+        /* ---- Dra for å endre rekkefølge ----
+           Kun håndtaket starter et dra-forløp; kortene er fulle av inputfelt
+           som ellers ville blitt vanskelige å merke tekst i. ↑/↓-knappene
+           beholdes som alternativ for tastatur og berøringsskjerm. */
+        .dra-handtak {
+            cursor: grab;
+            color: var(--text-secondary);
+            font-size: 15px;
+            line-height: 1;
+            padding: 2px 3px;
+            border-radius: 4px;
+            user-select: none;
+            flex: 0 0 auto;
+        }
+        .dra-handtak:hover { background: var(--accent-light); color: var(--accent); }
+        .dra-handtak:active { cursor: grabbing; }
+        .seksjon.dras, .felt.dras { opacity: 0.4; }
+        /* Innsettingspunktet vises som en strek på den kanten feltet havner ved */
+        .slipp-for { box-shadow: 0 -3px 0 0 var(--accent); }
+        .slipp-etter { box-shadow: 0 3px 0 0 var(--accent); }
+        .seksjon.slipp-i-seksjon { outline: 2px dashed var(--accent); outline-offset: 2px; }
 
         .valg-liste { display: flex; flex-direction: column; gap: 6px; }
         .valg-rad { display: flex; gap: 6px; align-items: center; }
@@ -1535,6 +1557,7 @@
             });
             // Populer DNF-editorer i sine slots
             byggAlleDNFEditorer();
+            settOppDraOgSlipp(container);
             appliserKollapsState();
             window.scrollTo({ top: rullePos });
         }
@@ -1606,12 +1629,200 @@
             });
         }
 
+        // ==================== DRA OG SLIPP ====================
+        // Rekkefølgen på seksjoner og felter kan endres ved å dra i håndtaket.
+        // Felter kan også dras mellom seksjoner. Lyttere settes på containeren
+        // én gang — innholdet bygges på nytt ved hver render, så per-element-
+        // lyttere ville forsvunnet.
+
+        let dratt = null; // { type: 'seksjon' | 'felt', sIdx, fIdx }
+
+        function rensDraMarkering() {
+            document.querySelectorAll('.slipp-for, .slipp-etter, .slipp-i-seksjon')
+                .forEach(el => el.classList.remove('slipp-for', 'slipp-etter', 'slipp-i-seksjon'));
+        }
+
+        function avsluttDra() {
+            document.querySelectorAll('.dras').forEach(el => el.classList.remove('dras'));
+            document.querySelectorAll('[draggable="true"]').forEach(el => { el.draggable = false; });
+            rensDraMarkering();
+            dratt = null;
+        }
+
+        /**
+         * Hva peker markøren på? Returnerer null når slippet ikke gir mening
+         * (f.eks. et felt sluppet utenfor alle seksjoner).
+         */
+        function finnSlippmal(e) {
+            if (!dratt) return null;
+            if (dratt.type === 'seksjon') {
+                const el = e.target.closest?.('.seksjon');
+                return el ? { el, type: 'seksjon' } : null;
+            }
+            const feltEl = e.target.closest?.('.felt');
+            if (feltEl) return { el: feltEl, type: 'felt' };
+            const seksjonEl = e.target.closest?.('.seksjon');
+            // Sluppet i en seksjon, men ikke på et felt → legges bakerst
+            return seksjonEl ? { el: seksjonEl, type: 'seksjon-slutt' } : null;
+        }
+
+        function erEtter(el, e) {
+            const r = el.getBoundingClientRect();
+            return e.clientY > r.top + r.height / 2;
+        }
+
+        /** Flytt element i én liste. Justerer målindeksen for at kilden fjernes først. */
+        function flyttInternt(liste, fra, til) {
+            const mal = fra < til ? til - 1 : til;
+            const [x] = liste.splice(fra, 1);
+            liste.splice(mal, 0, x);
+            return mal;
+        }
+
+        /**
+         * Hvor havner det dratte? Ren funksjon — all DOM-lesing skjer i drop-
+         * lytteren, slik at selve indeksregningen kan testes for seg.
+         *
+         * kilde: { type: 'seksjon' | 'felt', sIdx, fIdx }
+         * mal:   { type: 'seksjon' | 'felt' | 'seksjon-slutt', sIdx, fIdx, etter, antallFelter }
+         * Returnerer null når slippet ikke endrer rekkefølgen.
+         */
+        function beregnSlipp(kilde, mal) {
+            if (kilde.type === 'seksjon') {
+                const til = mal.sIdx + (mal.etter ? 1 : 0);
+                // Slipp rett før eller rett etter seg selv flytter ingenting
+                if (til === kilde.sIdx || til === kilde.sIdx + 1) return null;
+                return { type: 'seksjon', til };
+            }
+            const tilIdx = mal.type === 'seksjon-slutt'
+                ? mal.antallFelter
+                : mal.fIdx + (mal.etter ? 1 : 0);
+            if (mal.sIdx === kilde.sIdx && (tilIdx === kilde.fIdx || tilIdx === kilde.fIdx + 1)) return null;
+            return { type: 'felt', tilSeksjon: mal.sIdx, tilIdx };
+        }
+
+        function settOppDraOgSlipp(container) {
+            if (container._draKlar) return;
+            container._draKlar = true;
+
+            // Bare håndtaket gjør kortet dragbart, og kun så lenge musa er nede
+            container.addEventListener('mousedown', (e) => {
+                const handtak = e.target.closest('.dra-handtak');
+                if (!handtak) return;
+                const kort = handtak.closest(handtak.dataset.dra === 'seksjon' ? '.seksjon' : '.felt');
+                if (kort) kort.draggable = true;
+            });
+            // Slipp musa uten å dra (også utenfor lista) → kortet skal ikke bli dragbart
+            document.addEventListener('mouseup', () => {
+                if (!dratt) container.querySelectorAll('[draggable="true"]').forEach(el => { el.draggable = false; });
+            });
+
+            container.addEventListener('dragstart', (e) => {
+                const el = e.target;
+                if (!el.classList) return;
+                if (el.classList.contains('felt')) {
+                    dratt = { type: 'felt', sIdx: Number(el.dataset.seksjonIdx), fIdx: Number(el.dataset.feltIdx) };
+                } else if (el.classList.contains('seksjon')) {
+                    dratt = { type: 'seksjon', sIdx: Number(el.dataset.seksjonIdx) };
+                } else {
+                    return;
+                }
+                el.classList.add('dras');
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', 'flytt'); // Firefox starter ikke dra uten data
+            });
+
+            container.addEventListener('dragover', (e) => {
+                const mal = finnSlippmal(e);
+                if (!mal) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                rensDraMarkering();
+                if (mal.type === 'seksjon-slutt') mal.el.classList.add('slipp-i-seksjon');
+                else mal.el.classList.add(erEtter(mal.el, e) ? 'slipp-etter' : 'slipp-for');
+            });
+
+            container.addEventListener('dragleave', (e) => {
+                if (!e.relatedTarget || !container.contains(e.relatedTarget)) rensDraMarkering();
+            });
+
+            container.addEventListener('drop', (e) => {
+                const treff = finnSlippmal(e);
+                if (!treff || !dratt) { avsluttDra(); return; }
+                e.preventDefault();
+                const kilde = dratt;
+                const malSeksjon = Number(treff.el.dataset.seksjonIdx);
+                const mal = {
+                    type: treff.type,
+                    sIdx: malSeksjon,
+                    fIdx: Number(treff.el.dataset.feltIdx),
+                    etter: erEtter(treff.el, e),
+                    antallFelter: (data.Seksjoner[malSeksjon]?.Felter || []).length
+                };
+                avsluttDra();
+
+                const slipp = beregnSlipp(kilde, mal);
+                if (!slipp) return;
+
+                const kart = fangKollapsKart();
+                if (slipp.type === 'seksjon') {
+                    flyttInternt(data.Seksjoner, kilde.sIdx, slipp.til);
+                    renummererSeksjoner();
+                } else if (slipp.tilSeksjon === kilde.sIdx) {
+                    flyttInternt(data.Seksjoner[kilde.sIdx].Felter, kilde.fIdx, slipp.tilIdx);
+                    renummererFelter(kilde.sIdx);
+                } else {
+                    const tilSeksjonObj = data.Seksjoner[slipp.tilSeksjon];
+                    if (!tilSeksjonObj.Felter) tilSeksjonObj.Felter = [];
+                    const [felt] = data.Seksjoner[kilde.sIdx].Felter.splice(kilde.fIdx, 1);
+                    tilSeksjonObj.Felter.splice(slipp.tilIdx, 0, felt);
+                    renummererFelter(kilde.sIdx);
+                    renummererFelter(slipp.tilSeksjon);
+                }
+                oppdaterKollapsEtterFlytting(kart);
+                rendrerSeksjoner();
+            });
+
+            container.addEventListener('dragend', avsluttDra);
+        }
+
+        /**
+         * Kollaps-tilstanden er lagret per posisjon ("seksjonsnr" og
+         * "seksjonsnr-feltnr"). En flytting endrer posisjonene, så nøklene må
+         * følge med — ellers ville feil kort stått sammenslått etterpå.
+         * fangKollapsKart() kalles FØR flyttingen, oppdater… etter.
+         */
+        function fangKollapsKart() {
+            const kart = new Map(); // seksjons-/feltobjekt → nøkkelen det har nå
+            data.Seksjoner.forEach((s, i) => {
+                kart.set(s, i + 1);
+                (s.Felter || []).forEach(f => kart.set(f, `${i + 1}-${f.Nummer}`));
+            });
+            return kart;
+        }
+
+        function oppdaterKollapsEtterFlytting(kart) {
+            const gamleSeksjoner = lesSet(nokkelSeksjoner());
+            const gamleFelter = lesSet(nokkelFelter());
+            const nyeSeksjoner = new Set();
+            const nyeFelter = new Set();
+            data.Seksjoner.forEach((s, i) => {
+                if (gamleSeksjoner.has(kart.get(s))) nyeSeksjoner.add(i + 1);
+                (s.Felter || []).forEach(f => {
+                    if (gamleFelter.has(kart.get(f))) nyeFelter.add(`${i + 1}-${f.Nummer}`);
+                });
+            });
+            skrivSet(nokkelSeksjoner(), nyeSeksjoner);
+            skrivSet(nokkelFelter(), nyeFelter);
+        }
+
         function byggSeksjonHtml(seksjon, sIdx) {
             const feltHtml = (seksjon.Felter || []).map((f, fIdx) => byggFeltHtml(f, sIdx, fIdx, seksjon.Felter.length)).join('');
             const seksjonNr = sIdx + 1;
             return `
-                <div class="seksjon" data-seksjon-nr="${seksjonNr}">
+                <div class="seksjon" data-seksjon-nr="${seksjonNr}" data-seksjon-idx="${sIdx}">
                     <div class="seksjon-topp">
+                        <span class="dra-handtak" data-dra="seksjon" title="Dra for å flytte seksjonen">⠿</span>
                         <button class="seksjon-kollaps-btn" onclick="toggleSeksjon(${seksjonNr})" title="Kollaps/ekspander seksjon"><span class="kollaps-pil">▼</span></button>
                         <span class="seksjon-nr">${seksjonNr}</span>
                         <input type="text" placeholder="Overskrift…"
@@ -1641,9 +1852,10 @@
 
             const feltNokkel = `${sIdx + 1}-${felt.Nummer || (fIdx + 1)}`;
             return `
-                <div class="felt" data-felt-nokkel="${feltNokkel}">
+                <div class="felt" data-felt-nokkel="${feltNokkel}" data-seksjon-idx="${sIdx}" data-felt-idx="${fIdx}">
                     <div class="felt-topp">
                         <div style="display: flex; gap: 4px; align-items: center;">
+                            <span class="dra-handtak" data-dra="felt" title="Dra for å flytte feltet">⠿</span>
                             <button class="felt-kollaps-btn" onclick="toggleFelt('${feltNokkel}')" title="Kollaps/ekspander felt"><span class="kollaps-pil">▼</span></button>
                             <span class="felt-nr">${felt.Nummer || (fIdx + 1)}</span>
                         </div>
@@ -2228,9 +2440,11 @@
         function flyttSeksjon(sIdx, retning) {
             const til = sIdx + retning;
             if (til < 0 || til >= data.Seksjoner.length) return;
+            const kart = fangKollapsKart();
             const [s] = data.Seksjoner.splice(sIdx, 1);
             data.Seksjoner.splice(til, 0, s);
             renummererSeksjoner();
+            oppdaterKollapsEtterFlytting(kart);
             rendrerSeksjoner();
         }
         function renummererSeksjoner() {
@@ -2321,9 +2535,11 @@
             const felter = data.Seksjoner[sIdx].Felter;
             const til = fIdx + retning;
             if (til < 0 || til >= felter.length) return;
+            const kart = fangKollapsKart();
             const [f] = felter.splice(fIdx, 1);
             felter.splice(til, 0, f);
             renummererFelter(sIdx);
+            oppdaterKollapsEtterFlytting(kart);
             rendrerSeksjoner();
         }
 
