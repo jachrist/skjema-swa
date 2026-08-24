@@ -92,6 +92,11 @@ async function hentTerminer(arstallBetegnelsePar) {
  *
  * Hvis luTermin ({arstall, terminbetegnelse}) er gitt, inkluderer spørringen
  * beskrivelsesavsnitt med tekstkategori "E-FHSLUB" (forventet læringsutbytte).
+ *
+ * MERK: gjelderFraTerminer plukker tekstversjonen som hører til nøyaktig den
+ * terminen som oppgis. Oppgir du en termin det ennå ikke er skrevet tekst for,
+ * kommer feltet tomt tilbake — uten feilmelding. Bruk inneværende termin.
+ * Utelates filteret helt, returneres alle versjoner, også tomme og utdaterte.
  */
 async function hentUndervisningsenheter(terminIder, sidestorrelse = 200, luTermin = null) {
     const beskrivelseFelt = luTermin ? `

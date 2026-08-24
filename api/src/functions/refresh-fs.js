@@ -240,11 +240,22 @@ app.http('refreshFsDiagLu', {
                 }
             }
 
+            // Hvordan ser det ut i tabellen etter siste oppfriskning?
+            const emnerStorage = require('../lib/emner-storage');
+            const lagrede = await emnerStorage.hentAlleEmner();
+            const medLu = lagrede.filter(e => (e.LU || '').trim().length > 0);
+            const tabellStatus = {
+                emnerITabellen: lagrede.length,
+                medBeskrivelse: medLu.length,
+                eksempel: medLu[0] ? { EK: medLu[0].EK, Termin: medLu[0].Termin, LU: String(medLu[0].LU).slice(0, 220) } : null
+            };
+
             return {
                 jsonBody: {
                     status: 'ok',
                     aktiveTerminer: aktive.map(t => t.kort),
                     plukketFraTermin: naa.kort,
+                    tabellStatus,
                     resultater
                 }
             };

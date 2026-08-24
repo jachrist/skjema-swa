@@ -264,10 +264,15 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     }
     if (terminIder.length === 0) throw new Error('Fant ingen FS-termin-IDer for aktive terminer');
 
-    const sisteTermin = aktive[aktive.length - 1];
-    const luTermin = { arstall: sisteTermin.arstall, terminbetegnelse: sisteTermin.betegnelse };
+    // Emnebeskrivelsen hentes for INNEVÆRENDE termin, ikke siste aktive.
+    // gjelderFraTerminer treffer bare tekstversjoner knyttet til akkurat den
+    // terminen som oppgis, og for neste termin er de ennå ikke skrevet — derfor
+    // sto LU-kolonnen tom. Verifisert 2026-08-24 med refresh-fs/diag-lu:
+    // 0 av 8 emner ga innhold for neste termin, 8 av 8 for inneværende.
+    const naaTermin = aktive[1];
+    const luTermin = { arstall: naaTermin.arstall, terminbetegnelse: naaTermin.betegnelse };
     const enheter = await fs.hentUndervisningsenheter(terminIder, 200, luTermin);
-    log(`refresh-fs: hentet ${enheter.length} undervisningsenheter fra FS`);
+    log(`refresh-fs: hentet ${enheter.length} undervisningsenheter fra FS (beskrivelse fra ${naaTermin.kort})`);
 
     // Generasjonsmarkør for FilterStudent-ryddingen (spec §5)
     const generasjon = new Date().toISOString();
