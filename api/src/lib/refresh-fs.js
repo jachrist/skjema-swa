@@ -422,4 +422,4 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     };
 }
 
-module.exports = { refreshFS, transformer, transformerKlasser, normaliserLuHtml };
+module.exports = { refreshFS, transformer, transformerKlasser, luTilMarkdown };
