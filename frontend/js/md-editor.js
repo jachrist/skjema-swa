@@ -88,6 +88,16 @@ export function byggMdEditor(container, opsjoner = {}) {
         if (e.clientX > r.right - 18 && e.clientY > r.bottom - 18) manueltHoyde = true;
     });
 
+    // Et skjult felt (sammenslått kort) måler scrollHeight = 0, så høyden må
+    // regnes ut på nytt første gang feltet faktisk blir synlig.
+    if (window.IntersectionObserver) {
+        const io = new IntersectionObserver((poster) => {
+            if (poster.some(p => p.isIntersecting)) juster();
+        });
+        io.observe(tekstfelt);
+    }
+    tekstfelt.addEventListener('focus', juster);
+
     function endret() {
         juster();
         onEndring(tekstfelt.value);
