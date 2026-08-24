@@ -24,8 +24,21 @@ function rk(mottaker) {
     return String(mottaker || '').trim().toLowerCase();
 }
 
+// Table Storage tåler 32 KiB per egenskap. Prefilled ble tidligere kuttet med
+// substring() ved denne grensa — det gir ugyldig JSON, og da faller HELE
+// prefillen stille bort ved utlesing (tryParseJson returnerer null). Nå feiler
+// vi i stedet med en melding som sier hvem og hvor mye.
+const PREFILLED_MAKS = 30000;
+
 async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalHint, senderSkjemaId, opprettetAv }) {
     const t = await tabell();
+    const prefilledJson = prefilled ? JSON.stringify(prefilled) : '';
+    if (prefilledJson.length > PREFILLED_MAKS) {
+        throw new Error(
+            `Prefilled for ${mottaker} er ${prefilledJson.length} tegn — maks ${PREFILLED_MAKS}. ` +
+            'Kort ned den lengste verdien (typisk en emnebeskrivelse).'
+        );
+    }
     await t.upsertEntity({
         partitionKey: String(batchId),
         rowKey: rk(mottaker),
@@ -33,7 +46,7 @@ async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalH
         Jti: String(jti),
         Opprettet: new Date().toISOString(),
         KanalHint: String(kanalHint || 'epost'),
-        Prefilled: prefilled ? JSON.stringify(prefilled).substring(0, 30000) : '',
+        Prefilled: prefilledJson,
         SvarSkjemaId: '',
         SvarTid: '',
         SistPurret: '',
