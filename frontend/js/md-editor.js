@@ -80,16 +80,13 @@ export function byggMdEditor(container, opsjoner = {}) {
         tekstfelt.style.height = 'auto';
         tekstfelt.style.height = Math.max(minHoyde, Math.min(tekstfelt.scrollHeight + 2, MAKS_AUTOHOYDE)) + 'px';
     }
-    // Endrer brukeren størrelsen selv, slutter vi å overstyre den
-    if (window.ResizeObserver) {
-        let sisteAuto = null;
-        const obs = new ResizeObserver(() => {
-            const h = tekstfelt.style.height;
-            if (sisteAuto !== null && h !== sisteAuto) manueltHoyde = true;
-            sisteAuto = h;
-        });
-        obs.observe(tekstfelt);
-    }
+    // Tar brukeren tak i størrelseshåndtaket nede til høyre, slutter vi å
+    // overstyre høyden. (En ResizeObserver ville sett vår egen justering som
+    // en brukerendring og slått av autovoksingen med én gang.)
+    tekstfelt.addEventListener('mousedown', (e) => {
+        const r = tekstfelt.getBoundingClientRect();
+        if (e.clientX > r.right - 18 && e.clientY > r.bottom - 18) manueltHoyde = true;
+    });
 
     function endret() {
         juster();
