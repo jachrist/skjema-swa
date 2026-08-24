@@ -27,7 +27,7 @@ Alle tabeller er PK+RK-basert. Ingen indekser utover partition scan.
 ### Emner
 - PK = `<Termin>` (f.eks. "26V")
 - RK = `<EK>-<VK>` (f.eks. "CBU2501-1")
-- Egenskaper: `EK`, `VK`, `EN`, `SK`, `SN`, `C`, `Larere` (JSON), `Hovedlarere` (JSON), `LU`
+- Egenskaper: `EK`, `VK`, `EN`, `SK`, `SN`, `C`, `Larere` (JSON), `Hovedlarere` (JSON), `LU` (emnebeskrivelse fra FS, lagret som Markdown)
 
 ### EmneStudenter
 - PK = `<Termin>|<EK>-<VK>`

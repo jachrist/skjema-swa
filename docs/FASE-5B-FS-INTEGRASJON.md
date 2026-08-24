@@ -103,11 +103,28 @@ som er riktig.
 
 Utelates filteret helt, returneres alle versjoner — også tomme og utdaterte.
 
-FS bruker sitt eget markup-format (`<list listType="...">`, `<listItem>`,
-`<bold>`, `<italic>`). `normaliserLuHtml()` i `refresh-fs.js` oversetter det
-til `<ul>`/`<ol>`/`<li>`/`<strong>`/`<em>`. Rekkefølgen på erstatningene er
-vesentlig: `<listItem>` må tas før det generelle `<list...>`-mønsteret, ellers
-blir listepunktene til `<ul>`.
+FS bruker sitt eget markup-format (`<p>`, `<list listType="...">`,
+`<listItem>`, `<bold>`, `<italic>`). `luTilMarkdown()` i `refresh-fs.js`
+konverterer det til **Markdown** ved innlesing — ikke til HTML — fordi teksten
+skal brukes som innhold i et informasjonsfelt, og de rendres med
+`parseMarkdown()` i `frontend/js/felt-render.js`:
+
+| FS | Markdown |
+|---|---|
+| `<p>tekst</p>` | `tekst` + blank linje |
+| `<list listType="bulleted"><listItem>x</listItem></list>` | `- x` |
+| `<list listType="numbered">…` | `1. x` |
+| `<bold>` / `<italic>` | `**x**` / `*x*` |
+| `&nbsp;`, `&#229;`, `&#xE5;` | avkodet |
+
+Rekkefølgen på erstatningene er vesentlig: `<listItem>` må tas før det
+generelle `<list...>`-mønsteret, ellers spiser det listepunktene også.
+
+Teksten hentes for ett emne av gangen med
+`GET /api/emner/{termin}/{emneId}/beskrivelse` (innlogget bruker), som gir
+`{ EK, VK, EN, Termin, Format: 'Markdown', Beskrivelse }`. Den er bevisst holdt
+utenfor `_hentEmner()` og dropdown-oppslagene — feltet kan være opptil 30 000
+tegn og hører ikke hjemme i en nedtrekksliste.
 
 `POST /api/refresh-fs/diag-lu` (scheduler-nøkkel eller admin) kjører spørringen
 med ulike filtervarianter og rapporterer hvilke som gir innhold, samt hvor
