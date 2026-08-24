@@ -1,0 +1,30 @@
+name: Refresh FS-data — diag LU
+
+# Prøver ulike varianter av beskrivelsesavsnitt-filteret mot FS og rapporterer
+# hvilke som faktisk gir innhold. Brukes når LU-kolonnen kommer tom.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  diag-lu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kall refresh-fs/diag-lu
+        env:
+          SWA_URL: ${{ vars.SWA_URL }}
+          SCHEDULER_KEY: ${{ secrets.SCHEDULER_KEY }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "::error::SWA_URL eller SCHEDULER_KEY mangler."
+            exit 1
+          fi
+          echo "Kaller $SWA_URL/api/refresh-fs/diag-lu …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/refresh-fs/diag-lu" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"antall": 8}')
+          echo "HTTP $RESP"
+          cat response.json | python3 -m json.tool || cat response.json
+          echo ""
+          if [ "$RESP" != "200" ]; then exit 1; fi

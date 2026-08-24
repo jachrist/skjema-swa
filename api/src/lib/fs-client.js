@@ -243,5 +243,8 @@ async function hentKlasser(sidestorrelse = 50, studenterPerKlasse = 1000) {
 module.exports = {
     hentTerminer,
     hentUndervisningsenheter,
-    hentKlasser
+    hentKlasser,
+    // Kun for diagnose-endepunktet, som prøver ulike filtervarianter for å
+    // finne ut hvorfor et felt kommer tomt tilbake.
+    kallGraphQl
 };

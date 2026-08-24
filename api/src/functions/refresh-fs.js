@@ -161,6 +161,99 @@ app.http('refreshFsDiag', {
     }
 });
 
+/**
+ * POST /api/refresh-fs/diag-lu — hvorfor er LU-kolonnen tom?
+ *
+ * Kjører den samme emne-spørringen med ulike varianter av
+ * beskrivelsesavsnitt-filteret mot et lite utvalg emner, og rapporterer hvor
+ * mange som fikk innhold. Da slipper vi å gjette på hvilket filterledd som
+ * tømmer resultatet. Hver variant kjøres for seg — feiler én (ukjent felt i
+ * skjemaet), rapporteres feilmeldingen og de andre kjører videre.
+ */
+app.http('refreshFsDiagLu', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'refresh-fs/diag-lu',
+    handler: async (request, context) => {
+        const auth = autorisert(request);
+        if (!auth.ok) return { status: 403, jsonBody: { status: 'avvist' } };
+
+        try {
+            const terminer = require('../lib/terminer');
+            const fs = require('../lib/fs-client');
+            const aktive = terminer.aktiveTerminer();
+            const idMap = await fs.hentTerminer(aktive.map(t => ({ arstall: t.arstall, betegnelse: t.betegnelse })));
+
+            // Bruk inneværende termin til å plukke emner — der finnes det data
+            const naa = aktive[1];
+            const terminId = idMap.get(`${naa.arstall}-${naa.betegnelse}`);
+            if (!terminId) return { status: 500, jsonBody: { status: 'feil', melding: `Fant ikke termin-id for ${naa.kort}` } };
+
+            const antall = Number((await request.json().catch(() => ({})))?.antall || 8);
+            const termFilter = (t) => `gjelderFraTerminer: [{arstall: ${t.arstall}, terminbetegnelse: "${t.betegnelse}"}]`;
+
+            const varianter = [
+                { navn: 'dagens (gjelderFra = neste termin)', filter: `(filter: { tekstkategorikoder: "E-FHSLUB" sprakkode6392: "NOR" ${termFilter(aktive[2])} })`, felt: 'innhold' },
+                { navn: 'gjelderFra = inneværende termin', filter: `(filter: { tekstkategorikoder: "E-FHSLUB" sprakkode6392: "NOR" ${termFilter(aktive[1])} })`, felt: 'innhold' },
+                { navn: 'gjelderFra = forrige termin', filter: `(filter: { tekstkategorikoder: "E-FHSLUB" sprakkode6392: "NOR" ${termFilter(aktive[0])} })`, felt: 'innhold' },
+                { navn: 'uten gjelderFraTerminer', filter: `(filter: { tekstkategorikoder: "E-FHSLUB" sprakkode6392: "NOR" })`, felt: 'innhold' },
+                { navn: 'kun tekstkategori (uten språk)', filter: `(filter: { tekstkategorikoder: "E-FHSLUB" })`, felt: 'innhold' },
+                { navn: 'helt ufiltrert', filter: '', felt: 'innhold' },
+                { navn: 'ufiltrert med metadata', filter: '', felt: 'innhold tekstkategori { kode } sprak { kode }' }
+            ];
+
+            const resultater = [];
+            for (const v of varianter) {
+                const query = `
+                    query DiagLu($terminer: [ID!]!, $first: Int!, $eier: String!) {
+                        undervisningsenheter(filter: { eierOrganisasjonskode: $eier, terminer: $terminer } first: $first) {
+                            nodes {
+                                emne {
+                                    kode
+                                    beskrivelsesavsnitt${v.filter} { nodes { ${v.felt} } }
+                                }
+                            }
+                        }
+                    }
+                `;
+                try {
+                    const data = await fs.kallGraphQl(query, {
+                        terminer: [terminId], first: antall,
+                        eier: process.env.FS_EIER_ORG_KODE || '1627'
+                    });
+                    const noder = data.undervisningsenheter?.nodes || [];
+                    const medInnhold = noder.filter(n => (n.emne?.beskrivelsesavsnitt?.nodes || []).some(x => x?.innhold));
+                    const forste = medInnhold[0]?.emne?.beskrivelsesavsnitt?.nodes || [];
+                    resultater.push({
+                        variant: v.navn,
+                        emnerSjekket: noder.length,
+                        emnerMedInnhold: medInnhold.length,
+                        eksempelEmne: medInnhold[0]?.emne?.kode || null,
+                        eksempelAvsnitt: forste.slice(0, 3).map(x => ({
+                            kategori: x?.tekstkategori?.kode,
+                            sprak: x?.sprak?.kode,
+                            innhold: String(x?.innhold || '').slice(0, 220)
+                        }))
+                    });
+                } catch (e) {
+                    resultater.push({ variant: v.navn, feil: String(e.message || e).slice(0, 300) });
+                }
+            }
+
+            return {
+                jsonBody: {
+                    status: 'ok',
+                    aktiveTerminer: aktive.map(t => t.kort),
+                    plukketFraTermin: naa.kort,
+                    resultater
+                }
+            };
+        } catch (e) {
+            return { status: 500, jsonBody: { status: 'feil', melding: String(e.message || e), stack: (e.stack || '').split('\n').slice(0, 6) } };
+        }
+    }
+});
+
 app.http('refreshFsStatus', {
     methods: ['GET'],
     authLevel: 'anonymous',
