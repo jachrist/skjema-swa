@@ -1335,14 +1335,18 @@ export function parseMarkdown(tekst) {
     s = s.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     s = s.replace(/^# (.+)$/gm, '<h1>$1</h1>');
 
-    // Lister — samle sammenhengende linjer
+    // Lister — samle sammenhengende linjer.
+    // Blokken avsluttes med «\n\n» fordi mønsteret spiser linjeskiftet etter
+    // siste punkt. Uten det havner neste avsnitt i samme blokk som listen, og
+    // siden blokken da starter med <ul>, slipper den gjennom
+    // avsnittsinnpakningen nedenfor — teksten ble stående uten <p>.
     s = s.replace(/(^|\n)((?:- .+(?:\n|$))+)/g, (_m, pre, blokk) => {
         const items = blokk.trim().split(/\n/).map(l => '<li>' + l.replace(/^- /, '') + '</li>').join('');
-        return pre + '<ul>' + items + '</ul>';
+        return pre + '<ul>' + items + '</ul>\n\n';
     });
     s = s.replace(/(^|\n)((?:\d+\. .+(?:\n|$))+)/g, (_m, pre, blokk) => {
         const items = blokk.trim().split(/\n/).map(l => '<li>' + l.replace(/^\d+\. /, '') + '</li>').join('');
-        return pre + '<ol>' + items + '</ol>';
+        return pre + '<ol>' + items + '</ol>\n\n';
     });
 
     // Inline: bold, italic, kode, lenke
