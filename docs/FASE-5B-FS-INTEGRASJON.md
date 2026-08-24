@@ -91,9 +91,28 @@ rydder det.
 ## LU (læringsutbytte)
 
 Læringsutbytte-teksten hentes fra `beskrivelsesavsnitt` med tekstkategori
-`E-FHSLUB`, filtrert mot den SISTE aktive terminen. Det gir mest oppdatert
-versjon. HTML-tags fra FS (`<list>`/`<listItem>`) normaliseres til standard
-`<ul>`/`<ol>`/`<li>` i `refresh-fs.js` sin `normaliserLuHtml()`.
+`E-FHSLUB` og `sprakkode6392: "NOR"`.
+
+`gjelderFraTerminer` plukker tekstversjonen som hører til **nøyaktig den
+terminen som oppgis**. Oppgir man en termin det ennå ikke er skrevet tekst
+for, kommer feltet tomt tilbake uten feilmelding — det var grunnen til at
+LU-kolonnen sto tom fram til 2026-08-24, da filteret brukte siste aktive
+termin (altså NESTE termin). Jobben henter derfor emnene **per termin**, hver
+med sin egen `gjelderFraTerminer`. Terminer uten skrevet tekst gir tom LU,
+som er riktig.
+
+Utelates filteret helt, returneres alle versjoner — også tomme og utdaterte.
+
+FS bruker sitt eget markup-format (`<list listType="...">`, `<listItem>`,
+`<bold>`, `<italic>`). `normaliserLuHtml()` i `refresh-fs.js` oversetter det
+til `<ul>`/`<ol>`/`<li>`/`<strong>`/`<em>`. Rekkefølgen på erstatningene er
+vesentlig: `<listItem>` må tas før det generelle `<list...>`-mønsteret, ellers
+blir listepunktene til `<ul>`.
+
+`POST /api/refresh-fs/diag-lu` (scheduler-nøkkel eller admin) kjører spørringen
+med ulike filtervarianter og rapporterer hvilke som gir innhold, samt hvor
+mange rader i Emner-tabellen som har beskrivelse. Kjøres via workflowen
+«Refresh FS-data — diag LU».
 
 ## Feilhåndtering
 
