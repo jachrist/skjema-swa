@@ -34,6 +34,44 @@ Alle tabeller er PK+RK-basert. Ingen indekser utover partition scan.
 - RK = `<upn>`
 - Egenskaper: `FN`, `EN`, `EP`
 
+### Utsendinger
+- PK = `<BatchId>`, RK = `<mottaker>`
+- Egenskaper: `SkjematypeId`, `Jti`, `Opprettet`, `KanalHint`, `Prefilled` (JSON),
+  `SvarSkjemaId`, `SvarTid`, `SistPurret`, `SenderSkjemaId`, `OpprettetAv`
+
+**Prefilled** styrer felter som er fylt ut på forhånd i utsendings-lenka:
+
+```json
+{
+  "1-01": ["CBU1503"],
+  "1-02": { "emnebeskrivelse": "26H|CBU1503-1" }
+}
+```
+
+- **Tekstverdi** (`["..."]`) — låses i skjemaet, og tvinges inn igjen ved
+  innsending så mottakeren ikke kan endre den.
+- **Oppslags-referanse** (`{ "emnebeskrivelse": "<termin>|<EK>-<VK>" }`) — bare
+  referansen lagres. Teksten slås opp fra Emner-tabellen når mottakeren åpner
+  lenka (`GET /api/utsending/valider`), se `lib/utsending-prefill.js`. Terminen
+  er valgfri; utelates den, brukes nyeste versjon av emnet.
+
+  Referansene valideres når utsendingen opprettes — en ukjent emnekode gir 400
+  med én gang, i stedet for et tomt felt hos alle mottakerne. Feiler oppslaget
+  senere (emnet er borte fra FS), får feltet tom tekst og skjemaet vises
+  likevel.
+
+Treffer en prefilled-verdi et **informasjonsfelt**, overstyres feltets
+`Tekst.Verdi` i stedet for å sette et svar, og feltets `Format` (Tekst/Markdown)
+beholdes — se `frontend/index.html`. Emnebeskrivelsen lagres som Markdown og
+rendres dermed med avsnitt og punktlister. Informasjonsfelt lagres ikke med
+skjemaet, så teksten er kun til utfylleren; skal den analyseres senere, hentes
+den fra Emner-tabellen eller FS.
+
+`Prefilled` har en grense på 30 000 tegn (Table Storage tåler 32 KiB per
+egenskap). Overskrides den, feiler utsendingen med melding om hvilken mottaker
+og hvor stor verdien var — tidligere ble JSON-en kuttet, og da forsvant hele
+prefillen stille.
+
 ### Loggtabeller
 - **Hendelseslogg** (skjema-lifecycle-events): PK = `<yyyy-MM>`, RK = `<timestamp>-<id>`
 - **Jobblogg** (masterdata-refresh): PK = `<jobbtype>`, RK = `<timestamp>`

@@ -14,6 +14,10 @@
  *         ...
  *       ]
  *     }
+ *     En prefilled-verdi kan også være en oppslags-referanse i stedet for tekst:
+ *       { "1-02": { "emnebeskrivelse": "26H|CBU1503-1" } }
+ *     Da lagres bare referansen, og teksten slås opp når mottakeren åpner lenka.
+ *     Referansene valideres her — ukjent emne gir 400. Se lib/utsending-prefill.js.
  *     Returnerer: { batchId, lenker: [{ mottaker, url, utloper }] }
  *
  *   GET /api/utsending/valider?t=TOKEN
@@ -32,6 +36,7 @@ const hendelser = require('../lib/hendelser-storage');
 const skjemaStorage = require('../lib/skjema-storage');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
+const prefill = require('../lib/utsending-prefill');
 
 function harFlytNokkel(request, context) {
     const forventet = String(process.env.FLOW_CALLBACK_KEY || '').trim();
@@ -95,6 +100,24 @@ app.http('utsendingOpprett', {
             const b = baseUrl(request);
             const lenker = [];
 
+            // Oppslags-referanser (f.eks. { emnebeskrivelse: "26H|CBU1503-1" })
+            // valideres FØR noe skrives. En skrivefeil i emnekoden skal stoppe
+            // utsendingen her, ikke gi et tomt felt hos alle mottakerne.
+            const oppslagsCache = new Map();
+            for (const rå of mottakere) {
+                if (!rå?.prefilled || typeof rå.prefilled !== 'object') continue;
+                const feil = await prefill.validerOppslag(rå.prefilled, oppslagsCache);
+                if (feil.length > 0) {
+                    return {
+                        status: 400,
+                        jsonBody: {
+                            status: 'feil',
+                            melding: `Ugyldig prefilled-oppslag for ${rå.mottaker || '(uten mottaker)'}: ${feil.join('; ')}`
+                        }
+                    };
+                }
+            }
+
             for (const rå of mottakere) {
                 const mottaker = String(rå?.mottaker || '').trim().toLowerCase();
                 if (!mottaker) continue;
@@ -149,6 +172,12 @@ app.http('utsendingForMeg', {
             const skjematypeId = String(body.skjematypeId || '').trim();
             if (!skjematypeId) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler skjematypeId' } };
             const prefilled = body?.prefilled && typeof body.prefilled === 'object' ? body.prefilled : null;
+            if (prefilled) {
+                const feil = await prefill.validerOppslag(prefilled);
+                if (feil.length > 0) {
+                    return { status: 400, jsonBody: { status: 'feil', melding: `Ugyldig prefilled-oppslag: ${feil.join('; ')}` } };
+                }
+            }
             // Idempotent batchId per (upn, skjematypeId, evt. custom-suffix) så vi ikke
             // fyller storage med duplikater ved gjentatte editor-loads.
             const suffix = String(body.batchId || 'for-meg').trim();
@@ -220,7 +249,9 @@ app.http('utsendingValider', {
                     status: 'ok',
                     skjematypeId: post.SkjematypeId,
                     mottaker: post.Mottaker,
-                    prefilled: post.Prefilled || null,
+                    // Referanser slås opp her, når skjemaet faktisk åpnes —
+                    // se lib/utsending-prefill.js
+                    prefilled: await prefill.resolverPrefilled(post.Prefilled || null, (m) => context.log(m)),
                     alleredeBesvart: !!post.SvarSkjemaId,
                     svarSkjemaId: post.SvarSkjemaId || null,
                     utloper: v.utloper,

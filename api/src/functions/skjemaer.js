@@ -29,6 +29,7 @@ const otpToken = require('../lib/otp-token');
 const hendelser = require('../lib/hendelser-storage');
 const utsendingToken = require('../lib/utsending-token');
 const utsendingStorage = require('../lib/utsending-storage');
+const prefill = require('../lib/utsending-prefill');
 
 /**
  * Autentisering for ekstern-innsender-flyten.
@@ -701,6 +702,10 @@ app.http('lagreSkjema', {
                 // Prefilled er format { "sek-felt-padded": [verdi(er)] }.
                 if (utsendingAuth.prefilled && Array.isArray(skjemaData.Seksjoner)) {
                     for (const [nokkel, sva] of Object.entries(utsendingAuth.prefilled)) {
+                        // Oppslags-referanser (f.eks. { emnebeskrivelse: "..." }) fyller
+                        // informasjonsfelt og har ingen svarverdi å låse. Se
+                        // lib/utsending-prefill.js.
+                        if (prefill.erOppslag(sva)) continue;
                         const m = /^(\d+)-(\d+)$/.exec(nokkel);
                         if (!m) continue;
                         const sekNr = Number(m[1]), feltNr = m[2].padStart(2, '0');
