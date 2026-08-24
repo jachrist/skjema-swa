@@ -1596,11 +1596,20 @@
             return felter;
         }
 
+        /** Første linje med innhold, forkortet — brukes som kort-tittel. */
+        function forsteLinje(tekst, maks = 90) {
+            const linje = String(tekst || '').split('\n').find(l => l.trim()) || '';
+            return linje.length > maks ? linje.slice(0, maks) + '…' : linje;
+        }
+
         /**
-         * Fyller md-slot-ene med Markdown-editorer. Spørsmålsteksten finnes to
-         * steder — enlinjes-inputen i topplinja (som gir kortet identitet når
-         * det er sammenslått) og editoren her. Begge skriver til samme verdi og
-         * holdes i synk, så det spiller ingen rolle hvor du skriver.
+         * Fyller md-slot-ene med Markdown-editorer.
+         *
+         * Når editoren overtar, blir enlinjes-inputen i topplinja et
+         * skrivebeskyttet sammendrag (første linje). Den kan ikke være
+         * redigerbar samtidig: et <input> tåler ikke linjeskift, så ett
+         * tastetrykk der ville flatet ut hele teksten. Sammendraget står igjen
+         * fordi det er dette som identifiserer feltet når kortet er slått sammen.
          */
         function byggAlleMdEditorer() {
             (data.Seksjoner || []).forEach((seksjon, sIdx) => {
@@ -1608,17 +1617,23 @@
                     const tekstSlot = document.querySelector(`.md-slot[data-md="tekst-${sIdx}-${fIdx}"]`);
                     if (tekstSlot) {
                         const toppInput = document.querySelector(`input[data-felt-tekst="${sIdx}-${fIdx}"]`);
-                        const ed = byggMdEditor(tekstSlot, {
+                        if (toppInput) {
+                            toppInput.readOnly = true;
+                            toppInput.title = 'Redigeres i tekstfeltet under';
+                            toppInput.style.opacity = '0.75';
+                            toppInput.style.cursor = 'default';
+                            toppInput.value = forsteLinje(felt.Tekst?.Verdi);
+                        }
+                        byggMdEditor(tekstSlot, {
                             verdi: felt.Tekst?.Verdi || '',
                             plassholder: felt.Type === 'Informasjon' ? 'Informasjonstekst…' : 'Spørsmålstekst…',
                             visVerktoy: (felt.Tekst?.Format || 'Tekst') === 'Markdown',
                             onEndring: (v) => {
                                 if (!felt.Tekst) felt.Tekst = { Format: 'Tekst' };
                                 felt.Tekst.Verdi = v;
-                                if (toppInput) toppInput.value = v;
+                                if (toppInput) toppInput.value = forsteLinje(v);
                             }
                         });
-                        if (toppInput) toppInput.addEventListener('input', () => ed.settVerdi(toppInput.value));
                     }
 
                     const undSlot = document.querySelector(`.md-slot[data-md="und-${sIdx}-${fIdx}"]`);
