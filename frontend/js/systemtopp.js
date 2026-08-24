@@ -74,6 +74,14 @@ function byggTekst(m) {
 }
 
 function settInn(merke) {
+    // Sider som vil styre plasseringen selv lager en beholder med denne id-en
+    // (utfyllingssiden har merket til høyre for tittelen, ikke til venstre).
+    const plass = document.getElementById('systemmerke-plass');
+    if (plass) {
+        plass.appendChild(merke);
+        return;
+    }
+
     const h1 = document.querySelector('h1');
     if (h1 && h1.parentNode) {
         // Merket og overskriften flyttes inn i en egen flex-rad som tar

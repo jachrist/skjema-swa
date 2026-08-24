@@ -512,6 +512,7 @@
         import { byggDNFEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn, invaliderRolleCache } from './js/tilgang-editor.js';
         import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
+        import { byggMdEditor } from './js/md-editor.js';
 
         let rolleGrupper = []; // populeres i init()
         let teamNavn = [];     // populeres i init()
@@ -709,7 +710,7 @@
                         </select>
                     </div>
                     <div class="rad">
-                        <label>Logo (høyre) <small>(vises til høyre for tittelen — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>. Plassen til venstre er reservert for systemmerkingen.)</small></label>
+                        <label>Ikon <small>(vises til venstre for tittelen på utfyllingssiden — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>. Plassen til høyre er reservert for systemmerkingen.)</small></label>
                         <div style="display: flex; gap: 8px; align-items: center;">
                             <img id="f-logo-preview" src="${escapeAttr(data.Logo_url || '')}" alt=""
                                 style="height: 40px; max-width: 120px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.Logo_url ? '' : 'display: none;'}">
@@ -722,7 +723,7 @@
                         <label>Skjemaforklaring
                             <small>(vises som informasjon på utfyllingssiden)</small>
                         </label>
-                        <textarea id="f-forklaring" style="min-height: 90px;" oninput="setForklaring(this.value)">${escapeHtml(data.Skjemaforklaring?.Innhold || '')}</textarea>
+                        <div id="f-forklaring-editor"></div>
                         <div style="margin-top: 4px; display: flex; align-items: center; gap: 8px; font-size: 12px;">
                             <span>Format:</span>
                             <label class="checkbox-rad"><input type="radio" name="fklar-format" value="Tekst" ${(data.Skjemaforklaring?.Format || 'Tekst') === 'Tekst' ? 'checked' : ''} onchange="setForklaringFormat('Tekst')"> Ren tekst</label>
@@ -856,6 +857,7 @@
                 </div>
             `;
 
+            byggForklaringEditor();
             rendrerSeksjoner();
             rendrerBehandling();
             rendrerPerioder();
@@ -1363,7 +1365,19 @@
         window.setForklaringFormat = (f) => {
             if (!data.Skjemaforklaring) data.Skjemaforklaring = { Innhold: '' };
             data.Skjemaforklaring.Format = f;
+            byggForklaringEditor(); // verktøylinja vises kun for Markdown
         };
+
+        function byggForklaringEditor() {
+            const vert = document.getElementById('f-forklaring-editor');
+            if (!vert) return;
+            byggMdEditor(vert, {
+                verdi: data.Skjemaforklaring?.Innhold || '',
+                plassholder: 'Forklaring som vises øverst på utfyllingssiden…',
+                visVerktoy: (data.Skjemaforklaring?.Format || 'Tekst') === 'Markdown',
+                onEndring: (v) => setForklaring(v)
+            });
+        }
 
         window.setKrypteres = (v) => { data.Krypteres = v || 'Nei'; };
         window.setAnonymiseres = (v) => { data.Anonymiseres = !!v; };
@@ -1555,8 +1569,9 @@
                 const vIdx = el.dataset.valg !== undefined ? parseInt(el.dataset.valg, 10) : null;
                 el.addEventListener('click', () => håndterAksjon(act, sIdx, fIdx, vIdx));
             });
-            // Populer DNF-editorer i sine slots
+            // Populer DNF- og Markdown-editorer i sine slots
             byggAlleDNFEditorer();
+            byggAlleMdEditorer();
             settOppDraOgSlipp(container);
             appliserKollapsState();
             window.scrollTo({ top: rullePos });
@@ -1579,6 +1594,47 @@
                 }
             }
             return felter;
+        }
+
+        /**
+         * Fyller md-slot-ene med Markdown-editorer. Spørsmålsteksten finnes to
+         * steder — enlinjes-inputen i topplinja (som gir kortet identitet når
+         * det er sammenslått) og editoren her. Begge skriver til samme verdi og
+         * holdes i synk, så det spiller ingen rolle hvor du skriver.
+         */
+        function byggAlleMdEditorer() {
+            (data.Seksjoner || []).forEach((seksjon, sIdx) => {
+                (seksjon.Felter || []).forEach((felt, fIdx) => {
+                    const tekstSlot = document.querySelector(`.md-slot[data-md="tekst-${sIdx}-${fIdx}"]`);
+                    if (tekstSlot) {
+                        const toppInput = document.querySelector(`input[data-felt-tekst="${sIdx}-${fIdx}"]`);
+                        const ed = byggMdEditor(tekstSlot, {
+                            verdi: felt.Tekst?.Verdi || '',
+                            plassholder: felt.Type === 'Informasjon' ? 'Informasjonstekst…' : 'Spørsmålstekst…',
+                            visVerktoy: (felt.Tekst?.Format || 'Tekst') === 'Markdown',
+                            onEndring: (v) => {
+                                if (!felt.Tekst) felt.Tekst = { Format: 'Tekst' };
+                                felt.Tekst.Verdi = v;
+                                if (toppInput) toppInput.value = v;
+                            }
+                        });
+                        if (toppInput) toppInput.addEventListener('input', () => ed.settVerdi(toppInput.value));
+                    }
+
+                    const undSlot = document.querySelector(`.md-slot[data-md="und-${sIdx}-${fIdx}"]`);
+                    if (undSlot) {
+                        byggMdEditor(undSlot, {
+                            verdi: felt.Undertittel?.Verdi || '',
+                            plassholder: 'Hjelpetekst / presisering',
+                            minHoyde: 60,
+                            onEndring: (v) => {
+                                if (!felt.Undertittel) felt.Undertittel = { Format: 'Markdown' };
+                                felt.Undertittel.Verdi = v;
+                            }
+                        });
+                    }
+                });
+            });
         }
 
         function byggAlleDNFEditorer() {
@@ -1859,7 +1915,7 @@
                             <button class="felt-kollaps-btn" onclick="toggleFelt('${feltNokkel}')" title="Kollaps/ekspander felt"><span class="kollaps-pil">▼</span></button>
                             <span class="felt-nr">${felt.Nummer || (fIdx + 1)}</span>
                         </div>
-                        <input type="text" placeholder="Spørsmål / label…"
+                        <input type="text" placeholder="Spørsmål / label…" data-felt-tekst="${sIdx}-${fIdx}"
                             value="${escapeAttr(felt.Tekst?.Verdi || '')}"
                             oninput="setFeltTekst(${sIdx}, ${fIdx}, this.value)">
                         <select onchange="setFeltType(${sIdx}, ${fIdx}, this.value)">
@@ -1909,9 +1965,11 @@
                 </div>
                 <div class="rad">
                     <label>Undertittel <small>(vises under spørsmålet — valgfritt)</small></label>
-                    <input type="text" value="${escapeAttr(felt.Undertittel?.Verdi || '')}"
+                    ${undertittelFormat === 'Markdown'
+                        ? `<div class="md-slot" data-md="und-${sIdx}-${fIdx}"></div>`
+                        : `<input type="text" value="${escapeAttr(felt.Undertittel?.Verdi || '')}"
                         placeholder="Hjelpetekst / presisering"
-                        oninput="setUndertittel(${sIdx}, ${fIdx}, this.value)">
+                        oninput="setUndertittel(${sIdx}, ${fIdx}, this.value)">`}
                     <div style="display: flex; gap: 12px; font-size: 12px; align-items: center; margin-top: 4px;">
                         <label class="checkbox-rad"><input type="radio" name="und-format-${sIdx}-${fIdx}" value="Tekst"
                             ${undertittelFormat === 'Tekst' ? 'checked' : ''}
@@ -2061,7 +2119,19 @@
                 }
             }
 
-            return undertittel + oblig + (typeConfig ? '<div style="margin-top: 8px;">' + typeConfig + '</div>' : '');
+            // Informasjonsfelt og markdown-formatert spørsmålstekst får en
+            // ekspanderbar editor — enlinjes-inputen i topplinja holder ikke
+            // til flere avsnitt. De to holdes synkronisert, se byggAlleMdEditorer().
+            const tekstMd = (felt.Type === 'Informasjon' || tekstFormat === 'Markdown') ? `
+                <div class="rad">
+                    <label>${felt.Type === 'Informasjon' ? 'Informasjonstekst' : 'Spørsmålstekst'}
+                        <small>${tekstFormat === 'Markdown' ? '(Markdown)' : '(ren tekst)'}</small>
+                    </label>
+                    <div class="md-slot" data-md="tekst-${sIdx}-${fIdx}"></div>
+                </div>
+            ` : '';
+
+            return tekstMd + undertittel + oblig + (typeConfig ? '<div style="margin-top: 8px;">' + typeConfig + '</div>' : '');
         }
 
         window.setUndertittel = (sIdx, fIdx, v) => {
@@ -2104,8 +2174,8 @@
             data.Logo_url = v || '';
             oppdaterLogoPreview('f-logo-preview', 'f-logo-navn', v);
         };
-        // Åpne modal med logo-grid. Bare Logo_url (høyre side) er valgbar —
-        // plassen til venstre for tittelen er reservert for systemmerkingen.
+        // Åpne modal med logo-grid. Bare Logo_url er valgbar — plassen til
+        // høyre for tittelen er reservert for systemmerkingen.
         window.velgLogoModal = async (feltNavn) => {
             let logoer = [];
             try { logoer = await api.get('/api/logoer'); }
@@ -2502,20 +2572,25 @@
         window.setFeltProp = (sIdx, fIdx, prop, v) => {
             data.Seksjoner[sIdx].Felter[fIdx][prop] = v;
         };
+        // Formatvalget avgjør om feltet redigeres i en enkel input eller i
+        // Markdown-editoren, så visningen må bygges på nytt.
         window.setInfoFormat = (sIdx, fIdx, format) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];
             if (!felt.Tekst) felt.Tekst = { Verdi: '' };
             felt.Tekst.Format = format;
+            rendrerSeksjoner();
         };
         window.setTekstFormat = (sIdx, fIdx, format) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];
             if (!felt.Tekst) felt.Tekst = { Verdi: '' };
             felt.Tekst.Format = format;
+            rendrerSeksjoner();
         };
         window.setUndertittelFormat = (sIdx, fIdx, format) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];
             if (!felt.Undertittel) felt.Undertittel = { Verdi: '' };
             felt.Undertittel.Format = format;
+            rendrerSeksjoner();
         };
         window.toggleFiltype = (sIdx, fIdx, filtype, valgt) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];

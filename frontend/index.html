@@ -68,11 +68,33 @@
             border: 1px solid var(--border-color);
         }
 
+        .topprad {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 10px;
+        }
+        .tilbake-lenke {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+        }
+        .tilbake-lenke:hover { text-decoration: underline; }
+
         .topplinje {
             display: flex;
-            align-items: baseline;
+            align-items: center;
             justify-content: space-between;
+            gap: 14px;
             margin-bottom: 8px;
+        }
+        .tittelrad {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            flex: 1;
+            min-width: 0;
         }
         h1 {
             font-size: 1.7em;
@@ -93,6 +115,9 @@
             text-align: center;
         }
         .status-melding.info { background: var(--accent-light); color: var(--text-heading); }
+        /* Skjemaforklaringen er brødtekst, ikke en statusmelding — den leses
+           som avsnitt og skal derfor stå venstrestilt. */
+        .status-melding.forklaring { text-align: left; }
         .status-melding.feil { background: rgba(255, 59, 48, 0.1); color: var(--error); }
         .md-lenke { color: var(--accent); text-decoration: underline; }
         .md-lenke:hover { opacity: 0.8; }
@@ -277,14 +302,22 @@
 </head>
 <body>
     <div class="container">
-        <div class="topplinje">
-            <div style="display: flex; align-items: center; gap: 14px; flex: 1;">
-                <!-- Venstre for tittelen står systemmerket (js/systemtopp.js) — den plassen
-                     er reservert for graderingsmerkingen og kan ikke overstyres per skjema. -->
-                <h1 id="tittel" style="flex: 1;">Laster skjema…</h1>
-                <img id="logo" alt="" style="display: none; max-height: 50px; max-width: 140px; object-fit: contain;">
-            </div>
+        <!-- Øverste rad: navigasjon til venstre, innlogget bruker til høyre.
+             Tilbake-lenka vises bare for innloggede interne brukere — eksterne
+             respondenter og forhåndsvisning har ingen skjemaoversikt å gå til. -->
+        <div class="topprad">
+            <a id="tilbake-lenke" class="tilbake-lenke" href="/velgskjematype.html" style="display: none;">← Til skjemaoversikten</a>
+            <span></span>
             <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
+        </div>
+        <!-- Andre rad: skjemaets ikon og tittel til venstre, systemmerket
+             (gradering) til høyre. systemtopp.js finner #systemmerke-plass. -->
+        <div class="topplinje">
+            <div class="tittelrad">
+                <img id="logo" alt="" style="display: none; max-height: 50px; max-width: 140px; object-fit: contain;">
+                <h1 id="tittel">Laster skjema…</h1>
+            </div>
+            <div id="systemmerke-plass"></div>
         </div>
         <div id="forklaring"></div>
         <div id="innhold" class="laster">Henter skjemadefinisjon…</div>
@@ -338,6 +371,7 @@
                 return;
             }
             document.getElementById('upn').textContent = bruker.userDetails;
+            document.getElementById('tilbake-lenke').style.display = '';
 
             try {
                 skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
@@ -567,7 +601,7 @@
 
             if (skjematype.Skjemaforklaring?.Innhold) {
                 document.getElementById('forklaring').innerHTML =
-                    `<div class="status-melding info">${renderTekst(skjematype.Skjemaforklaring)}</div>`;
+                    `<div class="status-melding info forklaring">${renderTekst(skjematype.Skjemaforklaring)}</div>`;
             }
 
             const innhold = document.getElementById('innhold');
