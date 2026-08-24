@@ -25,15 +25,26 @@ const LU_MAX_LENGDE = 30000;
 const STUDENTER_PER_KLASSE = 1000;
 const KLASSER_PER_SIDE = 50;
 
+/**
+ * FS leverer beskrivelsene i sitt eget markup-format: <list listType="...">,
+ * <listItem>, <bold>, <italic>. Oversettes til vanlig HTML.
+ *
+ * Rekkefølgen er vesentlig: <listItem> må tas først, ellers spiser det
+ * generelle <list...>-mønsteret den også og gjør listepunktene til <ul>.
+ * Listeblokkene byttes parvis så en nummerert liste får </ol>, ikke </ul>.
+ */
 function normaliserLuHtml(html) {
     if (!html) return '';
     return String(html)
-        .replace(/<list\s+listType="bulleted"\s*>/gi, '<ul>')
-        .replace(/<list\s+listType="numbered"\s*>/gi, '<ol>')
-        .replace(/<list[^>]*>/gi, '<ul>')
-        .replace(/<\/list>/gi, '</ul>')
         .replace(/<listItem\s*>/gi, '<li>')
-        .replace(/<\/listItem>/gi, '</li>');
+        .replace(/<\/listItem\s*>/gi, '</li>')
+        .replace(/<list\s+listType="numbered"\s*>([\s\S]*?)<\/list\s*>/gi, '<ol>$1</ol>')
+        .replace(/<list[^>]*>([\s\S]*?)<\/list\s*>/gi, '<ul>$1</ul>')
+        // Rester hvis en blokk mangler sluttag
+        .replace(/<list[^>]*>/gi, '<ul>')
+        .replace(/<\/list\s*>/gi, '</ul>')
+        .replace(/<bold\s*>/gi, '<strong>').replace(/<\/bold\s*>/gi, '</strong>')
+        .replace(/<italic\s*>/gi, '<em>').replace(/<\/italic\s*>/gi, '</em>');
 }
 
 function utledLu(emne) {
@@ -264,15 +275,23 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     }
     if (terminIder.length === 0) throw new Error('Fant ingen FS-termin-IDer for aktive terminer');
 
-    // Emnebeskrivelsen hentes for INNEVÆRENDE termin, ikke siste aktive.
-    // gjelderFraTerminer treffer bare tekstversjoner knyttet til akkurat den
-    // terminen som oppgis, og for neste termin er de ennå ikke skrevet — derfor
-    // sto LU-kolonnen tom. Verifisert 2026-08-24 med refresh-fs/diag-lu:
-    // 0 av 8 emner ga innhold for neste termin, 8 av 8 for inneværende.
-    const naaTermin = aktive[1];
-    const luTermin = { arstall: naaTermin.arstall, terminbetegnelse: naaTermin.betegnelse };
-    const enheter = await fs.hentUndervisningsenheter(terminIder, 200, luTermin);
-    log(`refresh-fs: hentet ${enheter.length} undervisningsenheter fra FS (beskrivelse fra ${naaTermin.kort})`);
+    // Emnebeskrivelsen hentes per termin, ikke for alle tre under ett.
+    // gjelderFraTerminer treffer bare tekstversjonen som hører til akkurat den
+    // terminen som oppgis; oppgir man én felles termin, står radene for de andre
+    // terminene igjen uten tekst. Jobben oppga tidligere siste aktive termin —
+    // altså NESTE — og da ble kolonnen tom for alle. Verifisert 2026-08-24 med
+    // refresh-fs/diag-lu: 0 av 8 emner ga innhold for neste termin, 8 av 8 for
+    // inneværende. Terminer uten skrevet tekst gir tom LU, som er riktig.
+    const enheter = [];
+    for (const t of aktive) {
+        const id = idMap.get(`${t.arstall}-${t.betegnelse}`);
+        if (!id) continue;
+        const luTermin = { arstall: t.arstall, terminbetegnelse: t.betegnelse };
+        const del = await fs.hentUndervisningsenheter([id], 200, luTermin);
+        log(`refresh-fs: ${t.kort} — ${del.length} undervisningsenheter`);
+        enheter.push(...del);
+    }
+    log(`refresh-fs: hentet ${enheter.length} undervisningsenheter fra FS totalt`);
 
     // Generasjonsmarkør for FilterStudent-ryddingen (spec §5)
     const generasjon = new Date().toISOString();
