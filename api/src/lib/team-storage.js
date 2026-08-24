@@ -10,14 +10,13 @@
  * (fra editor-input) og POSTer oppdatert liste til /api/cache/teammedlemskap.
  * Editoren kan også lazy-loade et team på forespørsel via /api/team/last-medlemmer.
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
 
 const TABELL = 'Teammedlemskap';
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

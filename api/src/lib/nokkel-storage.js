@@ -8,14 +8,13 @@
  * Admin/eier må selv ta en kopi og lagre trygt utenfor systemet hvis
  * nøkkelen skal kunne gjenskapes ved rekryptering.
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'Kryptonokler';
 const PK = 'Nokkel';
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

@@ -15,7 +15,7 @@
  * (mobilnr med + osv).
  */
 const crypto = require('crypto');
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'Tilgangskontroll';
 const PK = 'OTP';
@@ -24,8 +24,7 @@ const MAKS_FORSOK = 5;
 const RATE_LIMIT_SEK = 60;
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

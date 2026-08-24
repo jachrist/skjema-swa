@@ -10,7 +10,7 @@
  * Returnerer alltid struktur { id, navn, JSON: <parset objekt> } for kompatibilitet
  * med filtrerTyperPåTilgang og tilhørende logikk.
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'Skjemadefinisjoner';
 const PK = 'Def';
@@ -53,9 +53,8 @@ function entityTilSkjema(entity) {
 }
 
 async function hentAlleSkjematyper() {
-    const tabell = tabellKlient(TABELL);
-    // Sørg for at tabellen finnes (idempotent)
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    // Sørg for at tabellen finnes (idempotent, cachet per prosess)
+    const tabell = await sikreTabell(TABELL);
 
     const typer = [];
     for await (const entity of tabell.listEntities()) {
@@ -82,8 +81,7 @@ async function hentSkjematype(skjematypeId) {
 }
 
 async function lagreSkjematype(skjemaData) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const skjematypeId = String(skjemaData.Skjematype_id || '');
     if (!skjematypeId) throw new Error('Skjematype_id mangler');

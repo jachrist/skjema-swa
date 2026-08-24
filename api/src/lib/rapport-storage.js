@@ -12,7 +12,7 @@
  *     RowKey       = <Rapporttype_id>
  *     Egenskaper: Tittel, Oppdatert, JSON, JSON2..JSON4
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'Rapporttyper';
 const PK = 'Def';
@@ -52,8 +52,7 @@ function entityTilRapport(entity) {
 }
 
 async function hentAlleRapporttyper() {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
     const typer = [];
     for await (const entity of tabell.listEntities()) {
         const data = entityTilRapport(entity);
@@ -79,8 +78,7 @@ async function hentRapporttype(rapporttypeId) {
 }
 
 async function lagreRapporttype(data) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const rapporttypeId = String(data.Rapporttype_id || '');
     if (!rapporttypeId) throw new Error('Rapporttype_id mangler');

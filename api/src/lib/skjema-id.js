@@ -10,14 +10,13 @@
  *
  * Returnerer neste nummer som streng ("1", "2", ...).
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'Teller';
 const PK = 'Teller';
 
 async function genererSkjemaId(skjematypeId) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const rk = String(skjematypeId);
 

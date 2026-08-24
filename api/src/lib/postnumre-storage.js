@@ -7,7 +7,7 @@
  *     RowKey       = fullt postnummer (4 siffer)
  *     Egenskaper: Postnr, Poststed, Kommune
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
 
 const TABELL = 'Postnumre';
@@ -15,8 +15,7 @@ const TABELL = 'Postnumre';
 async function hentPostnummer(postnr) {
     const nr = String(postnr || '').trim().padStart(4, '0');
     if (!/^\d{4}$/.test(nr)) return null;
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
     try {
         const row = await tabell.getEntity(nr[0], nr);
         return { Postnr: nr, Poststed: row.Poststed || '', Kommune: row.Kommune || '' };
@@ -36,8 +35,7 @@ async function hentPostnummer(postnr) {
 async function sokPostnumre(query, maks = 10) {
     const q = String(query || '').trim();
     if (!q) return [];
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const erTallsøk = /^\d/.test(q);
     const rader = [];
@@ -70,8 +68,7 @@ async function sokPostnumre(query, maks = 10) {
 }
 
 async function upsertBatch(rader) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
     // Grupperes per PK for submitTransaction — men her går vi enkel-upsert for pilot
     for (const rad of rader) {
         const nr = String(rad.Postnr).trim().padStart(4, '0');
@@ -94,8 +91,7 @@ async function upsertBatch(rader) {
  * jobben kjører 2×/år.
  */
 async function importerAlle(rader, { erstattAlt = false, log = () => {} } = {}) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins */ }
+    const tabell = await sikreTabell(TABELL);
 
     // Normaliser + dedupliser input
     const nye = new Map();

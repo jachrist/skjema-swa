@@ -9,7 +9,7 @@
  *
  * All skriving er upsert. Full erstatning skjer via slettAllePartisjoner + upsertBatch.
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
 
 const TABELL_EMNER = 'Emner';
@@ -42,9 +42,37 @@ function filterPk(fk, fv) {
 }
 
 async function tabell(navn) {
-    const t = tabellKlient(navn);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(navn);
     return t;
+}
+
+/**
+ * Kortlevd cache for lesing av FilterStudent.
+ *
+ * Studentlistene er store — en klasse- eller studentnedtrekk koster flere
+ * sider mot Table Storage, og de samme listene hentes om igjen for hvert
+ * feltoppslag og hver sidelast. Dataene skrives kun av FS-nattjobben, så et
+ * lite tidsvindu med gamle tall er uproblematisk.
+ */
+const LESE_CACHE_MS = 60 * 1000;
+const leseCache = new Map(); // nøkkel → { tid, verdi: Promise }
+
+function cachetLesing(nokkel, hent) {
+    const nå = Date.now();
+    const truffet = leseCache.get(nokkel);
+    if (truffet && (nå - truffet.tid) < LESE_CACHE_MS) return truffet.verdi;
+    const verdi = hent().catch(e => { leseCache.delete(nokkel); throw e; });
+    leseCache.set(nokkel, { tid: nå, verdi });
+    // Rydd utgåtte oppføringer så cachen ikke vokser med hver filterverdi
+    for (const [k, v] of leseCache) {
+        if ((nå - v.tid) >= LESE_CACHE_MS) leseCache.delete(k);
+    }
+    return verdi;
+}
+
+/** Tømmer lese-cachen — kalles etter skriving fra FS-oppfriskningen. */
+function tomLeseCache() {
+    leseCache.clear();
 }
 
 // ---------------- skriving ----------------
@@ -91,6 +119,7 @@ async function upsertBatch(navn, entiteter) {
             await t.submitTransaction(chunk.map(e => ['upsert', e, 'Replace']));
         }
     }
+    tomLeseCache(); // nyskrevne FS-data skal slå gjennom umiddelbart
     return { lagret: deduped.size };
 }
 
@@ -217,18 +246,20 @@ async function hentStudenterForEmne(emneId, { termin } = {}) {
  * @param {string} fv  filterverdi (tom for ALLE)
  */
 async function hentStudenterForFilter(fk, fv) {
-    const t = await tabell(TABELL_FILTERSTUDENT);
     const pk = filterPk(fk, fv);
-    const result = [];
-    for await (const row of t.listEntities({ queryOptions: { filter: odata`PartitionKey eq ${pk}` } })) {
-        result.push({
-            EP: row.EP,
-            FN: row.FN,
-            EN: row.EN,
-            Termin: row.Termin || ''
-        });
-    }
-    return result;
+    return cachetLesing(`studenter:${pk}`, async () => {
+        const t = await tabell(TABELL_FILTERSTUDENT);
+        const result = [];
+        for await (const row of t.listEntities({ queryOptions: { filter: odata`PartitionKey eq ${pk}` } })) {
+            result.push({
+                EP: row.EP,
+                FN: row.FN,
+                EN: row.EN,
+                Termin: row.Termin || ''
+            });
+        }
+        return result;
+    });
 }
 
 /**
@@ -237,18 +268,20 @@ async function hentStudenterForFilter(fk, fv) {
  * med RowKey = filterverdien som Studenter-filteret skal ta imot.
  */
 async function hentFilterMeta(partisjon) {
-    const t = await tabell(TABELL_FILTERSTUDENT);
-    const result = [];
-    for await (const row of t.listEntities({ queryOptions: { filter: odata`PartitionKey eq ${partisjon}` } })) {
-        result.push({
-            Verdi: row.rowKey,
-            Navn: row.Navn || row.rowKey,
-            SP: row.SP || '',
-            Termin: row.Termin || '',
-            Antall: row.Antall ?? 0
-        });
-    }
-    return result;
+    return cachetLesing(`meta:${partisjon}`, async () => {
+        const t = await tabell(TABELL_FILTERSTUDENT);
+        const result = [];
+        for await (const row of t.listEntities({ queryOptions: { filter: odata`PartitionKey eq ${partisjon}` } })) {
+            result.push({
+                Verdi: row.rowKey,
+                Navn: row.Navn || row.rowKey,
+                SP: row.SP || '',
+                Termin: row.Termin || '',
+                Antall: row.Antall ?? 0
+            });
+        }
+        return result;
+    });
 }
 
 /**
@@ -308,5 +341,6 @@ module.exports = {
     hentAlleStudenter,
     hentStudenterForFilter,
     hentFilterMeta,
+    tomLeseCache,
     hentAlleStudieprogrammer
 };

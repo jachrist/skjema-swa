@@ -12,8 +12,7 @@
  *   - Team-basert behandling kommer med Graph API (fase 8)
  */
 const { evaluerVilkar } = require('./vilkar');
-const rollerStorage = require('./roller-storage');
-const teamStorage = require('./team-storage');
+const { erRolleMedlem, erTeamMedlem } = require('./tilgang');
 
 function stegErFerdig(steg) {
     return Number(steg?.Beslutning || 0) !== 0;
@@ -48,18 +47,23 @@ function brukerErBehandler(steg, upn) {
  * Utvidet variant som også sjekker Roller. Krever async pga rolle-oppslag.
  * Bruk denne der behandler-sjekken skjer i request-håndtering.
  */
-async function brukerErBehandlerAsync(steg, upn) {
+/**
+ * @param {object} [cache] — valgfri memo fra tilgang.lagTilgangsCache(). Send
+ *   inn når mange skjemaer sjekkes i samme forespørsel (f.eks. mine-behandlinger);
+ *   da slås hver rolle opp én gang i stedet for én gang per skjema.
+ */
+async function brukerErBehandlerAsync(steg, upn, cache = null) {
     if (brukerErBehandler(steg, upn)) return true;
     const roller = steg?.Roller || [];
     for (const r of roller) {
         try {
-            if (await rollerStorage.erMedlem(r, upn)) return true;
+            if (await erRolleMedlem(cache, r, upn)) return true;
         } catch (_) { /* prøv neste */ }
     }
     const team = steg?.Team || [];
     for (const t of team) {
         try {
-            if (await teamStorage.erMedlem(t, upn)) return true;
+            if (await erTeamMedlem(cache, t, upn)) return true;
         } catch (_) { /* prøv neste */ }
     }
     return false;

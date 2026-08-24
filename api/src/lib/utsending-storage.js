@@ -10,14 +10,13 @@
  *   SvarSkjemaId (tom hvis ubesvart), SvarTid (ISO),
  *   SistPurret (ISO), SenderSkjemaId, OpprettetAv
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
 
 const TABELL = 'Utsendinger';
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

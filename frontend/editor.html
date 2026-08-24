@@ -16,6 +16,10 @@
             --bg-container: rgba(255, 255, 255, 0.85);
             --bg-section: rgba(255, 255, 255, 0.55);
             --bg-felt: rgba(255, 255, 255, 0.7);
+            /* Seksjonene får eget, tonet underlag så de skiller seg tydelig
+               fra de hvite feltkortene inni. */
+            --bg-seksjon: rgba(10, 132, 255, 0.07);
+            --seksjon-kant: rgba(10, 132, 255, 0.3);
             --bg-input: white;
             --text-primary: #1c1c1e;
             --text-secondary: #6e6e73;
@@ -43,6 +47,8 @@
             --text-heading: #64b5f6;
             --border-color: rgba(255, 255, 255, 0.1);
             --input-border: #3a3a5a;
+            --bg-seksjon: rgba(100, 181, 246, 0.12);
+            --seksjon-kant: rgba(100, 181, 246, 0.32);
         }
         * { box-sizing: border-box; }
         body {
@@ -185,9 +191,10 @@
 
         .seksjon {
             padding: 16px 18px;
-            margin-bottom: 14px;
-            background: var(--bg-felt);
-            border: 1px solid var(--border-color);
+            margin-bottom: 22px;
+            background: var(--bg-seksjon);
+            border: 1px solid var(--seksjon-kant);
+            border-left: 5px solid var(--accent);
             border-radius: var(--radius-md);
         }
         .seksjon-topp {
@@ -195,6 +202,8 @@
             gap: 10px;
             align-items: center;
             margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--seksjon-kant);
         }
         .seksjon-topp input { flex: 1; font-weight: 600; }
         .seksjon-nr {
@@ -1508,6 +1517,9 @@
 
         function rendrerSeksjoner() {
             const container = document.getElementById('seksjoner-container');
+            // Hele lista bygges på nytt ved hver endring. Uten dette hoppet
+            // siden fordi kollaps-tilstanden ble borte og alt sto ekspandert.
+            const rullePos = window.scrollY;
             if (!data.Seksjoner || data.Seksjoner.length === 0) {
                 container.innerHTML = '<div class="laster">Ingen seksjoner. Legg til en for å komme i gang.</div>';
                 return;
@@ -1523,6 +1535,8 @@
             });
             // Populer DNF-editorer i sine slots
             byggAlleDNFEditorer();
+            appliserKollapsState();
+            window.scrollTo({ top: rullePos });
         }
 
         function samleFelterFør(sIdx, fIdx) {
@@ -2194,6 +2208,14 @@
             if (!data.Seksjoner) data.Seksjoner = [];
             data.Seksjoner.push({ Seksjon_nummer: nr, Seksjon_overskrift: '', Felter: [] });
             rendrerSeksjoner();
+            const kollapsede = lesSet(nokkelSeksjoner());
+            if (kollapsede.delete(nr)) skrivSet(nokkelSeksjoner(), kollapsede);
+            const el = document.querySelector(`.seksjon[data-seksjon-nr="${nr}"]`);
+            if (el) {
+                el.classList.remove('kollapset');
+                el.scrollIntoView({ block: 'nearest' });
+                el.querySelector('.seksjon-topp input')?.focus();
+            }
         };
         window.setSeksjonOverskrift = (sIdx, v) => {
             data.Seksjoner[sIdx].Seksjon_overskrift = v;
@@ -2232,6 +2254,17 @@
                 Obligatorisk: false
             });
             rendrerSeksjoner();
+            // Nytt felt havner nederst i seksjonen — rull det fram og sett
+            // markøren i spørsmålsteksten så bruker beholder styringen.
+            const nokkel = `${sIdx + 1}-${nr}`;
+            const kollapsede = lesSet(nokkelFelter());
+            if (kollapsede.delete(nokkel)) skrivSet(nokkelFelter(), kollapsede);
+            const el = document.querySelector(`.felt[data-felt-nokkel="${nokkel}"]`);
+            if (el) {
+                el.classList.remove('kollapset');
+                el.scrollIntoView({ block: 'nearest' });
+                el.querySelector('input[type="text"]')?.focus();
+            }
         }
         window.setFeltTekst = (sIdx, fIdx, v) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];

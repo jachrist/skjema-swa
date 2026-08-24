@@ -7,7 +7,7 @@
  *     RowKey       = <Skjema_id>
  *     Egenskaper: Tittel, InnsenderEpost, Skjemastatus, Opprettet, Oppdatert, JSON
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { erKompaktFormat, ekspanderSkjema } = require('./skjema-kompakt');
 const skjemaStorage = require('./skjema-storage');
 
@@ -17,11 +17,19 @@ const TABELL = 'Skjemaer';
  * Sikrer at et skjema returneres i fullt format, uansett hvordan det er lagret.
  * Henter skjemadefinisjonen ved behov for å ekspandere kompakt lagring.
  */
-async function sikrFulltFormat(skjemaData) {
+async function sikrFulltFormat(skjemaData, defCache = null) {
     if (!skjemaData || !erKompaktFormat(skjemaData)) return skjemaData;
     const skjematypeId = skjemaData.Skjematype_id;
     if (!skjematypeId) return skjemaData;
-    const def = await skjemaStorage.hentSkjematype(skjematypeId);
+    // defCache: valgfri Map for løkker som ekspanderer mange skjemaer av samme
+    // type — uten den hentes definisjonen på nytt for hvert eneste skjema.
+    let def;
+    if (defCache) {
+        if (!defCache.has(skjematypeId)) defCache.set(skjematypeId, skjemaStorage.hentSkjematype(skjematypeId));
+        def = await defCache.get(skjematypeId);
+    } else {
+        def = await skjemaStorage.hentSkjematype(skjematypeId);
+    }
     if (!def || !def.JSON) return skjemaData;
     return ekspanderSkjema(skjemaData, def.JSON);
 }
@@ -37,8 +45,7 @@ function entityTilSkjema(entity) {
 }
 
 async function hentSkjema(skjemaId, skjematypeId) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     let data = null;
     if (skjematypeId) {
@@ -65,8 +72,7 @@ async function hentSkjema(skjemaId, skjematypeId) {
 }
 
 async function lagreSkjema(skjemaData, erNytt = false) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const skjematypeId = String(skjemaData.Skjematype_id || '0');
     const skjemaId = String(skjemaData.Skjema_id);
@@ -102,8 +108,7 @@ async function lagreSkjema(skjemaData, erNytt = false) {
  * endpoint returnerer. Ingen JSON-parse, ingen dekryptering, ingen ekspandering.
  */
 async function hentMetadataForType(skjematypeId) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins */ }
+    const tabell = await sikreTabell(TABELL);
     const { odata } = require('@azure/data-tables');
     const iter = tabell.listEntities({
         queryOptions: {
@@ -127,8 +132,7 @@ async function hentMetadataForType(skjematypeId) {
 }
 
 async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}) {
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const { odata } = require('@azure/data-tables');
     const resultat = [];
@@ -169,8 +173,7 @@ async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}
  */
 async function hentMineMellomlagrede(upn) {
     if (!upn) return [];
-    const tabell = tabellKlient(TABELL);
-    try { await tabell.createTable(); } catch (_) { /* fins fra før */ }
+    const tabell = await sikreTabell(TABELL);
 
     const { odata } = require('@azure/data-tables');
     const upnLower = String(upn).toLowerCase();

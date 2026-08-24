@@ -11,14 +11,13 @@
  * Brukes av /api/pb-token (opprett) og /api/power-bi (validering).
  */
 const crypto = require('crypto');
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'Tilgangskontroll';
 const TTL_DAGER_PB = 365;
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

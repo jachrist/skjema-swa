@@ -9,7 +9,7 @@
  *
  * Skrivinger er fire-and-forget fra kalleren — feiler aldri hovedhandlingen.
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
 const crypto = require('crypto');
 
@@ -17,8 +17,7 @@ const TABELL = 'Hendelser';
 const REV_BASE = 9999999999999n; // 13-siffret
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

@@ -12,7 +12,7 @@
  * systemet i inkonsistent tilstand — restore MÅ kjøres på nytt.
  */
 const JSZip = require('jszip');
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { containerKlient } = require('./blob');
 const { dekrypterBufferMed } = require('./backup-krypto');
 
@@ -47,8 +47,7 @@ async function wipeTabell(navn, log) {
 
 async function importerTabell(navn, rader, log) {
     if (rader.length === 0) return 0;
-    const t = tabellKlient(navn);
-    try { await t.createTable(); } catch (_) {}
+    const t = await sikreTabell(navn);
     let skrevet = 0;
     for (const r of rader) {
         if (!r.partitionKey && !r.PartitionKey) continue;

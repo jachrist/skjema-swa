@@ -16,7 +16,7 @@ const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
-const { filtrerTyperPåTilgang } = require('../lib/tilgang');
+const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
@@ -509,19 +509,22 @@ app.http('mineBehandlinger', {
                 queryOptions: { filter: odata`Skjemastatus eq ${2}` }
             });
 
-            const upnLower = upn.toLowerCase();
+            // Alle skjemaene deler de samme rollene og skjematypene. Uten memo
+            // ble hver rolle og hver definisjon hentet på nytt per skjema.
+            const cache = lagTilgangsCache();
+            const defCache = new Map();
             const gruppert = {};
             for await (const entity of iter) {
                 if (!entity.JSON) continue;
                 let data;
                 try { data = JSON.parse(entity.JSON); } catch { continue; }
-                const skjema = await forekomstStorage.sikrFulltFormat(data);
+                const skjema = await forekomstStorage.sikrFulltFormat(data, defCache);
                 if (!Array.isArray(skjema?.Behandling)) continue;
 
                 const aktive = beregnAktiveSteg(skjema);
                 const mine = [];
                 for (const s of aktive) {
-                    if (await brukerErBehandlerAsync(s, upn)) mine.push(s);
+                    if (await brukerErBehandlerAsync(s, upn, cache)) mine.push(s);
                 }
                 if (mine.length === 0) continue;
 

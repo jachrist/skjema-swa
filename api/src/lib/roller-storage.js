@@ -11,14 +11,13 @@
  * områder (avdelinger, emner, prosjekter, ...). En bruker kan ha samme
  * rolle på ulike omfang.
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
 
 const TABELL = 'Rollemedlemskap';
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins fra før */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 

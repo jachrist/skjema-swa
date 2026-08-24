@@ -10,7 +10,7 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
-const { filtrerTyperPåTilgang } = require('../lib/tilgang');
+const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 const { erTilgjengeligNaa } = require('../lib/periode');
@@ -78,9 +78,12 @@ app.http('mineSkjematyper', {
                 eierIder = new Set(alle.map(t => String(t.id)));
                 publikumsIder = new Set(alle.map(t => String(t.id)));
             } else {
+                // Samme cache i begge passeringene — rollene går igjen på tvers
+                // av skjematypene, og hver av dem koster en Table-spørring.
+                const cache = lagTilgangsCache();
                 const [eiere, publikum] = await Promise.all([
-                    filtrerTyperPåTilgang(alle, upn, 'Eiere'),
-                    filtrerTyperPåTilgang(alle, upn, 'Publikum')
+                    filtrerTyperPåTilgang(alle, upn, 'Eiere', cache),
+                    filtrerTyperPåTilgang(alle, upn, 'Publikum', cache)
                 ]);
                 eierIder = new Set(eiere.map(t => String(t.id)));
                 publikumsIder = new Set(publikum.map(t => String(t.id)));
@@ -159,9 +162,10 @@ app.http('hentSkjematype', {
 
             // Tilgang: admin, eier eller publikum
             if (!erAdmin(upn)) {
+                const cache = lagTilgangsCache();
                 const [eier, publikum] = await Promise.all([
-                    filtrerTyperPåTilgang([st], upn, 'Eiere'),
-                    filtrerTyperPåTilgang([st], upn, 'Publikum')
+                    filtrerTyperPåTilgang([st], upn, 'Eiere', cache),
+                    filtrerTyperPåTilgang([st], upn, 'Publikum', cache)
                 ]);
                 if (eier.length === 0 && publikum.length === 0) {
                     return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };

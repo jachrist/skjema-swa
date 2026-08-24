@@ -6,14 +6,13 @@
  * PK = 'Innstillinger', RK = kort nøkkel (f.eks. 'BackupOneDriveSti')
  * Egenskaper: Verdi (string), SistEndret, EndretAv
  */
-const { tabellKlient } = require('./storage');
+const { tabellKlient, sikreTabell } = require('./storage');
 
 const TABELL = 'SystemInnstillinger';
 const PK = 'Innstillinger';
 
 async function tabell() {
-    const t = tabellKlient(TABELL);
-    try { await t.createTable(); } catch (_) { /* fins */ }
+    const t = await sikreTabell(TABELL);
     return t;
 }
 
