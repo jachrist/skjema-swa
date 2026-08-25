@@ -2,15 +2,27 @@ name: Deploy pilot (test/utvikling)
 
 # Automatisk deploy til pilot-tenanten ved push til main.
 # Prod-tenanten deployes fra deploy-prod.yml (manuell trigger).
+#
+# paths-ignore: rene dokumentasjonsendringer (docs/, README, CLAUDE.md, TODO)
+# deployes ikke — ingen .md-fil inngår i frontend/ eller api/. Berører en commit
+# både kode og dokumentasjon, kjører deployen som normalt.
 
 on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
   pull_request:
     types: [opened, synchronize, reopened, closed]
     branches:
       - main
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
 
 jobs:
   build_and_deploy_job:
