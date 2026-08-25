@@ -41,7 +41,7 @@ Punktene under er ikke meldt inn av brukere, men funnet under arbeid i koden.
 30. [ ] Helsesjekken i `api/src/functions/system.js` lister 4 av 7 flyt-URL-er. Utvid lista, og avklar samtidig om `AAD_CLIENT_SECRET` skal finnes i prod — den mangler der i dag, og helsesjekken skiller ikke på miljø.
 31. [ ] `docs/FASE-6A-EPOST.md`, `FASE-9-EKSTERN-FLYT.md` og `FASE-10-SP-LISTE.md` viser fortsatt `logic.azure.com`-adresser i eksemplene. Riktig adresse er SWA-endepunktet med `x-flow-key`.
 32. [ ] Visningsflatene slår ikke opp filtrert FasteData på nytt for eldre skjemaer, så et svar kan vises med utdatert oppslagstekst.
-33. [ ] Prod-deploy gjenstår for FS-beskrivelser (LU → Markdown) og oppslags-prefill i utsendinger. Pilot er oppdatert.
+33. [x] Prod-deploy for FS-beskrivelser (LU → Markdown) og oppslags-prefill i utsendinger — deployet 24.08.2026 (43972d1).
 34. [ ] FasteData-utvidelser: analysen ble levert 13.08.2026 og venter på kundens prioritering. Ikke start arbeidet før den foreligger.
 35. [ ] `api/package-lock.json` er ikke i takt med `package.json` — `jszip` manglet i laasefila. `npm ci` feiler dermed, og CI-jobben ville stoppet paa foerste PR. Deployen merket det ikke fordi Oryx kjoerer `npm install`. Fikset for jszip 25.08.2026; vurder en CI-sjekk som kjoerer `npm ci` paa main-push, ikke bare paa PR.
 36. [ ] `npm test` i `api/package.json` er fortsatt `echo "No tests yet"`. CI-steget "Kjoer tester" gjoer altsaa ingenting. Testene som er skrevet underveis ligger i scratchpad og kjoeres manuelt — flytt dem inn i repoet og koble dem paa.
