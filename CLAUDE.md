@@ -30,3 +30,9 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 Den opprinnelige Function App-versjonen ligger i en separat mappe utenfor dette repoet.
 Mønstre gjenbrukes (dispatcher, DNF-vilkår, kompakt format), men koden reimplementeres for SWA-arkitektur.
 Rør ikke referanse-appen fra dette repoet.
+
+## Gjenstående arbeid
+
+`docs/TODO.md` er den løpende lista over utestående punkter — både brukerønsker
+og teknisk gjeld. Kryss av der når et punkt leveres, og legg nye punkter nederst
+så numrene holder seg stabile.
