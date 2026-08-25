@@ -73,6 +73,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/backup/kvittering",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/cache/teammedlemskap",
             "allowedRoles": ["anonymous"]
         },

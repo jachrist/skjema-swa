@@ -2,10 +2,20 @@
  * Backup-endepunkter.
  *
  *   POST /api/backup/kjor
- *     Auth: x-scheduler-key eller admin.
+ *     Auth: x-scheduler-key eller admin. Svarer 202 med én gang og kjører
+ *     jobben videre i bakgrunnen — bygging, kryptering og opplasting tar
+ *     lengre tid enn SWA-gatewayen holder en forbindelse åpen.
  *     Bygger komplett backup (tabeller + blobs), AES-krypterer, lagrer i
  *     midlertidig blob-container 'backups', kaller BACKUP_FLOW_URL (PA-flyt)
- *     med { url, filnavn, sti } så PA laster opp til OneDrive.
+ *     med { url, filnavn, sti, kvitteringUrl } så PA laster opp til OneDrive.
+ *
+ *   GET  /api/backup/status
+ *     Auth: admin. Framdrift og resultat for siste kjøring, fra statusraden
+ *     Meta/Backup i CacheMetadata.
+ *
+ *   POST /api/backup/kvittering
+ *     Auth: x-flow-key. PA-flyten melder tilbake om fila faktisk landet i
+ *     OneDrive, og hvor stor den ble. Se handleren for hvorfor dette trengs.
  *
  *   POST /api/backup/last-ned
  *     Auth: admin. Bygger backup og returnerer AES-kryptert zip inline
@@ -125,6 +135,12 @@ async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
     return { filnavn, storrelseKryptert: kryptert.length, storrelseKlar: buffer.length, manifest, varighetSekunder, tider };
 }
 
+/** Full URL til kvitteringsendepunktet, slik flyten slipper å ha den hardkodet. */
+function kvitteringUrl() {
+    const base = String(process.env.SWA_URL || '').replace(/\/+$/, '');
+    return base ? `${base}/api/backup/kvittering` : '';
+}
+
 /**
  * Ber PA-flyten hente backupen fra SAS-URL-en og legge den i OneDrive.
  * Returnerer { flytStatus, flytMelding } — kaster aldri.
@@ -147,7 +163,8 @@ async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
                 url: sasUrl,
                 storrelseBytes: res.storrelseKryptert,
                 miljø: process.env.MILJO || 'ukjent',
-                tid: new Date().toISOString()
+                tid: new Date().toISOString(),
+                kvitteringUrl: kvitteringUrl()
             }),
             signal: AbortSignal.timeout(FLYT_TIMEOUT_MS)
         });
@@ -239,7 +256,8 @@ app.http('backupKjor', {
         await settStatus({
             Status: 'kjører', Startet: startTid, Kilde: auth.upn,
             SistOppdatert: startTid, Steg: 'starter',
-            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: '', Tider: ''
+            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: '', Tider: '',
+            OneDriveStatus: '', OneDriveKvittert: '', OneDriveMelding: '', OneDriveStorrelse: 0
         });
 
         const jobbLog = (...a) => context.log(...a);
@@ -280,6 +298,9 @@ app.http('backupStatus', {
                     storrelseBytes: rad.StorrelseBytes ?? null,
                     varighetSekunder: rad.VarighetSekunder ?? null,
                     flytStatus: rad.FlytStatus || null,
+                    oneDriveStatus: rad.OneDriveStatus || null,
+                    oneDriveKvittert: rad.OneDriveKvittert || null,
+                    oneDriveMelding: rad.OneDriveMelding || null,
                     oneDriveSti: rad.OneDriveSti || null,
                     sistFeil: rad.SistFeil || null
                 }
@@ -287,6 +308,112 @@ app.http('backupStatus', {
         } catch (e) {
             if (e.statusCode === 404) return { jsonBody: { status: 'aldri-kjørt' } };
             context.log('backup/status FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/backup/kvittering
+ * Auth: x-flow-key som matcher FLOW_CALLBACK_KEY.
+ *
+ * PA-flyten melder tilbake om fila faktisk landet i OneDrive. Grunnen til at
+ * dette trengs: OneDrive-handlingen «Upload file from URL» rapporterer alltid
+ * suksess etter 20 sekunder, uansett hva som skjedde. Uten en kvittering ville
+ * vi altså registrert backupen som vellykket på et løfte connectoren ikke
+ * holder.
+ *
+ * Body: {
+ *   filnavn,                  // må matche backupen vi sist kjørte
+ *   status: 'ok' | 'feil',
+ *   storrelseBytes?,          // fra «Get file metadata» — sammenliknes med vår
+ *   sti?, melding?
+ * }
+ *
+ * Flyten bør hente storrelseBytes fra metadataen etter opplasting. Avviker den
+ * fra det vi lastet opp, er fila ufullstendig, og kvitteringen underkjennes
+ * selv om flyten mener alt gikk bra.
+ */
+/**
+ * Avgjør hva kvitteringen faktisk betyr. En flyt som melder «ok» blir ikke
+ * trodd på ordet: stemmer ikke størrelsen med det vi lastet opp, er fila
+ * ufullstendig uansett hva flyten sier.
+ */
+function vurderKvittering({ meldtStatus, meldtStorrelse, vårStorrelse, melding }) {
+    const meldt = String(meldtStatus || '').toLowerCase() === 'ok' ? 'ok' : 'feil';
+    const tekst = String(melding || '').slice(0, 500);
+
+    if (meldt === 'ok' && meldtStorrelse !== null && vårStorrelse !== null && meldtStorrelse !== vårStorrelse) {
+        return {
+            resultat: 'feil',
+            melding: `Fila i OneDrive er ${meldtStorrelse} bytes, men vi lastet opp ${vårStorrelse}. Opplastingen er ufullstendig.`
+        };
+    }
+    return { resultat: meldt, melding: tekst };
+}
+
+app.http('backupKvittering', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'backup/kvittering',
+    handler: async (request, context) => {
+        const flowKey = request.headers.get('x-flow-key');
+        const konfigurert = String(process.env.FLOW_CALLBACK_KEY || '').trim();
+        if (!konfigurert || flowKey !== konfigurert) {
+            return { status: 401, jsonBody: { status: 'feil', melding: 'Ugyldig x-flow-key' } };
+        }
+
+        try {
+            const body = await request.json().catch(() => ({}));
+            const filnavn = String(body.filnavn || '').trim();
+            if (!filnavn) return { status: 400, jsonBody: { status: 'feil', melding: 'filnavn mangler' } };
+
+            let rad = null;
+            try {
+                rad = await tabellKlient('CacheMetadata').getEntity(STATUS_PK, STATUS_RK);
+            } catch (e) {
+                if (e.statusCode !== 404) throw e;
+            }
+
+            // En kvittering for en eldre backup skal ikke overskrive statusen
+            // for den nyeste. Flyten kan komme sent tilbake.
+            if (rad && rad.Filnavn && rad.Filnavn !== filnavn) {
+                context.log(`backup/kvittering: gjelder ${filnavn}, men siste backup er ${rad.Filnavn} — ignorert`);
+                return {
+                    status: 409,
+                    jsonBody: { status: 'ignorert', melding: `Kvitteringen gjelder ${filnavn}, siste backup er ${rad.Filnavn}` }
+                };
+            }
+
+            const meldtStorrelse = Number(body.storrelseBytes) || null;
+            const { resultat, melding } = vurderKvittering({
+                meldtStatus: body.status,
+                meldtStorrelse,
+                vårStorrelse: rad?.StorrelseBytes ? Number(rad.StorrelseBytes) : null,
+                melding: body.melding
+            });
+
+            await settStatus({
+                OneDriveStatus: resultat,
+                OneDriveKvittert: new Date().toISOString(),
+                OneDriveStorrelse: meldtStorrelse ?? 0,
+                OneDriveMelding: melding,
+                SistOppdatert: new Date().toISOString()
+            });
+
+            hendelser.logg({
+                Type: resultat === 'ok' ? 'backup.onedrive-ok' : 'backup.onedrive-feil',
+                Aktor: 'flyt',
+                ObjektType: 'backup', ObjektId: filnavn,
+                Melding: resultat === 'ok'
+                    ? `Backup bekreftet i OneDrive${body.sti ? ' (' + String(body.sti).slice(0, 200) + ')' : ''}`
+                    : `Backup kom ikke trygt i OneDrive: ${melding || 'flyten meldte feil'}`.slice(0, 500)
+            });
+
+            context.log(`backup/kvittering: ${filnavn} → ${resultat}${melding ? ' — ' + melding : ''}`);
+            return { jsonBody: { status: 'ok', registrert: resultat, melding: melding || null } };
+        } catch (e) {
+            context.log('backup/kvittering FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }
@@ -467,3 +594,5 @@ app.http('backupListe', {
         }
     }
 });
+
+module.exports = { vurderKvittering };

@@ -1462,6 +1462,8 @@
             const s = document.getElementById('b-kjor-status');
             const start = Date.now();
             const MAKS_MS = 15 * 60 * 1000;
+            const KVITTERING_MS = 5 * 60 * 1000;  // hvor lenge vi venter på flytens kvittering
+            let ferdigTid = null;
             while (Date.now() - start < MAKS_MS) {
                 let st;
                 try {
@@ -1471,16 +1473,37 @@
                     return;
                 }
                 if (st.status === 'ok' || st.status === 'feil') {
+                    // Flyten kvitterer først etter at den har verifisert fila i
+                    // OneDrive, og det tar et par minutter. Uten kvittering vet
+                    // vi bare at flyten ble kalt — ikke at fila kom fram.
+                    if (ferdigTid === null) ferdigTid = Date.now();
+                    const venterPaKvittering = st.status === 'ok' && st.flytStatus === 'ok'
+                        && !st.oneDriveStatus && (Date.now() - ferdigTid) < KVITTERING_MS;
+
                     const mb = st.storrelseBytes ? Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10 : null;
-                    const klasse = st.status === 'feil' ? 'advarsel' : (st.flytStatus === 'ok' ? 'suksess' : 'info');
+                    const feilet = st.status === 'feil' || st.oneDriveStatus === 'feil';
+                    const klasse = feilet ? 'advarsel' : (st.oneDriveStatus === 'ok' ? 'suksess' : 'info');
+
+                    let onedrive;
+                    if (st.oneDriveStatus === 'ok') onedrive = '<br><small>✓ Bekreftet i OneDrive</small>';
+                    else if (st.oneDriveStatus === 'feil') onedrive = `<br><small>⚠ Kom ikke trygt i OneDrive: ${escHtml(st.oneDriveMelding || 'flyten meldte feil')}</small>`;
+                    else if (venterPaKvittering) onedrive = '<br><small>Venter på kvittering fra flyten…</small>';
+                    else if (st.flytStatus === 'ok') onedrive = '<br><small>Ingen kvittering mottatt — fila ligger i blob-storage, men OneDrive er ubekreftet.</small>';
+                    else onedrive = '';
+
                     s.innerHTML = `
                         <div class="banner ${klasse}">
-                            <strong>${st.status === 'feil' ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
+                            <strong>${feilet ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
                             ${mb !== null ? `<br><small>${mb} MB kryptert · ${st.varighetSekunder}s · PA-flyt: ${escHtml(st.flytStatus || '-')}</small>` : ''}
                             ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
+                            ${onedrive}
                             ${st.oneDriveSti ? `<br><small>OneDrive-sti: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}
                         </div>
                     `;
+                    if (venterPaKvittering) {
+                        await new Promise(r => setTimeout(r, 5000));
+                        continue;
+                    }
                     await bListLast();
                     return;
                 }
