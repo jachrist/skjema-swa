@@ -23,10 +23,27 @@ const restore = require('../lib/restore');
 const innstillinger = require('../lib/innstillinger-storage');
 const hendelser = require('../lib/hendelser-storage');
 const { containerKlient, serviceKlient } = require('../lib/blob');
+const { tabellKlient } = require('../lib/storage');
 const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } = require('@azure/storage-blob');
 
 const BACKUP_CONTAINER = 'backups';
 const SAS_GYLDIG_TIMER = 24; // PA-flyt bruker denne til å hente og laste opp
+
+// Statusrad i CacheMetadata, samme mønster som refresh-fs bruker.
+const STATUS_PK = 'Meta';
+const STATUS_RK = 'Backup';
+
+// Taket på hvor lenge vi venter på PA-flyten. En HTTP-trigget flyt svarer
+// normalt 202 med én gang; svarer den ikke, har den en Response-handling til
+// slutt og holder forbindelsen åpen gjennom hele OneDrive-opplastingen.
+const FLYT_TIMEOUT_MS = 4 * 60 * 1000;
+
+async function settStatus(felter) {
+    try {
+        const t = tabellKlient('CacheMetadata');
+        await t.upsertEntity({ partitionKey: STATUS_PK, rowKey: STATUS_RK, ...felter }, 'Merge');
+    } catch (_) { /* statusraden er ikke kritisk for selve backupen */ }
+}
 
 function admin(request) {
     const upn = hentInnloggetUpn(request);
@@ -106,6 +123,95 @@ async function byggOgLagre(aktor, jobbLog) {
     return { filnavn, storrelseKryptert: kryptert.length, storrelseKlar: buffer.length, manifest, varighetSekunder };
 }
 
+/**
+ * Ber PA-flyten hente backupen fra SAS-URL-en og legge den i OneDrive.
+ * Returnerer { flytStatus, flytMelding } — kaster aldri.
+ */
+async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
+    const flytUrl = String(process.env.BACKUP_FLOW_URL || '').trim();
+    if (!flytUrl) {
+        const melding = 'BACKUP_FLOW_URL ikke satt — backup ligger i blob-storage men er ikke opplastet til OneDrive';
+        jobbLog(`backup/kjor: ${melding}`);
+        return { flytStatus: 'hoppet-over', flytMelding: melding };
+    }
+    try {
+        const respons = await fetch(flytUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                handling: 'lagreBackup',
+                filnavn: res.filnavn,
+                sti,
+                url: sasUrl,
+                storrelseBytes: res.storrelseKryptert,
+                miljø: process.env.MILJO || 'ukjent',
+                tid: new Date().toISOString()
+            }),
+            signal: AbortSignal.timeout(FLYT_TIMEOUT_MS)
+        });
+        if (respons.ok) {
+            jobbLog('backup/kjor: PA-flyt OK');
+            return { flytStatus: 'ok', flytMelding: null };
+        }
+        const melding = `PA-flyt returnerte ${respons.status}: ${(await respons.text().catch(() => '')).slice(0, 200)}`;
+        jobbLog(`backup/kjor: ${melding}`);
+        return { flytStatus: 'feilet', flytMelding: melding };
+    } catch (e) {
+        const tidsavbrudd = e.name === 'TimeoutError' || e.name === 'AbortError';
+        const melding = tidsavbrudd
+            ? `PA-flyten svarte ikke innen ${FLYT_TIMEOUT_MS / 1000}s. Filen ligger i blob-storage, og flyten kan fortsatt fullføre opplastingen. Har flyten en Response-handling til slutt, holder den forbindelsen åpen hele veien — fjern den, så kvitterer flyten med én gang.`
+            : `PA-flyt-kall feilet: ${e.message}`;
+        jobbLog(`backup/kjor: ${melding}`);
+        return { flytStatus: 'feilet', flytMelding: melding };
+    }
+}
+
+/**
+ * Hele backupjobben. Kjøres uten await fra handleren — bygging av zip,
+ * kryptering og opplasting tar lengre tid enn de ~45 sekundene SWA-gatewayen
+ * holder en forbindelse åpen, så svaret må sendes før jobben er ferdig.
+ * Framdrift leses fra statusraden i CacheMetadata.
+ */
+async function kjorBackupJobb(aktor, jobbLog) {
+    try {
+        const res = await byggOgLagre(aktor, jobbLog);
+        const sasUrl = lagSasUrl(res.filnavn);
+        const stiInnst = await innstillinger.hent('BackupOneDriveSti');
+        const sti = stiInnst?.Verdi || '';
+        const { flytStatus, flytMelding } = await kallBackupFlyt(res, sasUrl, sti, jobbLog);
+
+        await settStatus({
+            Status: flytStatus === 'feilet' ? 'feil' : 'ok',
+            Ferdig: new Date().toISOString(),
+            Filnavn: res.filnavn,
+            StorrelseBytes: res.storrelseKryptert,
+            VarighetSekunder: res.varighetSekunder,
+            FlytStatus: flytStatus,
+            OneDriveSti: sti,
+            SistFeil: flytMelding || ''
+        });
+
+        hendelser.logg({
+            Type: 'backup.kjort', Aktor: aktor,
+            ObjektType: 'backup', ObjektId: res.filnavn,
+            Melding: `Backup kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. PA-flyt: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
+            Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, flytStatus, flytMelding }
+        });
+    } catch (e) {
+        jobbLog(`backup/kjor FEIL: ${e.message}`);
+        await settStatus({
+            Status: 'feil',
+            Ferdig: new Date().toISOString(),
+            SistFeil: String(e.message || e).slice(0, 500)
+        });
+        hendelser.logg({
+            Type: 'backup.feil', Aktor: aktor,
+            ObjektType: 'backup', ObjektId: '',
+            Melding: `Backup feilet: ${e.message}`.slice(0, 500)
+        });
+    }
+}
+
 app.http('backupKjor', {
     methods: ['POST'],
     authLevel: 'anonymous',
@@ -114,75 +220,54 @@ app.http('backupKjor', {
         const auth = schedulerEllerAdmin(request);
         if (!auth.ok) return { status: auth.status, jsonBody: { status: 'feil', melding: auth.melding } };
 
+        const startTid = new Date().toISOString();
+        await settStatus({
+            Status: 'kjører', Startet: startTid, Kilde: auth.upn,
+            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: ''
+        });
+
         const jobbLog = (...a) => context.log(...a);
-        try {
-            const res = await byggOgLagre(auth.upn, jobbLog);
-            const sasUrl = lagSasUrl(res.filnavn);
+        jobbLog(`backup/kjor: trigget av ${auth.upn} (fire-and-forget)`);
+        kjorBackupJobb(auth.upn, jobbLog).catch(e => jobbLog(`backup/kjor: uventet feil i bakgrunnsjobb — ${e.message}`));
 
-            // Kall PA-flyt for opplasting til OneDrive
-            const flytUrl = String(process.env.BACKUP_FLOW_URL || '').trim();
-            const stiInnst = await innstillinger.hent('BackupOneDriveSti');
-            const sti = stiInnst?.Verdi || '';
-            let flytStatus = 'hoppet-over';
-            let flytMelding = null;
-
-            if (!flytUrl) {
-                flytMelding = 'BACKUP_FLOW_URL ikke satt — backup ligger i blob-storage men er ikke opplastet til OneDrive';
-                jobbLog(`backup/kjor: ${flytMelding}`);
-            } else {
-                try {
-                    const resp = await fetch(flytUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            handling: 'lagreBackup',
-                            filnavn: res.filnavn,
-                            sti,
-                            url: sasUrl,
-                            storrelseBytes: res.storrelseKryptert,
-                            miljø: process.env.MILJO || 'ukjent',
-                            tid: new Date().toISOString()
-                        })
-                    });
-                    if (resp.ok) { flytStatus = 'ok'; jobbLog(`backup/kjor: PA-flyt OK`); }
-                    else {
-                        flytStatus = 'feilet';
-                        flytMelding = `PA-flyt returnerte ${resp.status}: ${(await resp.text()).slice(0, 200)}`;
-                        jobbLog(`backup/kjor: ${flytMelding}`);
-                    }
-                } catch (e) {
-                    flytStatus = 'feilet';
-                    flytMelding = `PA-flyt-kall feilet: ${e.message}`;
-                    jobbLog(`backup/kjor: ${flytMelding}`);
-                }
+        return {
+            status: 202,
+            jsonBody: {
+                status: 'startet',
+                startet: startTid,
+                melding: 'Backupen kjører i bakgrunnen. Følg med på /api/backup/status.'
             }
+        };
+    }
+});
 
-            hendelser.logg({
-                Type: 'backup.kjort', Aktor: auth.upn,
-                ObjektType: 'backup', ObjektId: res.filnavn,
-                Melding: `Backup kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. PA-flyt: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
-                Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, flytStatus, flytMelding }
-            });
-
+app.http('backupStatus', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'backup/status',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const t = tabellKlient('CacheMetadata');
+            const rad = await t.getEntity(STATUS_PK, STATUS_RK);
             return {
                 jsonBody: {
-                    status: 'ok',
-                    filnavn: res.filnavn,
-                    storrelseBytes: res.storrelseKryptert,
-                    varighetSekunder: res.varighetSekunder,
-                    manifest: res.manifest,
-                    sasUrl,
-                    sasUtloper: new Date(Date.now() + SAS_GYLDIG_TIMER * 3600 * 1000).toISOString(),
-                    flytStatus, flytMelding, oneDriveSti: sti
+                    status: rad.Status || 'ukjent',
+                    startet: rad.Startet || null,
+                    ferdig: rad.Ferdig || null,
+                    kilde: rad.Kilde || null,
+                    filnavn: rad.Filnavn || null,
+                    storrelseBytes: rad.StorrelseBytes ?? null,
+                    varighetSekunder: rad.VarighetSekunder ?? null,
+                    flytStatus: rad.FlytStatus || null,
+                    oneDriveSti: rad.OneDriveSti || null,
+                    sistFeil: rad.SistFeil || null
                 }
             };
         } catch (e) {
-            context.log('backup/kjor FEIL:', e.message, e.stack);
-            hendelser.logg({
-                Type: 'backup.feil', Aktor: auth.upn,
-                ObjektType: 'backup', ObjektId: '',
-                Melding: `Backup feilet: ${e.message}`.slice(0, 500)
-            });
+            if (e.statusCode === 404) return { jsonBody: { status: 'aldri-kjørt' } };
+            context.log('backup/status FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

@@ -1445,25 +1445,50 @@
         };
 
         window.bKjor = async () => {
-            if (!confirm('Kjør backup nå? Kan ta flere minutter avhengig av datamengde.')) return;
+            if (!confirm('Kjør backup nå? Den kjører i bakgrunnen og kan ta flere minutter.')) return;
             const s = document.getElementById('b-kjor-status');
-            s.innerHTML = '<div class="banner info">Kjører backup — dette kan ta et par minutter…</div>';
+            s.innerHTML = '<div class="banner info">Starter backup…</div>';
             try {
-                const res = await api.post('/api/backup/kjor', {});
-                const mbKlar = Math.round((res.manifest?.tabeller?.reduce((a, t) => a + t.antall, 0) || 0));
-                const mbKrypt = Math.round(res.storrelseBytes / 1024 / 1024 * 10) / 10;
-                s.innerHTML = `
-                    <div class="banner ${res.flytStatus === 'ok' ? 'suksess' : (res.flytStatus === 'hoppet-over' ? 'info' : 'advarsel')}">
-                        <strong>✓ Backup lagret som ${escHtml(res.filnavn)}</strong>
-                        <br><small>${mbKrypt} MB kryptert · ${res.varighetSekunder}s · PA-flyt: ${escHtml(res.flytStatus)}</small>
-                        ${res.flytMelding ? `<br><small>${escHtml(res.flytMelding)}</small>` : ''}
-                        ${res.oneDriveSti ? `<br><small>OneDrive-sti: <code>${escHtml(res.oneDriveSti)}</code></small>` : ''}
-                    </div>
-                `;
-                await bListLast();
+                await api.post('/api/backup/kjor', {});
+                await bFolgStatus();
             } catch (e) {
                 s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
+        };
+
+        // Backupen bygges i bakgrunnen — den bruker lengre tid enn SWA-gatewayen
+        // holder en forbindelse åpen. Framdriften leses fra statusraden.
+        window.bFolgStatus = async () => {
+            const s = document.getElementById('b-kjor-status');
+            const start = Date.now();
+            const MAKS_MS = 15 * 60 * 1000;
+            while (Date.now() - start < MAKS_MS) {
+                let st;
+                try {
+                    st = await api.get('/api/backup/status');
+                } catch (e) {
+                    s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+                    return;
+                }
+                if (st.status === 'ok' || st.status === 'feil') {
+                    const mb = st.storrelseBytes ? Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10 : null;
+                    const klasse = st.status === 'feil' ? 'advarsel' : (st.flytStatus === 'ok' ? 'suksess' : 'info');
+                    s.innerHTML = `
+                        <div class="banner ${klasse}">
+                            <strong>${st.status === 'feil' ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
+                            ${mb !== null ? `<br><small>${mb} MB kryptert · ${st.varighetSekunder}s · PA-flyt: ${escHtml(st.flytStatus || '-')}</small>` : ''}
+                            ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
+                            ${st.oneDriveSti ? `<br><small>OneDrive-sti: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}
+                        </div>
+                    `;
+                    await bListLast();
+                    return;
+                }
+                const sek = Math.round((Date.now() - start) / 1000);
+                s.innerHTML = `<div class="banner info">Backup kjører i bakgrunnen… (${sek}s)</div>`;
+                await new Promise(r => setTimeout(r, 5000));
+            }
+            s.innerHTML = '<div class="banner advarsel">Backupen kjører fortsatt etter 15 minutter. Se Hendelser for resultatet.</div>';
         };
 
         window.bLastNed = async () => {
