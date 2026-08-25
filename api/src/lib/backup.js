@@ -61,7 +61,7 @@ async function eksporterTabell(spec, log) {
     return rader;
 }
 
-async function eksporterContainer(navn, zip, log) {
+async function eksporterContainer(navn, zip, log, fremdrift = () => {}) {
     const c = containerKlient(navn);
     const meta = [];
     let totalBytes = 0;
@@ -69,7 +69,13 @@ async function eksporterContainer(navn, zip, log) {
         for await (const blob of c.listBlobsFlat()) {
             const b = c.getBlockBlobClient(blob.name);
             const buffer = await b.downloadToBuffer();
-            zip.file(`blobs/${navn}/${blob.name}`, buffer);
+            // Vedlegg er stort sett PDF, JPEG og PNG — allerede komprimert.
+            // DEFLATE over dem koster CPU uten å spare plass, så de legges inn
+            // som de er. JSON-filene komprimeres fortsatt.
+            zip.file(`blobs/${navn}/${blob.name}`, buffer, { compression: 'STORE' });
+            if (meta.length % 25 === 0) {
+                fremdrift(`container ${navn}: ${meta.length} blobs (${Math.round(totalBytes / 1024 / 1024)} MB)`);
+            }
             meta.push({
                 navn: blob.name,
                 storrelse: buffer.length,
@@ -93,9 +99,10 @@ async function eksporterContainer(navn, zip, log) {
  * @param {(msg: string) => void} log
  * @returns {Promise<{ buffer: Buffer, manifest: object }>}
  */
-async function byggBackup(log = () => {}) {
+async function byggBackup(log = () => {}, fremdrift = () => {}) {
     const start = Date.now();
     const zip = new JSZip();
+    const tider = {};
 
     const manifest = {
         versjon: 1,
@@ -106,30 +113,40 @@ async function byggBackup(log = () => {}) {
     };
 
     // Tabeller
+    const tabellStart = Date.now();
     for (const spec of TABELLER) {
         const navn = tabellNavn(spec);
+        fremdrift(`leser tabell ${navn}`);
         const rader = await eksporterTabell(spec, log);
         zip.file(`tabeller/${navn}.json`, JSON.stringify(rader, null, 2));
         manifest.tabeller.push({ navn, antall: rader.length, maksAlderDager: spec.maksAlderDager || null });
     }
+    tider.tabellerSek = Math.round((Date.now() - tabellStart) / 1000);
 
     // Blob-containere
+    const blobStart = Date.now();
     for (const navn of BLOB_CONTAINERE) {
-        const res = await eksporterContainer(navn, zip, log);
+        fremdrift(`leser container ${navn}`);
+        const res = await eksporterContainer(navn, zip, log, fremdrift);
         manifest.containers.push({ navn, ...res });
     }
+    tider.blobberSek = Math.round((Date.now() - blobStart) / 1000);
 
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
 
+    fremdrift('komprimerer zip');
     log(`backup: genererer zip…`);
+    const zipStart = Date.now();
     const buffer = await zip.generateAsync({
         type: 'nodebuffer',
         compression: 'DEFLATE',
         compressionOptions: { level: 6 }
     });
+    tider.zipSek = Math.round((Date.now() - zipStart) / 1000);
+
     const varighetSek = Math.round((Date.now() - start) / 1000);
-    log(`backup: zip ferdig — ${Math.round(buffer.length / 1024 / 1024 * 10) / 10} MB (${varighetSek}s)`);
-    return { buffer, manifest, varighetSekunder: varighetSek };
+    log(`backup: zip ferdig — ${Math.round(buffer.length / 1024 / 1024 * 10) / 10} MB (${varighetSek}s: tabeller ${tider.tabellerSek}s, blobs ${tider.blobberSek}s, komprimering ${tider.zipSek}s)`);
+    return { buffer, manifest, varighetSekunder: varighetSek, tider };
 }
 
 module.exports = { byggBackup, TABELLER, BLOB_CONTAINERE };

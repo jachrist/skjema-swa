@@ -1485,7 +1485,20 @@
                     return;
                 }
                 const sek = Math.round((Date.now() - start) / 1000);
-                s.innerHTML = `<div class="banner info">Backup kjører i bakgrunnen… (${sek}s)</div>`;
+                // Jobben stempler statusraden for hvert steg. Står stempelet
+                // stille, er bakgrunnsjobben død — da hjelper det ikke å vente.
+                const stille = st.sistOppdatert ? (Date.now() - new Date(st.sistOppdatert).getTime()) / 1000 : 0;
+                if (stille > 180) {
+                    s.innerHTML = `
+                        <div class="banner advarsel">
+                            <strong>⚠ Backupen ser ut til å ha stoppet</strong>
+                            <br><small>Ingen framdrift på ${Math.round(stille / 60)} minutter. Siste steg: ${escHtml(st.steg || 'ukjent')}.</small>
+                            <br><small>Bakgrunnsjobben er trolig avbrutt. Sjekk Hendelser, og prøv «Last ned backup» hvis du trenger filen nå.</small>
+                        </div>
+                    `;
+                    return;
+                }
+                s.innerHTML = `<div class="banner info">Backup kjører i bakgrunnen… (${sek}s)${st.steg ? ' — ' + escHtml(st.steg) : ''}</div>`;
                 await new Promise(r => setTimeout(r, 5000));
             }
             s.innerHTML = '<div class="banner advarsel">Backupen kjører fortsatt etter 15 minutter. Se Hendelser for resultatet.</div>';

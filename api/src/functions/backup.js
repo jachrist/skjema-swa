@@ -98,13 +98,15 @@ function lagSasUrl(blobNavn) {
     return `https://${konto}.blob.core.windows.net/${BACKUP_CONTAINER}/${encodeURIComponent(blobNavn)}?${sas}`;
 }
 
-async function byggOgLagre(aktor, jobbLog) {
+async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
     // 1. Bygg zip
-    const { buffer, manifest, varighetSekunder } = await backup.byggBackup(jobbLog);
+    const { buffer, manifest, varighetSekunder, tider } = await backup.byggBackup(jobbLog, fremdrift);
     // 2. AES-krypter
+    fremdrift('krypterer');
     const kryptert = backupKrypto.krypterBuffer(buffer);
     jobbLog(`backup: kryptert (klartekst ${buffer.length} → container ${kryptert.length} bytes)`);
     // 3. Lagre i midlertidig blob
+    fremdrift('laster opp til blob-storage');
     const stempel = new Date().toISOString().replace(/[:.]/g, '-');
     const miljø = (process.env.MILJO || 'ukjent').replace(/[^a-z0-9]/gi, '');
     const filnavn = `${miljø}-backup-${stempel}.fsbk`;
@@ -120,7 +122,7 @@ async function byggOgLagre(aktor, jobbLog) {
             varighet_sek: String(varighetSekunder)
         }
     });
-    return { filnavn, storrelseKryptert: kryptert.length, storrelseKlar: buffer.length, manifest, varighetSekunder };
+    return { filnavn, storrelseKryptert: kryptert.length, storrelseKlar: buffer.length, manifest, varighetSekunder, tider };
 }
 
 /**
@@ -173,8 +175,17 @@ async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
  * Framdrift leses fra statusraden i CacheMetadata.
  */
 async function kjorBackupJobb(aktor, jobbLog) {
+    // Hjerteslag: hvert steg stempler statusraden, slik at admin-panelet kan
+    // skille «jobber fortsatt» fra «døde stille». En bakgrunnsjobb som blir
+    // drept av minnetak eller instansresirkulering rekker ikke å sette Status,
+    // og da er det bare tidsstempelet som avslører det.
+    const fremdrift = (steg) => {
+        jobbLog(`backup: ${steg}`);
+        settStatus({ Steg: steg, SistOppdatert: new Date().toISOString() });
+    };
+
     try {
-        const res = await byggOgLagre(aktor, jobbLog);
+        const res = await byggOgLagre(aktor, jobbLog, fremdrift);
         const sasUrl = lagSasUrl(res.filnavn);
         const stiInnst = await innstillinger.hent('BackupOneDriveSti');
         const sti = stiInnst?.Verdi || '';
@@ -183,9 +194,12 @@ async function kjorBackupJobb(aktor, jobbLog) {
         await settStatus({
             Status: flytStatus === 'feilet' ? 'feil' : 'ok',
             Ferdig: new Date().toISOString(),
+            SistOppdatert: new Date().toISOString(),
+            Steg: 'ferdig',
             Filnavn: res.filnavn,
             StorrelseBytes: res.storrelseKryptert,
             VarighetSekunder: res.varighetSekunder,
+            Tider: JSON.stringify(res.tider || {}),
             FlytStatus: flytStatus,
             OneDriveSti: sti,
             SistFeil: flytMelding || ''
@@ -202,6 +216,7 @@ async function kjorBackupJobb(aktor, jobbLog) {
         await settStatus({
             Status: 'feil',
             Ferdig: new Date().toISOString(),
+            SistOppdatert: new Date().toISOString(),
             SistFeil: String(e.message || e).slice(0, 500)
         });
         hendelser.logg({
@@ -223,7 +238,8 @@ app.http('backupKjor', {
         const startTid = new Date().toISOString();
         await settStatus({
             Status: 'kjører', Startet: startTid, Kilde: auth.upn,
-            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: ''
+            SistOppdatert: startTid, Steg: 'starter',
+            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: '', Tider: ''
         });
 
         const jobbLog = (...a) => context.log(...a);
@@ -255,6 +271,9 @@ app.http('backupStatus', {
                 jsonBody: {
                     status: rad.Status || 'ukjent',
                     startet: rad.Startet || null,
+                    steg: rad.Steg || null,
+                    sistOppdatert: rad.SistOppdatert || null,
+                    tider: rad.Tider ? JSON.parse(rad.Tider) : null,
                     ferdig: rad.Ferdig || null,
                     kilde: rad.Kilde || null,
                     filnavn: rad.Filnavn || null,
