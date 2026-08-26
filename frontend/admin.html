@@ -160,6 +160,35 @@
         .tom-melding, .laster, .feilmelding { text-align: center; padding: 30px; color: var(--text-secondary); font-size: 13px; }
         .feilmelding { color: var(--danger); }
 
+        /* Oppgaver-fane */
+        .todo-kat {
+            font-size: 11px; font-weight: 600; color: var(--text-secondary);
+            text-transform: uppercase; letter-spacing: 0.05em;
+            margin: 16px 0 4px; padding-bottom: 4px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .todo-kat:first-child { margin-top: 0; }
+        .todo-rad {
+            display: grid; grid-template-columns: 24px 40px 1fr auto; gap: 10px;
+            align-items: start; padding: 9px 4px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .todo-rad:last-child { border-bottom: 0; }
+        .todo-rad:hover { background: var(--accent-light); border-radius: 6px; }
+        .todo-rad input[type="checkbox"] { width: 16px; height: 16px; margin: 2px 0 0; cursor: pointer; }
+        .todo-nr { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; color: var(--text-secondary); padding-top: 2px; }
+        .todo-tekst { font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+        .todo-rad.ferdig .todo-tekst { text-decoration: line-through; color: var(--text-secondary); }
+        .todo-meta { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
+        .todo-handling { display: flex; gap: 6px; opacity: 0.45; }
+        .todo-rad:hover .todo-handling { opacity: 1; }
+        .todo-input {
+            width: 100%; padding: 8px 12px; font-size: 13px; line-height: 1.5;
+            border: 1px solid var(--input-border); border-radius: var(--radius-sm);
+            background: var(--bg-input); color: var(--text-primary); font-family: inherit;
+            resize: vertical;
+        }
+
         /* Nøkler-fane */
         .nokkel-vis {
             font-family: 'SF Mono', Menlo, monospace; font-size: 12px;
@@ -188,6 +217,8 @@
 
         <div class="layout">
             <nav class="sidebar" id="sidebar">
+                <a class="fane" data-fane="oppgaver" href="#oppgaver">✅ Oppgaver</a>
+                <div class="skille"></div>
                 <a class="fane" data-fane="roller" href="#roller">👥 Roller</a>
                 <a class="fane" data-fane="nokler" href="#nokler">🔐 Nøkler</a>
                 <div class="skille"></div>
@@ -235,6 +266,7 @@
             const h = (window.location.hash || '#roller').replace(/^#/, '');
             markerFane(h);
             switch (h) {
+                case 'oppgaver':    rendrOppgaver(); break;
                 case 'roller':      rendrRoller(); break;
                 case 'nokler':      rendrNokler(); break;
                 case 'hendelser':   rendrHendelser(); break;
@@ -265,6 +297,283 @@
                 </div>
             `;
         }
+
+        // ==================== OPPGAVER-FANE ====================
+        // Lista over utestående punkter. Lå tidligere i docs/TODO.md; ligger nå
+        // i Table Storage på dev-tenanten slik at pilot og prod ser samme liste.
+        let todoState = { punkter: [], lager: null, filter: 'åpne', sok: '', redigerer: null };
+
+        function rendrOppgaver() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Utestående punkter <span id="todo-teller" style="font-weight: 400; color: var(--text-secondary); text-transform: none; letter-spacing: 0; margin-left: 8px;"></span></h2>
+                    <div id="todo-lager"></div>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <div class="knapp-rad" id="todo-filtre">
+                            <button class="knapp mini" data-filter="åpne" onclick="todoSettFilter('åpne')">Åpne</button>
+                            <button class="knapp mini" data-filter="ferdige" onclick="todoSettFilter('ferdige')">Ferdige</button>
+                            <button class="knapp mini" data-filter="alle" onclick="todoSettFilter('alle')">Alle</button>
+                        </div>
+                        <input type="text" id="todo-sok" placeholder="🔍 Søk i punktene…" oninput="todoSok()" style="flex: 1; min-width: 180px; width: auto;">
+                        <button class="knapp primær" onclick="todoVisNy()">+ Nytt punkt</button>
+                    </div>
+                    <div id="todo-ny" style="display: none; margin-top: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-section);">
+                        <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px;">Nytt punkt — legges bakerst og får neste ledige nummer</div>
+                        <textarea id="todo-ny-tekst" class="todo-input" rows="3" placeholder="Beskriv punktet…"></textarea>
+                        <div class="rad" style="margin-top: 8px;">
+                            <label>Kategori:</label>
+                            <input type="text" id="todo-ny-kat" list="todo-kategorier" placeholder="Brukerønsker">
+                            <datalist id="todo-kategorier"></datalist>
+                        </div>
+                        <div class="knapp-rad" style="margin-top: 8px;">
+                            <button class="knapp primær mini" onclick="todoOpprett()">Legg til</button>
+                            <button class="knapp mini" onclick="todoSkjulNy()">Avbryt</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div id="todo-liste"><div class="laster">Laster…</div></div>
+                </div>
+                <div class="panel">
+                    <h2>Del og importer</h2>
+                    <div class="knapp-rad">
+                        <button class="knapp mini" onclick="todoKopierMarkdown()">📋 Kopier som Markdown</button>
+                        <button class="knapp mini" onclick="todoLastNed()">⬇ Last ned .md</button>
+                        <button class="knapp mini" onclick="todoVisImport()">📥 Importer fra Markdown</button>
+                    </div>
+                    <div id="todo-import-status" style="margin-top: 8px;"></div>
+                    <div id="todo-import" style="display: none; margin-top: 10px;">
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">
+                            Lim inn linjer på formen <code>12. [x] tekst</code>. <code>##</code>-overskrifter blir kategorier.
+                            Numre som allerede finnes hoppes over, så importen kan trygt kjøres om igjen.
+                        </div>
+                        <textarea id="todo-import-tekst" class="todo-input" rows="10" placeholder="# Utestående punkter&#10;&#10;1. [ ] …"></textarea>
+                        <div class="knapp-rad" style="margin-top: 8px;">
+                            <button class="knapp primær mini" onclick="todoImporter()">Importer</button>
+                            <button class="knapp mini" onclick="todoSkjulImport()">Avbryt</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            todoLast();
+        }
+
+        async function todoLast() {
+            const el = document.getElementById('todo-liste');
+            try {
+                const data = await api.get('/api/todo');
+                todoState.punkter = data.punkter || [];
+                todoState.lager = data.lager || null;
+                todoState.redigerer = null;
+                todoTegn();
+            } catch (e) {
+                el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        }
+
+        function todoTegn() {
+            const alle = todoState.punkter;
+            const apne = alle.filter(p => p.Status === 'åpen').length;
+            document.getElementById('todo-teller').textContent =
+                `— ${apne} åpne av ${alle.length}`;
+
+            for (const b of document.querySelectorAll('#todo-filtre .knapp')) {
+                b.classList.toggle('primær', b.dataset.filter === todoState.filter);
+            }
+
+            // Kjente kategorier foreslås når man legger til nye punkter.
+            const kategorier = [...new Set(alle.map(p => p.Kategori))];
+            const dl = document.getElementById('todo-kategorier');
+            if (dl) dl.innerHTML = kategorier.map(k => `<option value="${escHtml(k)}"></option>`).join('');
+
+            const lagerEl = document.getElementById('todo-lager');
+            if (lagerEl && todoState.lager) {
+                const l = todoState.lager;
+                lagerEl.innerHTML = l.delt
+                    ? `<div class="banner info">Delt liste — lagres i <strong>${escHtml(l.konto || 'ukjent konto')}</strong>. Pilot og prod ser samme punkter.</div>`
+                    : `<div class="banner advarsel">Lista ligger i dette miljøets eget lager${l.konto ? ` (<strong>${escHtml(l.konto)}</strong>)` : ''}. Sett <code>TODO_STORAGE_CONNECTION_STRING</code> i begge miljøer for å dele én liste.</div>`;
+            }
+
+            const q = todoState.sok.trim().toLowerCase();
+            const synlige = alle.filter(p => {
+                if (todoState.filter === 'åpne' && p.Status !== 'åpen') return false;
+                if (todoState.filter === 'ferdige' && p.Status !== 'ferdig') return false;
+                if (q && !`${p.Nummer} ${p.Tekst} ${p.Kategori} ${p.Notat}`.toLowerCase().includes(q)) return false;
+                return true;
+            });
+
+            const el = document.getElementById('todo-liste');
+            if (synlige.length === 0) {
+                el.innerHTML = `<div class="tom-melding">${alle.length === 0
+                    ? 'Ingen punkter ennå. Legg til ett, eller importer den gamle lista nederst.'
+                    : 'Ingen punkter matcher filteret.'}</div>`;
+                return;
+            }
+
+            const rekkefolge = [...new Set(synlige.map(p => p.Kategori))];
+            el.innerHTML = rekkefolge.map(k => `
+                <div class="todo-kat">${escHtml(k)}</div>
+                ${synlige.filter(p => p.Kategori === k).map(todoRad).join('')}
+            `).join('');
+        }
+
+        function todoRad(p) {
+            if (todoState.redigerer === p.Nummer) {
+                return `
+                    <div class="todo-rad" style="grid-template-columns: 40px 1fr;">
+                        <div class="todo-nr">${p.Nummer}.</div>
+                        <div>
+                            <textarea id="todo-rediger-tekst" class="todo-input" rows="3">${escHtml(p.Tekst)}</textarea>
+                            <div class="rad" style="margin-top: 6px;">
+                                <label>Kategori:</label>
+                                <input type="text" id="todo-rediger-kat" list="todo-kategorier" value="${escHtml(p.Kategori)}">
+                            </div>
+                            <div class="knapp-rad" style="margin-top: 8px;">
+                                <button class="knapp primær mini" onclick="todoLagre(${p.Nummer})">Lagre</button>
+                                <button class="knapp mini" onclick="todoAvbrytRediger()">Avbryt</button>
+                                <button class="knapp danger mini" style="margin-left: auto;" onclick="todoSlett(${p.Nummer})">Slett</button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            const endret = p.Status === 'ferdig' && p.Ferdig
+                ? `Ferdig ${formatTid(p.Ferdig)}${p.EndretAv ? ` av ${escHtml(p.EndretAv)}` : ''}`
+                : (p.SistEndret && p.EndretAv ? `Sist endret ${formatTid(p.SistEndret)} av ${escHtml(p.EndretAv)}` : '');
+            return `
+                <div class="todo-rad${p.Status === 'ferdig' ? ' ferdig' : ''}">
+                    <input type="checkbox" ${p.Status === 'ferdig' ? 'checked' : ''}
+                        title="Marker som ferdig" onchange="todoToggle(${p.Nummer})">
+                    <div class="todo-nr">${p.Nummer}.</div>
+                    <div>
+                        <div class="todo-tekst">${escHtml(p.Tekst)}</div>
+                        ${endret ? `<div class="todo-meta">${endret}</div>` : ''}
+                    </div>
+                    <div class="todo-handling">
+                        <button class="knapp mini" onclick="todoRediger(${p.Nummer})">Rediger</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        window.todoSettFilter = (f) => { todoState.filter = f; todoTegn(); };
+        window.todoSok = () => { todoState.sok = document.getElementById('todo-sok').value; todoTegn(); };
+
+        window.todoVisNy = () => {
+            document.getElementById('todo-ny').style.display = 'block';
+            document.getElementById('todo-ny-tekst').focus();
+        };
+        window.todoSkjulNy = () => {
+            document.getElementById('todo-ny').style.display = 'none';
+            document.getElementById('todo-ny-tekst').value = '';
+        };
+
+        window.todoOpprett = async () => {
+            const tekst = document.getElementById('todo-ny-tekst').value.trim();
+            if (!tekst) return;
+            const kategori = document.getElementById('todo-ny-kat').value.trim();
+            try {
+                await api.post('/api/todo', { Tekst: tekst, Kategori: kategori || undefined });
+                todoSkjulNy();
+                await todoLast();
+            } catch (e) {
+                alert('Kunne ikke legge til punktet: ' + e.message);
+            }
+        };
+
+        window.todoRediger = (nummer) => { todoState.redigerer = nummer; todoTegn(); };
+        window.todoAvbrytRediger = () => { todoState.redigerer = null; todoTegn(); };
+
+        window.todoLagre = async (nummer) => {
+            const tekst = document.getElementById('todo-rediger-tekst').value.trim();
+            if (!tekst) return;
+            const kategori = document.getElementById('todo-rediger-kat').value.trim();
+            try {
+                await api.put(`/api/todo/${nummer}`, { Tekst: tekst, Kategori: kategori });
+                todoState.redigerer = null;
+                await todoLast();
+            } catch (e) {
+                alert('Kunne ikke lagre: ' + e.message);
+            }
+        };
+
+        window.todoToggle = async (nummer) => {
+            const p = todoState.punkter.find(x => x.Nummer === nummer);
+            if (!p) return;
+            const ny = p.Status === 'ferdig' ? 'åpen' : 'ferdig';
+            try {
+                const oppdatert = await api.put(`/api/todo/${nummer}`, { Status: ny });
+                Object.assign(p, oppdatert);
+                todoTegn();
+            } catch (e) {
+                alert('Kunne ikke endre status: ' + e.message);
+                todoTegn();
+            }
+        };
+
+        window.todoSlett = async (nummer) => {
+            if (!confirm(`Slette punkt ${nummer} for godt? Nummeret blir stående ubrukt.`)) return;
+            try {
+                await api.del(`/api/todo/${nummer}`);
+                await todoLast();
+            } catch (e) {
+                alert('Kunne ikke slette: ' + e.message);
+            }
+        };
+
+        async function todoHentMarkdown() {
+            return await api.get('/api/todo/markdown');
+        }
+
+        window.todoKopierMarkdown = async () => {
+            const status = document.getElementById('todo-import-status');
+            try {
+                const md = await todoHentMarkdown();
+                await navigator.clipboard.writeText(md);
+                status.innerHTML = '<div class="banner suksess">Lista er kopiert som Markdown.</div>';
+            } catch (e) {
+                status.innerHTML = `<div class="banner feil">Kopiering feilet: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.todoLastNed = async () => {
+            const status = document.getElementById('todo-import-status');
+            try {
+                const md = await todoHentMarkdown();
+                const url = URL.createObjectURL(new Blob([md], { type: 'text/markdown;charset=utf-8' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `TODO-${new Date().toISOString().slice(0, 10)}.md`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                status.innerHTML = `<div class="banner feil">Nedlasting feilet: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.todoVisImport = () => {
+            document.getElementById('todo-import').style.display = 'block';
+            document.getElementById('todo-import-tekst').focus();
+        };
+        window.todoSkjulImport = () => {
+            document.getElementById('todo-import').style.display = 'none';
+        };
+
+        window.todoImporter = async () => {
+            const markdown = document.getElementById('todo-import-tekst').value;
+            const status = document.getElementById('todo-import-status');
+            if (!markdown.trim()) return;
+            status.innerHTML = '<div class="laster">Importerer…</div>';
+            try {
+                const r = await api.post('/api/todo/importer', { markdown });
+                status.innerHTML = `<div class="banner suksess">Leste ${r.lest} punkt: ${r.lagtTil} lagt til, ${r.hoppetOver} fantes fra før.</div>`;
+                todoSkjulImport();
+                document.getElementById('todo-import-tekst').value = '';
+                await todoLast();
+            } catch (e) {
+                status.innerHTML = `<div class="banner feil">Import feilet: ${escHtml(e.message)}</div>`;
+            }
+        };
 
         // ==================== ROLLER-FANE ====================
         let rollerState = { grupper: [], filtrerte: [], valgt: null };
@@ -603,7 +912,11 @@
             'rolle.leggtil': 'Rolle: innehaver lagt til',
             'rolle.fjern': 'Rolle: innehaver fjernet',
             'behandling.rolle.ekspandert': 'Behandling: dynamisk rolle løst opp',
-            'behandling.uten-behandler': 'Behandling: steg uten behandler'
+            'behandling.uten-behandler': 'Behandling: steg uten behandler',
+            'todo.opprett': 'Oppgave lagt til',
+            'todo.oppdater': 'Oppgave endret',
+            'todo.slett': 'Oppgave slettet',
+            'todo.importer': 'Oppgaver importert'
         };
 
         function rendrHendelser() {

@@ -1,5 +1,21 @@
 # Utestående punkter skjemasystem
 
+> **Frosset — lista har flyttet inn i appen.**
+>
+> Punktene vedlikeholdes nå under **Administrasjon → ✅ Oppgaver**, med lagring i
+> Table Storage på dev-tenanten, slik at pilot og prod ser samme liste.
+>
+> Denne fila står igjen som kilde for engangsimporten: åpne Oppgaver-fanen,
+> velg *Importer fra Markdown*, lim inn alt under streken og trykk Importer.
+> Importen hopper over numre som allerede finnes, så den kan trygt kjøres om
+> igjen. **Når importen er bekreftet, tøm alt under streken** — da finnes lista
+> bare ett sted.
+>
+> Trenger du en Markdown-kopi senere (til deling eller et referat), bruk
+> *Kopier som Markdown* eller *Last ned .md* i samme fane.
+
+---
+
 Kryss av med `[x]` når et punkt er levert. Ferdige punkter blir stående, og nye
 legges til nederst — da holder numrene seg stabile, slik at «punkt 17» betyr det
 samme i dag og om en måned.
