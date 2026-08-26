@@ -97,10 +97,12 @@ app.http('varslingDiagSkjema', {
             const ferdigMottakere = fv?.Mottakere
                 ? await varsling.løsMottakere(fv.Mottakere, skjema, log)
                 : [];
+            const ferdigForklaring = fv?.Mottakere ? await varsling.forklarMottakere(fv.Mottakere, skjema) : null;
             const kopiOppsett = skjematype.Innsenderkvittering?.Kopi || null;
             const kopiMottakere = kopiOppsett
                 ? await varsling.løsMottakere(kopiOppsett, skjema, log)
                 : [];
+            const kopiForklaring = kopiOppsett ? await varsling.forklarMottakere(kopiOppsett, skjema) : null;
 
             const alleFerdig = alleStegFerdig(skjema);
             const aktive = beregnAktiveSteg(skjema);
@@ -120,12 +122,14 @@ app.http('varslingDiagSkjema', {
                         aktiv: fv?.Aktiv === true,
                         mottakerOppsett: fv?.Mottakere || null,
                         oppløsteMottakere: ferdigMottakere,
+                        forklaring: ferdigForklaring,
                         villeSendt: alleFerdig && fv?.Aktiv === true && ferdigMottakere.length > 0
                     },
                     kvitteringKopi: {
                         konfigurert: !!kopiOppsett,
                         mottakerOppsett: kopiOppsett,
-                        oppløsteMottakere: kopiMottakere
+                        oppløsteMottakere: kopiMottakere,
+                        forklaring: kopiForklaring
                     },
                     logg
                 }

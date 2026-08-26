@@ -139,6 +139,46 @@ async function løsMottakere(oppsett, skjema, log = () => {}) {
 }
 
 /**
+ * Som løsMottakere, men forteller hva som skjedde med hver enkelt rollestreng.
+ *
+ * Brukes av varslingsdiagnosen. Uten den er «rollen ga ingen mottakere» umulig
+ * å skille fra «feltet ga ingen roller» — begge ender med en tom liste.
+ * `vurderte` viser hvilke rollestrenger feltsvarene faktisk ble til, så det
+ * synes med én gang om alle valgene i et flervalgsfelt ble lest.
+ */
+async function forklarMottakere(oppsett, skjema) {
+    const roller = [];
+    for (const mal of (oppsett?.Roller || [])) {
+        if (!dynamiskRolle.erDynamisk(mal)) {
+            const innehavere = await rollerStorage.hentInnehavere(mal).catch(() => []);
+            roller.push({
+                mal, dynamisk: false,
+                perRolle: [{ rolle: mal, antallInnehavere: innehavere.length, innehavere: innehavere.map(i => i.EP || i.UPN) }]
+            });
+            continue;
+        }
+        let resultat;
+        try {
+            resultat = await dynamiskRolle.ekspanderRolleStreng(mal, skjema?.Seksjoner || []);
+        } catch (e) {
+            roller.push({ mal, dynamisk: true, feil: e.message, perRolle: [] });
+            continue;
+        }
+        if (resultat.ulost) {
+            roller.push({ mal, dynamisk: true, ulost: true, melding: 'Feltet er ubesvart — ingen roller å slå opp', perRolle: [] });
+            continue;
+        }
+        const perRolle = [];
+        for (const r of resultat.roller) {
+            const innehavere = await rollerStorage.hentInnehavere(r).catch(() => []);
+            perRolle.push({ rolle: r, antallInnehavere: innehavere.length, innehavere: innehavere.map(i => i.EP || i.UPN) });
+        }
+        roller.push({ mal, dynamisk: true, vurderte: resultat.vurderte, perRolle });
+    }
+    return { personer: oppsett?.Personer || [], roller };
+}
+
+/**
  * Send innsender-kvittering. Kalles ved innsending.
  *
  * `Innsenderkvittering.Kopi` ({ Personer, Roller }) får samme melding. Det er
@@ -315,6 +355,7 @@ module.exports = {
     sendBeslutningVarsling,
     sendFerdigVarsling,
     løsMottakere,
+    forklarMottakere,
     _samleBehandlerMottakere: samleBehandlerMottakere,
     _skjemaLenke: skjemaLenke
 };
