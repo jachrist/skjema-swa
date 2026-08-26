@@ -566,14 +566,24 @@
 
             // Alle-modus: vis progresjon
             if (steg.Beslutning_alle === true) {
-                const personer = (steg.Personer || []).map(p => String(p).toLowerCase());
+                // Kravene beregnes på serveren (rollemedlemskap kan ikke slås opp
+                // her) og lagres på steget. Før første beslutning finnes de ikke
+                // ennå — da er alt udekket, og det kan vi utlede selv.
+                const krav = Array.isArray(steg.BeslutningKrav) && steg.BeslutningKrav.length > 0
+                    ? steg.BeslutningKrav
+                    : [
+                        ...(steg.Personer || []).map(p => ({ type: 'person', navn: String(p).toLowerCase(), dekket: false })),
+                        ...(steg.Roller || []).map(r => ({ type: 'rolle', navn: String(r), dekket: false })),
+                        ...(steg.Team || []).map(t => ({ type: 'team', navn: String(t), dekket: false }))
+                    ];
                 const leverte = new Set((steg.Beslutninger || []).map(b => String(b.Aktor || '').toLowerCase()));
                 const megLower = String(bruker?.userDetails || '').toLowerCase();
                 const jegHarLevert = leverte.has(megLower);
-                const gjenstar = personer.filter(p => !leverte.has(p));
+                const gjenstar = krav.filter(k => !k.dekket).map(k => k.navn);
+                const dekket = krav.length - gjenstar.length;
                 const alleModusInfo = document.createElement('div');
                 alleModusInfo.style.cssText = 'padding: 8px 10px; background: var(--accent-light, rgba(10,132,255,0.1)); border-radius: 6px; margin-bottom: 10px; font-size: 12px;';
-                let html = `<strong>Alle må avgjøre</strong> — ${leverte.size} av ${personer.length} har levert.`;
+                let html = `<strong>Alle må avgjøre</strong> — ${dekket} av ${krav.length} har levert.`;
                 if (jegHarLevert) {
                     const min = (steg.Beslutninger || []).find(b => String(b.Aktor || '').toLowerCase() === megLower);
                     const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(min?.Beslutning));

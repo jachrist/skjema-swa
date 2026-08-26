@@ -7,7 +7,9 @@
  *     "Klassesjef({3f7a1c2e-...})"                referanse via felt-Id
  *
  * Ved innsending erstattes referansen med kadettens svar, og steget lagres med
- * konkret omfang: "Klassesjef(MILM23-1)".
+ * konkret omfang: "Klassesjef(MILM23-1)". Peker referansen på et flervalgsfelt,
+ * gir hvert valg sin egen rolle — tre avhukede klasser blir tre klassesjefer på
+ * steget, ikke bare den første.
  *
  * Hvorfor ekspandere ÉN gang ved innsending, og ikke ved hvert oppslag:
  *   - På skjematyper med Krypteres=Svar/Alt ligger svaret som chiffertekst, og
@@ -28,7 +30,7 @@
  * som faktisk har innehavere. Finnes ingen, brukes den mest lesbare formen, så
  * hendelsesloggen viser admin hvilken rolle som må opprettes.
  */
-const { finnSvarForFeltRef, finnSvarForFeltViaId } = require('./placeholder');
+const { finnAlleSvarForFeltRef, finnAlleSvarForFeltViaId } = require('./placeholder');
 const { hentOmfangsalias } = require('./omfang');
 const rollerStorage = require('./roller-storage');
 
@@ -44,47 +46,68 @@ function erDynamisk(rolleStreng) {
 function slaOppSvar(ref, seksjoner) {
     const m = POSISJONELL.exec(ref);
     return m
-        ? finnSvarForFeltRef(seksjoner, m[1], m[2])
-        : finnSvarForFeltViaId(seksjoner, ref);
+        ? finnAlleSvarForFeltRef(seksjoner, m[1], m[2])
+        : finnAlleSvarForFeltViaId(seksjoner, ref);
+}
+
+/**
+ * Finn rollestrengen for én svarverdi, via alias-formene i omfang.js.
+ * Returnerer { rolle, kandidater } — kandidatene tas vare på til logging.
+ */
+async function rolleForVerdi(mal, verdi) {
+    const kandidater = (await hentOmfangsalias(verdi)).map(a => mal.replace(FELTREF, a).trim());
+    for (const kandidat of kandidater) {
+        try {
+            const innehavere = await rollerStorage.hentInnehavere(kandidat);
+            if (innehavere.length > 0) return { rolle: kandidat, kandidater };
+        } catch (_) { /* prøv neste form */ }
+    }
+    // Ingen treff: behold den mest lesbare formen (klassenavnet når vi fant det,
+    // ellers nøkkelen) og la sikreBehandler/hendelsesloggen si fra.
+    return { rolle: kandidater[kandidater.length > 1 ? 1 : 0], kandidater };
 }
 
 /**
  * Ekspander én rollestreng mot skjemasvarene.
  *
- * Returnerer { rolle, ulost, vurderte }. Er referansen ubesvart, beholdes malen
+ * Returnerer { roller, ulost, vurderte }. Er referansen ubesvart, beholdes malen
  * uendret (ulost=true) — en halvferdig "Klassesjef()" ville bare skjult
  * problemet. `vurderte` er alle rollestrengene som ble prøvd, til logging.
+ *
+ * Et flervalgsfelt gir én rolle per valg: huker kadetten av tre klasser, blir
+ * det tre klassesjefer på steget. Steget behandles av den første som svarer —
+ * `steg.Roller` har alltid vært en ELLER-liste. Skal alle tre måtte avgjøre, er
+ * det `Beslutning_alle`, og den teller i dag bare konkrete `Personer`.
  */
 async function ekspanderRolleStreng(rolleStreng, seksjoner) {
     const mal = String(rolleStreng || '');
 
-    // Én referanse om gangen, så vi kan bygge alias-kandidater av svaret.
-    // Flere referanser i samme streng er ikke i bruk, men skal ikke gi et
-    // halvekspandert resultat.
     const refs = [...mal.matchAll(FELTREF)];
-    if (refs.length === 0) return { rolle: mal, ulost: false, vurderte: [mal] };
+    if (refs.length === 0) return { roller: [mal], ulost: false, vurderte: [mal] };
 
-    const svar = [];
+    const svarPerRef = [];
     for (const [, ref] of refs) {
-        const v = slaOppSvar(String(ref).trim(), seksjoner);
-        if (!v) return { rolle: mal, ulost: true, vurderte: [] };
-        svar.push(String(v));
+        const verdier = slaOppSvar(String(ref).trim(), seksjoner);
+        if (verdier.length === 0) return { roller: [mal], ulost: true, vurderte: [] };
+        svarPerRef.push(verdier);
     }
 
-    // Alias bare for én-referanse-tilfellet; ellers settes verdiene inn ordrett.
-    const kandidater = refs.length === 1
-        ? (await hentOmfangsalias(svar[0])).map(a => mal.replace(FELTREF, a).trim())
-        : [svar.reduce((s, v) => s.replace(FELTREF_EN, v), mal).trim()];
-
-    for (const kandidat of kandidater) {
-        try {
-            const innehavere = await rollerStorage.hentInnehavere(kandidat);
-            if (innehavere.length > 0) return { rolle: kandidat, ulost: false, vurderte: kandidater };
-        } catch (_) { /* prøv neste form */ }
+    // Flere referanser i samme streng er ikke i bruk. Der settes første verdi
+    // per referanse inn ordrett, uten alias-oppslag — som før. Å gange ut alle
+    // kombinasjonene ville laget roller ingen har bedt om.
+    if (refs.length > 1) {
+        const rolle = svarPerRef.reduce((s, verdier) => s.replace(FELTREF_EN, verdier[0]), mal).trim();
+        return { roller: [rolle], ulost: false, vurderte: [rolle] };
     }
-    // Ingen treff: behold den mest lesbare formen (klassenavnet når vi fant det,
-    // ellers nøkkelen) og la sikreBehandler/hendelsesloggen si fra.
-    return { rolle: kandidater[kandidater.length > 1 ? 1 : 0], ulost: false, vurderte: kandidater };
+
+    const roller = [];
+    const vurderte = [];
+    for (const verdi of svarPerRef[0]) {
+        const { rolle, kandidater } = await rolleForVerdi(mal, verdi);
+        for (const k of kandidater) if (!vurderte.includes(k)) vurderte.push(k);
+        if (rolle && !roller.includes(rolle)) roller.push(rolle);
+    }
+    return { roller, ulost: false, vurderte };
 }
 
 /**
@@ -92,7 +115,7 @@ async function ekspanderRolleStreng(rolleStreng, seksjoner) {
  * in-place.
  *
  * Returnerer { ekspanderte, uloste } til logging — begge er arrays av
- * { steg, mal, rolle }.
+ * { steg, mal, roller }.
  */
 async function ekspanderBehandling(skjema) {
     const seksjoner = skjema?.Seksjoner || [];
@@ -114,10 +137,10 @@ async function ekspanderBehandling(skjema) {
                 if (!nye.includes(mal)) nye.push(mal);
                 continue;
             }
-            const { rolle, ulost, vurderte } = await ekspanderRolleStreng(mal, seksjoner);
-            if (ulost) uloste.push({ steg: steg.Steg, mal, rolle });
-            else ekspanderte.push({ steg: steg.Steg, mal, rolle, vurderte });
-            if (!nye.includes(rolle)) nye.push(rolle);
+            const { roller, ulost, vurderte } = await ekspanderRolleStreng(mal, seksjoner);
+            if (ulost) uloste.push({ steg: steg.Steg, mal, roller });
+            else ekspanderte.push({ steg: steg.Steg, mal, roller, vurderte });
+            for (const rolle of roller) if (!nye.includes(rolle)) nye.push(rolle);
         }
         steg.Roller = nye;
     }

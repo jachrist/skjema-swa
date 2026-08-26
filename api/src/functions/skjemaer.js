@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const varsling = require('../lib/varsling');
 const { kallEksternFlyt } = require('../lib/ekstern-flyt');
@@ -218,13 +218,16 @@ app.http('lagreBeslutning', {
                 context.log(`beslutning: ${upn || 'ekstern-flyt'} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
             } else {
                 // "Alle må avgjøre"-modus: samle beslutninger, sett stegets sluttbeslutning
-                // først når alle konkrete Personer har levert. Ellers: normal behandling
-                // (første behandler avgjør).
+                // først når alle kravene er dekket. Kravene er konkrete Personer,
+                // rollestrenger og team — se beregnAlleKrav. Ellers: normal
+                // behandling (første behandler avgjør).
                 const kreverAlle = stegObj.Beslutning_alle === true;
-                const personer = (stegObj.Personer || []).map(p => String(p).toLowerCase());
+                const harKandidater = (stegObj.Personer || []).length
+                    + (stegObj.Roller || []).length
+                    + (stegObj.Team || []).length > 0;
                 const aktor = upn ? String(upn).toLowerCase() : 'ekstern-flyt';
 
-                if (kreverAlle && personer.length > 0) {
+                if (kreverAlle && harKandidater) {
                     if (!Array.isArray(stegObj.Beslutninger)) stegObj.Beslutninger = [];
                     // Hindre duplikat fra samme aktør (idempotens ved retry)
                     const eksisterende = stegObj.Beslutninger.find(b => String(b.Aktor || '').toLowerCase() === aktor);
@@ -240,11 +243,13 @@ app.http('lagreBeslutning', {
                             Kommentar: body?.kommentar || ''
                         });
                     }
-                    // Sjekk om alle konkrete personer har levert
-                    const leverte = new Set(stegObj.Beslutninger.map(b => String(b.Aktor || '').toLowerCase()));
-                    const alleLeverte = personer.every(p => leverte.has(p));
+                    // Sjekk om alle kravene er dekket. Statusen lagres på steget
+                    // så evaluering.html kan vise «venter på» uten å slå opp
+                    // rollemedlemskap i nettleseren.
+                    const { krav, gjenstar, alleLevert } = await beregnAlleKrav(stegObj, lagTilgangsCache());
+                    stegObj.BeslutningKrav = krav;
 
-                    if (alleLeverte) {
+                    if (alleLevert) {
                         // Sluttbeslutning = siste avgivelse (i praksis samme siden alle må godkjenne)
                         stegObj.Beslutning = beslutning;
                         stegObj.BehandletAv = 'alle-behandlere';
@@ -253,7 +258,6 @@ app.http('lagreBeslutning', {
                         if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
                         if (alleStegFerdig(skjema)) skjema.Skjema_status = 5;
                     } else {
-                        const gjenstar = personer.filter(p => !leverte.has(p));
                         context.log(`beslutning: ${aktor} avga sin beslutning på steg ${stegNr}. Venter på: ${gjenstar.join(', ')}`);
                     }
                 } else {
@@ -732,17 +736,21 @@ app.http('lagreSkjema', {
                 try {
                     const { ekspanderte, uloste } = await dynamiskRolle.ekspanderBehandling(skjemaData);
                     for (const e of ekspanderte) {
-                        context.log(`dynamisk-rolle: steg ${e.steg} "${e.mal}" → "${e.rolle}"` +
-                            (e.vurderte?.length > 1 ? ` (vurderte: ${e.vurderte.join(', ')})` : ''));
+                        context.log(`dynamisk-rolle: steg ${e.steg} "${e.mal}" → ${e.roller.map(r => `"${r}"`).join(', ')}` +
+                            (e.vurderte?.length > e.roller.length ? ` (vurderte: ${e.vurderte.join(', ')})` : ''));
                     }
                     for (const u of uloste) {
                         context.log(`dynamisk-rolle: steg ${u.steg} "${u.mal}" — feltet er ubesvart, malen beholdes`);
                     }
                     if (ekspanderte.length > 0 || uloste.length > 0) {
+                        // Én mal kan gi flere roller når feltet er et flervalg,
+                        // så begge tallene hører hjemme i loggen.
+                        const antallRoller = ekspanderte.reduce((n, e) => n + e.roller.length, 0);
                         hendelser.logg({
                             Type: 'behandling.rolle.ekspandert', Aktor: innsenderId,
                             ObjektType: 'skjema', ObjektId: skjemaId,
                             Melding: `Løste opp ${ekspanderte.length} dynamisk${ekspanderte.length === 1 ? ' rolle' : 'e roller'}` +
+                                (antallRoller > ekspanderte.length ? ` til ${antallRoller} behandlerroller` : '') +
                                 (uloste.length ? `, ${uloste.length} uløst` : ''),
                             Detaljer: { ekspanderte, uloste }
                         });

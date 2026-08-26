@@ -69,6 +69,61 @@ async function brukerErBehandlerAsync(steg, upn, cache = null) {
     return false;
 }
 
+/**
+ * Hvem som fortsatt må avgi beslutning på et «alle må avgjøre»-steg.
+ *
+ * Kravene er stegets konkrete Personer, hver rollestreng i Roller og hvert Team.
+ * En rolle er dekket når én av innehaverne har levert — ett svar per rolle, ikke
+ * per person. Det er granulariteten saken har: tre klassesjefer på tre klasser
+ * gir tre vurderinger, og at én klasse har to registrerte sjefer betyr ikke at
+ * begge må svare. Dekker samme person to roller, dekker det ene svaret begge.
+ *
+ * Fram til dette telte modusen bare Personer, så et steg med roller falt stille
+ * tilbake til «første behandler avgjør».
+ *
+ * @param {object} steg
+ * @param {object} [cache] — memo fra tilgang.lagTilgangsCache()
+ * @returns {Promise<{krav: object[], gjenstar: string[], alleLevert: boolean}>}
+ */
+async function beregnAlleKrav(steg, cache = null) {
+    const leverte = [...new Set(
+        (steg?.Beslutninger || [])
+            .map(b => String(b.Aktor || '').toLowerCase())
+            .filter(Boolean)
+    )];
+    const levertSett = new Set(leverte);
+    const krav = [];
+
+    for (const p of (steg?.Personer || [])) {
+        const navn = String(p || '').toLowerCase();
+        if (!navn || krav.some(k => k.type === 'person' && k.navn === navn)) continue;
+        krav.push({ type: 'person', navn, dekket: levertSett.has(navn) });
+    }
+
+    for (const [type, liste, erMedlem] of [
+        ['rolle', steg?.Roller || [], erRolleMedlem],
+        ['team', steg?.Team || [], erTeamMedlem]
+    ]) {
+        for (const oppforing of liste) {
+            const navn = String(oppforing || '');
+            if (!navn || krav.some(k => k.type === type && k.navn === navn)) continue;
+            let dekket = false;
+            for (const aktor of leverte) {
+                try {
+                    if (await erMedlem(cache, navn, aktor)) { dekket = true; break; }
+                } catch (_) { /* oppslagsfeil skal ikke låse steget — prøv neste */ }
+            }
+            krav.push({ type, navn, dekket });
+        }
+    }
+
+    return {
+        krav,
+        gjenstar: krav.filter(k => !k.dekket).map(k => k.navn),
+        alleLevert: krav.length > 0 && krav.every(k => k.dekket)
+    };
+}
+
 function alleStegFerdig(skjema) {
     const behandling = skjema?.Behandling || [];
     if (behandling.length === 0) return true;
@@ -109,6 +164,7 @@ module.exports = {
     beregnAktiveSteg,
     brukerErBehandler,
     brukerErBehandlerAsync,
+    beregnAlleKrav,
     alleStegFerdig,
     stegErFerdig,
     stegErBlokkertAvAvhengighet,

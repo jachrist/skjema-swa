@@ -25,14 +25,32 @@
  * for å fjerne den.
  */
 
-function finnSvarForFeltRef(seksjoner, seksjonNummer, feltNummer) {
+// Felttyper der `Svar` er flere selvstendige verdier. Postnummer lagrer
+// [postnr, poststed] og Opplasting en filliste — der er element 0 fortsatt
+// den ene verdien, ikke det første av flere valg.
+const FLERVALGSTYPER = new Set(['Flervalg-dropdown', 'Flervalg-knapper']);
+
+function finnFeltViaRef(seksjoner, seksjonNummer, feltNummer) {
     const sekNr = String(seksjonNummer);
     const seksjon = (seksjoner || []).find(s =>
         String(s.Seksjon_nummer) === sekNr || String(s.Nummer) === sekNr
     );
     if (!seksjon) return null;
     const feltNrPadded = String(feltNummer).padStart(2, '0');
-    const felt = (seksjon.Felter || []).find(f => String(f.Nummer).padStart(2, '0') === feltNrPadded);
+    return (seksjon.Felter || []).find(f => String(f.Nummer).padStart(2, '0') === feltNrPadded) || null;
+}
+
+function finnFeltViaId(seksjoner, id) {
+    if (!id) return null;
+    for (const s of (seksjoner || [])) {
+        for (const f of (s.Felter || [])) {
+            if (f.Id === id) return f;
+        }
+    }
+    return null;
+}
+
+function forsteSvar(felt) {
     if (!felt) return null;
     if (Array.isArray(felt.Svar) && felt.Svar.length > 0 && felt.Svar[0] !== '') {
         return felt.Svar[0];
@@ -40,17 +58,35 @@ function finnSvarForFeltRef(seksjoner, seksjonNummer, feltNummer) {
     return null;
 }
 
+/**
+ * Alle besvarte verdier i et felt.
+ *
+ * Et flervalgsfelt kan ha mange — et nedtrekk der kadetten huker av tre klasser
+ * gir tre verdier, og alle tre er reelle svar. For alle andre felttyper er det
+ * bare den første som er en verdi, så lista kuttes der.
+ */
+function alleSvarIFelt(felt) {
+    if (!Array.isArray(felt?.Svar)) return [];
+    const verdier = felt.Svar
+        .map(v => (v == null ? '' : String(v)))
+        .filter(v => v.trim() !== '');
+    return FLERVALGSTYPER.has(String(felt.Type || '')) ? verdier : verdier.slice(0, 1);
+}
+
+function finnSvarForFeltRef(seksjoner, seksjonNummer, feltNummer) {
+    return forsteSvar(finnFeltViaRef(seksjoner, seksjonNummer, feltNummer));
+}
+
 function finnSvarForFeltViaId(seksjoner, id) {
-    if (!id) return null;
-    for (const s of (seksjoner || [])) {
-        for (const f of (s.Felter || [])) {
-            if (f.Id === id) {
-                if (Array.isArray(f.Svar) && f.Svar.length > 0 && f.Svar[0] !== '') return f.Svar[0];
-                return null;
-            }
-        }
-    }
-    return null;
+    return forsteSvar(finnFeltViaId(seksjoner, id));
+}
+
+function finnAlleSvarForFeltRef(seksjoner, seksjonNummer, feltNummer) {
+    return alleSvarIFelt(finnFeltViaRef(seksjoner, seksjonNummer, feltNummer));
+}
+
+function finnAlleSvarForFeltViaId(seksjoner, id) {
+    return alleSvarIFelt(finnFeltViaId(seksjoner, id));
 }
 
 function erstattPlassholdere(streng, kontekst = {}) {
@@ -115,5 +151,7 @@ module.exports = {
     erstattPlassholdere,
     byggKontekst,
     finnSvarForFeltRef,
-    finnSvarForFeltViaId
+    finnSvarForFeltViaId,
+    finnAlleSvarForFeltRef,
+    finnAlleSvarForFeltViaId
 };
