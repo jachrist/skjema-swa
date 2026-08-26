@@ -122,6 +122,26 @@ async function erMedlem(rolleStreng, upn) {
     return innehavere.some(i => String(i.UPN || '').toLowerCase() === upnLower);
 }
 
+/**
+ * Alle omfang én bruker har en gitt rolle for.
+ *
+ * "Emneansvarlig" → ['CBU2501', 'CBU2502'] for den som er emneansvarlig for to
+ * emner. Tomt omfang (rollen gjelder uten avgrensning) tas ikke med — en slik
+ * rad sier ingenting om hvilke rader brukeren skal se.
+ */
+async function hentOmfangForBruker(rolle, upn) {
+    if (!rolle || !upn) return [];
+    const upnLower = String(upn).toLowerCase();
+    const innehavere = await hentInnehavere(String(rolle).trim());
+    const ut = [];
+    for (const i of innehavere) {
+        if (String(i.UPN || '').toLowerCase() !== upnLower) continue;
+        const omfang = String(i.Omfang || '').trim();
+        if (omfang && !ut.includes(omfang)) ut.push(omfang);
+    }
+    return ut;
+}
+
 async function leggTilInnehaver({ Rolle, Omfang = '', UPN, FN = '', EN = '', Rollebeskrivelse = '', Kilde = 'manuell' }) {
     if (!Rolle || !UPN) throw new Error('Rolle og UPN er påkrevd');
     const t = await tabell();
@@ -155,6 +175,7 @@ module.exports = {
     hentNavnekart,
     hentInnehavere,
     erMedlem,
+    hentOmfangForBruker,
     leggTilInnehaver,
     fjernInnehaver
 };

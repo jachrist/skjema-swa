@@ -299,6 +299,21 @@
                 <input type="text" id="ny-innebygd-verdi2" placeholder="…til (dato: idag+N)" style="display:none;">
                 <button class="knapp primær liten" onclick="leggTilInnebygd()">Legg til</button>
             </div>
+            <div class="legg-til" id="legg-til-rollefilter-rad" style="display:none;">
+                <select id="ny-rollefilter-type">
+                    <option value="svar">Svar på felt</option>
+                    <option value="meta">Meta</option>
+                </select>
+                <select id="ny-rollefilter-kilde"></select>
+                <span style="font-size:12px;color:var(--text-secondary);white-space:nowrap;">er ett av mine omfang i rollen</span>
+                <select id="ny-rollefilter-rolle"></select>
+                <button class="knapp primær liten" onclick="leggTilRollefilter()">Legg til rollefilter</button>
+            </div>
+            <div id="rollefilter-hjelp" style="font-size:12px;color:var(--text-secondary);margin-top:6px;display:none;">
+                Et rollefilter avgrenser rapporten til den som kjører den: emneansvarlig ser sine emner,
+                klassesjefen sin klasse. Det er alltid på og vises ikke for brukeren.
+                <strong>Admin ser alt</strong> — og har brukeren ingen omfang i rollen, blir rapporten tom.
+            </div>
         </section>
 
         <section>
@@ -534,6 +549,17 @@
             innTypeSel.onchange = settInnKilde;
             settInnKilde();
 
+            // Rollefilter — samme kildevalg, men verdien kommer fra brukerens
+            // rolleomfang ved kjøring, så det er ingen operator eller verdi å velge.
+            const rfTypeSel = document.getElementById('ny-rollefilter-type');
+            const rfKildeSel = document.getElementById('ny-rollefilter-kilde');
+            const settRfKilde = () => {
+                if (rfTypeSel.value === 'meta') fyllMeta(rfKildeSel);
+                else fyllSvarKilde(rfKildeSel);
+            };
+            rfTypeSel.onchange = settRfKilde;
+            settRfKilde();
+
             // Bruker-filter
             const brukTypeSel = document.getElementById('ny-bruker-type');
             const brukKildeSel = document.getElementById('ny-bruker-kilde');
@@ -549,6 +575,8 @@
             // Vis legg-til-radene
             document.getElementById('legg-til-kolonne-rad').style.display = kildeDef ? '' : 'none';
             document.getElementById('legg-til-innebygd-rad').style.display = kildeDef ? '' : 'none';
+            document.getElementById('legg-til-rollefilter-rad').style.display = kildeDef ? '' : 'none';
+            document.getElementById('rollefilter-hjelp').style.display = kildeDef ? '' : 'none';
             document.getElementById('legg-til-bruker-rad').style.display = kildeDef ? '' : 'none';
         }
 
@@ -597,6 +625,21 @@
                 container.innerHTML = '<div class="tom-melding">Ingen innebygde filtre.</div>';
             } else {
                 container.innerHTML = data.Innebygde_filtre.map((f, i) => {
+                    // Rollefilteret har ingen fast verdi — den kommer av hvem
+                    // som kjører rapporten, så det leses som en egen setning.
+                    if (f.fraRolle) {
+                        return `
+                        <div class="liste-element">
+                            <div class="nr">${i + 1}</div>
+                            <div class="desc">
+                                <div class="primær">${escapeHtml(kildeVisning(f))} <em style="color:var(--text-secondary);font-weight:400;">er ett av mine omfang i rollen</em> ${escapeHtml(f.fraRolle)}</div>
+                                <div class="sekundær">Avgrenser til den som kjører rapporten. Admin ser alt.</div>
+                            </div>
+                            <div class="handlinger">
+                                <button onclick="slettInnebygd(${i})">Fjern</button>
+                            </div>
+                        </div>
+                    `; }
                     const verdiTekst = ['tomt', 'ikkeTomt'].includes(f.operator) ? ''
                         : (f.operator === 'between' ? `${f.verdi} — ${f.verdi2}` : String(f.verdi ?? ''));
                     return `
@@ -723,6 +766,20 @@
             data.Innebygde_filtre.push(filter);
             document.getElementById('ny-innebygd-verdi').value = '';
             document.getElementById('ny-innebygd-verdi2').value = '';
+            renderInnebygde();
+        };
+
+        window.leggTilRollefilter = () => {
+            if (!kildeDef) return;
+            const type = document.getElementById('ny-rollefilter-type').value;
+            const kilde = document.getElementById('ny-rollefilter-kilde').value;
+            const rolle = document.getElementById('ny-rollefilter-rolle').value;
+            if (!kilde || !rolle) { visStatus('Rollefilter krever både felt og rolle', 'feil'); return; }
+            // Ingen verdi her — den settes ved kjøring, ut fra hvem som kjører.
+            const filter = type === 'meta'
+                ? { type: 'meta', kilde, operator: 'in', fraRolle: rolle }
+                : { type: 'svar', seksjon: kilde.split('|')[0], felt: kilde.split('|')[1], operator: 'in', fraRolle: rolle };
+            data.Innebygde_filtre.push(filter);
             renderInnebygde();
         };
 
@@ -1007,6 +1064,13 @@
                 kompakt: true, api, rolleGrupper, teamNavn,
                 onEndring: (ny) => { data.Eiere = ny; }
             });
+
+            // Rollefilteret peker på et rollenavn uten omfang — omfanget er
+            // nettopp det som varierer per bruker. Derfor distinkte navn.
+            const rolleSel = document.getElementById('ny-rollefilter-rolle');
+            const rolleNavn = [...new Set(rolleGrupper.map(g => g.Rolle))].sort((a, b) => a.localeCompare(b));
+            rolleSel.innerHTML = '<option value="">— velg rolle —</option>' +
+                rolleNavn.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
 
             if (rapporttypeId) {
                 try {

@@ -84,4 +84,44 @@ async function hentOmfangsalias(verdi) {
     return alias;
 }
 
-module.exports = { normaliserOmfang, erSammensatt, hentOmfangsalias };
+/**
+ * Alle formene et sett med omfang kan ha i et skjemasvar.
+ *
+ * `hentOmfangsalias` går fra FS-nøkkelen og utover. Denne går motsatt vei:
+ * rollelista har omfanget slik admin skrev det inn — klassenavnet, eller bare
+ * klassekoden — mens svaret i skjemaet er FS' sammensatte nøkkel. Et rollefilter
+ * på klasse ville aldri truffet uten denne oversettelsen.
+ *
+ * Treffer et omfang en rad i FilterMeta, tas alle radens former med. Omfang som
+ * ikke finnes i FS (manuelt vedlikeholdte klasser, emnekoder) blir stående som
+ * de er — de er allerede den formen svaret har.
+ */
+async function finnOmfangsvarianter(omfangListe) {
+    const ut = [];
+    const leggTil = (v) => {
+        const s = String(v ?? '').trim();
+        if (s && !ut.some(x => x.toLowerCase() === s.toLowerCase())) ut.push(s);
+    };
+    for (const o of (omfangListe || [])) leggTil(o);
+    if (ut.length === 0) return [];
+
+    const sokte = new Set(ut.map(s => s.toLowerCase()));
+    for (const partisjon of ['KLASSE', 'KULL']) {
+        let rader;
+        try {
+            rader = await emnerStorage.hentFilterMeta(partisjon);
+        } catch (_) {
+            continue; // Manglende FS-data skal ikke velte en rapportkjøring
+        }
+        for (const rad of rader) {
+            const former = [String(rad.Verdi || ''), navnUtenHale(rad), normaliserOmfang(rad.Verdi)]
+                .map(s => String(s || '').trim())
+                .filter(Boolean);
+            if (!former.some(f => sokte.has(f.toLowerCase()))) continue;
+            for (const f of former) leggTil(f);
+        }
+    }
+    return ut;
+}
+
+module.exports = { normaliserOmfang, erSammensatt, hentOmfangsalias, finnOmfangsvarianter };

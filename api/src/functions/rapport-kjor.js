@@ -17,6 +17,7 @@ const { filtrerTyperPåTilgang, erSkjemaskaper } = require('../lib/tilgang');
 const kryptering = require('../lib/kryptering');
 const nokkelStorage = require('../lib/nokkel-storage');
 const rapportMotor = require('../lib/rapport-motor');
+const { løsRollefiltre } = require('../lib/rapport-rollefilter');
 const hendelser = require('../lib/hendelser-storage');
 
 async function harTilgang(rapporttype, upn) {
@@ -75,7 +76,18 @@ app.http('kjorRapport', {
                 catch (_) { return s; }
             });
 
-            const resultat = rapportMotor.kjør(spec, dekryptert, body.brukerVerdier || {});
+            // Rollebaserte innebygde filtre løses opp mot den innloggede
+            // brukeren rett før kjøring. Admin slipper dem og ser alt.
+            const brukerAdmin = erAdmin(upn);
+            const kjørespec = {
+                ...spec,
+                Innebygde_filtre: await løsRollefiltre(
+                    spec.Innebygde_filtre, upn, brukerAdmin, (m) => context.log(m)
+                )
+            };
+            const antallRollefiltre = (spec.Innebygde_filtre || []).filter(f => f?.fraRolle).length;
+
+            const resultat = rapportMotor.kjør(kjørespec, dekryptert, body.brukerVerdier || {});
 
             // Berik med rapport-metadata så frontend kan vise header/tittel
             resultat.rapport = {
@@ -91,7 +103,15 @@ app.http('kjorRapport', {
                 Aktor: upn,
                 ObjektType: 'rapporttype', ObjektId: rapporttypeId,
                 Melding: `Kjørte rapport "${spec.Rapport_navn || ''}"`,
-                Detaljer: { antall: resultat.meta.antallEtterFilter, kilde: kildeId }
+                // Rollefiltrering gjør at samme rapport gir ulikt antall rader
+                // for ulike brukere. Uten dette i loggen er tallene umulige å
+                // etterprøve i ettertid.
+                Detaljer: {
+                    antall: resultat.meta.antallEtterFilter,
+                    kilde: kildeId,
+                    rollefiltre: antallRollefiltre,
+                    sattAvRolle: antallRollefiltre > 0 && !brukerAdmin
+                }
             });
 
             return { jsonBody: resultat };
