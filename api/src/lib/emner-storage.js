@@ -191,6 +191,26 @@ async function hentEmne(termin, emneId) {
     return treff[0];
 }
 
+/**
+ * Alle emnenøkler ("{EK}-{VK}") → emnekoden alene.
+ *
+ * Brukes av rolleoppslaget til å avgjøre om en omfangsverdi er et emne. Formen
+ * alene holder ikke: klassekoden «MILM23-1» ser akkurat ut som emnenøkkelen
+ * «ING2308-1», og bare den siste skal kunne kortes ned til emnekoden.
+ *
+ * Cachet som de andre leseoperasjonene — tabellen skrives bare av FS-jobben.
+ */
+async function hentEmnenokler() {
+    return cachetLesing('emnenokler', async () => {
+        const t = await tabell(TABELL_EMNER);
+        const kart = {};
+        for await (const row of t.listEntities({ queryOptions: { select: ['RowKey', 'EK'] } })) {
+            if (row.EK) kart[String(row.rowKey)] = String(row.EK);
+        }
+        return kart;
+    });
+}
+
 async function hentEmnerForUpn(upn, rolle = null) {
     if (!upn) return [];
     const upnLower = String(upn).toLowerCase();
@@ -341,6 +361,7 @@ module.exports = {
     hentAlleStudenter,
     hentStudenterForFilter,
     hentFilterMeta,
+    hentEmnenokler,
     tomLeseCache,
     hentAlleStudieprogrammer
 };

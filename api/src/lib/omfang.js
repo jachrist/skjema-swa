@@ -69,10 +69,36 @@ async function finnMetaRad(verdi) {
  *
  * En verdi uten «|» er allerede ren tekst og returneres alene.
  */
+/**
+ * Emnekoden bak en emnenøkkel, eller null hvis verdien ikke er et emne.
+ *
+ * Formen alene kan ikke avgjøre dette: klassekoden «MILM23-1» ser akkurat ut
+ * som emnenøkkelen «ING2308-1», og bare den siste skal kunne kortes ned. Derfor
+ * slås det opp i Emner-tabellen i stedet for å gjettes med et mønster.
+ */
+async function emnekodeFor(verdi) {
+    try {
+        const kart = await emnerStorage.hentEmnenokler();
+        return kart[verdi] || null;
+    } catch (_) {
+        return null; // Manglende FS-data skal ikke velte et rolleoppslag
+    }
+}
+
 async function hentOmfangsalias(verdi) {
     const start = String(verdi ?? '').trim();
     if (!start) return [];
-    if (!erSammensatt(start)) return [start];
+
+    if (!erSammensatt(start)) {
+        // Emner fra FS har nøkkelen "{emnekode}-{versjonskode}" (refresh-fs.js).
+        // Rollelista vedlikeholdes på emnet, ikke på versjonen: «Emneansvarlig
+        // for ING2308» skal ikke slutte å gjelde når emnet får versjon 2.
+        // Emnekoden legges derfor til som mindre spesifikt alias — en rolle
+        // registrert på hele nøkkelen vinner fortsatt, siden kallerne tar den
+        // første formen som har innehavere.
+        const ek = await emnekodeFor(start);
+        return ek && ek !== start ? [start, ek] : [start];
+    }
 
     const alias = [start];
     const rad = await finnMetaRad(start);
@@ -106,6 +132,21 @@ async function finnOmfangsvarianter(omfangListe) {
     if (ut.length === 0) return [];
 
     const sokte = new Set(ut.map(s => s.toLowerCase()));
+
+    // Emner: rollelista har gjerne bare emnekoden, mens svaret i skjemaet er
+    // "{emnekode}-{versjonskode}". Begge formene må med, ellers treffer ikke
+    // et rollefilter på emne.
+    try {
+        const emnekart = await emnerStorage.hentEmnenokler();
+        for (const [nokkel, ek] of Object.entries(emnekart)) {
+            if (!sokte.has(nokkel.toLowerCase()) && !sokte.has(String(ek).toLowerCase())) continue;
+            leggTil(nokkel);
+            leggTil(ek);
+        }
+    } catch (_) {
+        // Manglende FS-data skal ikke velte en rapportkjøring
+    }
+
     for (const partisjon of ['KLASSE', 'KULL']) {
         let rader;
         try {
