@@ -12,7 +12,7 @@
  * Nummer gjenbrukes ikke: nye punkter legges alltid bakerst, slik at
  * «punkt 17» betyr det samme i dag og om en måned.
  */
-const { sikreTabellFra, kontoNavnFra } = require('./storage');
+const { sikreTabellFra, glemOpprettelse, kontoNavnFra } = require('./storage');
 
 const TABELL = 'TodoPunkter';
 const PK = 'Todo';
@@ -29,6 +29,44 @@ function rk(nummer) {
 
 async function tabell() {
     return sikreTabellFra(CS, TABELL, 'TODO_STORAGE_CONNECTION_STRING');
+}
+
+function erTabellMangler(e) {
+    return e?.statusCode === 404 && /TableNotFound/i.test(`${e.code || ''} ${e.message || ''}`);
+}
+
+/**
+ * Kjør en operasjon mot tabellen, og oversett «TableNotFound» til noe som
+ * faktisk hjelper.
+ *
+ * `sikreTabellFra` svelger feil fra createTable med vilje — en connection
+ * string uten rett til å opprette tabeller skal fortsatt kunne lese tabeller
+ * som finnes. Baksiden er at avvisningen dukker opp som TableNotFound på neste
+ * kall, langt fra årsaken. Her prøver vi opprettelsen én gang til og lar den
+ * egentlige feilen komme fram.
+ */
+async function medTabell(fn) {
+    const t = await tabell();
+    try {
+        return await fn(t);
+    } catch (e) {
+        if (!erTabellMangler(e)) throw e;
+        glemOpprettelse(CS, TABELL);
+        try {
+            await t.createTable();
+        } catch (opprett) {
+            if (opprett.statusCode !== 409) {
+                const konto = kontoNavnFra(CS) || 'lagringskontoen';
+                throw new Error(
+                    `Tabellen ${TABELL} finnes ikke på ${konto}, og kunne ikke opprettes: ` +
+                    `${opprett.message}. Enten må SAS-en i TODO_STORAGE_CONNECTION_STRING ` +
+                    `tillate ressurstypen Container (srt) og rettigheten Create, eller så må ` +
+                    `tabellen opprettes én gang manuelt på lagringskontoen.`
+                );
+            }
+        }
+        return await fn(t);
+    }
 }
 
 function fraEntitet(e) {
@@ -52,22 +90,27 @@ function lagerInfo() {
 }
 
 async function listAlle() {
-    const t = await tabell();
-    const ut = [];
-    for await (const e of t.listEntities({ queryOptions: { filter: `PartitionKey eq '${PK}'` } })) {
-        ut.push(fraEntitet(e));
-    }
-    return ut.sort((a, b) => a.Nummer - b.Nummer);
+    return medTabell(async (t) => {
+        const ut = [];
+        for await (const e of t.listEntities({ queryOptions: { filter: `PartitionKey eq '${PK}'` } })) {
+            ut.push(fraEntitet(e));
+        }
+        return ut.sort((a, b) => a.Nummer - b.Nummer);
+    });
 }
 
 async function hent(nummer) {
-    const t = await tabell();
-    try {
-        return fraEntitet(await t.getEntity(PK, rk(nummer)));
-    } catch (e) {
-        if (e.statusCode === 404) return null;
-        throw e;
-    }
+    return medTabell(async (t) => {
+        try {
+            return fraEntitet(await t.getEntity(PK, rk(nummer)));
+        } catch (e) {
+            // 404 fra en tabell som finnes betyr «punktet finnes ikke».
+            // Mangler hele tabellen, skal medTabell få tak i den.
+            if (erTabellMangler(e)) throw e;
+            if (e.statusCode === 404) return null;
+            throw e;
+        }
+    });
 }
 
 async function nesteNummer(t) {
@@ -87,33 +130,34 @@ async function nesteNummer(t) {
  * den ene overskriver den andre — da prøver vi neste ledige nummer.
  */
 async function opprett({ tekst, kategori, notat }, av) {
-    const t = await tabell();
-    const na = new Date().toISOString();
-    let nummer = await nesteNummer(t);
-    for (let forsok = 0; forsok < 5; forsok++) {
-        const entitet = {
-            partitionKey: PK,
-            rowKey: rk(nummer),
-            Nummer: nummer,
-            Tekst: String(tekst || '').trim(),
-            Status: 'åpen',
-            Kategori: String(kategori || KATEGORI_STANDARD).trim() || KATEGORI_STANDARD,
-            Notat: String(notat || ''),
-            Opprettet: na,
-            OpprettetAv: String(av || ''),
-            SistEndret: na,
-            EndretAv: String(av || ''),
-            Ferdig: ''
-        };
-        try {
-            await t.createEntity(entitet);
-            return fraEntitet(entitet);
-        } catch (e) {
-            if (e.statusCode !== 409) throw e;
-            nummer++;
+    return medTabell(async (t) => {
+        const na = new Date().toISOString();
+        let nummer = await nesteNummer(t);
+        for (let forsok = 0; forsok < 5; forsok++) {
+            const entitet = {
+                partitionKey: PK,
+                rowKey: rk(nummer),
+                Nummer: nummer,
+                Tekst: String(tekst || '').trim(),
+                Status: 'åpen',
+                Kategori: String(kategori || KATEGORI_STANDARD).trim() || KATEGORI_STANDARD,
+                Notat: String(notat || ''),
+                Opprettet: na,
+                OpprettetAv: String(av || ''),
+                SistEndret: na,
+                EndretAv: String(av || ''),
+                Ferdig: ''
+            };
+            try {
+                await t.createEntity(entitet);
+                return fraEntitet(entitet);
+            } catch (e) {
+                if (e.statusCode !== 409) throw e;
+                nummer++;
+            }
         }
-    }
-    throw new Error('Fant ikke et ledig nummer — prøv igjen.');
+        throw new Error('Fant ikke et ledig nummer — prøv igjen.');
+    });
 }
 
 async function oppdater(nummer, felter, av) {
@@ -141,9 +185,14 @@ async function oppdater(nummer, felter, av) {
 }
 
 async function slett(nummer) {
-    const t = await tabell();
-    try { await t.deleteEntity(PK, rk(nummer)); return true; }
-    catch (e) { if (e.statusCode === 404) return false; throw e; }
+    return medTabell(async (t) => {
+        try { await t.deleteEntity(PK, rk(nummer)); return true; }
+        catch (e) {
+            if (erTabellMangler(e)) throw e;
+            if (e.statusCode === 404) return false;
+            throw e;
+        }
+    });
 }
 
 /**

@@ -58,6 +58,15 @@ async function sikreTabell(tabellNavn) {
 }
 
 /**
+ * Glem at vi har forsøkt å opprette tabellen, slik at neste `sikreTabell*`
+ * prøver på nytt. Trengs når opprettelsen ble avvist: uten dette ville en
+ * rettet tilgang først slå inn ved neste kaldstart.
+ */
+function glemOpprettelse(connectionString, tabellNavn) {
+    opprettet.delete(`${connectionString}::${tabellNavn}`);
+}
+
+/**
  * Kontonavnet fra en connection string, til visning i UI. Gjør det mulig å se
  * hvilket lager et miljø faktisk snakker med uten å eksponere nøkkelen.
  */
@@ -66,4 +75,8 @@ function kontoNavnFra(connectionString) {
     return m ? m[1].trim() : null;
 }
 
-module.exports = { tabellKlient, sikreTabell, tabellKlientFra, sikreTabellFra, kontoNavnFra };
+module.exports = {
+    tabellKlient, sikreTabell,
+    tabellKlientFra, sikreTabellFra,
+    glemOpprettelse, kontoNavnFra
+};

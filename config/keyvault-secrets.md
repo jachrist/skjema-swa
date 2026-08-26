@@ -27,9 +27,24 @@ Managed Identity kan ikke brukes til dette — MI er tenant-bundet, og prod-appe
 identitet finnes ikke i dev-tenanten. Derfor delt nøkkel.
 
 Anbefalt: bruk en **SAS på kontonivå** som bare gir tilgang til Table-tjenesten
-(rettigheter: read, write, delete, list, add, update, process) i stedet for
-kontonøkkelen, så en lekkasje ikke gir tilgang til blobene. Connection stringen
-blir da på formen:
+i stedet for kontonøkkelen, så en lekkasje ikke gir tilgang til blobene.
+
+I portalen (Storage account → Shared access signature):
+
+| Felt | Verdi |
+|---|---|
+| Allowed services | **Table** (bare den) |
+| Allowed resource types | **Container** og **Object** |
+| Allowed permissions | Read, Write, Delete, List, Add, Create, Update, Process |
+
+**Container-typen er ikke valgfri.** «Table» som ressurs er en *container* i SAS-
+terminologien, mens radene er *objects*. Med bare Object får appen lest og
+skrevet rader i en tabell som finnes, men den får ikke opprette `TodoPunkter`
+første gang — og feilen kommer da som `TableNotFound`, ikke som en
+tilgangsfeil. Alternativet er å opprette tabellen manuelt én gang og la SAS-en
+stå på Object alene.
+
+Connection stringen blir på formen:
 
 ```
 TableEndpoint=https://<konto>.table.core.windows.net/;SharedAccessSignature=<sas-uten-ledende-spørsmålstegn>
