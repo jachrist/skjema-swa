@@ -580,11 +580,29 @@
 
         function rendrRoller() {
             document.getElementById('innhold').innerHTML = `
+                <div class="panel" id="roller-import-panel" style="display: none;">
+                    <h2>Importer roller fra Excel eller CSV</h2>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 10px;">
+                        Kolonner: <code>Rolle</code> (påkrevd), <code>UPN</code> eller <code>E-post</code> (påkrevd),
+                        <code>Omfang</code>, <code>Fornavn</code>, <code>Etternavn</code>, <code>Rollebeskrivelse</code>.
+                        Første rad må være overskrifter.<br>
+                        <strong>Importen eier bare sine egne rader.</strong> Alt den legger inn merkes med kilde
+                        <code>import</code>, og bare de radene kan den fjerne igjen. Innehavere du har lagt inn
+                        for hånd står urørt — også om de er med i fila.
+                    </div>
+                    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                        <input type="file" id="roller-import-fil" accept=".xlsx,.xlsm,.xls,.csv,.txt"
+                            onchange="rollerForhandsvisImport()" style="font-size: 13px;">
+                        <button class="knapp mini" onclick="rollerSkjulImport()">Lukk</button>
+                    </div>
+                    <div id="roller-import-resultat" style="margin-top: 12px;"></div>
+                </div>
                 <div class="to-spalter">
                     <div class="kolonne">
                         <input type="text" id="roller-sok" placeholder="🔍 Søk rolle eller omfang…" oninput="rollerFiltrer()">
-                        <div style="margin-top: 8px;">
+                        <div style="margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap;">
                             <button class="knapp sekundær mini" onclick="rollerVisNyForm()">+ Ny rolle</button>
+                            <button class="knapp sekundær mini" onclick="rollerVisImport()">📥 Importer</button>
                         </div>
                         <div id="roller-ny-form" style="display: none; margin-top: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-section);">
                             <div style="font-weight: 600; margin-bottom: 6px; font-size: 13px;">Ny rolle</div>
@@ -697,6 +715,108 @@
                 document.getElementById(id).value = '';
             }
         };
+        // ---- Import fra Excel/CSV ----
+        // Fila sendes to ganger: først som tørrkjøring for å vise planen, så
+        // med bekreft=true for å utføre den. Serveren kjører samme kode begge
+        // ganger, så det som vises er det som skjer.
+        window.rollerVisImport = () => {
+            document.getElementById('roller-import-panel').style.display = '';
+            document.getElementById('roller-import-resultat').innerHTML = '';
+        };
+        window.rollerSkjulImport = () => {
+            document.getElementById('roller-import-panel').style.display = 'none';
+            document.getElementById('roller-import-fil').value = '';
+            document.getElementById('roller-import-resultat').innerHTML = '';
+        };
+
+        async function rollerSendImport(bekreft) {
+            const fil = document.getElementById('roller-import-fil').files[0];
+            if (!fil) return null;
+            const fd = new FormData();
+            fd.append('fil', fil);
+            if (bekreft) fd.append('bekreft', 'true');
+            const res = await fetch('/api/roller/import', { method: 'POST', body: fd });
+            const data = await res.json().catch(() => ({ melding: `${res.status} ${res.statusText}` }));
+            if (!res.ok) { const e = new Error(data.melding || 'Import feilet'); e.data = data; throw e; }
+            return data;
+        }
+
+        function rollerImportListe(tittel, rader, antall) {
+            if (!antall) return '';
+            const vist = rader.map(r =>
+                `${escHtml(r.Rolle)}${r.Omfang ? '(' + escHtml(r.Omfang) + ')' : ''} — ${escHtml(r.UPN)}`
+            ).join('<br>');
+            const mer = antall > rader.length ? `<br><em>…og ${antall - rader.length} til</em>` : '';
+            return `<div style="margin-top: 8px;">
+                <div style="font-weight: 600; font-size: 12px;">${escHtml(tittel)} (${antall})</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 2px;">${vist}${mer}</div>
+            </div>`;
+        }
+
+        function rollerImportFeilliste(feil) {
+            if (!feil || feil.length === 0) return '';
+            const vist = feil.slice(0, 20).map(f =>
+                `Linje ${f.linje}: ${escHtml(f.melding)}`
+            ).join('<br>');
+            const mer = feil.length > 20 ? `<br><em>…og ${feil.length - 20} til</em>` : '';
+            return `<div class="banner advarsel" style="margin-top: 10px;">
+                <strong>${feil.length} rad${feil.length === 1 ? '' : 'er'} ble hoppet over:</strong><br>${vist}${mer}
+            </div>`;
+        }
+
+        window.rollerForhandsvisImport = async () => {
+            const el = document.getElementById('roller-import-resultat');
+            el.innerHTML = '<div class="laster">Leser fila…</div>';
+            try {
+                const r = await rollerSendImport(false);
+                if (!r) { el.innerHTML = ''; return; }
+                const s = r.sammendrag;
+                const endringer = s.leggTil + s.oppdater + s.fjern;
+                el.innerHTML = `
+                    <div class="banner ${endringer ? 'info' : 'suksess'}">
+                        Leste <strong>${s.lest}</strong> rad${s.lest === 1 ? '' : 'er'} fra ${escHtml(r.filnavn)}.
+                        ${endringer
+                            ? `Importen vil legge til <strong>${s.leggTil}</strong>, oppdatere <strong>${s.oppdater}</strong>
+                               og fjerne <strong>${s.fjern}</strong>.`
+                            : 'Ingenting å endre — lista er allerede i takt med fila.'}
+                        ${s.uendret ? `<br><small>${s.uendret} rad${s.uendret === 1 ? '' : 'er'} er uendret.</small>` : ''}
+                        ${s.manuelle ? `<br><small>${s.manuelle} rad${s.manuelle === 1 ? '' : 'er'} finnes fra før som manuelt innlagt og røres ikke.</small>` : ''}
+                    </div>
+                    ${rollerImportFeilliste(r.feil)}
+                    ${rollerImportListe('Legges til', r.eksempler.leggTil, s.leggTil)}
+                    ${rollerImportListe('Oppdateres', r.eksempler.oppdater, s.oppdater)}
+                    ${rollerImportListe('Fjernes', r.eksempler.fjern, s.fjern)}
+                    ${rollerImportListe('Står urørt (manuelt innlagt)', r.eksempler.manuelle, s.manuelle)}
+                    ${endringer ? `<div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp primær" onclick="rollerUtforImport()">Utfør importen</button>
+                    </div>` : ''}
+                `;
+            } catch (e) {
+                el.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>${rollerImportFeilliste(e.data?.feil)}`;
+            }
+        };
+
+        window.rollerUtforImport = async () => {
+            const el = document.getElementById('roller-import-resultat');
+            if (!confirm('Utfør importen? Rader som er merket for fjerning slettes for godt.')) return;
+            el.innerHTML = '<div class="laster">Importerer…</div>';
+            try {
+                const r = await rollerSendImport(true);
+                const s = r.sammendrag;
+                el.innerHTML = `
+                    <div class="banner suksess">
+                        ✓ Importert fra ${escHtml(r.filnavn)}: ${s.leggTil} lagt til, ${s.oppdater} oppdatert,
+                        ${s.fjern} fjernet.
+                    </div>
+                    ${rollerImportFeilliste(r.feil)}
+                `;
+                document.getElementById('roller-import-fil').value = '';
+                await rollerLast();
+            } catch (e) {
+                el.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`;
+            }
+        };
+
         window.rollerOpprett = async () => {
             const rolle = document.getElementById('nr-rolle').value.trim();
             const omfang = document.getElementById('nr-omfang').value.trim();
@@ -916,7 +1036,8 @@
             'todo.opprett': 'Oppgave lagt til',
             'todo.oppdater': 'Oppgave endret',
             'todo.slett': 'Oppgave slettet',
-            'todo.importer': 'Oppgaver importert'
+            'todo.importer': 'Oppgaver importert',
+            'rolle.import': 'Roller importert fra fil'
         };
 
         function rendrHendelser() {

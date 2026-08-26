@@ -122,6 +122,65 @@ async function erMedlem(rolleStreng, upn) {
     return innehavere.some(i => String(i.UPN || '').toLowerCase() === upnLower);
 }
 
+/** Alle rader i tabellen. Importen trenger dem for å se hva som endres. */
+async function hentAlle() {
+    const t = await tabell();
+    const ut = [];
+    for await (const e of t.listEntities()) ut.push(radTilInnehaver(e));
+    return ut;
+}
+
+function radNokkel(Omfang, UPN) {
+    return `${Omfang || ''}|${String(UPN).toLowerCase()}`;
+}
+
+/**
+ * Skriv og slett mange rader i batch-transaksjoner.
+ *
+ * Table Storage krever at alle handlinger i én transaksjon deler PartitionKey,
+ * og tar maks 100 om gangen — derfor grupperes de per rolle. Rad-for-rad er
+ * ikke et alternativ: SWA kutter kallet etter 45 sekunder, og en import på
+ * noen hundre rader ville hengt stille.
+ *
+ * @returns {Promise<{skrevet: number, slettet: number, transaksjoner: number}>}
+ */
+async function utforBatch({ skriv = [], slett = [] }) {
+    const t = await tabell();
+    const na = new Date().toISOString();
+    const grupper = new Map(); // Rolle → handlinger
+
+    const leggTil = (rolle, handling) => {
+        if (!grupper.has(rolle)) grupper.set(rolle, []);
+        grupper.get(rolle).push(handling);
+    };
+
+    for (const r of skriv) {
+        leggTil(r.Rolle, ['upsert', {
+            partitionKey: r.Rolle,
+            rowKey: radNokkel(r.Omfang, r.UPN),
+            FN: r.FN || '', EN: r.EN || '', EP: r.UPN,
+            Kilde: r.Kilde || 'import',
+            Rollebeskrivelse: r.Rollebeskrivelse || '',
+            SistOppdatert: na
+        }, 'Replace']);
+    }
+    for (const r of slett) {
+        leggTil(r.Rolle, ['delete', {
+            partitionKey: r.Rolle,
+            rowKey: radNokkel(r.Omfang, r.UPN)
+        }]);
+    }
+
+    let transaksjoner = 0;
+    for (const handlinger of grupper.values()) {
+        for (let i = 0; i < handlinger.length; i += 100) {
+            await t.submitTransaction(handlinger.slice(i, i + 100));
+            transaksjoner++;
+        }
+    }
+    return { skrevet: skriv.length, slettet: slett.length, transaksjoner };
+}
+
 /**
  * Alle omfang én bruker har en gitt rolle for.
  *
@@ -174,6 +233,8 @@ module.exports = {
     hentAlleGrupper,
     hentNavnekart,
     hentInnehavere,
+    hentAlle,
+    utforBatch,
     erMedlem,
     hentOmfangForBruker,
     leggTilInnehaver,
