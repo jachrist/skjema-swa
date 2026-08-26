@@ -337,7 +337,21 @@ app.http('lagreBeslutning', {
                 varslinger.push(varsling.sendVarslingAktiveSteg(skjemaKlartekst, skjematype, vanligeSteg, varslOpts));
                 for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjemaKlartekst, s, log));
             }
-            Promise.all(varslinger).catch(e => context.log(`varsling/ekstern-flyt FEIL (beslutning): ${e.message}`));
+            // allSettled i stedet for all: resultatene ble kastet før, så en
+            // varsling som ble hoppet over etterlot seg ingen spor.
+            Promise.allSettled(varslinger).then(resultater => {
+                for (const r of resultater) {
+                    if (r.status === 'rejected') {
+                        context.log(`varsling (beslutning): FEIL — ${r.reason?.message || r.reason}`);
+                        continue;
+                    }
+                    for (const v of (Array.isArray(r.value) ? r.value : [r.value])) {
+                        if (v?.status && v.status !== 'ok') {
+                            context.log(`varsling (beslutning): ${v.status}${v.melding ? ' — ' + v.melding : ''}`);
+                        }
+                    }
+                }
+            }).catch(() => { /* logging skal aldri velte noe */ });
 
             return {
                 jsonBody: {

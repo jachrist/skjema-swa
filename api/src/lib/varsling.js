@@ -279,7 +279,13 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
 async function sendFerdigVarsling(skjema, skjematype, opts = {}) {
     const log = opts.log || (() => {});
     const fv = skjematype?.Ferdigvarsling || {};
-    if (fv.Aktiv !== true) return { status: 'hoppet-over', melding: 'Ferdigvarsling ikke aktivert' };
+    if (fv.Aktiv !== true) {
+        // Uten denne linja er «det kom ingen e-post» umulig å skille fra
+        // «skjematypen har ikke slått den på».
+        log(`varsling: ferdigvarsling ikke aktivert for skjematype ${skjema?.Skjematype_id}`
+            + ` (Ferdigvarsling ${skjematype?.Ferdigvarsling ? `finnes, Aktiv=${JSON.stringify(fv.Aktiv)}` : 'mangler helt'})`);
+        return { status: 'hoppet-over', melding: 'Ferdigvarsling ikke aktivert' };
+    }
 
     const mottakere = await løsMottakere(fv.Mottakere, skjema, log);
     if (mottakere.length === 0) {
