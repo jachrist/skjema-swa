@@ -752,6 +752,30 @@
                             <button class="knapp mini sekundær" onclick="apneKvitteringEditor()" id="kv-rediger">Rediger melding…</button>
                         </div>
                         <div class="melding-oppsummering" id="kv-oppsummering"></div>
+                        <div style="margin-top: 8px;">
+                            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">
+                                Kopi til <small>— samme melding til en rolle eller person. Rolleomfang kan hentes fra et felt,
+                                og et flervalgsfelt gir én mottakerrolle per valg. Dette er kanalen for skjematyper
+                                <em>uten</em> behandlingssteg, som er ferdige i det de sendes inn.</small>
+                            </div>
+                            <div class="tilgang-slot" data-slot="kv-kopi"></div>
+                        </div>
+                    </div>
+                    <div class="rad">
+                        <label>Ferdigvarsling <small>(e-post når hele skjemaet er ferdig behandlet)</small></label>
+                        <div style="display: flex; align-items: center; gap: 10px; margin-top: 4px;">
+                            <label class="checkbox-rad" style="margin: 0;">
+                                <input type="checkbox" id="fv-aktiv" ${data.Ferdigvarsling?.Aktiv === true ? 'checked' : ''} onchange="setFerdigvarslingAktiv(this.checked)">
+                                Send ferdigvarsling
+                            </label>
+                            <button class="knapp mini sekundær" onclick="apneFerdigvarslingEditor()">Rediger melding…</button>
+                        </div>
+                        <div style="font-size: 11px; color: var(--text-secondary); margin: 4px 0;">
+                            Sendes når siste behandlingssteg er avgjort. Feltreferanser i mottakerrollen slås opp
+                            på nytt der og da, mot svarene slik de står ved ferdigstillelse.
+                        </div>
+                        <div class="tilgang-slot" data-slot="fv-mottakere"></div>
+                        <div class="melding-oppsummering" id="fv-oppsummering"></div>
                     </div>
                     <div class="rad">
                         <label>Personvern <small>(anvendes ved siste ferdig-behandling)</small></label>
@@ -874,6 +898,7 @@
             rendrerPerioder();
             rendrerTilgang();
             oppdaterKvitteringOppsummering();
+            oppdaterFerdigvarslingOppsummering();
             oppdaterSPOppsummering();
             appliserKollapsState();
             fyllGevinstoppfolging();
@@ -895,6 +920,70 @@
                     onEndring: (ny) => { data.Eiere = ny; }
                 });
             }
+            rendrerVarslingsmottakere();
+        }
+
+        /**
+         * Mottakervelgere for kvittering-kopi og ferdigvarsling. Team vises ikke:
+         * varslingen slår opp e-post via rollelista, og et team gir ingen adresser.
+         */
+        function rendrerVarslingsmottakere() {
+            const felter = samleFelterFør(data.Seksjoner.length - 1, -1);
+            const felles = { kompakt: true, rolleGrupper, teamNavn: [], api, visTeam: false, feltReferanser: felter };
+
+            const kopiEl = document.querySelector('.tilgang-slot[data-slot="kv-kopi"]');
+            if (kopiEl) {
+                byggTilgangEditor(kopiEl, data.Innsenderkvittering?.Kopi, {
+                    ...felles,
+                    onEndring: (ny) => {
+                        if (!data.Innsenderkvittering) data.Innsenderkvittering = { Aktiv: true };
+                        data.Innsenderkvittering.Kopi = { Personer: ny.Personer, Roller: ny.Roller };
+                    }
+                });
+            }
+
+            const fvEl = document.querySelector('.tilgang-slot[data-slot="fv-mottakere"]');
+            if (fvEl) {
+                byggTilgangEditor(fvEl, data.Ferdigvarsling?.Mottakere, {
+                    ...felles,
+                    onEndring: (ny) => {
+                        if (!data.Ferdigvarsling) data.Ferdigvarsling = { Aktiv: false };
+                        data.Ferdigvarsling.Mottakere = { Personer: ny.Personer, Roller: ny.Roller };
+                    }
+                });
+            }
+        }
+
+        window.setFerdigvarslingAktiv = (v) => {
+            if (!data.Ferdigvarsling) data.Ferdigvarsling = {};
+            data.Ferdigvarsling.Aktiv = v;
+        };
+
+        window.apneFerdigvarslingEditor = async () => {
+            const fv = data.Ferdigvarsling || {};
+            const ny = await apneMeldingModal({ Emne: fv.Emne || '', Tekst: fv.Tekst || '' }, {
+                tittel: 'Ferdigvarsling',
+                forslag: {
+                    Emne: 'Ferdig behandlet: "$skjemanavn"',
+                    Tekst: '<p>Hei,</p>\n<p>Skjemaet "<b>$skjemanavn</b>" ($skjema_id) er ferdig behandlet.</p>\n<p><a href="$lenke">Åpne skjemaet</a></p>'
+                },
+                feltreferanser: samleFeltreferanser(data)
+            });
+            if (ny === null) return; // avbrutt
+            if (!data.Ferdigvarsling) data.Ferdigvarsling = { Aktiv: false };
+            data.Ferdigvarsling.Emne = ny.Emne;
+            data.Ferdigvarsling.Tekst = ny.Tekst;
+            data.Ferdigvarsling.Format = ny.Format || 'HTML';
+            oppdaterFerdigvarslingOppsummering();
+        };
+
+        function oppdaterFerdigvarslingOppsummering() {
+            const el = document.getElementById('fv-oppsummering');
+            if (!el) return;
+            const fv = data.Ferdigvarsling || {};
+            el.textContent = fv.Emne
+                ? `Emne: ${forsteLinje(fv.Emne, 70)}`
+                : 'Ingen egen melding — standardteksten brukes.';
         }
 
         // ==================== KOLLAPS ====================

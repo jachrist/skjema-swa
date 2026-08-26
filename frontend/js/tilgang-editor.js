@@ -56,6 +56,10 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     // øverst som overstyrer person/rolle/team-sjekker. Kun meningsfull for
     // Publikum-tilgang (ellers ville alle blitt eiere/behandlere).
     const visAlleTilgang = options.visAlleTilgang === true;
+    // visTeam: false → skjul Team-seksjonen. Brukes av varslingsmottakere, hvor
+    // teamoppslag ikke gir e-postadresser — en velger som ikke virker er verre
+    // enn ingen velger.
+    const visTeam = options.visTeam !== false;
 
     // Kloningsstate — muter aldri innkommende
     let state = normaliserVerdi(verdi);
@@ -103,7 +107,7 @@ export function byggTilgangEditor(container, verdi, options = {}) {
         kroppen.style.cssText = `display: flex; flex-direction: column; gap: 10px; ${state.AlleTilgang ? 'opacity: 0.4; pointer-events: none;' : ''}`;
         kroppen.appendChild(byggPersonerSeksjon());
         kroppen.appendChild(byggRollerSeksjon());
-        kroppen.appendChild(byggTeamSeksjon());
+        if (visTeam) kroppen.appendChild(byggTeamSeksjon());
         wrap.appendChild(kroppen);
 
         container.appendChild(wrap);

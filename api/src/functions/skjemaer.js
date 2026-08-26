@@ -271,6 +271,13 @@ app.http('lagreBeslutning', {
                 }
             }
 
+            // Varslingene under skal ha skjemaet i klartekst. Krypteringen
+            // returnerer en ny kopi, så denne referansen beholder svarene.
+            // Uten den fikk varslingen ved siste beslutning et skjema uten
+            // Seksjoner og uten innsender-epost i Alt-mode, og ble stille
+            // hoppet over.
+            const skjemaKlartekst = skjema;
+
             // Ved siste ferdig-status: anonymiser + krypter før lagring
             // (rekkefølge må være anonymiser → krypter, ellers krypteres den
             // ekte innsender-eposten i Alt-mode)
@@ -312,19 +319,23 @@ app.http('lagreBeslutning', {
             // Varsling (fire-and-forget) — kalles etter lagring
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             const skjematype = st?.JSON || {};
-            const nyeAktive = beregnAktiveSteg(skjema);
-            const alleFerdig = alleStegFerdig(skjema);
+            const nyeAktive = beregnAktiveSteg(skjemaKlartekst);
+            const alleFerdig = alleStegFerdig(skjemaKlartekst);
             const beslutningTekst = valgtValg?.Tekst || '';
             const varslOpts = { log: (m) => context.log(m), request };
             const log = (m) => context.log(m);
             const varslinger = [
-                varsling.sendBeslutningVarsling(skjema, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', varslOpts)
+                varsling.sendBeslutningVarsling(skjemaKlartekst, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', varslOpts)
             ];
-            if (!alleFerdig) {
+            if (alleFerdig) {
+                // Hele skjemaet er ferdig behandlet — varsle rollene skjematypen
+                // har pekt ut. Feltreferanser løses opp mot klartekst-utgaven.
+                varslinger.push(varsling.sendFerdigVarsling(skjemaKlartekst, skjematype, varslOpts));
+            } else {
                 const flytSteg = nyeAktive.filter(s => (s.Flyt_url || '').trim());
                 const vanligeSteg = nyeAktive.filter(s => !(s.Flyt_url || '').trim());
-                varslinger.push(varsling.sendVarslingAktiveSteg(skjema, skjematype, vanligeSteg, varslOpts));
-                for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjema, s, log));
+                varslinger.push(varsling.sendVarslingAktiveSteg(skjemaKlartekst, skjematype, vanligeSteg, varslOpts));
+                for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjemaKlartekst, s, log));
             }
             Promise.all(varslinger).catch(e => context.log(`varsling/ekstern-flyt FEIL (beslutning): ${e.message}`));
 
@@ -797,6 +808,10 @@ app.http('lagreSkjema', {
                 }
             }
 
+            // Varslingene under skal ha skjemaet i klartekst — krypteringen
+            // returnerer en ny kopi, så denne referansen beholder svarene.
+            const skjemaKlartekst = skjemaData;
+
             // Ved status=5 (avsluttet): anonymiser + krypter før lagring.
             // Trigges både for skjematyper uten behandling (direkte-arkivering)
             // og for de som ble ferdig etter siste beslutning.
@@ -842,28 +857,41 @@ app.http('lagreSkjema', {
                 }
             }
 
-            // Varsling ved innsending (status 2 = Innsendt, ellers mellomlagring)
-            // Fire-and-forget så feil i SMTP ikke feiler hovedhandlingen.
-            // NB: samme uttrykk som erInnsending over, men evaluert etter skip-
-            // logikken. Et skjema der alle steg ble hoppet over står nå med
-            // status 5 og varsles ikke — bevisst forskjell, ikke duplisering.
-            const bleInnsendt = skjemaData.Skjema_status === 2 && (erNytt || (eksisterende?.Skjema_status || 0) !== 2);
-            if (bleInnsendt) {
+            // Varsling ved innsending. Fire-and-forget så feil i SMTP ikke
+            // feiler hovedhandlingen.
+            //
+            // `erInnsending` ble regnet ut før skip-logikken. Et skjema uten
+            // behandlingssteg — eller der alle steg ble hoppet over — står her
+            // med status 5, men er like fullt nettopp sendt inn og skal ha
+            // kvittering. Fram til nå falt de ut av testen på status 2 og fikk
+            // ingen varsling i det hele tatt.
+            const gikkTilBehandling = skjemaKlartekst.Skjema_status === 2 && (erNytt || (eksisterende?.Skjema_status || 0) !== 2);
+            const bleFerdigVedInnsending = erInnsending && skjemaKlartekst.Skjema_status === 5;
+            if (gikkTilBehandling || bleFerdigVedInnsending) {
                 const st = await skjemaStorage.hentSkjematype(skjematypeId);
                 const skjematype = st?.JSON || {};
-                const aktive = beregnAktiveSteg(skjemaData);
+                const aktive = beregnAktiveSteg(skjemaKlartekst);
                 const varslOpts = { log: (m) => context.log(m), request };
 
                 // Splitt aktive: eksterne flyt-steg vs vanlige (som får varsling)
                 const flytSteg = aktive.filter(s => (s.Flyt_url || '').trim());
                 const vanligeSteg = aktive.filter(s => !(s.Flyt_url || '').trim());
 
+                // Ferdigvarslingen gjelder skjematyper som HAR behandling, men
+                // hvor alle stegene ble hoppet over. Har typen ingen steg i det
+                // hele tatt, er kvitteringens Kopi riktig kanal — ellers ville
+                // det gått to like e-poster i samme sekund.
+                const harBehandling = Array.isArray(skjemaKlartekst.Behandling) && skjemaKlartekst.Behandling.length > 0;
+
                 const log = (m) => context.log(m);
                 Promise.all([
-                    varsling.sendInnsenderKvittering(skjemaData, skjematype, varslOpts),
-                    varsling.sendVarslingAktiveSteg(skjemaData, skjematype, vanligeSteg, varslOpts),
-                    ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaData, s, log)),
-                    oppdaterSPListe(skjemaData, skjematype, log)
+                    varsling.sendInnsenderKvittering(skjemaKlartekst, skjematype, varslOpts),
+                    ...(bleFerdigVedInnsending && harBehandling
+                        ? [varsling.sendFerdigVarsling(skjemaKlartekst, skjematype, varslOpts)]
+                        : []),
+                    varsling.sendVarslingAktiveSteg(skjemaKlartekst, skjematype, vanligeSteg, varslOpts),
+                    ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaKlartekst, s, log)),
+                    oppdaterSPListe(skjemaKlartekst, skjematype, log)
                 ]).catch(e => context.log(`varsling/ekstern-flyt/sp FEIL (innsending): ${e.message}`));
             }
 
