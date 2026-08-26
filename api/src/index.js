@@ -31,6 +31,7 @@ require('./functions/ai-analyser');
 require('./functions/oppslag');
 require('./functions/rapporttyper');
 require('./functions/rapport-kjor');
+require('./functions/todo');
 
 // Etter hvert:
 // require('./functions/skjema');
