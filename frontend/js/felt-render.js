@@ -393,10 +393,10 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
         verktoy.style.cssText = 'width: 100%; margin: 0 0 4px 0;';
         merkAlle = document.createElement('button');
         merkAlle.type = 'button';
-        merkAlle.textContent = 'Merk alle';
+        merkAlle.textContent = 'Velg alle';
         fjernAlle = document.createElement('button');
         fjernAlle.type = 'button';
-        fjernAlle.textContent = 'Fjern alle';
+        fjernAlle.textContent = 'Opphev alle';
         verktoy.append(merkAlle, fjernAlle);
         container.appendChild(verktoy);
     }
@@ -642,18 +642,33 @@ function _lagFlervalgDropdown(felt, feltId, initialSvar = []) {
         return o;
     });
 
+    // Verktøyraden kommer automatisk når lista er lang nok til at det blir
+    // tungvint å klikke seg gjennom den, i tillegg til når skjemaskaperen har
+    // krysset av for MerkAlle. Grensa er lav med vilje: under seks valg ser man
+    // hele lista, og knappene er mer støy enn hjelp.
+    const AUTO_VERKTOY_FRA = 6;
+    // «Velg alle» gir bare mening når alt faktisk kan velges. Et felt med
+    // Max_valg = 3 og ti alternativer får derfor bare «Opphev alle» — maks er
+    // Infinity når MerkAlle er satt, så det tilfellet dekkes av samme test.
+    const kanVelgeAlle = maks >= valgListe.length;
+    const visVerktoy = maks > 1 && valgListe.length > 0
+        && (felt.MerkAlle || valgListe.length >= AUTO_VERKTOY_FRA);
+
     let merkAlle = null;
     let fjernAlle = null;
-    if (felt.MerkAlle) {
+    if (visVerktoy) {
         const verktoy = document.createElement('div');
         verktoy.className = 'dropdown-verktoy';
-        merkAlle = document.createElement('button');
-        merkAlle.type = 'button';
-        merkAlle.textContent = 'Merk alle';
+        if (kanVelgeAlle) {
+            merkAlle = document.createElement('button');
+            merkAlle.type = 'button';
+            merkAlle.textContent = 'Velg alle';
+            verktoy.appendChild(merkAlle);
+        }
         fjernAlle = document.createElement('button');
         fjernAlle.type = 'button';
-        fjernAlle.textContent = 'Fjern alle';
-        verktoy.append(merkAlle, fjernAlle);
+        fjernAlle.textContent = 'Opphev alle';
+        verktoy.appendChild(fjernAlle);
         container.appendChild(verktoy);
     }
 
@@ -778,6 +793,8 @@ function _lagFlervalgDropdown(felt, feltId, initialSvar = []) {
             tegn();
             meldEndring();
         });
+    }
+    if (fjernAlle) {
         fjernAlle.addEventListener('click', () => {
             if (container._valgte.length === 0) return;
             container._valgte = [];
