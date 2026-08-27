@@ -124,6 +124,36 @@ app.http('utsendingOpprett', {
                 }
             }
 
+            // En mottaker uten brukbart `mottaker`-felt ble tidligere hoppet
+            // stille over, og kalleren fikk 200 med tom lenke-liste. Den
+            // vanligste årsaken er at lista er pakket i en ekstra array —
+            // lett å få til i Power Automate, og umulig å se på svaret.
+            const avviste = [];
+            for (const [i, rå] of mottakere.entries()) {
+                if (Array.isArray(rå)) {
+                    avviste.push(`mottakere[${i}] er en liste, ikke et objekt — er mottakerlista pakket i en ekstra array?`);
+                    continue;
+                }
+                if (!rå || typeof rå !== 'object') {
+                    avviste.push(`mottakere[${i}] er ${rå === null ? 'null' : typeof rå}, forventet objekt med { mottaker }`);
+                    continue;
+                }
+                if (!String(rå.mottaker || '').trim()) {
+                    avviste.push(`mottakere[${i}] mangler feltet "mottaker"`);
+                    continue;
+                }
+            }
+            if (avviste.length > 0) {
+                return {
+                    status: 400,
+                    jsonBody: {
+                        status: 'feil',
+                        melding: `Ingen lenker opprettet — ${avviste.length} av ${mottakere.length} mottakere er ugyldige`,
+                        avviste: avviste.slice(0, 20)
+                    }
+                };
+            }
+
             for (const rå of mottakere) {
                 const mottaker = String(rå?.mottaker || '').trim().toLowerCase();
                 if (!mottaker) continue;
