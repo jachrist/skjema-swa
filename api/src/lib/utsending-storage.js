@@ -8,7 +8,8 @@
  *   SkjematypeId, Jti, Opprettet, KanalHint,
  *   Prefilled (JSON-streng: { "sek-felt": [verdi(er)] }),
  *   SvarSkjemaId (tom hvis ubesvart), SvarTid (ISO),
- *   SistPurret (ISO), SenderSkjemaId, OpprettetAv
+ *   SistPurret (ISO), SenderSkjemaId, OpprettetAv,
+ *   Purretekst (valgfri tilleggstekst som følger med til purre-flyten)
  */
 const { tabellKlient, sikreTabell } = require('./storage');
 const { odata } = require('@azure/data-tables');
@@ -30,7 +31,11 @@ function rk(mottaker) {
 // vi i stedet med en melding som sier hvem og hvor mye.
 const PREFILLED_MAKS = 30000;
 
-async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalHint, senderSkjemaId, opprettetAv }) {
+// Purreteksten er ment som én setning i en e-post, ikke et brødtekstfelt.
+// Taket hindrer at en innlimt HTML-blokk sprenger 32 KiB-grensa per egenskap.
+const PURRETEKST_MAKS = 1000;
+
+async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalHint, senderSkjemaId, opprettetAv, purretekst }) {
     const t = await tabell();
     const prefilledJson = prefilled ? JSON.stringify(prefilled) : '';
     if (prefilledJson.length > PREFILLED_MAKS) {
@@ -51,7 +56,8 @@ async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalH
         SvarTid: '',
         SistPurret: '',
         SenderSkjemaId: String(senderSkjemaId || ''),
-        OpprettetAv: String(opprettetAv || '')
+        OpprettetAv: String(opprettetAv || ''),
+        Purretekst: String(purretekst || '').slice(0, PURRETEKST_MAKS)
     }, 'Replace');
 }
 
@@ -136,7 +142,8 @@ async function listUbesvarte({ maksDagerSidenOpprettet = 14, minDagerSidenPurrin
             BatchId: e.partitionKey, Mottaker: e.rowKey,
             SkjematypeId: e.SkjematypeId, Jti: e.Jti, Opprettet: e.Opprettet,
             KanalHint: e.KanalHint,
-            SenderSkjemaId: e.SenderSkjemaId || '', OpprettetAv: e.OpprettetAv || ''
+            SenderSkjemaId: e.SenderSkjemaId || '', OpprettetAv: e.OpprettetAv || '',
+            Purretekst: e.Purretekst || ''
         });
     }
     return ut;

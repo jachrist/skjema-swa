@@ -9,6 +9,7 @@
  *       batchId: "SKJ-2026-011" | "custom-id",   // gruppe-nøkkel for status/purring
  *       senderSkjemaId?: "SKJ-2026-011",         // sporing: skjemaet som utløste utsendingen
  *       kanalHint?: "epost" | "sms",
+ *       purretekst?: "...",                      // følger batchen til purre-flyten
  *       mottakere: [
  *         { mottaker: "nn@mil.no", prefilled?: { "1-01": ["Verdi"], "2-03": ["4"] } },
  *         ...
@@ -56,6 +57,10 @@ function harFlytNokkel(request, context) {
     } catch (e) { return { ok: false, årsak: 'x-flow-key sammenligning feilet: ' + e.message }; }
 }
 
+// Skjemaforklaringen er skrevet for skjemasida og kan være lang. I en purring
+// trengs bare nok til å kjenne igjen skjemaet, og teksten sendes per mottaker.
+const BESKRIVELSE_MAKS = 1000;
+
 function baseUrl(request) {
     if (process.env.SWA_URL) return String(process.env.SWA_URL).replace(/\/$/, '');
     // Fallback: rekonstruér fra request
@@ -90,6 +95,7 @@ app.http('utsendingOpprett', {
             const batchId = String(body.batchId || '').trim() || `batch-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
             const senderSkjemaId = String(body.senderSkjemaId || '').trim();
             const kanalHint = String(body.kanalHint || 'epost').trim();
+            const purretekst = String(body.purretekst || '').trim();
             const mottakere = Array.isArray(body.mottakere) ? body.mottakere : [];
             const opprettetAv = upn || 'flyt';
 
@@ -126,7 +132,7 @@ app.http('utsendingOpprett', {
                 const token = utsendingToken.utsted({ batchId, mottaker, skjematypeId, jti });
                 await utsendingStorage.opprett({
                     batchId, mottaker, skjematypeId, jti, prefilled,
-                    kanalHint, senderSkjemaId, opprettetAv
+                    kanalHint, senderSkjemaId, opprettetAv, purretekst
                 });
                 lenker.push({
                     mottaker,
@@ -274,7 +280,21 @@ app.http('utsendingValider', {
  * hver som purret. Fire-and-forget — feiler ikke om PA er nede.
  *
  * Body (valgfritt):
- *   { batchId?: "..." }   — hvis satt: purr KUN denne batchen (manuell trigger)
+ *   { batchId?: "...",      // hvis satt: purr KUN denne batchen (manuell trigger)
+ *     purretekst?: "..." }  // overstyrer teksten batchen ble opprettet med
+ *
+ * Payload til PA-flyten — ett kall per kjøring, flyten løkker selv:
+ *   {
+ *     handling: 'purreUtsendinger',
+ *     mottakere: [{
+ *       mottaker, url, batchId, skjematypeId,
+ *       skjemanavn,                 // slått opp nå, ikke frosset ved utsending
+ *       skjemabeskrivelse,          // Skjemaforklaring, kuttet ved 1000 tegn
+ *       skjemabeskrivelseFormat,    // "Tekst" | "HTML"
+ *       purretekst,                 // '' hvis ingen er satt
+ *       kanal, dagerSiden
+ *     }]
+ *   }
  *
  * Returnerer: { antallPurret, antallHoppetOver, feil? }
  */
@@ -295,6 +315,9 @@ app.http('utsendingPurre', {
         try {
             const body = await request.json().catch(() => ({}));
             const batchFilter = String(body?.batchId || '').trim();
+            // Overstyrer batchens egen purretekst — nyttig sammen med batchId
+            // når én bestemt gruppe skal purres med en annen ordlyd.
+            const tekstOverstyring = String(body?.purretekst || '').trim().slice(0, BESKRIVELSE_MAKS);
             const maksDager = Number(process.env.PURRE_MAKS_DAGER || 14);
             const minDagerMellom = Number(process.env.PURRE_MIN_DAGER_MELLOM || 3);
 
@@ -312,8 +335,46 @@ app.http('utsendingPurre', {
             const b = baseUrl(request);
             const nå = Date.now();
 
+            // Én purring kan spenne over flere skjematyper, og mottakeren har
+            // bare en lenke å gå etter. Navnet må derfor følge med, ellers kan
+            // ikke flyten skrive hva purringen gjelder. Slås opp én gang per
+            // skjematype — en batch på 500 mottakere er typisk 1-2 typer.
+            const typeCache = new Map();
+            async function skjematypeInfo(id) {
+                if (typeCache.has(id)) return typeCache.get(id);
+                let info = { navn: '', beskrivelse: '', format: 'Tekst' };
+                try {
+                    const type = await skjemaStorage.hentSkjematype(id);
+                    if (type) {
+                        // Skjemaforklaring er normalt { Innhold, Format }, men
+                        // eldre definisjoner har den som ren streng.
+                        const forklaring = type.JSON?.Skjemaforklaring || null;
+                        const erTekst = typeof forklaring === 'string';
+                        info = {
+                            navn: type.navn || '',
+                            beskrivelse: String(erTekst ? forklaring : (forklaring?.Innhold || '')).slice(0, BESKRIVELSE_MAKS),
+                            format: (erTekst ? 'Tekst' : forklaring?.Format) || 'Tekst'
+                        };
+                    } else {
+                        context.log(`utsending/purre: fant ikke skjematype ${id} — purrer uten navn`);
+                    }
+                } catch (e) {
+                    // Et navn er ikke verdt å avlyse hele purringen for.
+                    context.log(`utsending/purre: oppslag av skjematype ${id} feilet (${e.message}) — purrer uten navn`);
+                }
+                typeCache.set(id, info);
+                return info;
+            }
+
+            // Slå opp typene før løkka, så cachen er varm og oppslagene ikke
+            // kjører parallelt mot samme id.
+            for (const id of new Set(kandidater.map(k => String(k.SkjematypeId)))) {
+                await skjematypeInfo(id);
+            }
+
             // Bygg mottakere-liste med regenerert token (bevarer jti — samme identitet, ny exp)
             const mottakere = kandidater.map(k => {
+                const type = typeCache.get(String(k.SkjematypeId)) || { navn: '', beskrivelse: '', format: 'Tekst' };
                 const token = utsendingToken.utsted({
                     batchId: k.BatchId, mottaker: k.Mottaker, skjematypeId: k.SkjematypeId, jti: k.Jti
                 });
@@ -323,6 +384,10 @@ app.http('utsendingPurre', {
                     url: `${b}/index.html?utsending=${encodeURIComponent(token)}`,
                     batchId: k.BatchId,
                     skjematypeId: k.SkjematypeId,
+                    skjemanavn: type.navn,
+                    skjemabeskrivelse: type.beskrivelse,
+                    skjemabeskrivelseFormat: type.format,
+                    purretekst: tekstOverstyring || k.Purretekst || '',
                     kanal: k.KanalHint || 'epost',
                     dagerSiden
                 };
