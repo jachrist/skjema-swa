@@ -71,8 +71,15 @@ function glemOpprettelse(connectionString, tabellNavn) {
  * hvilket lager et miljø faktisk snakker med uten å eksponere nøkkelen.
  */
 function kontoNavnFra(connectionString) {
-    const m = /(?:^|;)\s*AccountName=([^;]+)/i.exec(String(connectionString || ''));
-    return m ? m[1].trim() : null;
+    const s = String(connectionString || '');
+    const m = /(?:^|;)\s*AccountName=([^;]+)/i.exec(s);
+    if (m) return m[1].trim();
+    // En SAS-basert connection string fra portalen har ingen AccountName — bare
+    // endepunkter og signaturen. Da må navnet leses ut av vertsnavnet, ellers
+    // står det «ukjent konto» i admin-panelet akkurat når man trenger å vite
+    // hvilken konto man faktisk snakker med.
+    const e = /(?:Blob|Table|Queue|File)Endpoint=https?:\/\/([^.;/]+)\./i.exec(s);
+    return e ? e[1].trim() : null;
 }
 
 module.exports = {
