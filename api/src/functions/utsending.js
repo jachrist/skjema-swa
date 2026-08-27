@@ -31,7 +31,15 @@
  *
  *   POST /api/utsending/send-forfalte
  *     Auth: x-scheduler-key eller admin. Sender lenker med forfalt
- *     utsendingsdato via UTSENDING_FLOW_URL. Se handleren nederst.
+ *     utsendingsdato. Se handleren nederst.
+ *
+ *   POST /api/utsending/purre
+ *     Auth: x-scheduler-key eller admin. Purrer ubesvarte lenker.
+ *
+ *     Begge kaller samme flyt med samme payload, og skiller seg bare på
+ *     `handling` ('sendUtsendinger' / 'purreUtsendinger'). Normaloppsettet er
+ *     ÉN PA-flyt som forgrener på det feltet — sett UTSENDING_FLOW_URL og la
+ *     PURRE_FLOW_URL stå tom. Se kallUtsendingsflyt().
  *
  *   GET /api/utsending/valider?t=TOKEN
  *     Anonymt. Verifiserer HMAC + slår opp i Utsendinger.
@@ -140,6 +148,69 @@ async function byggUtsendingsposter(kandidater, basisUrl, context, navn, { tekst
             dagerSiden: Math.floor((nå - new Date(referanse).getTime()) / (24 * 3600 * 1000))
         };
     });
+}
+
+/**
+ * Kall flyten som sender ut lenker — første gang eller som purring.
+ *
+ * De to kjøringene sender samme payload og skiller seg bare på `handling`, så
+ * normaloppsettet er ÉN flyt som forgrener på det feltet og velger ordlyd
+ * deretter. Da holder det å sette én env-var; den andre kan stå tom.
+ *
+ *   UTSENDING_FLOW_URL — flyten for begge handlinger
+ *   PURRE_FLOW_URL     — valgfri: egen flyt for purring, hvis du heller vil
+ *                        holde de to adskilt
+ *
+ * Mangler den ene, brukes den andre. Flyten må uansett se på `handling`:
+ * får den 'sendUtsendinger' og svarer med purretekst, er meldingen feil.
+ *
+ * Kallet har en tidsgrense godt under SWA-gatewayens ~45 sekunder. Uten den
+ * ville en treg flyt kvele hele cron-kjøringen, og feilen kommet som en naken
+ * 502 uten spor i loggen.
+ */
+const FLYT_TIMEOUT_MS = 35000;
+
+function flytUrlFor(handling) {
+    const utsending = String(process.env.UTSENDING_FLOW_URL || '').trim();
+    const purre = String(process.env.PURRE_FLOW_URL || '').trim();
+    return handling === 'purreUtsendinger' ? (purre || utsending) : (utsending || purre);
+}
+
+async function kallUtsendingsflyt(handling, mottakere, context, navn) {
+    const url = flytUrlFor(handling);
+    if (!url) return { ok: false, mangler: true, feil: 'Verken UTSENDING_FLOW_URL eller PURRE_FLOW_URL er satt' };
+
+    const start = Date.now();
+    let vertsnavn = 'ugyldig-url';
+    try { vertsnavn = new URL(url).hostname; } catch (_) { /* logges som ugyldig */ }
+
+    const avbryt = new AbortController();
+    const timer = setTimeout(() => avbryt.abort(), FLYT_TIMEOUT_MS);
+    try {
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ handling, mottakere }),
+            signal: avbryt.signal
+        });
+        const ms = Date.now() - start;
+        if (!res.ok) {
+            const tekst = await res.text().catch(() => '');
+            return { ok: false, feil: `PA-flyt (${vertsnavn}) svarte HTTP ${res.status} etter ${ms} ms: ${tekst.slice(0, 300)}` };
+        }
+        context.log(`${navn}: PA-flyt (${vertsnavn}) tok imot ${mottakere.length} mottakere på ${ms} ms (handling=${handling})`);
+        return { ok: true, ms };
+    } catch (e) {
+        const ms = Date.now() - start;
+        return {
+            ok: false,
+            feil: e.name === 'AbortError'
+                ? `PA-flyt (${vertsnavn}) svarte ikke innen ${FLYT_TIMEOUT_MS / 1000} sekunder`
+                : `PA-flyt-kall mot ${vertsnavn} feilet etter ${ms} ms: ${e.message}`
+        };
+    } finally {
+        clearTimeout(timer);
+    }
 }
 
 app.http('utsendingOpprett', {
@@ -426,9 +497,10 @@ app.http('utsendingValider', {
  * POST /api/utsending/purre — kalles av scheduler (GitHub Actions cron) eller admin.
  * Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
  *
- * Går gjennom alle ubesvarte utsendinger som ikke ble purret nylig,
- * kaller PURRE_FLOW_URL (PA-flyt) med batch av mottakere, og markerer
- * hver som purret. Fire-and-forget — feiler ikke om PA er nede.
+ * Går gjennom alle ubesvarte utsendinger som ikke ble purret nylig, kaller
+ * flyten med batch av mottakere, og markerer hver som purret. Fire-and-forget
+ * — feiler ikke om PA er nede, og markerer likevel, så vi ikke purrer på nytt
+ * dagen etter.
  *
  * Body (valgfritt):
  *   { batchId?: "...",      // hvis satt: purr KUN denne batchen (manuell trigger)
@@ -443,9 +515,13 @@ app.http('utsendingValider', {
  *       skjemabeskrivelse,          // Skjemaforklaring, kuttet ved 1000 tegn
  *       skjemabeskrivelseFormat,    // "Tekst" | "HTML"
  *       purretekst,                 // '' hvis ingen er satt
+ *       avslutningsdato,            // '' hvis batchen ikke har frist
  *       kanal, dagerSiden
  *     }]
  *   }
+ *
+ * Utsendingsjobben sender nøyaktig samme form, bare med
+ * handling: 'sendUtsendinger'.
  *
  * Returnerer: { antallPurret, antallHoppetOver, feil? }
  */
@@ -482,33 +558,14 @@ app.http('utsendingPurre', {
                 return { jsonBody: { status: 'ok', antallPurret: 0, antallHoppetOver: 0, melding: 'Ingen kandidater å purre' } };
             }
 
-            const purreFlyt = String(process.env.PURRE_FLOW_URL || '').trim();
-            const b = baseUrl(request);
-            const nå = Date.now();
-
-            const mottakere = await byggUtsendingsposter(kandidater, b, context, 'utsending/purre', {
+            const mottakere = await byggUtsendingsposter(kandidater, baseUrl(request), context, 'utsending/purre', {
                 tekstOverstyring
             });
 
-            let antallPurret = 0, feil = null;
-            if (!purreFlyt) {
-                context.log('utsending/purre: PURRE_FLOW_URL ikke satt — markerer likevel som purret (dry-run)');
-            } else {
-                try {
-                    const res = await fetch(purreFlyt, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ handling: 'purreUtsendinger', mottakere })
-                    });
-                    if (!res.ok) {
-                        feil = `PA-flyt returnerte ${res.status}`;
-                        context.log(`utsending/purre: ${feil}`);
-                    }
-                } catch (e) {
-                    feil = `PA-flyt-kall feilet: ${e.message}`;
-                    context.log(`utsending/purre: ${feil}`);
-                }
-            }
+            const res = await kallUtsendingsflyt('purreUtsendinger', mottakere, context, 'utsending/purre');
+            let antallPurret = 0;
+            const feil = res.ok ? null : res.feil;
+            if (feil) context.log(`utsending/purre: ${feil}`);
 
             // Marker alle som purret (også hvis PA feilet — så vi ikke spammer neste kjøring)
             for (const k of kandidater) {
@@ -530,7 +587,7 @@ app.http('utsendingPurre', {
             return {
                 jsonBody: {
                     status: 'ok', antallPurret, antallHoppetOver: 0, feil,
-                    melding: purreFlyt ? undefined : 'PURRE_FLOW_URL ikke satt — dry-run (markert som purret men ingen e-post sendt)'
+                    melding: res.mangler ? 'Ingen flyt-URL satt — dry-run (markert som purret, men ingen e-post sendt)' : undefined
                 }
             };
         } catch (e) {
@@ -610,32 +667,19 @@ app.http('utsendingSendForfalte', {
                 return { jsonBody: { status: 'ok', antallSendt: 0, antallKandidater: 0, melding: 'Ingen forfalte utsendinger' } };
             }
 
-            const flytUrl = String(process.env.UTSENDING_FLOW_URL || '').trim();
-            if (!flytUrl) {
-                // Ingen dry-run her: markerer vi som sendt uten å sende, får
-                // mottakeren aldri lenka, og ingenting plukker den opp igjen.
-                const melding = `UTSENDING_FLOW_URL ikke satt — ${kandidater.length} forfalte utsendinger venter`;
-                context.log(`utsending/send-forfalte: ${melding}`);
-                return { status: 503, jsonBody: { status: 'feil', antallSendt: 0, antallKandidater: kandidater.length, melding } };
-            }
-
             const mottakere = await byggUtsendingsposter(
                 kandidater, baseUrl(request), context, 'utsending/send-forfalte'
             );
 
-            let feil = null;
-            try {
-                const res = await fetch(flytUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ handling: 'sendUtsendinger', mottakere })
-                });
-                if (!res.ok) {
-                    const tekst = await res.text().catch(() => '');
-                    feil = `PA-flyt returnerte ${res.status}: ${tekst.slice(0, 300)}`;
-                }
-            } catch (e) {
-                feil = `PA-flyt-kall feilet: ${e.message}`;
+            // Ingen dry-run her: markerer vi som sendt uten å sende, får
+            // mottakeren aldri lenka, og ingenting plukker den opp igjen.
+            const res = await kallUtsendingsflyt('sendUtsendinger', mottakere, context, 'utsending/send-forfalte');
+            const feil = res.ok ? null : res.feil;
+
+            if (res.mangler) {
+                const melding = `${res.feil} — ${kandidater.length} forfalte utsendinger venter`;
+                context.log(`utsending/send-forfalte: ${melding}`);
+                return { status: 503, jsonBody: { status: 'feil', antallSendt: 0, antallKandidater: kandidater.length, melding } };
             }
 
             if (feil) {
