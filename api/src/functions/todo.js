@@ -8,6 +8,14 @@
  *   POST   /api/todo/importer    — engangsimport fra Markdown { markdown } (admin)
  *   GET    /api/todo/markdown    — lista som Markdown, til deling (admin)
  *
+ *   GET    /api/todo/{nummer}/vedlegg            — list vedlegg (admin)
+ *   POST   /api/todo/{nummer}/vedlegg            — last opp (multipart «fil», admin)
+ *   GET    /api/todo/{nummer}/vedlegg/{filnavn}  — hent fila inline (admin)
+ *   DELETE /api/todo/{nummer}/vedlegg/{filnavn}  — fjern vedlegget (admin)
+ *
+ * Vedleggene ligger i blob-containeren todo-vedlegg på samme konto som lista,
+ * så de følger den delte versjonen på tvers av miljøene.
+ *
  * Lista deles på tvers av tenanter, så alle skrivende kall logges med UPN.
  */
 const { app } = require('@azure/functions');
@@ -36,6 +44,12 @@ app.http('todoList', {
         if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
         try {
             const punkter = await todo.listAlle();
+            // Ett kall over hele containeren, ikke ett per punkt — lista
+            // trenger bare tallet for å vise bindersen.
+            const vedleggAntall = await todo.antallVedleggPerPunkt();
+            for (const p of punkter) {
+                p.AntallVedlegg = vedleggAntall[String(p.Nummer).padStart(4, '0')] || 0;
+            }
             return {
                 jsonBody: {
                     punkter,
@@ -130,10 +144,13 @@ app.http('todoSlett', {
         try {
             const slettet = await todo.slett(nummer);
             if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Punktet finnes ikke' } };
+            // Vedleggene har ingen mening uten punktet, og nummeret gjenbrukes
+            // ikke — blir de liggende, dukker de opp på ingenting.
+            const vedlegg = await todo.slettAlleVedlegg(nummer);
             hendelser.logg({
                 Type: 'todo.slett', Aktor: a.upn,
                 ObjektType: 'todo', ObjektId: String(nummer),
-                Melding: `Slettet punkt ${nummer}`
+                Melding: `Slettet punkt ${nummer}${vedlegg ? ` og ${vedlegg} vedlegg` : ''}`
             });
             return { jsonBody: { status: 'ok' } };
         } catch (e) {
@@ -189,6 +206,130 @@ app.http('todoMarkdown', {
             };
         } catch (e) {
             context.log('todo markdown FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * GET /api/todo/{nummer}/vedlegg — list vedlegg for punktet (admin).
+ */
+app.http('todoVedleggList', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'todo/{nummer}/vedlegg',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            return { jsonBody: { status: 'ok', vedlegg: await todo.listVedlegg(request.params.nummer) } };
+        } catch (e) {
+            context.log('todo vedlegg GET FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/todo/{nummer}/vedlegg — last opp én fil (multipart, felt "fil").
+ * Admin. Bilder, PDF og tekstfiler, maks 4 MB.
+ */
+app.http('todoVedleggOpplast', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'todo/{nummer}/vedlegg',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const nummer = request.params.nummer;
+            const punkt = await todo.hent(nummer);
+            if (!punkt) return { status: 404, jsonBody: { status: 'feil', melding: `Fant ikke punkt ${nummer}` } };
+
+            const formData = await request.formData();
+            const fil = formData.get('fil');
+            if (!fil || typeof fil === 'string') {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'Ingen fil sendt (må hete "fil")' } };
+            }
+            const buffer = Buffer.from(await fil.arrayBuffer());
+            if (buffer.length > todo.VEDLEGG_MAKS) {
+                return { status: 413, jsonBody: { status: 'feil', melding: `Filen er for stor (maks ${todo.VEDLEGG_MAKS / 1024 / 1024} MB)` } };
+            }
+
+            const res = await todo.lagreVedlegg(nummer, {
+                filnavn: fil.name, buffer, contentType: fil.type
+            });
+            context.log(`todo vedlegg: ${a.upn} lastet opp ${res.Filnavn} (${res.Storrelse} bytes) til punkt ${nummer}`);
+            hendelser.logg({
+                Type: 'todo.vedlegg-opplast', Aktor: a.upn,
+                ObjektType: 'todo', ObjektId: String(nummer),
+                Melding: `La ved ${res.Filnavn} på punkt ${nummer}`,
+                Detaljer: { filnavn: res.Filnavn, storrelse: res.Storrelse }
+            });
+            return { jsonBody: { status: 'ok', ...res } };
+        } catch (e) {
+            context.log('todo vedlegg POST FEIL:', e.message);
+            // Filtype- og størrelsesfeil er brukerfeil, ikke serverfeil.
+            const brukerfeil = /ikke tillatt|for stor|er tom/i.test(e.message);
+            return { status: brukerfeil ? 400 : 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * GET /api/todo/{nummer}/vedlegg/{filnavn} — hent selve fila (admin).
+ * Vises inline, så et skjermbilde kan åpnes rett i fana.
+ */
+app.http('todoVedleggHent', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'todo/{nummer}/vedlegg/{filnavn}',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const filnavn = todo.trygtFilnavn(request.params.filnavn);
+            const fil = await todo.hentVedlegg(request.params.nummer, filnavn);
+            if (!fil) return { status: 404, jsonBody: { status: 'feil', melding: 'Fant ikke vedlegget' } };
+            return {
+                status: 200,
+                headers: {
+                    'Content-Type': fil.contentType,
+                    'Content-Disposition': `inline; filename="${filnavn}"`,
+                    'Cache-Control': 'private, max-age=300'
+                },
+                body: fil.buffer
+            };
+        } catch (e) {
+            context.log('todo vedlegg hent FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * DELETE /api/todo/{nummer}/vedlegg/{filnavn} — fjern vedlegget (admin).
+ */
+app.http('todoVedleggSlett', {
+    methods: ['DELETE'],
+    authLevel: 'anonymous',
+    route: 'todo/{nummer}/vedlegg/{filnavn}',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const filnavn = todo.trygtFilnavn(request.params.filnavn);
+            const slettet = await todo.slettVedlegg(request.params.nummer, filnavn);
+            if (!slettet) return { status: 404, jsonBody: { status: 'feil', melding: 'Fant ikke vedlegget' } };
+            hendelser.logg({
+                Type: 'todo.vedlegg-slett', Aktor: a.upn,
+                ObjektType: 'todo', ObjektId: String(request.params.nummer),
+                Melding: `Fjernet vedlegget ${filnavn} fra punkt ${request.params.nummer}`,
+                Detaljer: { filnavn }
+            });
+            return { jsonBody: { status: 'ok' } };
+        } catch (e) {
+            context.log('todo vedlegg slett FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

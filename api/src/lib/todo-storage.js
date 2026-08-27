@@ -276,8 +276,178 @@ function tilMarkdown(punkter) {
     return linjer.join('\n') + '\n';
 }
 
+
+// ==================== VEDLEGG ====================
+//
+// Skjermbilder hører ofte til et punkt — «slik ser feilen ut» sier mer enn en
+// setning. Filene ligger i blob-containeren todo-vedlegg på samme konto som
+// lista, med nummeret som mappe: `0017/skjermbilde.png`. Blob-navnet ER
+// fasiten; ingen egen kolonne på raden som kan komme ut av takt med filene.
+
+const { containerKlientFra } = require('./blob');
+
+const VEDLEGG_CONTAINER = 'todo-vedlegg';
+const VEDLEGG_MAKS = 4 * 1024 * 1024;
+
+// Bare det som gir mening å lime inn i en oppgaveliste. Ingen kjørbare filer.
+const VEDLEGG_TYPER = {
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif', '.webp': 'image/webp', '.bmp': 'image/bmp',
+    '.pdf': 'application/pdf', '.txt': 'text/plain', '.log': 'text/plain',
+    '.csv': 'text/csv', '.json': 'application/json'
+};
+
+/**
+ * Filnavn som er trygt som blob-navn og i en nedlastingsdialog. Stier,
+ * kontrolltegn og tomme navn er de farlige tilfellene.
+ */
+const FILNAVN_MAKS = 120;
+
+function trygtFilnavn(navn) {
+    // Nettlesere sender av og til hele stien. Ta siste ledd uansett skilletegn.
+    const bare = String(navn || '').split('/').pop().split('\\').pop();
+    // Kontrolltegn blir mellomrom framfor å forsvinne — ellers limes ordene
+    // sammen, og «to<tab>ord.png» blir «toord.png».
+    const renset = [...bare]
+        .map(c => (c < ' ' ? ' ' : c))
+        .filter(c => !'<>:"|?*'.includes(c))
+        .join('').replace(/\s+/g, ' ').trim();
+    if (!renset) return 'vedlegg';
+    if (renset.length <= FILNAVN_MAKS) return renset;
+    // Kutt i navnet, ikke i endelsen: det er filtypen som avgjør om vedlegget
+    // i det hele tatt godtas.
+    const i = renset.lastIndexOf('.');
+    const endelse = i > 0 && renset.length - i <= 10 ? renset.slice(i) : '';
+    return renset.slice(0, FILNAVN_MAKS - endelse.length) + endelse;
+}
+
+function filtype(navn) {
+    const i = String(navn || '').lastIndexOf('.');
+    return i >= 0 ? String(navn).slice(i).toLowerCase() : '';
+}
+
+async function vedleggContainer() {
+    const c = containerKlientFra(CS, VEDLEGG_CONTAINER, 'TODO_STORAGE_CONNECTION_STRING');
+    try {
+        await c.createIfNotExists();
+    } catch (e) {
+        // Samme felle som med tabellen: en SAS uten rett til å opprette
+        // containere feiler her, og ville ellers dukket opp som «BlobNotFound»
+        // langt fra årsaken.
+        const konto = kontoNavnFra(CS) || 'lagringskontoen';
+        throw new Error(
+            `Fikk ikke tilgang til containeren ${VEDLEGG_CONTAINER} på ${konto}: ${e.message}. ` +
+            `SAS-en i TODO_STORAGE_CONNECTION_STRING må omfatte Blob-tjenesten ` +
+            `(srt=Container+Object, rettighetene Read/Write/List/Create/Delete), ` +
+            `eller containeren må opprettes én gang manuelt.`);
+    }
+    return c;
+}
+
+function blobNavn(nummer, filnavn) {
+    return `${rk(nummer)}/${filnavn}`;
+}
+
+async function listVedlegg(nummer) {
+    const c = await vedleggContainer();
+    const ut = [];
+    for await (const b of c.listBlobsFlat({ prefix: `${rk(nummer)}/` })) {
+        ut.push({
+            Filnavn: b.name.slice(b.name.indexOf('/') + 1),
+            Storrelse: b.properties.contentLength || 0,
+            ContentType: b.properties.contentType || 'application/octet-stream',
+            Lastet: b.properties.lastModified ? new Date(b.properties.lastModified).toISOString() : ''
+        });
+    }
+    return ut.sort((a, b) => a.Filnavn.localeCompare(b.Filnavn));
+}
+
+/**
+ * Antall vedlegg per punkt, som { '0017': 2 }.
+ *
+ * Lista trenger bare tallet for å vise bindersen, og ett kall over hele
+ * containeren er billigere enn ett per punkt. Feiler blob-tilgangen, får
+ * lista stå uten tall framfor å ikke komme opp i det hele tatt.
+ */
+async function antallVedleggPerPunkt() {
+    const ut = {};
+    try {
+        const c = await vedleggContainer();
+        for await (const b of c.listBlobsFlat()) {
+            const mappe = b.name.slice(0, b.name.indexOf('/'));
+            if (mappe) ut[mappe] = (ut[mappe] || 0) + 1;
+        }
+    } catch (_) {
+        return {};
+    }
+    return ut;
+}
+
+async function lagreVedlegg(nummer, { filnavn, buffer, contentType }) {
+    const navn = trygtFilnavn(filnavn);
+    const type = filtype(navn);
+    if (!VEDLEGG_TYPER[type]) {
+        throw new Error(`Filtypen ${type || '(ingen)'} er ikke tillatt. Bruk ${Object.keys(VEDLEGG_TYPER).join(', ')}.`);
+    }
+    if (!buffer?.length) throw new Error('Filen er tom');
+    if (buffer.length > VEDLEGG_MAKS) {
+        throw new Error(`Filen er ${Math.round(buffer.length / 1024)} kB — maks ${VEDLEGG_MAKS / 1024 / 1024} MB`);
+    }
+    const c = await vedleggContainer();
+    // Content-Type settes fra filnavnet, ikke fra det klienten oppgir: en
+    // nettleser som viser blobben skal aldri kunne lures til å tolke den som
+    // noe annet enn filtypen tilsier.
+    await c.getBlockBlobClient(blobNavn(nummer, navn)).uploadData(buffer, {
+        blobHTTPHeaders: {
+            blobContentType: VEDLEGG_TYPER[type],
+            blobContentDisposition: `inline; filename="${navn}"`
+        }
+    });
+    return { Filnavn: navn, Storrelse: buffer.length, ContentType: VEDLEGG_TYPER[type] };
+}
+
+async function hentVedlegg(nummer, filnavn) {
+    const c = await vedleggContainer();
+    const b = c.getBlockBlobClient(blobNavn(nummer, trygtFilnavn(filnavn)));
+    try {
+        const svar = await b.download();
+        const biter = [];
+        for await (const bit of svar.readableStreamBody) biter.push(bit);
+        return {
+            buffer: Buffer.concat(biter),
+            contentType: svar.contentType || 'application/octet-stream'
+        };
+    } catch (e) {
+        if (e.statusCode === 404) return null;
+        throw e;
+    }
+}
+
+async function slettVedlegg(nummer, filnavn) {
+    const c = await vedleggContainer();
+    const res = await c.getBlockBlobClient(blobNavn(nummer, trygtFilnavn(filnavn))).deleteIfExists();
+    return res.succeeded === true;
+}
+
+/** Alle vedlegg for punktet forsvinner med punktet. */
+async function slettAlleVedlegg(nummer) {
+    let antall = 0;
+    try {
+        const c = await vedleggContainer();
+        for await (const b of c.listBlobsFlat({ prefix: `${rk(nummer)}/` })) {
+            await c.getBlockBlobClient(b.name).deleteIfExists();
+            antall++;
+        }
+    } catch (_) {
+        // Et punkt skal kunne slettes selv om blob-lageret er utilgjengelig.
+    }
+    return antall;
+}
+
 module.exports = {
     listAlle, hent, opprett, oppdater, slett,
     importerMarkdown, parseMarkdown, tilMarkdown, lagerInfo,
-    KATEGORI_STANDARD, STATUS_VERDIER
+    listVedlegg, lagreVedlegg, hentVedlegg, slettVedlegg, slettAlleVedlegg,
+    antallVedleggPerPunkt,
+    trygtFilnavn, KATEGORI_STANDARD, STATUS_VERDIER, VEDLEGG_MAKS
 };

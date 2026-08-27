@@ -182,6 +182,39 @@
         .todo-meta { font-size: 11px; color: var(--text-secondary); margin-top: 3px; }
         .todo-handling { display: flex; gap: 6px; opacity: 0.45; }
         .todo-rad:hover .todo-handling { opacity: 1; }
+        .todo-vedlegg {
+            margin: 0 0 10px 52px;
+            padding: 10px 12px;
+            border-left: 2px solid var(--border-color);
+            background: var(--bg-section);
+            border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+        }
+        .vedlegg-liste { display: flex; flex-wrap: wrap; gap: 10px; }
+        .vedlegg-kort {
+            width: 130px;
+            padding: 6px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-card, transparent);
+        }
+        /* Fast høyde på miniatyren så kortene står på linje uansett bildeformat. */
+        .vedlegg-kort img {
+            width: 100%; height: 78px; object-fit: cover;
+            border-radius: 4px; display: block; background: var(--bg-section);
+        }
+        .vedlegg-ikon { height: 78px; display: flex; align-items: center; justify-content: center; font-size: 30px; }
+        .vedlegg-navn {
+            font-size: 11px; margin: 4px 0 2px;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .vedlegg-slipp {
+            margin-top: 10px; padding: 10px 12px;
+            border: 1px dashed var(--border-color); border-radius: var(--radius-sm);
+            font-size: 12px; color: var(--text-secondary); text-align: center;
+        }
+        .vedlegg-slipp:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+        .vedlegg-slipp.over { border-color: var(--accent); background: var(--accent-light); }
+        .vedlegg-velg { color: var(--accent); cursor: pointer; text-decoration: underline; }
         .todo-input {
             width: 100%; padding: 8px 12px; font-size: 13px; line-height: 1.5;
             border: 1px solid var(--input-border); border-radius: var(--radius-sm);
@@ -450,11 +483,124 @@
                         ${endret ? `<div class="todo-meta">${endret}</div>` : ''}
                     </div>
                     <div class="todo-handling">
+                        <button class="knapp mini" onclick="todoVedlegg(${p.Nummer})"
+                            title="Vedlegg — skjermbilder kan limes rett inn">📎${p.AntallVedlegg ? ' ' + p.AntallVedlegg : ''}</button>
                         <button class="knapp mini" onclick="todoRediger(${p.Nummer})">Rediger</button>
                     </div>
                 </div>
+                <div class="todo-vedlegg" id="todo-vedlegg-${p.Nummer}" style="display: none;"></div>
             `;
         }
+
+        // ==================== VEDLEGG ====================
+        //
+        // Panelet ligger som egen rad under punktet. Innholdet hentes først når
+        // det åpnes — lista viser bare antallet, som følger med i todo-kallet.
+
+        window.todoVedlegg = async (nummer) => {
+            const el = document.getElementById(`todo-vedlegg-${nummer}`);
+            if (!el) return;
+            if (el.style.display !== 'none') { el.style.display = 'none'; return; }
+            el.style.display = 'block';
+            el.innerHTML = '<div class="todo-meta">Laster vedlegg…</div>';
+            await todoVedleggTegn(nummer);
+        };
+
+        async function todoVedleggTegn(nummer) {
+            const el = document.getElementById(`todo-vedlegg-${nummer}`);
+            if (!el) return;
+            let vedlegg = [];
+            try {
+                const res = await api.get(`/api/todo/${nummer}/vedlegg`);
+                vedlegg = res.vedlegg || [];
+            } catch (e) {
+                el.innerHTML = `<div class="todo-meta" style="color: var(--danger);">Kunne ikke hente vedlegg: ${escHtml(e.message)}</div>`;
+                return;
+            }
+
+            const filerHtml = vedlegg.length === 0
+                ? '<div class="todo-meta">Ingen vedlegg ennå.</div>'
+                : vedlegg.map(v => {
+                    const url = `/api/todo/${nummer}/vedlegg/${encodeURIComponent(v.Filnavn)}`;
+                    const erBilde = /^image\//.test(v.ContentType || '');
+                    return `
+                        <div class="vedlegg-kort">
+                            <a href="${url}" target="_blank" rel="noopener" title="${escHtml(v.Filnavn)}">
+                                ${erBilde
+                                    ? `<img src="${url}" alt="${escHtml(v.Filnavn)}">`
+                                    : '<div class="vedlegg-ikon">📄</div>'}
+                            </a>
+                            <div class="vedlegg-navn" title="${escHtml(v.Filnavn)}">${escHtml(v.Filnavn)}</div>
+                            <div class="todo-meta">${Math.max(1, Math.round(v.Storrelse / 1024))} kB</div>
+                            <button class="knapp danger mini" onclick="todoVedleggSlett(${nummer}, '${escAttr(v.Filnavn)}')">Fjern</button>
+                        </div>`;
+                }).join('');
+
+            el.innerHTML = `
+                <div class="vedlegg-liste">${filerHtml}</div>
+                <div class="vedlegg-slipp" id="vedlegg-slipp-${nummer}" tabindex="0">
+                    Lim inn et skjermbilde (Ctrl+V) her, dra en fil hit, eller
+                    <label class="vedlegg-velg">velg fil<input type="file" style="display: none;"
+                        accept="image/*,.pdf,.txt,.log,.csv,.json"
+                        onchange="todoVedleggLastOpp(${nummer}, this.files[0]); this.value='';"></label>
+                </div>
+                <div class="todo-meta" id="vedlegg-status-${nummer}"></div>
+            `;
+
+            // Innliming er hovedveien inn: et skjermbilde i utklippstavla skal
+            // kunne legges ved uten å lagres som fil først. Feltet må ha fokus
+            // for at paste-hendelsen skal komme hit og ikke til dokumentet.
+            const slipp = document.getElementById(`vedlegg-slipp-${nummer}`);
+            slipp.addEventListener('paste', (e) => {
+                const fil = [...(e.clipboardData?.files || [])][0];
+                if (fil) { e.preventDefault(); todoVedleggLastOpp(nummer, fil); }
+            });
+            slipp.addEventListener('dragover', (e) => { e.preventDefault(); slipp.classList.add('over'); });
+            slipp.addEventListener('dragleave', () => slipp.classList.remove('over'));
+            slipp.addEventListener('drop', (e) => {
+                e.preventDefault();
+                slipp.classList.remove('over');
+                const fil = e.dataTransfer?.files?.[0];
+                if (fil) todoVedleggLastOpp(nummer, fil);
+            });
+        }
+
+        window.todoVedleggLastOpp = async (nummer, fil) => {
+            if (!fil) return;
+            const status = document.getElementById(`vedlegg-status-${nummer}`);
+            // Innlimte skjermbilder heter «image.png» hos alle — uten et eget
+            // navn ville de overskrevet hverandre.
+            const navn = /^image\.\w+$/i.test(fil.name || '')
+                ? `skjermbilde-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`
+                : (fil.name || 'vedlegg');
+            if (status) status.textContent = `Laster opp ${navn}…`;
+            try {
+                const fd = new FormData();
+                fd.append('fil', fil, navn);
+                // Rå fetch: api-klienten setter Content-Type: application/json,
+                // og da mister multipart-forsendelsen sin boundary.
+                const res = await fetch(`/api/todo/${nummer}/vedlegg`, { method: 'POST', body: fd });
+                const data = await res.json().catch(() => ({ melding: `${res.status} ${res.statusText}` }));
+                if (!res.ok) throw new Error(data.melding || 'Opplasting feilet');
+                await todoVedleggTegn(nummer);
+                await todoLast();   // oppdaterer telleren på bindersen
+                document.getElementById(`todo-vedlegg-${nummer}`).style.display = 'block';
+            } catch (e) {
+                if (status) status.innerHTML = `<span style="color: var(--danger);">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        window.todoVedleggSlett = async (nummer, filnavn) => {
+            if (!confirm(`Fjerne vedlegget «${filnavn}»?`)) return;
+            try {
+                await api.del(`/api/todo/${nummer}/vedlegg/${encodeURIComponent(filnavn)}`);
+                await todoVedleggTegn(nummer);
+                await todoLast();
+                document.getElementById(`todo-vedlegg-${nummer}`).style.display = 'block';
+            } catch (e) {
+                alert('Kunne ikke fjerne vedlegget: ' + e.message);
+            }
+        };
 
         window.todoSettFilter = (f) => { todoState.filter = f; todoTegn(); };
         window.todoSok = () => { todoState.sok = document.getElementById('todo-sok').value; todoTegn(); };

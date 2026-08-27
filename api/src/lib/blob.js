@@ -21,4 +21,27 @@ function containerKlient(containerNavn) {
     return serviceKlient().getContainerClient(containerNavn);
 }
 
-module.exports = { containerKlient, serviceKlient };
+/**
+ * Blob-klient mot en annen lagringskonto enn miljøets egen.
+ *
+ * Samme behov som tabellKlientFra i storage.js: todo-lista med vedlegg bor på
+ * dev-tenanten, og Managed Identity virker ikke over tenantgrenser. Klientene
+ * caches per connection string, ikke i én global som serviceKlient().
+ */
+const tjenester = new Map();
+
+function serviceKlientFra(connectionString, varNavn = 'STORAGE_CONNECTION_STRING') {
+    if (!connectionString) throw new Error(`${varNavn} env-var mangler`);
+    let s = tjenester.get(connectionString);
+    if (!s) {
+        s = BlobServiceClient.fromConnectionString(connectionString);
+        tjenester.set(connectionString, s);
+    }
+    return s;
+}
+
+function containerKlientFra(connectionString, containerNavn, varNavn) {
+    return serviceKlientFra(connectionString, varNavn).getContainerClient(containerNavn);
+}
+
+module.exports = { containerKlient, serviceKlient, containerKlientFra, serviceKlientFra };
