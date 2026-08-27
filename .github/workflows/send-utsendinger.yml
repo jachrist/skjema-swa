@@ -1,0 +1,44 @@
+name: Send planlagte utsendinger
+
+# SWA Managed Functions støtter ikke timer-triggere.
+# Denne workflowen kaller /api/utsending/send-forfalte daglig.
+# Kjører mot både pilot og prod hvis begge env-vars er satt.
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 05:00 UTC daglig — før purringen
+  workflow_dispatch:
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: send (${{ matrix.env }})
+    steps:
+      - name: Kall utsending/send-forfalte (${{ matrix.env }})
+        env:
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
+          fi
+          echo "Kaller $SWA_URL/api/utsending/send-forfalte (${{ matrix.env }}) …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/utsending/send-forfalte" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          if [ "$RESP" != "200" ]; then exit 1; fi

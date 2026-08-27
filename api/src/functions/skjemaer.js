@@ -662,6 +662,16 @@ app.http('lagreSkjema', {
                 if (post.SvarSkjemaId) {
                     return { status: 409, jsonBody: { status: 'feil', melding: 'Denne lenken er allerede besvart' } };
                 }
+                if (utsendingStorage.erAvsluttet(post)) {
+                    return {
+                        status: 410,
+                        jsonBody: {
+                            status: 'feil', avsluttet: true,
+                            avslutningsdato: post.Avslutningsdato,
+                            melding: 'Fristen for å svare på dette skjemaet er ute'
+                        }
+                    };
+                }
                 utsendingAuth = { batchId: v.batchId, mottaker: v.mottaker, prefilled: post.Prefilled || null };
             } else if (!upn) {
                 eksternAuth = await autentiserEkstern(request, skjematypeId);

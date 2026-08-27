@@ -10,6 +10,9 @@
  *       senderSkjemaId?: "SKJ-2026-011",         // sporing: skjemaet som utløste utsendingen
  *       kanalHint?: "epost" | "sms",
  *       purretekst?: "...",                      // følger batchen til purre-flyten
+ *       utsendingsdato?: "2026-09-01",           // appen sender denne dagen
+ *       purredato?: "2026-09-08",                // én purring denne dagen
+ *       avslutningsdato?: "2026-09-15",          // lenka stenges etter denne
  *       mottakere: [
  *         { mottaker: "nn@mil.no", prefilled?: { "1-01": ["Verdi"], "2-03": ["4"] } },
  *         ...
@@ -19,7 +22,16 @@
  *       { "1-02": { "emnebeskrivelse": "26H|CBU1503-1" } }
  *     Da lagres bare referansen, og teksten slås opp når mottakeren åpner lenka.
  *     Referansene valideres her — ukjent emne gir 400. Se lib/utsending-prefill.js.
- *     Returnerer: { batchId, lenker: [{ mottaker, url, utloper }] }
+ *     Returnerer: { batchId, lenker: [{ mottaker, url, utloper }], sendesAvAppen, planlagt }
+ *
+ *     Datoene er valgfrie, og uten dem oppfører batchen seg som før: kalleren
+ *     sender selv, purringen følger PURRE_*-tersklene, og lenka lever til
+ *     tokenet utløper. Settes `utsendingsdato`, tar cron-jobben over
+ *     sendingen — da skal ikke kalleren sende i tillegg.
+ *
+ *   POST /api/utsending/send-forfalte
+ *     Auth: x-scheduler-key eller admin. Sender lenker med forfalt
+ *     utsendingsdato via UTSENDING_FLOW_URL. Se handleren nederst.
  *
  *   GET /api/utsending/valider?t=TOKEN
  *     Anonymt. Verifiserer HMAC + slår opp i Utsendinger.
@@ -69,6 +81,67 @@ function baseUrl(request) {
     return `${proto}://${host}`;
 }
 
+/**
+ * Bygg mottakerlista som sendes til en PA-flyt — både ved førstegangs utsending
+ * og ved purring.
+ *
+ * En kjøring kan spenne over flere skjematyper, og mottakeren har bare en lenke
+ * å gå etter. Navnet må derfor følge med, ellers kan ikke flyten skrive hva
+ * meldingen gjelder. Slås opp én gang per skjematype — en batch på 500
+ * mottakere er typisk 1-2 typer.
+ *
+ * Tokenet utstedes på nytt med samme jti: samme identitet, ny utløpstid. Lenka
+ * i en purring er derfor alltid fersk, selv om batchen er gammel.
+ */
+async function byggUtsendingsposter(kandidater, basisUrl, context, navn, { tekstOverstyring = '' } = {}) {
+    const typeCache = new Map();
+    for (const id of new Set(kandidater.map(k => String(k.SkjematypeId)))) {
+        let info = { navn: '', beskrivelse: '', format: 'Tekst' };
+        try {
+            const type = await skjemaStorage.hentSkjematype(id);
+            if (type) {
+                // Skjemaforklaring er normalt { Innhold, Format }, men eldre
+                // definisjoner har den som ren streng.
+                const forklaring = type.JSON?.Skjemaforklaring || null;
+                const erTekst = typeof forklaring === 'string';
+                info = {
+                    navn: type.navn || '',
+                    beskrivelse: String(erTekst ? forklaring : (forklaring?.Innhold || '')).slice(0, BESKRIVELSE_MAKS),
+                    format: (erTekst ? 'Tekst' : forklaring?.Format) || 'Tekst'
+                };
+            } else {
+                context.log(`${navn}: fant ikke skjematype ${id} — sender uten navn`);
+            }
+        } catch (e) {
+            // Et navn er ikke verdt å avlyse hele kjøringen for.
+            context.log(`${navn}: oppslag av skjematype ${id} feilet (${e.message}) — sender uten navn`);
+        }
+        typeCache.set(id, info);
+    }
+
+    const nå = Date.now();
+    return kandidater.map(k => {
+        const type = typeCache.get(String(k.SkjematypeId)) || { navn: '', beskrivelse: '', format: 'Tekst' };
+        const token = utsendingToken.utsted({
+            batchId: k.BatchId, mottaker: k.Mottaker, skjematypeId: k.SkjematypeId, jti: k.Jti
+        });
+        const referanse = k.Sendt || k.Utsendingsdato || k.Opprettet;
+        return {
+            mottaker: k.Mottaker,
+            url: `${basisUrl}/index.html?utsending=${encodeURIComponent(token)}`,
+            batchId: k.BatchId,
+            skjematypeId: k.SkjematypeId,
+            skjemanavn: type.navn,
+            skjemabeskrivelse: type.beskrivelse,
+            skjemabeskrivelseFormat: type.format,
+            purretekst: tekstOverstyring || k.Purretekst || '',
+            avslutningsdato: k.Avslutningsdato || '',
+            kanal: k.KanalHint || 'epost',
+            dagerSiden: Math.floor((nå - new Date(referanse).getTime()) / (24 * 3600 * 1000))
+        };
+    });
+}
+
 app.http('utsendingOpprett', {
     methods: ['POST'],
     authLevel: 'anonymous',
@@ -102,6 +175,27 @@ app.http('utsendingOpprett', {
             if (!skjematypeId) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler skjematypeId' } };
             if (mottakere.length === 0) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler mottakere' } };
             if (mottakere.length > 500) return { status: 400, jsonBody: { status: 'feil', melding: 'Maks 500 mottakere per batch' } };
+
+            // Datoene styrer når lenka går ut, når det purres og når den
+            // stenges. En skrivefeil her ville ellers blitt lagret som «ingen
+            // dato», og batchen ville oppført seg som om planen aldri fantes.
+            const datoer = {};
+            for (const [navn, slutten] of [['utsendingsdato', false], ['purredato', false], ['avslutningsdato', true]]) {
+                const normalisert = utsendingStorage.normaliserDato(body[navn], { slutten });
+                if (normalisert === null) {
+                    return { status: 400, jsonBody: { status: 'feil', melding: `${navn} "${body[navn]}" er ikke en gyldig dato. Bruk "2026-09-01" eller full ISO-tid.` } };
+                }
+                datoer[navn] = normalisert;
+            }
+            if (datoer.avslutningsdato && datoer.utsendingsdato && datoer.avslutningsdato < datoer.utsendingsdato) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'avslutningsdato er før utsendingsdato — lenka ville vært stengt før den ble sendt' } };
+            }
+            if (datoer.avslutningsdato && datoer.purredato && datoer.avslutningsdato < datoer.purredato) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'avslutningsdato er før purredato — purringen ville aldri gått ut' } };
+            }
+            if (datoer.purredato && datoer.utsendingsdato && datoer.purredato < datoer.utsendingsdato) {
+                return { status: 400, jsonBody: { status: 'feil', melding: 'purredato er før utsendingsdato — det ville blitt purret før lenka gikk ut' } };
+            }
 
             const b = baseUrl(request);
             const lenker = [];
@@ -162,7 +256,8 @@ app.http('utsendingOpprett', {
                 const token = utsendingToken.utsted({ batchId, mottaker, skjematypeId, jti });
                 await utsendingStorage.opprett({
                     batchId, mottaker, skjematypeId, jti, prefilled,
-                    kanalHint, senderSkjemaId, opprettetAv, purretekst
+                    kanalHint, senderSkjemaId, opprettetAv, purretekst,
+                    ...datoer
                 });
                 lenker.push({
                     mottaker,
@@ -178,7 +273,20 @@ app.http('utsendingOpprett', {
                 Detaljer: { batchId, skjematypeId, antall: lenker.length, kanalHint, senderSkjemaId }
             });
 
-            return { jsonBody: { status: 'ok', batchId, lenker } };
+            // sendesAvAppen sier hvem som har ansvaret for å få lenka ut.
+            // Er utsendingsdato satt, gjør cron-jobben det — da skal ikke
+            // kalleren sende i tillegg, ellers får mottakeren to e-poster.
+            return {
+                jsonBody: {
+                    status: 'ok', batchId, lenker,
+                    sendesAvAppen: !!datoer.utsendingsdato,
+                    planlagt: {
+                        utsendingsdato: datoer.utsendingsdato || null,
+                        purredato: datoer.purredato || null,
+                        avslutningsdato: datoer.avslutningsdato || null
+                    }
+                }
+            };
         } catch (e) {
             context.log('utsending POST FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
@@ -262,6 +370,19 @@ app.http('utsendingValider', {
             const post = await utsendingStorage.hent(v.batchId, v.mottaker);
             if (!post) return { status: 404, jsonBody: { status: 'feil', melding: 'Utsending ikke funnet' } };
             if (post.Jti !== v.jti) return { status: 401, jsonBody: { status: 'feil', melding: 'Token matcher ikke lagret jti (kan være erstattet)' } };
+
+            // Fristen er ute. 410 Gone framfor 401 — lenka var gyldig, den
+            // gjelder bare ikke lenger, og frontend skal vise fristen.
+            if (utsendingStorage.erAvsluttet(post)) {
+                return {
+                    status: 410,
+                    jsonBody: {
+                        status: 'feil', avsluttet: true,
+                        avslutningsdato: post.Avslutningsdato,
+                        melding: 'Fristen for å svare på dette skjemaet er ute'
+                    }
+                };
+            }
 
             // Beriker med skjematype (samme berikning som publikum-endepunktet)
             // så frontend slipper ekstra kall og trenger ikke EksternTilgang=true.
@@ -365,62 +486,8 @@ app.http('utsendingPurre', {
             const b = baseUrl(request);
             const nå = Date.now();
 
-            // Én purring kan spenne over flere skjematyper, og mottakeren har
-            // bare en lenke å gå etter. Navnet må derfor følge med, ellers kan
-            // ikke flyten skrive hva purringen gjelder. Slås opp én gang per
-            // skjematype — en batch på 500 mottakere er typisk 1-2 typer.
-            const typeCache = new Map();
-            async function skjematypeInfo(id) {
-                if (typeCache.has(id)) return typeCache.get(id);
-                let info = { navn: '', beskrivelse: '', format: 'Tekst' };
-                try {
-                    const type = await skjemaStorage.hentSkjematype(id);
-                    if (type) {
-                        // Skjemaforklaring er normalt { Innhold, Format }, men
-                        // eldre definisjoner har den som ren streng.
-                        const forklaring = type.JSON?.Skjemaforklaring || null;
-                        const erTekst = typeof forklaring === 'string';
-                        info = {
-                            navn: type.navn || '',
-                            beskrivelse: String(erTekst ? forklaring : (forklaring?.Innhold || '')).slice(0, BESKRIVELSE_MAKS),
-                            format: (erTekst ? 'Tekst' : forklaring?.Format) || 'Tekst'
-                        };
-                    } else {
-                        context.log(`utsending/purre: fant ikke skjematype ${id} — purrer uten navn`);
-                    }
-                } catch (e) {
-                    // Et navn er ikke verdt å avlyse hele purringen for.
-                    context.log(`utsending/purre: oppslag av skjematype ${id} feilet (${e.message}) — purrer uten navn`);
-                }
-                typeCache.set(id, info);
-                return info;
-            }
-
-            // Slå opp typene før løkka, så cachen er varm og oppslagene ikke
-            // kjører parallelt mot samme id.
-            for (const id of new Set(kandidater.map(k => String(k.SkjematypeId)))) {
-                await skjematypeInfo(id);
-            }
-
-            // Bygg mottakere-liste med regenerert token (bevarer jti — samme identitet, ny exp)
-            const mottakere = kandidater.map(k => {
-                const type = typeCache.get(String(k.SkjematypeId)) || { navn: '', beskrivelse: '', format: 'Tekst' };
-                const token = utsendingToken.utsted({
-                    batchId: k.BatchId, mottaker: k.Mottaker, skjematypeId: k.SkjematypeId, jti: k.Jti
-                });
-                const dagerSiden = Math.floor((nå - new Date(k.Opprettet).getTime()) / (24 * 3600 * 1000));
-                return {
-                    mottaker: k.Mottaker,
-                    url: `${b}/index.html?utsending=${encodeURIComponent(token)}`,
-                    batchId: k.BatchId,
-                    skjematypeId: k.SkjematypeId,
-                    skjemanavn: type.navn,
-                    skjemabeskrivelse: type.beskrivelse,
-                    skjemabeskrivelseFormat: type.format,
-                    purretekst: tekstOverstyring || k.Purretekst || '',
-                    kanal: k.KanalHint || 'epost',
-                    dagerSiden
-                };
+            const mottakere = await byggUtsendingsposter(kandidater, b, context, 'utsending/purre', {
+                tekstOverstyring
             });
 
             let antallPurret = 0, feil = null;
@@ -499,6 +566,109 @@ app.http('utsendingBatchStatus', {
             };
         } catch (e) {
             context.log('utsending/batch FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/utsending/send-forfalte — kalles av scheduler (GitHub Actions cron)
+ * eller admin. Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
+ *
+ * Sender ut lenker for batcher der utsendingsdatoen er passert, og markerer
+ * dem som sendt. Speiler purre-jobben, med én viktig forskjell: purringen
+ * markerer som purret selv om flyten feiler, for å slippe å spamme dagen
+ * etter. Her ville det samme betydd at mottakeren aldri fikk lenka. Derfor
+ * settes Sendt bare når flyten faktisk tok imot kallet — feiler den, prøves
+ * de samme radene på nytt neste døgn.
+ *
+ * Payload til UTSENDING_FLOW_URL:
+ *   { handling: 'sendUtsendinger', mottakere: [ ...samme form som purringen ] }
+ *
+ * Returnerer: { antallSendt, antallKandidater, feil? }
+ */
+app.http('utsendingSendForfalte', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'utsending/send-forfalte',
+    handler: async (request, context) => {
+        const schedulerKey = request.headers.get('x-scheduler-key');
+        const configuredKey = String(process.env.SCHEDULER_KEY || '').trim();
+        const upn = hentInnloggetUpn(request);
+        const schedulerOk = configuredKey && schedulerKey && schedulerKey === configuredKey;
+        if (!schedulerOk && !(upn && erAdmin(upn))) {
+            return { status: 401, jsonBody: { status: 'feil', melding: 'Krever x-scheduler-key eller admin' } };
+        }
+
+        try {
+            const body = await request.json().catch(() => ({}));
+            const batchFilter = String(body?.batchId || '').trim();
+
+            let kandidater = await utsendingStorage.listForfalteUtsendinger();
+            if (batchFilter) kandidater = kandidater.filter(k => k.BatchId === batchFilter);
+            if (kandidater.length === 0) {
+                return { jsonBody: { status: 'ok', antallSendt: 0, antallKandidater: 0, melding: 'Ingen forfalte utsendinger' } };
+            }
+
+            const flytUrl = String(process.env.UTSENDING_FLOW_URL || '').trim();
+            if (!flytUrl) {
+                // Ingen dry-run her: markerer vi som sendt uten å sende, får
+                // mottakeren aldri lenka, og ingenting plukker den opp igjen.
+                const melding = `UTSENDING_FLOW_URL ikke satt — ${kandidater.length} forfalte utsendinger venter`;
+                context.log(`utsending/send-forfalte: ${melding}`);
+                return { status: 503, jsonBody: { status: 'feil', antallSendt: 0, antallKandidater: kandidater.length, melding } };
+            }
+
+            const mottakere = await byggUtsendingsposter(
+                kandidater, baseUrl(request), context, 'utsending/send-forfalte'
+            );
+
+            let feil = null;
+            try {
+                const res = await fetch(flytUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ handling: 'sendUtsendinger', mottakere })
+                });
+                if (!res.ok) {
+                    const tekst = await res.text().catch(() => '');
+                    feil = `PA-flyt returnerte ${res.status}: ${tekst.slice(0, 300)}`;
+                }
+            } catch (e) {
+                feil = `PA-flyt-kall feilet: ${e.message}`;
+            }
+
+            if (feil) {
+                context.log(`utsending/send-forfalte: ${feil} — ingen markert som sendt, prøves igjen neste kjøring`);
+                hendelser.logg({
+                    Type: 'utsending.send-forfalte', Aktor: upn || 'scheduler',
+                    ObjektType: 'utsending', ObjektId: batchFilter || '(alle)',
+                    Melding: `Utsending av ${kandidater.length} lenker feilet: ${feil}`,
+                    Detaljer: { antallKandidater: kandidater.length, feil }
+                });
+                return { status: 502, jsonBody: { status: 'feil', antallSendt: 0, antallKandidater: kandidater.length, feil } };
+            }
+
+            let antallSendt = 0;
+            for (const k of kandidater) {
+                try {
+                    await utsendingStorage.markerSendt(k.BatchId, k.Mottaker);
+                    antallSendt++;
+                } catch (e) {
+                    context.log(`utsending/send-forfalte: markerSendt feilet for ${k.BatchId}/${k.Mottaker}: ${e.message}`);
+                }
+            }
+
+            hendelser.logg({
+                Type: 'utsending.send-forfalte', Aktor: upn || 'scheduler',
+                ObjektType: 'utsending', ObjektId: batchFilter || '(alle)',
+                Melding: `Sendte ${antallSendt} planlagte utsending${antallSendt === 1 ? '' : 'er'}`,
+                Detaljer: { antallSendt, antallKandidater: kandidater.length, batchFilter }
+            });
+
+            return { jsonBody: { status: 'ok', antallSendt, antallKandidater: kandidater.length } };
+        } catch (e) {
+            context.log('utsending/send-forfalte FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

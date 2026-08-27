@@ -523,6 +523,13 @@
                 rendrer();
                 lasUtsendingFelter();
             } catch (e) {
+                // 410: lenka var gyldig, men svarfristen er passert. Det er
+                // ikke det samme som en ødelagt lenke, og skal ikke se slik ut.
+                if (e.status === 410) {
+                    document.getElementById('innhold').className = 'status-melding info';
+                    document.getElementById('innhold').textContent = e.message;
+                    return;
+                }
                 visFeil('Ugyldig eller utløpt lenke: ' + e.message);
             }
         }
