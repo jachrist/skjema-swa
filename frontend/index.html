@@ -137,6 +137,28 @@
             color: var(--text-secondary);
             margin: 0 0 16px 0;
         }
+        /* Seksjonene starter lukket, så skjemaet åpner med en oversikt over
+           hva det spør om. Bare seksjoner med overskrift kan lukkes — uten
+           overskrift finnes det ingenting å klikke på for å åpne igjen. */
+        .seksjon-tittel.klikkbar {
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            user-select: none;
+        }
+        .seksjon-tittel.klikkbar:hover { color: var(--accent); }
+        .seksjon-kollaps-pil {
+            display: inline-block;
+            font-size: 11px;
+            transition: transform 0.15s;
+        }
+        .seksjon.kollapset .seksjon-kollaps-pil { transform: rotate(-90deg); }
+        .seksjon.kollapset .seksjon-tittel { margin-bottom: 0; }
+        .seksjon.kollapset > .felt { display: none; }
+        /* Rød stjerne på seksjonen når den inneholder obligatoriske felt, så
+           lukket tilstand ikke skjuler at det er noe som må fylles ut. */
+        .seksjon-oblig { color: var(--danger); font-weight: 700; }
 
         .felt {
             margin-bottom: 18px;
@@ -753,6 +775,19 @@
                         markering.style.display = evaluerVilkar(felt.ObligatoriskHvis, seksjonerMedSvar) ? '' : 'none';
                     }
                 }
+
+                // Stjerna på seksjonen speiler feltene slik de står nå: et felt
+                // som er skjult, eller bare betinget obligatorisk, skal ikke gi
+                // seksjonen en stjerne den ikke har dekning for.
+                const stjerne = document.querySelector(`.seksjon[data-seksjon-nummer="${seksjon.Seksjon_nummer}"] .seksjon-oblig`);
+                if (stjerne) {
+                    const noenObligatoriske = (seksjon.Felter || []).some(felt => {
+                        if (felt.Type === 'Informasjon') return false;
+                        if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) return false;
+                        return erObligatoriskNa(felt, seksjonerMedSvar);
+                    });
+                    stjerne.style.display = noenObligatoriske ? '' : 'none';
+                }
             }
         }
 
@@ -769,9 +804,23 @@
             div.dataset.seksjonNummer = seksjon.Seksjon_nummer;
             if (seksjon.Seksjon_overskrift) {
                 const h = document.createElement('h2');
-                h.className = 'seksjon-tittel';
-                h.textContent = seksjon.Seksjon_overskrift;
+                h.className = 'seksjon-tittel klikkbar';
+                const pil = document.createElement('span');
+                pil.className = 'seksjon-kollaps-pil';
+                pil.textContent = '▼';
+                const navn = document.createElement('span');
+                navn.textContent = seksjon.Seksjon_overskrift;
+                const stjerne = document.createElement('span');
+                stjerne.className = 'seksjon-oblig';
+                stjerne.title = 'Seksjonen inneholder obligatoriske felt';
+                stjerne.textContent = '*';
+                stjerne.style.display = 'none'; // settes av oppdaterVises
+                h.append(pil, navn, stjerne);
+                h.onclick = () => div.classList.toggle('kollapset');
                 div.appendChild(h);
+                // Lukket som utgangspunkt — brukeren skal se hva skjemaet
+                // spør om før hen begynner å fylle ut.
+                div.classList.add('kollapset');
             }
             let visningsNr = 0;
             for (const felt of (seksjon.Felter || [])) {
@@ -874,6 +923,9 @@
                         feltEl?.classList.add('har-feil');
                         if (feilEl) feilEl.textContent = res.feilmelding || 'Ugyldig verdi';
                         alleOk = false;
+                        // Feilmeldingen er usynlig i en lukket seksjon. Åpne
+                        // alle som har feil, ikke bare den vi scroller til.
+                        feltEl?.closest('.seksjon')?.classList.remove('kollapset');
                         if (!førsteFeilFelt) førsteFeilFelt = feltEl;
                     } else {
                         feltEl?.classList.remove('har-feil');

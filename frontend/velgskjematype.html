@@ -273,6 +273,19 @@
             color: var(--text-secondary);
             transition: transform 0.15s;
         }
+        /* ID-en står foran tittelen fordi den er det folk refererer til seg
+           imellom. Fast bredde ville sprikt for tresifrede id-er, så den får
+           i stedet en ramme som holder den visuelt adskilt fra navnet. */
+        .kort-id {
+            flex: none;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            background: var(--bg-page, rgba(127, 127, 127, 0.12));
+            border: 1px solid var(--border-color);
+            border-radius: 5px;
+            padding: 1px 6px;
+        }
         .skjematype-kort.kollapset .kort-kollaps-pil { transform: rotate(-90deg); }
         .skjematype-kort.kollapset .kort-innhold { display: none; }
 
@@ -556,8 +569,18 @@
                 const fase = t.Fase || 'Produksjon';
                 if (!valgteFaser.includes(fase)) return false;
                 if (q === '') return true;
-                return (t.Skjema_navn || '').toLowerCase().includes(q)
-                    || (t.Skjema_forklaring?.Verdi || '').toLowerCase().includes(q);
+                // Hvert ord må treffe noe, så «evaluering 14» finner skjema 14
+                // og ikke alle som har ordet «evaluering» i seg.
+                const navn = (t.Skjema_navn || '').toLowerCase();
+                const forklaring = (t.Skjema_forklaring?.Verdi || '').toLowerCase();
+                const id = String(t.Skjematype_id || '');
+                return q.split(/\s+/).filter(Boolean).every(ord =>
+                    navn.includes(ord)
+                    || forklaring.includes(ord)
+                    // ID-en matches fra starten, ikke som delstreng: søk på «14»
+                    // skal ikke dra med seg 114 og 214.
+                    || id.startsWith(ord)
+                );
             });
             render(filtrert);
         };
@@ -668,8 +691,8 @@
                     <div class="kort-tittelrad" onclick="toggleKort('${escapeAttr(String(t.Skjematype_id))}')">
                         <h2 class="kort-tittel">
                             <span class="kort-kollaps-pil">▼</span>
+                            <span class="kort-id" title="Skjematype-ID">${escapeHtml(String(t.Skjematype_id))}</span>
                             ${escapeHtml(t.Skjema_navn || '(uten navn)')}
-                            <small style="font-weight: 400; color: var(--text-secondary); font-size: 0.65em;">ID ${escapeHtml(String(t.Skjematype_id))}</small>
                         </h2>
                         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                             ${behBadge}
