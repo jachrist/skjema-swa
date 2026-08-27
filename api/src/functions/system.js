@@ -17,12 +17,30 @@ const HEMMELIGE_ENV = [
     'AAD_CLIENT_ID', 'AAD_CLIENT_SECRET',
     'HASH_SALT', 'OTP_HMAC_KEY', 'FLOW_CALLBACK_KEY', 'SCHEDULER_KEY',
     'FS_API_USER', 'FS_API_PASSWORD',
-    'VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL', 'PURRE_FLOW_URL'
+    'VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL', 'PURRE_FLOW_URL',
+    'BACKUP_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL'
 ];
 
 function maskLengde(verdi) {
     if (!verdi) return { satt: false };
     return { satt: true, lengde: String(verdi).length };
+}
+
+/**
+ * Flyt-URLer: vertsnavnet er ikke hemmelig, og er det som skiller en flyt i
+ * riktig miljø fra en som fortsatt peker på dev. Signaturen ligger i
+ * query-strengen og tas aldri med. En verdi som ikke lar seg parse som URL
+ * er som regel en Key Vault-referanse som ikke ble løst.
+ */
+function maskFlytUrl(verdi) {
+    const info = maskLengde(verdi);
+    if (!info.satt) return info;
+    try {
+        const u = new URL(String(verdi));
+        return { ...info, vertsnavn: u.hostname, sti: u.pathname };
+    } catch (_) {
+        return { ...info, vertsnavn: null, feil: 'ikke en gyldig URL — uløst Key Vault-referanse?' };
+    }
 }
 
 app.http('systemInfo', {
@@ -38,7 +56,9 @@ app.http('systemInfo', {
         for (const k of OFFENTLIGE_ENV) offentlige[k] = process.env[k] || null;
 
         const hemmelige = {};
-        for (const k of HEMMELIGE_ENV) hemmelige[k] = maskLengde(process.env[k]);
+        for (const k of HEMMELIGE_ENV) {
+            hemmelige[k] = k.endsWith('_FLOW_URL') ? maskFlytUrl(process.env[k]) : maskLengde(process.env[k]);
+        }
 
         return {
             jsonBody: {
