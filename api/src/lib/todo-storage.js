@@ -86,7 +86,15 @@ function fraEntitet(e) {
 
 /** Hvilket lager lista faktisk ligger i — vises i admin-panelet. */
 function lagerInfo() {
-    return { konto: kontoNavnFra(CS), delt: !!DELT_CS };
+    const konto = kontoNavnFra(CS);
+    const egenKonto = kontoNavnFra(process.env.STORAGE_CONNECTION_STRING || '');
+    // En SAS utstedt på feil lagringskonto er fullt gyldig: appen kobler til,
+    // oppretter tabellen, og viser en tom liste uten en eneste feilmelding.
+    // Peker den delte strengen på miljøets egen konto, er lista ikke delt med
+    // noen — og det er nesten alltid en forveksling ved utstedelsen.
+    const sammeSomMiljo = !!(DELT_CS && konto && egenKonto
+        && konto.toLowerCase() === egenKonto.toLowerCase());
+    return { konto, delt: !!DELT_CS, sammeSomMiljo, miljoKonto: egenKonto };
 }
 
 async function listAlle() {

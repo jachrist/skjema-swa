@@ -422,7 +422,12 @@
             const lagerEl = document.getElementById('todo-lager');
             if (lagerEl && todoState.lager) {
                 const l = todoState.lager;
-                lagerEl.innerHTML = l.delt
+                lagerEl.innerHTML = l.sammeSomMiljo
+                    ? `<div class="banner advarsel"><strong>Ikke delt.</strong> <code>TODO_STORAGE_CONNECTION_STRING</code> peker på
+                       <strong>${escHtml(l.konto)}</strong> — dette miljøets egen lagringskonto. En SAS utstedt på feil konto
+                       er fullt gyldig, så lista ser bare tom ut. Punktene ligger på kontoen den forrige strengen pekte på;
+                       tidligere versjoner av hemmeligheten finnes i Key Vault.</div>`
+                    : l.delt
                     ? `<div class="banner info">Delt liste — lagres i <strong>${escHtml(l.konto || 'ukjent konto')}</strong>. Pilot og prod ser samme punkter.</div>`
                     : `<div class="banner advarsel">Lista ligger i dette miljøets eget lager${l.konto ? ` (<strong>${escHtml(l.konto)}</strong>)` : ''}. Sett <code>TODO_STORAGE_CONNECTION_STRING</code> i begge miljøer for å dele én liste.</div>`;
             }
