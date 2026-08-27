@@ -343,11 +343,20 @@ async function vedleggContainer() {
         // containere feiler her, og ville ellers dukket opp som «BlobNotFound»
         // langt fra årsaken.
         const konto = kontoNavnFra(CS) || 'lagringskontoen';
+        // «not authorized ... using this service» betyr at signaturen ikke
+        // gjelder for Blob i det hele tatt — en SAS utstedt med bare Table
+        // lar tabellen virke mens blobs avvises. Det er en annen sak enn for
+        // svake rettigheter, og løses et annet sted i portaldialogen.
+        const feilTjeneste = /using this service/i.test(e.message || '');
         throw new Error(
             `Fikk ikke tilgang til containeren ${VEDLEGG_CONTAINER} på ${konto}: ${e.message}. ` +
-            `SAS-en i TODO_STORAGE_CONNECTION_STRING må omfatte Blob-tjenesten ` +
-            `(srt=Container+Object, rettighetene Read/Write/List/Create/Delete), ` +
-            `eller containeren må opprettes én gang manuelt.`);
+            (feilTjeneste
+                ? `SAS-en i TODO_STORAGE_CONNECTION_STRING gjelder ikke for Blob. Utsted den på nytt ` +
+                  `med «Allowed services» = Blob (i tillegg til Table), «Allowed resource types» = ` +
+                  `Container + Object, og rettighetene Read/Write/List/Create/Delete.`
+                : `SAS-en i TODO_STORAGE_CONNECTION_STRING må ha «Allowed resource types» = ` +
+                  `Container + Object og rettighetene Read/Write/List/Create/Delete, eller så må ` +
+                  `containeren opprettes én gang manuelt.`));
     }
     return c;
 }
