@@ -487,6 +487,30 @@
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
         }
         .melding-oppsummering .emne-forhandsvis.standard { font-style: italic; }
+
+        /* Utkast og lagringsstatus */
+        .lagre-status {
+            align-self: center;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        /* Ulagret arbeid skal skille seg ut uten å rope. */
+        .lagre-status.advarsel { color: var(--danger); font-weight: 600; }
+        .utkast-banner {
+            display: flex;
+            gap: 14px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin: 12px 0 0;
+            padding: 12px 16px;
+            font-size: 13px;
+            line-height: 1.5;
+            background: var(--danger-light);
+            border: 1px solid var(--danger);
+            border-radius: var(--radius-md);
+        }
+        .utkast-banner > div:first-child { flex: 1; min-width: 240px; }
+        .utkast-knapper { display: flex; gap: 8px; }
     </style>
 </head>
 <body>
@@ -500,6 +524,7 @@
             <div id="systemmerke-plass"></div>
         </div>
 
+        <div id="utkast-banner"></div>
         <div id="innhold" class="laster">Laster…</div>
     </div>
 
@@ -651,6 +676,7 @@
                 }
                 sikreFeltIder();
                 rendrer();
+                startUtkastvakt();
             } catch (e) {
                 visFeil('Kunne ikke laste: ' + e.message);
             }
@@ -691,6 +717,7 @@
             const knappeLinje = `
                 <div class="knappelinje">
                     <button class="knapp primær" onclick="lagre()">💾 Lagre</button>
+                    <span id="lagre-status" class="lagre-status"></span>
                     <button class="knapp sekundær" onclick="visForhandsvisning()" title="Åpne skjemaet i ny fane med gjeldende (ulagrede) endringer">👁 Vis skjema</button>
                     ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}" target="_blank">🧪 Test utfylling (lagret)</a>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="kopier()">📋 Kopier</button>` : ''}
@@ -902,6 +929,7 @@
             oppdaterSPOppsummering();
             appliserKollapsState();
             fyllGevinstoppfolging();
+            oppdaterLagreStatus();
         }
 
         function rendrerTilgang() {
@@ -2772,6 +2800,204 @@
             rendrerSeksjoner();
         }
 
+        // ==================== AUTOLAGRING OG UTKAST ====================
+        //
+        // En skjemadefinisjon kan ha en time med arbeid i seg før noen trykker
+        // Lagre. Et krasj, en lukket fane eller en utløpt sesjon tok tidligere
+        // alt sammen. Utkastet legges derfor i localStorage hvert 2. minutt —
+        // og ved lukking av fanen, som er akkurat da man trenger det.
+        //
+        // Utkastet er en redningsplanke, ikke en lagringsmodell: serveren er
+        // fasit, og utkastet slettes i det noe er lagret dit. Det ligger i
+        // denne nettleseren alene, så det følger verken bruker eller maskin.
+
+        const UTKAST_INTERVALL_MS = 2 * 60 * 1000;
+        // Et utkast fra i fjor er ikke en redning, det er en felle. Eldre
+        // utkast tilbys ikke, og ryddes bort når editoren åpnes.
+        const UTKAST_MAKS_ALDER_MS = 7 * 24 * 60 * 60 * 1000;
+
+        let sistLagretSerialisert = null;  // snapshot ved siste vellykkede serverlagring
+        let sistServerLagring = null;
+        let sistUtkastTid = null;
+        let utkastIntervall = null;
+        let hopperOverAdvarsel = false;
+
+        // Nøkkelen følger skjematypen. Et helt nytt skjema har ingen id ennå og
+        // deler nøkkelen «ny» — to nye skjemaer i to faner vil altså skrive over
+        // hverandres utkast. Banneret viser navn og tidspunkt, slik at man ser
+        // hva man får tilbake før man gjenoppretter.
+        function utkastNokkel() {
+            if (eksisterendeId) return `skjematype-utkast:${eksisterendeId}`;
+            if (kopiFraId) return `skjematype-utkast:kopi-${kopiFraId}`;
+            return 'skjematype-utkast:ny';
+        }
+
+        function serialisert() {
+            try { return JSON.stringify(data); } catch (_) { return null; }
+        }
+
+        function harUlagredeEndringer() {
+            if (!data) return false;
+            const na = serialisert();
+            return na !== null && na !== sistLagretSerialisert;
+        }
+
+        function klokkeslett(d = new Date()) {
+            return d.toTimeString().slice(0, 5);
+        }
+
+        function lagreUtkast() {
+            if (!data || !harUlagredeEndringer()) return false;
+            const na = serialisert();
+            if (na === null) return false;
+            try {
+                localStorage.setItem(utkastNokkel(), JSON.stringify({
+                    tid: new Date().toISOString(),
+                    navn: data.Skjema_navn || '',
+                    skjematypeId: data.Skjematype_id || '',
+                    data: JSON.parse(na)
+                }));
+                sistUtkastTid = new Date();
+                oppdaterLagreStatus();
+                return true;
+            } catch (e) {
+                // Full localStorage er den realistiske feilen her. Da er det
+                // bedre å si fra enn å la brukeren tro arbeidet er trygt.
+                console.warn('Kunne ikke lagre utkast:', e);
+                settLagreStatus('Utkast kunne ikke lagres lokalt — lagre manuelt', true);
+                return false;
+            }
+        }
+
+        function hentUtkast() {
+            try {
+                const rå = localStorage.getItem(utkastNokkel());
+                if (!rå) return null;
+                const u = JSON.parse(rå);
+                if (!u?.data || !u?.tid) return null;
+                if (Date.now() - new Date(u.tid).getTime() > UTKAST_MAKS_ALDER_MS) {
+                    fjernUtkast();
+                    return null;
+                }
+                return u;
+            } catch (_) {
+                return null;
+            }
+        }
+
+        function fjernUtkast() {
+            try { localStorage.removeItem(utkastNokkel()); } catch (_) { /* ikke kritisk */ }
+            sistUtkastTid = null;
+        }
+
+        function settLagreStatus(tekst, erAdvarsel = false) {
+            const el = document.getElementById('lagre-status');
+            if (!el) return;
+            el.textContent = tekst;
+            el.classList.toggle('advarsel', !!erAdvarsel);
+        }
+
+        /**
+         * Statuslinja ved siden av Lagre-knappen. Den skal svare på ett
+         * spørsmål: kan jeg lukke denne fanen nå?
+         */
+        function oppdaterLagreStatus() {
+            if (!data) return;
+            // rendrer() kaller hit også før vakten er startet. Uten dette ville
+            // editoren blinket rødt «Ulagrede endringer» ved hver åpning.
+            if (sistLagretSerialisert === null) return;
+            if (!harUlagredeEndringer()) {
+                settLagreStatus(sistServerLagring ? `Lagret ${klokkeslett(sistServerLagring)}` : 'Ingen endringer');
+                return;
+            }
+            settLagreStatus(sistUtkastTid
+                ? `Ulagrede endringer — utkast tatt vare på ${klokkeslett(sistUtkastTid)}`
+                : 'Ulagrede endringer', true);
+        }
+
+        function startUtkastvakt() {
+            // Utgangspunktet er «som på serveren». Først når noe endres regnes
+            // det som ulagret — ellers ville hver åpning meldt om endringer.
+            sistLagretSerialisert = serialisert();
+
+            const utkast = hentUtkast();
+            if (utkast) {
+                if (JSON.stringify(utkast.data) === sistLagretSerialisert) {
+                    // Utkastet er identisk med det som ligger på serveren —
+                    // ingenting å gjenopprette, og ingen grunn til å spørre.
+                    fjernUtkast();
+                } else {
+                    visUtkastBanner(utkast);
+                }
+            }
+
+            if (!utkastIntervall) utkastIntervall = setInterval(lagreUtkast, UTKAST_INTERVALL_MS);
+
+            // Siste sjanse ved lukking. localStorage er synkron, så skrivingen
+            // rekker å fullføre selv her.
+            window.addEventListener('beforeunload', (e) => {
+                if (hopperOverAdvarsel || !harUlagredeEndringer()) return;
+                lagreUtkast();
+                e.preventDefault();
+                e.returnValue = '';
+            });
+            // Fanebytte og mobil bakgrunnskjøring gir ikke alltid beforeunload.
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'hidden') lagreUtkast();
+            });
+
+            oppdaterLagreStatus();
+        }
+
+        function visUtkastBanner(utkast) {
+            const el = document.getElementById('utkast-banner');
+            if (!el) return;
+            const tid = new Date(utkast.tid);
+            const dato = tid.toDateString() === new Date().toDateString()
+                ? `i dag ${klokkeslett(tid)}`
+                : `${tid.toLocaleDateString('nb-NO')} ${klokkeslett(tid)}`;
+            el.innerHTML = `
+                <div class="utkast-banner">
+                    <div>
+                        <strong>Ulagret utkast funnet</strong> — sist endret ${escapeHtml(dato)}${utkast.navn ? ` («${escapeHtml(utkast.navn)}»)` : ''}.
+                        Det ble tatt vare på i denne nettleseren og er <em>ikke</em> lagret på serveren.
+                    </div>
+                    <div class="utkast-knapper">
+                        <button class="knapp mini" onclick="gjenopprettUtkast()">Gjenopprett</button>
+                        <button class="knapp mini sekundær" onclick="forkastUtkast()">Forkast</button>
+                    </div>
+                </div>`;
+        }
+
+        function skjulUtkastBanner() {
+            const el = document.getElementById('utkast-banner');
+            if (el) el.innerHTML = '';
+        }
+
+        window.gjenopprettUtkast = () => {
+            const utkast = hentUtkast();
+            if (!utkast) { skjulUtkastBanner(); return; }
+            data = utkast.data;
+            sikreFeltIder();
+            rendrer();
+            skjulUtkastBanner();
+            // Snapshotet røres ikke: det gjenopprettede innholdet er fortsatt
+            // ulagret, og både statuslinja og lukkevarselet skal si fra om det.
+            oppdaterLagreStatus();
+            toast('Utkastet er hentet tilbake — husk å lagre');
+        };
+
+        window.forkastUtkast = () => {
+            fjernUtkast();
+            skjulUtkastBanner();
+            oppdaterLagreStatus();
+        };
+
+        /** Bevisst navigasjon bort fra editoren skal ikke utløse lukkevarselet. */
+        function forlatUtenAdvarsel() {
+            hopperOverAdvarsel = true;
+        }
+
         // ---- Lagre / Slett / Kopier ----
         window.lagre = async () => {
             if (!data.Skjema_navn?.trim()) {
@@ -2781,11 +3007,16 @@
             try {
                 const svar = await api.post('/api/skjematyper', data);
                 data.Skjematype_id = svar.Skjematype_id;
+                sistLagretSerialisert = serialisert();
+                sistServerLagring = new Date();
+                fjernUtkast();
+                oppdaterLagreStatus();
                 toast('Lagret ✓');
                 // Hvis dette var ny, oppdater URL slik at ytterligere lagringer blir oppdatering
                 if (svar.erNy) {
                     const nyUrl = `/editor.html?skjematype_id=${encodeURIComponent(svar.Skjematype_id)}`;
                     window.history.replaceState({}, '', nyUrl);
+                    forlatUtenAdvarsel();
                     // Re-rendrer med knappelinje som viser Test/Kopier/Slett
                     location.reload();
                 }
@@ -2794,6 +3025,7 @@
             }
         };
         window.kopier = () => {
+            forlatUtenAdvarsel();
             window.location.href = `/editor.html?kopi_fra=${encodeURIComponent(eksisterendeId)}`;
         };
         window.aapneSlettModal = () => {
@@ -2808,6 +3040,8 @@
             btn.textContent = 'Sletter…';
             try {
                 await api.del(`/api/skjematyper/${encodeURIComponent(eksisterendeId)}`);
+                fjernUtkast();
+                forlatUtenAdvarsel();
                 window.location.href = '/velgskjematype.html';
             } catch (e) {
                 btn.disabled = false;
