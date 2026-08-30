@@ -36,7 +36,7 @@ jobs:
           submodules: true
           lfs: false
       - name: Sett opp Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
       # Testene er rene node-skript uten avhengigheter — Azure-SDK-ene lastes
