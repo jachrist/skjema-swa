@@ -1,0 +1,46 @@
+name: Sjekk nøkkelkalender
+
+# SWA Managed Functions støtter ikke timer-triggere.
+# Denne workflowen kaller /api/nokkelkalender/sjekk daglig. Endepunktet varsler
+# ADMIN_UPNS når en hemmelighet nærmer seg utløp, og eskalerer på faste trinn.
+# Hvert miljø behandler bare sine egne rader, så pilot og prod varsler ikke
+# dobbelt om samme hemmelighet.
+
+on:
+  schedule:
+    - cron: '0 7 * * *' # 07:00 UTC daglig
+  workflow_dispatch:
+
+jobs:
+  sjekk:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: sjekk nøkler (${{ matrix.env }})
+    steps:
+      - name: Kall nokkelkalender/sjekk (${{ matrix.env }})
+        env:
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
+          fi
+          echo "Kaller $SWA_URL/api/nokkelkalender/sjekk (${{ matrix.env }}) …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/nokkelkalender/sjekk" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          if [ "$RESP" != "200" ]; then exit 1; fi

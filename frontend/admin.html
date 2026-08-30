@@ -234,6 +234,54 @@
             .layout { grid-template-columns: 1fr; }
             .to-spalter { grid-template-columns: 1fr; }
         }
+
+        /* Nøkkelkalender-fane */
+        .nk-miljo {
+            font-size: 11px; font-weight: 600; color: var(--text-secondary);
+            text-transform: uppercase; letter-spacing: 0.05em;
+            margin: 16px 0 4px; padding-bottom: 4px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .nk-miljo:first-child { margin-top: 0; }
+        .nk-rad {
+            display: grid; grid-template-columns: 1fr 150px auto; gap: 10px;
+            align-items: start; padding: 9px 4px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .nk-rad:last-child { border-bottom: 0; }
+        .nk-rad:hover { background: var(--accent-light); border-radius: 6px; }
+        .nk-navn { font-size: 13px; font-weight: 600; line-height: 1.4; }
+        .nk-meta { font-size: 11px; color: var(--text-secondary); margin-top: 3px; line-height: 1.45; }
+        .nk-handling { display: flex; gap: 6px; opacity: 0.45; }
+        .nk-rad:hover .nk-handling { opacity: 1; }
+        /* Fristen er det man leser først — den skal kunne skannes uten å lese teksten. */
+        .nk-frist { font-size: 12px; font-weight: 600; line-height: 1.4; }
+        .nk-dato { font-size: 11px; color: var(--text-secondary); font-family: 'SF Mono', Menlo, monospace; }
+        .nk-frist.utlopt  { color: var(--danger); }
+        .nk-frist.kritisk { color: var(--danger); }
+        .nk-frist.snart   { color: var(--warning); }
+        .nk-frist.ok      { color: var(--success); }
+        .nk-frist.ukjent  { color: var(--text-secondary); }
+        .nk-frist.fast    { color: var(--text-secondary); }
+        .nk-prikk {
+            display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+            margin-right: 6px; vertical-align: middle;
+        }
+        .nk-prikk.utlopt  { background: var(--danger); }
+        .nk-prikk.kritisk { background: var(--danger); }
+        .nk-prikk.snart   { background: var(--warning); }
+        .nk-prikk.ok      { background: var(--success); }
+        .nk-prikk.ukjent  { background: var(--text-secondary); }
+        .nk-prikk.fast    { background: var(--text-secondary); }
+        .nk-skjema { padding: 12px; border: 1px solid var(--border-color); border-radius: var(--radius-sm); background: var(--bg-section); }
+        .nk-skjema label { display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary); margin: 8px 0 3px; }
+        .nk-skjema input, .nk-skjema select, .nk-skjema textarea { width: 100%; box-sizing: border-box; }
+        .nk-skjema textarea { font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+        .nk-to-kol { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        @media (max-width: 640px) {
+            .nk-rad { grid-template-columns: 1fr; }
+            .nk-to-kol { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -254,6 +302,7 @@
                 <div class="skille"></div>
                 <a class="fane" data-fane="roller" href="#roller">👥 Roller</a>
                 <a class="fane" data-fane="nokler" href="#nokler">🔐 Nøkler</a>
+                <a class="fane" data-fane="nokkelkalender" href="#nokkelkalender">🗓 Nøkkelkalender</a>
                 <div class="skille"></div>
                 <a class="fane" data-fane="hendelser" href="#hendelser">📋 Hendelser</a>
                 <a class="fane" data-fane="utsendinger" href="#utsendinger">✉️ Utsendinger</a>
@@ -302,6 +351,7 @@
                 case 'oppgaver':    rendrOppgaver(); break;
                 case 'roller':      rendrRoller(); break;
                 case 'nokler':      rendrNokler(); break;
+                case 'nokkelkalender': rendrNokkelkalender(); break;
                 case 'hendelser':   rendrHendelser(); break;
                 case 'utsendinger': rendrUtsendinger(); break;
                 case 'gevinst':     rendrGevinst(); break;
@@ -2232,6 +2282,317 @@
                 setTimeout(() => { status.innerHTML = ''; }, 3000);
             } catch (e) {
                 status.innerHTML = `<span style="color: var(--danger);">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        // ==================== NØKKELKALENDER-FANE ====================
+        //
+        // Hemmeligheter og nøkler med utløpsdato: hvor de ligger, hva som
+        // skjer når de ryker, og hvordan de fornyes. API-et sorterer det som
+        // haster øverst, så panelet beholder rekkefølgen det får.
+        let nkState = { rader: [], lager: null, miljo: '', typer: [], redigerer: null, nyRad: false };
+
+        // Tilstandene har norske navn i API-et; CSS-klassene holder seg til ASCII.
+        const NK_KLASSE = { 'utløpt': 'utlopt', kritisk: 'kritisk', snart: 'snart', ok: 'ok', ukjent: 'ukjent', fast: 'fast' };
+
+        function rendrNokkelkalender() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Nøkkelkalender <span id="nk-teller" style="font-weight: 400; color: var(--text-secondary); text-transform: none; letter-spacing: 0; margin-left: 8px;"></span></h2>
+                    <div id="nk-lager"></div>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px;">
+                        Utløpsdatoer vedlikeholdes manuelt — appen kan ikke spørre Key Vault, siden Managed Identity
+                        ikke er tilgjengelig i SWA Managed Functions. Unntaket er SAS-strenger, som bærer utløpet i seg selv.
+                        Varsel går til <code>ADMIN_UPNS</code> via den daglige jobben <code>sjekk-nokler.yml</code>.
+                    </div>
+                    <div class="knapp-rad">
+                        <button class="knapp primær" onclick="nkVisNy()">+ Ny hemmelighet</button>
+                        <button class="knapp mini" onclick="nkSeed()">📋 Legg inn standardinventaret</button>
+                        <button class="knapp mini" onclick="nkTorrkjor()">🔔 Test varsling (sender ikke)</button>
+                    </div>
+                    <div id="nk-status" style="margin-top: 8px;"></div>
+                    <div id="nk-ny" style="display: none; margin-top: 12px;"></div>
+                </div>
+                <div class="panel">
+                    <div id="nk-liste"><div class="laster">Laster…</div></div>
+                </div>
+            `;
+            nkLast();
+        }
+
+        async function nkLast() {
+            const el = document.getElementById('nk-liste');
+            try {
+                const data = await api.get('/api/nokkelkalender');
+                nkState.rader = data.rader || [];
+                nkState.lager = data.lager || null;
+                nkState.miljo = data.miljo || '';
+                nkState.typer = data.typer || [];
+                nkState.redigerer = null;
+                nkTegn();
+            } catch (e) {
+                el.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        }
+
+        function nkFristTekst(r) {
+            if (r.Roteres === 'nei') return 'skal ikke roteres';
+            if (r.DagerIgjen === null) return 'ingen dato satt';
+            if (r.DagerIgjen < 0) return `UTLØPT for ${Math.abs(r.DagerIgjen)} d siden`;
+            if (r.DagerIgjen === 0) return 'utløper i dag';
+            if (r.DagerIgjen === 1) return 'utløper i morgen';
+            return `om ${r.DagerIgjen} dager`;
+        }
+
+        function nkTegn() {
+            const o = nkState.rader;
+            const teller = document.getElementById('nk-teller');
+            if (teller) {
+                const utlopt = o.filter(r => r.Tilstand === 'utløpt').length;
+                const kritisk = o.filter(r => r.Tilstand === 'kritisk').length;
+                const ukjent = o.filter(r => r.Tilstand === 'ukjent').length;
+                const deler = [`${o.length} oppført`];
+                if (utlopt) deler.push(`${utlopt} utløpt`);
+                if (kritisk) deler.push(`${kritisk} kritisk`);
+                if (ukjent) deler.push(`${ukjent} uten dato`);
+                teller.textContent = '— ' + deler.join(', ');
+            }
+
+            const lagerEl = document.getElementById('nk-lager');
+            if (lagerEl && nkState.lager) {
+                const l = nkState.lager;
+                lagerEl.innerHTML = l.sammeSomMiljo
+                    ? `<div class="banner advarsel"><strong>Ikke delt.</strong> <code>TODO_STORAGE_CONNECTION_STRING</code> peker på
+                       <strong>${escHtml(l.konto)}</strong> — dette miljøets egen lagringskonto. Kalenderen deles da ikke med de andre miljøene.</div>`
+                    : l.delt
+                    ? `<div class="banner info">Lagres i <strong>${escHtml(l.konto || 'ukjent konto')}</strong>. Hvert miljø eier sine egne rader; du ser alle.</div>`
+                    : `<div class="banner advarsel">Kalenderen ligger i dette miljøets eget lager${l.konto ? ` (<strong>${escHtml(l.konto)}</strong>)` : ''}, og forsvinner hvis miljøet bygges opp på nytt. Sett <code>TODO_STORAGE_CONNECTION_STRING</code>.</div>`;
+            }
+
+            const el = document.getElementById('nk-liste');
+            if (o.length === 0) {
+                el.innerHTML = `<div class="tom-melding">Ingen hemmeligheter er ført opp ennå.
+                    Trykk «Legg inn standardinventaret» for å få inn de kjente fra koden, og fyll inn datoene.</div>`;
+                return;
+            }
+            const miljoer = [...new Set(o.map(r => r.Miljo))];
+            el.innerHTML = miljoer.map(m => `
+                <div class="nk-miljo">${escHtml(m)}${m === nkState.miljo ? ' — dette miljøet' : ''}</div>
+                ${o.filter(r => r.Miljo === m).map(nkRad).join('')}
+            `).join('');
+        }
+
+        function nkRad(r) {
+            if (nkState.redigerer === `${r.Miljo}/${r.Id}`) {
+                return `<div class="nk-rad" style="grid-template-columns: 1fr;">${nkSkjema(r)}</div>`;
+            }
+            const kl = NK_KLASSE[r.Tilstand] || 'ukjent';
+            // En rad som leser datoen fra en env-var kan ikke bli utdatert, og
+            // det skal synes — ellers vet man ikke om datoen er å stole på.
+            const kilde = r.EnvVar
+                ? (r.UtlopKilde === 'env'
+                    ? `<span title="Lest fra ${escHtml(r.EnvVar)}">🔄 automatisk</span>`
+                    : `<span style="color: var(--warning);" title="Fant ingen se=-parameter i ${escHtml(r.EnvVar)}">⚠ fant ikke utløp i ${escHtml(r.EnvVar)}</span>`)
+                : '';
+            const meta = [
+                escHtml(r.Type),
+                r.Hvor ? escHtml(r.Hvor) : '',
+                kilde,
+                r.Ansvarlig ? `Ansvarlig: ${escHtml(r.Ansvarlig)}` : '',
+                r.SistVarslet ? `Sist varslet ${formatTid(r.SistVarslet).slice(0, 10)}` : ''
+            ].filter(Boolean).join(' · ');
+            return `
+                <div class="nk-rad">
+                    <div>
+                        <div class="nk-navn"><span class="nk-prikk ${kl}"></span>${escHtml(r.Navn)}</div>
+                        <div class="nk-meta">${meta}</div>
+                        ${r.Konsekvens ? `<div class="nk-meta"><strong>Ved utløp:</strong> ${escHtml(r.Konsekvens)}</div>` : ''}
+                    </div>
+                    <div>
+                        <div class="nk-frist ${kl}">${escHtml(nkFristTekst(r))}</div>
+                        <div class="nk-dato">${r.UtloperFaktisk ? escHtml(r.UtloperFaktisk.slice(0, 10)) : '—'}</div>
+                    </div>
+                    <div class="nk-handling">
+                        <button class="knapp mini" onclick="nkRediger('${escAttr(r.Miljo)}', '${escAttr(r.Id)}')">Rediger</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function nkSkjema(r) {
+            const ny = !r.Id;
+            const typer = (nkState.typer.length ? nkState.typer : ['annet'])
+                .map(t => `<option value="${escHtml(t)}"${t === r.Type ? ' selected' : ''}>${escHtml(t)}</option>`).join('');
+            return `
+                <div class="nk-skjema">
+                    <div class="nk-to-kol">
+                        <div>
+                            <label>Navn</label>
+                            <input type="text" id="nk-f-navn" value="${escHtml(r.Navn || '')}" ${ny ? '' : 'readonly title="Navnet er nøkkelen til raden og kan ikke endres. Slett og opprett på nytt om det må byttes."'}>
+                        </div>
+                        <div>
+                            <label>Type</label>
+                            <select id="nk-f-type">${typer}</select>
+                        </div>
+                    </div>
+                    <label>Hvor ligger den?</label>
+                    <input type="text" id="nk-f-hvor" value="${escHtml(r.Hvor || '')}" placeholder="Key Vault fhs-kv-01 / GitHub Secrets / SWA Configuration">
+                    <div class="nk-to-kol">
+                        <div>
+                            <label>Utløper</label>
+                            <input type="date" id="nk-f-utloper" value="${r.UtloperFaktisk ? escHtml(r.UtloperFaktisk.slice(0, 10)) : ''}">
+                        </div>
+                        <div>
+                            <label>Varsle så mange dager før</label>
+                            <input type="number" id="nk-f-varsle" min="1" max="365" value="${r.VarsleDagerFor || 30}">
+                        </div>
+                    </div>
+                    <div class="nk-to-kol">
+                        <div>
+                            <label>Env-var å lese utløp fra (kun SAS)</label>
+                            <input type="text" id="nk-f-envvar" value="${escHtml(r.EnvVar || '')}" placeholder="TODO_STORAGE_CONNECTION_STRING">
+                        </div>
+                        <div>
+                            <label>Ansvarlig</label>
+                            <input type="text" id="nk-f-ansvarlig" value="${escHtml(r.Ansvarlig || '')}" placeholder="Navn eller rolle">
+                        </div>
+                    </div>
+                    <label>Konsekvens ved utløp</label>
+                    <textarea id="nk-f-konsekvens" rows="2" placeholder="Hva slutter å virke, og for hvem?">${escHtml(r.Konsekvens || '')}</textarea>
+                    <label>Slik fornyes den</label>
+                    <textarea id="nk-f-rotasjon" rows="4" placeholder="Steg for steg — skrevet for en som ikke var med da løsningen ble bygget.">${escHtml(r.Rotasjon || '')}</textarea>
+                    <label>Notat</label>
+                    <textarea id="nk-f-notat" rows="2">${escHtml(r.Notat || '')}</textarea>
+                    <label style="display: flex; align-items: center; gap: 8px; margin-top: 10px;">
+                        <input type="checkbox" id="nk-f-roteres-nei" style="width: auto;" ${r.Roteres === 'nei' ? 'checked' : ''}>
+                        <span style="text-transform: none; font-size: 12px;">Skal ikke roteres — varsles aldri (f.eks. salt som ville brutt eksisterende data)</span>
+                    </label>
+                    <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp primær mini" onclick="${ny ? 'nkOpprett()' : `nkLagre('${escAttr(r.Miljo)}', '${escAttr(r.Id)}')`}">Lagre</button>
+                        <button class="knapp mini" onclick="nkAvbryt()">Avbryt</button>
+                        ${ny ? '' : `<button class="knapp danger mini" style="margin-left: auto;" onclick="nkSlett('${escAttr(r.Miljo)}', '${escAttr(r.Id)}')">Slett</button>`}
+                    </div>
+                    ${ny ? '' : `<div class="nk-meta" style="margin-top: 8px;">
+                        Ny utløpsdato nullstiller varslingstrinnet, slik at eskaleringen starter forfra.
+                    </div>`}
+                </div>
+            `;
+        }
+
+        function nkLesSkjema() {
+            const v = (id) => document.getElementById(id)?.value ?? '';
+            return {
+                Navn: v('nk-f-navn').trim(),
+                Type: v('nk-f-type'),
+                Hvor: v('nk-f-hvor').trim(),
+                Utloper: v('nk-f-utloper'),
+                VarsleDagerFor: Number(v('nk-f-varsle')) || 30,
+                EnvVar: v('nk-f-envvar').trim(),
+                Ansvarlig: v('nk-f-ansvarlig').trim(),
+                Konsekvens: v('nk-f-konsekvens').trim(),
+                Rotasjon: v('nk-f-rotasjon').trim(),
+                Notat: v('nk-f-notat').trim(),
+                Roteres: document.getElementById('nk-f-roteres-nei')?.checked ? 'nei' : 'ja'
+            };
+        }
+
+        function nkMelding(html, klasse = 'info') {
+            const el = document.getElementById('nk-status');
+            if (el) el.innerHTML = `<div class="banner ${klasse}">${html}</div>`;
+        }
+
+        window.nkRediger = (miljo, id) => {
+            nkState.nyRad = false;
+            document.getElementById('nk-ny').style.display = 'none';
+            nkState.redigerer = `${miljo}/${id}`;
+            nkTegn();
+        };
+
+        window.nkAvbryt = () => {
+            nkState.redigerer = null;
+            nkState.nyRad = false;
+            document.getElementById('nk-ny').style.display = 'none';
+            nkTegn();
+        };
+
+        window.nkVisNy = () => {
+            nkState.redigerer = null;
+            nkState.nyRad = true;
+            const el = document.getElementById('nk-ny');
+            el.style.display = 'block';
+            el.innerHTML = nkSkjema({ Type: 'secret', VarsleDagerFor: 30, Roteres: 'ja' });
+            nkTegn();
+            document.getElementById('nk-f-navn')?.focus();
+        };
+
+        window.nkOpprett = async () => {
+            const body = nkLesSkjema();
+            if (!body.Navn) { nkMelding('Navn mangler.', 'feil'); return; }
+            try {
+                await api.post('/api/nokkelkalender', body);
+                document.getElementById('nk-ny').style.display = 'none';
+                nkState.nyRad = false;
+                nkMelding(`La til <strong>${escHtml(body.Navn)}</strong>.`, 'suksess');
+                await nkLast();
+            } catch (e) {
+                nkMelding(escHtml(e.message), 'feil');
+            }
+        };
+
+        window.nkLagre = async (miljo, id) => {
+            const body = { ...nkLesSkjema(), Miljo: miljo };
+            delete body.Navn; // navnet er RowKey-en og endres ikke
+            try {
+                await api.put(`/api/nokkelkalender/${encodeURIComponent(id)}`, body);
+                nkMelding('Lagret.', 'suksess');
+                await nkLast();
+            } catch (e) {
+                nkMelding(escHtml(e.message), 'feil');
+            }
+        };
+
+        window.nkSlett = async (miljo, id) => {
+            if (!confirm('Slette denne raden fra nøkkelkalenderen?')) return;
+            try {
+                await api.del(`/api/nokkelkalender/${encodeURIComponent(id)}?miljo=${encodeURIComponent(miljo)}`);
+                nkMelding('Raden er slettet.', 'suksess');
+                await nkLast();
+            } catch (e) {
+                nkMelding(escHtml(e.message), 'feil');
+            }
+        };
+
+        window.nkSeed = async () => {
+            if (!confirm(`Legge inn standardinventaret for «${nkState.miljo}»?\n\nRader som allerede finnes røres ikke, så dette kan trygt kjøres om igjen.`)) return;
+            try {
+                const res = await api.post('/api/nokkelkalender/seed', {});
+                nkMelding(`${res.lagtTil} lagt til, ${res.hoppetOver} fantes fra før. Fyll inn utløpsdatoene — de kan ikke leses automatisk.`, 'suksess');
+                await nkLast();
+            } catch (e) {
+                nkMelding(escHtml(e.message), 'feil');
+            }
+        };
+
+        // Tørrkjøring viser nøyaktig hva den daglige jobben ville sendt, uten å
+        // sende noe. Ellers må man vente til dagen etter for å se om oppsettet
+        // virker — og det er nettopp da man ikke vil oppdage at det ikke gjør det.
+        window.nkTorrkjor = async () => {
+            nkMelding('Kjører…');
+            try {
+                const res = await api.post('/api/nokkelkalender/sjekk', { tørrkjør: true });
+                const ville = res.villeVarslet || [];
+                if (ville.length === 0) {
+                    nkMelding(`Ingenting ville blitt varslet nå (${res.vurdert ?? 0} rader vurdert i «${escHtml(res.miljo || '')}»).`);
+                    return;
+                }
+                const mottakere = (res.mottakere || []);
+                nkMelding(
+                    `Ville sendt ett varsel til <strong>${mottakere.length ? escHtml(mottakere.join(', ')) : '(ingen — ADMIN_UPNS er tom)'}</strong> om:<br>`
+                    + ville.map(v => `• ${escHtml(v.Navn)} — ${v.DagerIgjen === null ? 'ukjent dato' : `${v.DagerIgjen} dager igjen`}`).join('<br>'),
+                    mottakere.length ? 'info' : 'advarsel'
+                );
+            } catch (e) {
+                nkMelding(escHtml(e.message), 'feil');
             }
         };
 

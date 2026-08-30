@@ -32,11 +32,53 @@
   - `Key Vault Secrets User` på Key Vault
 - Ingen andre tildelinger (least privilege)
 
+**Merk:** MI-en brukes i praksis bare av SWA-hosten, til å løse
+`@Microsoft.KeyVault(...)`-referanser ved oppstart. SWA Managed Functions
+eksponerer ikke identity-endepunktet til koden, så `DefaultAzureCredential`
+kan ikke hente token derfra — derfor går all lagring via connection string
+fra Key Vault, og `api/src/lib/keyvault.js` er ubrukt. Storage-rolletildelingene
+over er dermed uten praktisk effekt i dag; de står igjen fra da MI-veien ble forsøkt.
+
 ## Key Vault
 
 - Alle hemmeligheter i `kv-fhsskjema-pilot` (dev) / `kv-fhsskjema-pilot-prod` (prod)
 - Se `config/keyvault-secrets.md` for oversikt og rotasjonspolicy
-- Cache på 5 minutter i appen — rotasjoner får effekt automatisk innen den tiden
+- Verdiene når appen som env-vars via `@Microsoft.KeyVault(...)`-referanser,
+  løst av SWA-hosten ved oppstart. En rotert hemmelighet får derfor effekt først
+  når appen restartes — ikke automatisk.
+
+## Nøkkelkalender
+
+Hemmeligheter som utløper er den vanligste kilden til plutselig driftsstans, og
+den vanskeligste å oppdage på forhånd. Admin-panelet har derfor fanen
+**🗓 Nøkkelkalender** (`/admin.html#nokkelkalender`), som fører opp hver
+hemmelighet med:
+
+- **utløpsdato** og hvor mange dager det er igjen,
+- **hvor den ligger** (Key Vault, SWA Configuration, GitHub Secrets),
+- **konsekvens ved utløp** — hva som slutter å virke, og for hvem,
+- **rotasjonsprosedyre** — steg for steg, skrevet for en som ikke bygde løsningen.
+
+`.github/workflows/sjekk-nokler.yml` kaller `POST /api/nokkelkalender/sjekk`
+daglig kl. 07:00 UTC. Endepunktet varsler `ADMIN_UPNS` på e-post når en
+hemmelighet passerer et nytt trinn — først på radens egen varslingsfrist,
+deretter 14, 7, 3 og 1 dag før, og så daglig etter utløp. Ett samlet brev per
+kjøring, ikke ett per hemmelighet.
+
+Praktiske detaljer:
+
+- **Utløpsdatoer fylles inn manuelt.** Appen kan ikke spørre Key Vault (se
+  Managed Identity over). Unntaket er SAS-strenger: de bærer utløpet i seg selv
+  (`se=`), og leses direkte fra env-varen — merk raden med feltet **EnvVar**.
+- **Hvert miljø eier sine egne rader**, så pilot og prod varsler ikke dobbelt.
+  Trykk «Legg inn standardinventaret» én gang per miljø for å få inn de kjente
+  hemmelighetene fra koden; datoene må fylles inn etterpå.
+- **`HASH_SALT` er merket «skal ikke roteres».** Saltet gir deterministisk
+  pseudonymisering av innsendere (`api/src/lib/kryptering.js`). Et bytte gir nye
+  pseudonymer for framtidige innsendinger mens de historiske beholder de gamle,
+  og koblingen kan ikke gjenskapes — e-postadressen den ble beregnet fra er slettet.
+- «Test varsling» i panelet tørrkjører sjekken og viser hva som ville blitt sendt,
+  uten å sende noe.
 
 ## Auth-modell
 

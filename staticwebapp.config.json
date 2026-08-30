@@ -81,6 +81,14 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/nokkelkalender/sjekk",
+            "allowedRoles": ["anonymous"]
+        },
+        {
+            "route": "/api/utsending/send-forfalte",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": ["authenticated"]
         },

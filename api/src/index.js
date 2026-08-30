@@ -32,6 +32,7 @@ require('./functions/oppslag');
 require('./functions/rapporttyper');
 require('./functions/rapport-kjor');
 require('./functions/todo');
+require('./functions/nokkelkalender');
 
 // Etter hvert:
 // require('./functions/skjema');
