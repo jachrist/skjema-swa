@@ -44,11 +44,14 @@ function lagMiljo({ eksisterendeId = null, kopiFraId = null, lager = {} } = {}) 
 
     const lyttere = { window: {}, document: {} };
     const toaster = [];
+    // console.warn fanges opp i stedet for å skrives ut — den forventede
+    // advarselen i kvote-testen skal ikke se ut som en feil i CI-loggen.
+    const advarsler = [];
 
     const ctx = {
         data: null,
         eksisterendeId, kopiFraId,
-        console,
+        console: { ...console, warn: (...a) => advarsler.push(a.join(" ")) },
         Date, JSON, Math, setInterval: () => 1, clearInterval: () => {},
         sikreFeltIder: () => {},
         rendrer: () => {},
@@ -73,7 +76,7 @@ function lagMiljo({ eksisterendeId = null, kopiFraId = null, lager = {} } = {}) 
     ctx.window = ctx;
     ctx.addEventListener = (n, f) => { lyttere.window[n] = f; };
     vm.runInContext(hentSeksjon(), ctx);
-    return { ctx, elementer, lyttere, toaster };
+    return { ctx, elementer, lyttere, toaster, advarsler };
 }
 
 const NOKKEL_NY = 'skjematype-utkast:ny';
@@ -219,7 +222,7 @@ const skjema = (navn) => ({ Skjema_navn: navn, Seksjoner: [] });
 
 // ---------- fullt lager ----------
 {
-    const { ctx, elementer } = lagMiljo({ eksisterendeId: '42' });
+    const { ctx, elementer, advarsler } = lagMiljo({ eksisterendeId: '42' });
     ctx.data = skjema('Reiseregning');
     ctx.startUtkastvakt();
     ctx.data.Skjema_navn = 'Endret';
@@ -227,6 +230,7 @@ const skjema = (navn) => ({ Skjema_navn: navn, Seksjoner: [] });
     sjekk('fullt lager gir false, ikke unntak', ctx.lagreUtkast(), false);
     sjekk('og brukeren får beskjed',
         elementer['lagre-status'].textContent, 'Utkast kunne ikke lagres lokalt — lagre manuelt');
+    sjekk('og feilen logges', /QuotaExceededError/.test(advarsler.join(" ")), true);
 }
 
 // ---------- etter lagring til server ----------

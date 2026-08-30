@@ -4,7 +4,13 @@
  * Se kommentar i storage.js — samme grunn til at vi bruker connection string
  * via KV-referanse i stedet for Managed Identity direkte i koden.
  */
-const { BlobServiceClient } = require('@azure/storage-blob');
+// Samme grunn som i storage.js: lat lasting holder modulen importerbar
+// uten node_modules, slik at logikktester kan kjøre uten npm ci.
+let BlobServiceClient = null;
+function blobKlientKlasse() {
+    if (!BlobServiceClient) ({ BlobServiceClient } = require('@azure/storage-blob'));
+    return BlobServiceClient;
+}
 
 const cs = process.env.STORAGE_CONNECTION_STRING;
 let service = null;
@@ -12,7 +18,7 @@ let service = null;
 function serviceKlient() {
     if (!cs) throw new Error('STORAGE_CONNECTION_STRING env-var mangler');
     if (!service) {
-        service = BlobServiceClient.fromConnectionString(cs);
+        service = blobKlientKlasse().fromConnectionString(cs);
     }
     return service;
 }
@@ -34,7 +40,7 @@ function serviceKlientFra(connectionString, varNavn = 'STORAGE_CONNECTION_STRING
     if (!connectionString) throw new Error(`${varNavn} env-var mangler`);
     let s = tjenester.get(connectionString);
     if (!s) {
-        s = BlobServiceClient.fromConnectionString(connectionString);
+        s = blobKlientKlasse().fromConnectionString(connectionString);
         tjenester.set(connectionString, s);
     }
     return s;

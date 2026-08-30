@@ -17,7 +17,14 @@
  * finnes for data som skal deles på tvers av tenanter — se `todo-storage.js`.
  * Delt nøkkel er eneste vei dit: Managed Identity virker ikke over tenantgrenser.
  */
-const { TableClient } = require('@azure/data-tables');
+// SDK-en lastes først ved første tabelloppslag. Da kan de rene
+// logikktestene kjøre uten node_modules, og CI slipper å installere
+// avhengigheter bare for å validere dem.
+let TableClient = null;
+function tableKlientKlasse() {
+    if (!TableClient) ({ TableClient } = require('@azure/data-tables'));
+    return TableClient;
+}
 
 const cs = process.env.STORAGE_CONNECTION_STRING;
 
@@ -29,7 +36,7 @@ function tabellKlientFra(connectionString, tabellNavn, varNavn = 'STORAGE_CONNEC
     const nokkel = `${connectionString}::${tabellNavn}`;
     let k = klienter.get(nokkel);
     if (!k) {
-        k = TableClient.fromConnectionString(connectionString, tabellNavn);
+        k = tableKlientKlasse().fromConnectionString(connectionString, tabellNavn);
         klienter.set(nokkel, k);
     }
     return k;

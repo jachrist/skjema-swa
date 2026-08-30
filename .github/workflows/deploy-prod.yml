@@ -39,6 +39,15 @@ jobs:
         with:
           submodules: true
           lfs: false
+      - name: Sett opp Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Testene er rene node-skript uten avhengigheter — Azure-SDK-ene lastes
+      # lat i storage.js og blob.js. Derfor trengs ingen npm ci her, og steget
+      # koster noen få sekunder. Feiler det, stopper deployen.
+      - name: Kjør tester
+        run: node scripts/kjor-tester.js
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
