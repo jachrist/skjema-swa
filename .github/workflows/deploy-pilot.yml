@@ -24,9 +24,13 @@ on:
       - 'docs/**'
       - '.gitignore'
 
+# Dependabot-utløste kjøringer får ikke repoets secrets — de ligger i et
+# eget dependabot-scope. deployment_token blir dermed tomt, og SWA-actionen
+# feiler med «deployment_token was not provided». Slike PR-er skal derfor
+# ikke deployes; CI-jobben validerer dem i stedet.
 jobs:
   build_and_deploy_job:
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed'))
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     environment: pilot
@@ -57,7 +61,7 @@ jobs:
           app_build_command: "node ../scripts/build-config.js pilot"
 
   close_pull_request_job:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: github.actor != 'dependabot[bot]' && github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     name: Close Pull Request Job
     steps:
