@@ -2,8 +2,10 @@
  * Backup — bygg zip-eksport av alle tabeller + blob-containers.
  *
  * Struktur i zip:
- *   manifest.json                                — { versjon, tid, tabeller[], containers[] }
+ *   manifest.json                                — { versjon, tid, tabeller[], delteTabeller[], containers[] }
  *   tabeller/{TabellNavn}.json                   — array av entities
+ *   delte-tabeller/{TabellNavn}.json             — tabeller fra den delte dev-kontoen.
+ *                                                  Egen manifestnøkkel, og restore rører dem ikke.
  *   blobs/{container}/{filnavn}                  — binær-innhold
  *   blobs/{container}/_meta.json                 — liste over filnavn + storrelse + contentType
  *
@@ -25,7 +27,7 @@ function jszip() {
     return JSZipKlasse;
 }
 const { PassThrough } = require('stream');
-const { tabellKlient } = require('./storage');
+const { tabellKlient, tabellKlientFra } = require('./storage');
 const { containerKlient } = require('./blob');
 const backupKrypto = require('./backup-krypto');
 
@@ -41,8 +43,31 @@ const TABELLER = [
     'Postnumre',
     'CacheMetadata',
     'SystemInnstillinger',
+    // Løpenummeret per skjematype. Uten den starter tellerne på 1 etter en
+    // gjenoppretting, og nye skjemaer får ID-er som allerede finnes — en feil
+    // som oppstår stille i etterkant og oppdages sent.
+    'Teller',
+    // Brukerskapte rapportdefinisjoner.
+    'Rapporttyper',
+    // OTP-er og Power BI-tokens (365 dagers levetid). Uten dem slutter alle
+    // PB-rapporter å virke til noen utsteder tokens på nytt.
+    'Tilgangskontroll',
     { navn: 'Hendelser', maksAlderDager: 90 }
 ];
+
+// Bevisst utelatt: 'Teammedlemskap' er en cache som bygges opp igjen av
+// team-flytene, og er stor. 'HelloTest' er testrester.
+
+/**
+ * Tabeller som bor på den delte dev-kontoen, ikke i miljøets eget lager.
+ * De finnes derfor bare i én kopi, og ville ikke vært dekket av noen backup.
+ *
+ * De legges i zipen under `delte-tabeller/`, og står i manifestet under en
+ * EGEN nøkkel — bevisst, slik at `restore` ikke rører dem. Lista deles av
+ * pilot og prod, og en gjenoppretting av det ene miljøet skal ikke kunne
+ * overskrive den andres oppgaveliste. Skal de tilbake, gjøres det manuelt.
+ */
+const DELTE_TABELLER = ['TodoPunkter', 'Nokkelkalender'];
 
 // Blob-containere vi tar backup av
 const BLOB_CONTAINERE = ['vedlegg', 'logoer'];
@@ -51,10 +76,10 @@ function tabellNavn(spec) {
     return typeof spec === 'string' ? spec : spec.navn;
 }
 
-async function eksporterTabell(spec, log) {
+async function eksporterTabell(spec, log, klient = null) {
     const navn = tabellNavn(spec);
     const maksAlder = spec.maksAlderDager;
-    const t = tabellKlient(navn);
+    const t = klient || tabellKlient(navn);
     const rader = [];
     try {
         const grenseISO = maksAlder ? new Date(Date.now() - maksAlder * 24 * 3600 * 1000).toISOString() : null;
@@ -240,6 +265,7 @@ async function byggZip(log, fremdrift) {
         tid: new Date().toISOString(),
         miljø: process.env.MILJO || 'ukjent',
         tabeller: [],
+        delteTabeller: [],
         containers: []
     };
 
@@ -252,6 +278,27 @@ async function byggZip(log, fremdrift) {
         manifest.tabeller.push({ navn, antall: rader.length, maksAlderDager: spec.maksAlderDager || null });
     }
     tider.tabellerSek = Math.round((Date.now() - tabellStart) / 1000);
+
+    // Delte tabeller: egen connection string, egen manifestnøkkel. Feiler
+    // oppslaget — typisk en SAS som ikke dekker Table — skal ikke hele
+    // backupen ryke for det. Miljøets egne data er viktigere.
+    const deltCs = process.env.TODO_STORAGE_CONNECTION_STRING || '';
+    if (deltCs) {
+        for (const navn of DELTE_TABELLER) {
+            fremdrift(`leser delt tabell ${navn}`);
+            try {
+                const klient = tabellKlientFra(deltCs, navn, 'TODO_STORAGE_CONNECTION_STRING');
+                const rader = await eksporterTabell(navn, log, klient);
+                zip.file(`delte-tabeller/${navn}.json`, JSON.stringify(rader, null, 2));
+                manifest.delteTabeller.push({ navn, antall: rader.length });
+            } catch (e) {
+                log(`backup: delt tabell ${navn} feilet — ${e.message}`);
+                manifest.delteTabeller.push({ navn, antall: null, feil: String(e.message).slice(0, 200) });
+            }
+        }
+    } else {
+        log('backup: TODO_STORAGE_CONNECTION_STRING ikke satt — delte tabeller hoppes over');
+    }
 
     const blobStart = Date.now();
     for (const navn of BLOB_CONTAINERE) {
@@ -410,5 +457,5 @@ module.exports = {
     byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
     byggZip, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
     verifiserKryptertStrom,
-    TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
+    TABELLER, DELTE_TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
 };
