@@ -20,5 +20,10 @@ jobs:
       - name: Kjør tester
         run: npm test
         working-directory: api
+
+      # Deploy kjører testene uten npm ci. Denne fanger en test som drar inn
+      # en npm-pakke her, i stedet for at utrullingen stopper på det.
+      - name: Kjør tester uten node_modules (som deploy)
+        run: node scripts/kjor-tester.js --uten-pakker
       - name: Bygg config for development
         run: node scripts/build-config.js development

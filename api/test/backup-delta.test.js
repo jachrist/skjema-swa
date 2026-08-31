@@ -187,7 +187,7 @@ async function kjor() {
 async function medStubber(zip, fn) {
     const storage = require('../src/lib/storage');
     const blob = require('../src/lib/blob');
-    const jszipSti = require.resolve('jszip');
+    const Module = require('module');
 
     const orig = {
         tabellKlient: storage.tabellKlient,
@@ -202,9 +202,17 @@ async function medStubber(zip, fn) {
 
     // byggZip lager sin egen JSZip, og cacher klassen etter første kall. Derfor
     // peker stubben på en variabel vi kan sette om, i stedet for på én zip.
+    //
+    // Vi fanger opp selve require-kallet i stedet for å skrive i require.cache:
+    // cache-varianten krever require.resolve('jszip'), som kaster når pakken
+    // ikke er installert. Testene skal kunne kjøre uten node_modules — deploy
+    // kjører dem uten npm ci, og en test som krever pakker stopper utrullingen.
     aktivZip = zip;
-    const jszipOrig = require.cache[jszipSti];
-    require.cache[jszipSti] = { id: jszipSti, filename: jszipSti, loaded: true, exports: function () { return aktivZip; } };
+    const origLoad = Module._load;
+    Module._load = function (req, ...rest) {
+        if (req === 'jszip') return function () { return aktivZip; };
+        return origLoad.call(this, req, ...rest);
+    };
 
     try {
         return await fn();
@@ -214,7 +222,7 @@ async function medStubber(zip, fn) {
         blob.containerKlient = orig.containerKlient;
         if (orig.cs === undefined) delete process.env.TODO_STORAGE_CONNECTION_STRING;
         else process.env.TODO_STORAGE_CONNECTION_STRING = orig.cs;
-        if (jszipOrig) require.cache[jszipSti] = jszipOrig; else delete require.cache[jszipSti];
+        Module._load = origLoad;
     }
 }
 

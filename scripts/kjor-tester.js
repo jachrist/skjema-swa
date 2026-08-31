@@ -41,11 +41,20 @@ if (tester.length === 0) {
     process.exit(0);
 }
 
+// --uten-pakker kjører testene som om node_modules ikke finnes, slik deploy
+// gjør. Uten dette oppdages en test som drar inn en npm-pakke først når
+// utrullingen stopper.
+const utenPakker = process.argv.includes('--uten-pakker');
+const nodeArgs = utenPakker
+    ? ['--require', path.join(__dirname, 'uten-node-modules.js')]
+    : [];
+if (utenPakker) console.log('Kjører uten node_modules (samme betingelse som deploy-steget).');
+
 let feilet = 0;
 for (const fil of tester) {
     const kort = path.relative(ROT, fil).split(path.sep).join('/');
     console.log(`\n─── ${kort} ${'─'.repeat(Math.max(0, 60 - kort.length))}`);
-    const res = spawnSync(process.execPath, [fil], { stdio: 'inherit', cwd: ROT });
+    const res = spawnSync(process.execPath, [...nodeArgs, fil], { stdio: 'inherit', cwd: ROT });
     if (res.status !== 0) {
         feilet++;
         console.log(`✗ ${kort} feilet (exit ${res.status})`);
