@@ -11,7 +11,13 @@
  * resultat. Delvis feil (f.eks. 3 av 5 tabeller fullført) etterlater
  * systemet i inkonsistent tilstand — restore MÅ kjøres på nytt.
  */
-const JSZip = require('jszip');
+// Lat lasting, som med Azure-SDK-ene i storage.js: da kan logikktestene
+// kjøre uten node_modules, og deploy-steget slipper npm ci.
+let JSZipKlasse = null;
+function jszip() {
+    if (!JSZipKlasse) JSZipKlasse = require('jszip');
+    return JSZipKlasse;
+}
 const { tabellKlient, sikreTabell } = require('./storage');
 const { containerKlient } = require('./blob');
 const { dekrypterBufferMed } = require('./backup-krypto');
@@ -22,7 +28,7 @@ const { dekrypterBufferMed } = require('./backup-krypto');
  */
 async function apneOgDekrypter(kryptertBuffer, passphrase) {
     const klartekst = dekrypterBufferMed(passphrase, kryptertBuffer);
-    const zip = await JSZip.loadAsync(klartekst);
+    const zip = await jszip().loadAsync(klartekst);
     const manifestFil = zip.file('manifest.json');
     if (!manifestFil) throw new Error('manifest.json mangler i zip — ikke en gyldig backup');
     const manifest = JSON.parse(await manifestFil.async('string'));

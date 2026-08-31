@@ -60,8 +60,49 @@ function dekrypterBufferMed(passphrase, container) {
     return Buffer.concat([decipher.update(ct), decipher.final()]);
 }
 
+/**
+ * Strømmende kryptering, samme containerformat som krypterBuffer.
+ *
+ * Auth-taggen finnes ikke før siste byte er kryptert, men ligger i hodet.
+ * Derfor kan ikke containeren skrives rett fram i én strøm — kalleren må
+ * kunne plassere hodet foran i etterkant. Mot en block blob løses det ved å
+ * stage hodeblokken sist og likevel commite den først; se krypterStromTil()
+ * i backup.js.
+ *
+ * Bruk:
+ *   const k = startKryptering();
+ *   for await (const del of strom) sink.skriv(k.oppdater(del));
+ *   const { siste, hode } = k.avslutt();
+ */
+function startKrypteringMed(passphrase) {
+    const salt = crypto.randomBytes(SALT_LEN);
+    const iv = crypto.randomBytes(IV_LEN);
+    const nokkel = utledNokkel(passphrase, salt);
+    const cipher = crypto.createCipheriv('aes-256-gcm', nokkel, iv);
+    let avsluttet = false;
+    return {
+        hodeLengde: 4 + 1 + SALT_LEN + IV_LEN + TAG_LEN,
+        oppdater(del) {
+            if (avsluttet) throw new Error('Krypteringen er avsluttet');
+            return cipher.update(del);
+        },
+        avslutt() {
+            if (avsluttet) throw new Error('Krypteringen er allerede avsluttet');
+            avsluttet = true;
+            const siste = cipher.final();
+            const tag = cipher.getAuthTag();
+            const hode = Buffer.concat([MAGIC, Buffer.from([VERSJON]), salt, iv, tag]);
+            return { siste, hode };
+        }
+    };
+}
+
 // Convenience-wrappers som bruker env-passphrase
 const krypterBuffer = (klartekst) => krypterBufferMed(envPassphrase(), klartekst);
 const dekrypterBuffer = (container) => dekrypterBufferMed(envPassphrase(), container);
+const startKryptering = () => startKrypteringMed(envPassphrase());
 
-module.exports = { krypterBuffer, dekrypterBuffer, krypterBufferMed, dekrypterBufferMed, MAGIC };
+module.exports = {
+    krypterBuffer, dekrypterBuffer, krypterBufferMed, dekrypterBufferMed,
+    startKryptering, startKrypteringMed, MAGIC
+};

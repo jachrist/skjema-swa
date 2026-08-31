@@ -28,7 +28,6 @@ const { app } = require('@azure/functions');
 const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const backup = require('../lib/backup');
-const backupKrypto = require('../lib/backup-krypto');
 const restore = require('../lib/restore');
 const innstillinger = require('../lib/innstillinger-storage');
 const hendelser = require('../lib/hendelser-storage');
@@ -109,30 +108,33 @@ function lagSasUrl(blobNavn) {
 }
 
 async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
-    // 1. Bygg zip
-    const { buffer, manifest, varighetSekunder, tider } = await backup.byggBackup(jobbLog, fremdrift);
-    // 2. AES-krypter
-    fremdrift('krypterer');
-    const kryptert = backupKrypto.krypterBuffer(buffer);
-    jobbLog(`backup: kryptert (klartekst ${buffer.length} → container ${kryptert.length} bytes)`);
-    // 3. Lagre i midlertidig blob
-    fremdrift('laster opp til blob-storage');
     const stempel = new Date().toISOString().replace(/[:.]/g, '-');
     const miljø = (process.env.MILJO || 'ukjent').replace(/[^a-z0-9]/gi, '');
     const filnavn = `${miljø}-backup-${stempel}.fsbk`;
     const c = await backupContainer();
     const blob = c.getBlockBlobClient(filnavn);
-    await blob.uploadData(kryptert, {
-        blobHTTPHeaders: { blobContentType: 'application/octet-stream' },
-        metadata: {
-            miljo: process.env.MILJO || 'ukjent',
-            opprettet: new Date().toISOString(),
-            opprettet_av: aktor,
-            klartekst_bytes: String(buffer.length),
-            varighet_sek: String(varighetSekunder)
-        }
+
+    // Bygging, kryptering og opplasting er én strøm: zipen genereres
+    // fortløpende, krypteres underveis og skrives i blokker rett til blobben.
+    // Ingen kopi av den ferdige fila finnes i minnet.
+    const res = await backup.byggOgKrypterTilBlob(
+        blob,
+        { blobContentType: 'application/octet-stream' },
+        jobbLog,
+        fremdrift
+    );
+
+    // Metadata settes etter commit — størrelse og varighet er ikke kjent
+    // før siste blokk er skrevet.
+    await blob.setMetadata({
+        miljo: process.env.MILJO || 'ukjent',
+        opprettet: new Date().toISOString(),
+        opprettet_av: aktor,
+        klartekst_bytes: String(res.storrelseKlar),
+        varighet_sek: String(res.varighetSekunder)
     });
-    return { filnavn, storrelseKryptert: kryptert.length, storrelseKlar: buffer.length, manifest, varighetSekunder, tider };
+
+    return { filnavn, ...res };
 }
 
 /** Full URL til kvitteringsendepunktet, slik flyten slipper å ha den hardkodet. */
@@ -428,18 +430,17 @@ app.http('backupLastNed', {
         if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
         const jobbLog = (...m) => context.log(...m);
         try {
-            const { buffer, manifest, varighetSekunder } = await backup.byggBackup(jobbLog);
-            const kryptert = backupKrypto.krypterBuffer(buffer);
+            const { buffer, manifest, varighetSekunder } = await backup.byggOgKrypterTilBuffer(jobbLog);
             const stempel = new Date().toISOString().replace(/[:.]/g, '-');
             const miljø = (process.env.MILJO || 'ukjent').replace(/[^a-z0-9]/gi, '');
             const filnavn = `${miljø}-backup-${stempel}.fsbk`;
             hendelser.logg({
                 Type: 'backup.last-ned', Aktor: a.upn,
                 ObjektType: 'backup', ObjektId: filnavn,
-                Melding: `Last-ned backup — ${Math.round(kryptert.length / 1024 / 1024 * 10) / 10} MB (${varighetSekunder}s)`
+                Melding: `Last-ned backup — ${Math.round(buffer.length / 1024 / 1024 * 10) / 10} MB (${varighetSekunder}s)`
             });
             return {
-                body: kryptert,
+                body: buffer,
                 headers: {
                     'Content-Type': 'application/octet-stream',
                     'Content-Disposition': `attachment; filename="${filnavn}"`,

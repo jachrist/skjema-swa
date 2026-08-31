@@ -7,12 +7,27 @@
  *   blobs/{container}/{filnavn}                  — binær-innhold
  *   blobs/{container}/_meta.json                 — liste over filnavn + storrelse + contentType
  *
- * Ytelse: alt in-memory. Fint for pilot (< 200 MB). For større deploy må
- * det skrives streaming til midlertidig blob i stedet.
+ * Ytelse: zipen genereres som strøm, krypteres underveis og skrives i blokker
+ * rett til blob. Verken den ferdige zipen, ciphertexten eller den krypterte
+ * containeren finnes som egen kopi i minnet.
+ *
+ * Det som fortsatt skalerer med datamengden, er JSZip: innholdet i alle
+ * blobbene holdes til zipen genereres — én gang datamengden. Det er samme tak
+ * som restore har, siden restore.apneOgDekrypter laster hele zipen i minnet.
+ * Skal det under, må begge sider legges om til et arkivformat som kan skrives
+ * og leses sekvensielt.
  */
-const JSZip = require('jszip');
+// Lat lasting, som med Azure-SDK-ene i storage.js: da kan logikktestene
+// kjøre uten node_modules, og deploy-steget slipper npm ci.
+let JSZipKlasse = null;
+function jszip() {
+    if (!JSZipKlasse) JSZipKlasse = require('jszip');
+    return JSZipKlasse;
+}
+const { PassThrough } = require('stream');
 const { tabellKlient } = require('./storage');
 const { containerKlient } = require('./blob');
+const backupKrypto = require('./backup-krypto');
 
 // Tabeller vi tar backup av. Utsendinger + Hendelser inkluderes for full
 // gjenopprettelse; Hendelser filtreres til siste 90 dager for å begrense
@@ -93,15 +108,131 @@ async function eksporterContainer(navn, zip, log, fremdrift = () => {}) {
     return { antall: meta.length, bytes: totalBytes };
 }
 
+// Blokkstørrelse ved opplasting. Stor nok til at 100+ MB blir få kall, liten
+// nok til at minnebruken er en konstant og ikke følger datamengden.
+const BLOKK_STORRELSE = 8 * 1024 * 1024;
+
 /**
- * Bygg komplett backup-zip. Returnerer Buffer med zip-innhold.
+ * Sink som skriver den krypterte strømmen til en block blob.
  *
- * @param {(msg: string) => void} log
- * @returns {Promise<{ buffer: Buffer, manifest: object }>}
+ * Auth-taggen ligger i hodet, men er ikke kjent før siste byte er kryptert.
+ * Løsningen ligger i block blob-API-et: blokker kan stages i vilkårlig
+ * rekkefølge, og det er commitBlockList som bestemmer rekkefølgen i fila.
+ * Hodeblokken stages derfor til slutt og commites først. Da slipper vi å
+ * endre containerformatet, og gamle backuper leses av samme restore-kode.
  */
-async function byggBackup(log = () => {}, fremdrift = () => {}) {
-    const start = Date.now();
-    const zip = new JSZip();
+function blokkSink(blob, blobHTTPHeaders) {
+    // Blokk-ID-er må ha lik lengde og være unike. 0 er reservert til hodet.
+    const id = (n) => Buffer.from(`blokk-${String(n).padStart(6, '0')}`).toString('base64');
+    const ider = [];
+    let nr = 0;
+    return {
+        async skriv(blokk) {
+            const bid = id(++nr);
+            await blob.stageBlock(bid, blokk, blokk.length);
+            ider.push(bid);
+        },
+        async avslutt(hode) {
+            const hodeId = id(0);
+            await blob.stageBlock(hodeId, hode, hode.length);
+            await blob.commitBlockList([hodeId, ...ider], { blobHTTPHeaders });
+        }
+    };
+}
+
+/**
+ * Sink som samler alt i minnet. Brukes av last-ned-endepunktet, som må ha
+ * hele fila som ett svar uansett.
+ */
+function bufferSink() {
+    const deler = [];
+    let ferdig = null;
+    return {
+        async skriv(blokk) { deler.push(blokk); },
+        async avslutt(hode) { ferdig = Buffer.concat([hode, ...deler]); },
+        hentResultat: () => ferdig
+    };
+}
+
+/**
+ * Les klartekststrømmen, krypter den underveis og skriv den ut i blokker.
+ *
+ * Minnebruken er én blokk om gangen pluss det strømmen selv holder — den
+ * følger ikke datamengden. Blokkene sendes én etter én; parallell staging
+ * ville spart tid, men til gjengjeld holdt flere blokker i minnet samtidig,
+ * og det er nettopp det vi prøver å unngå.
+ */
+/**
+ * JSZip-strømmen bygger på en eldre stream-implementasjon uten
+ * Symbol.asyncIterator, og kan derfor ikke itereres med for await. Vi sender
+ * den gjennom en PassThrough, som er en moderne strøm. Mottrykket består:
+ * komprimeringen bremses mens en blokk lastes opp.
+ */
+function somModerneStrom(strom) {
+    if (typeof strom?.[Symbol.asyncIterator] === 'function') return strom;
+    const gjennom = new PassThrough();
+    strom.on('error', (e) => gjennom.destroy(e));
+    strom.pipe(gjennom);
+    return gjennom;
+}
+
+async function skrivKryptertStrom(strom, sink, blokkStorrelse = BLOKK_STORRELSE) {
+    const k = backupKrypto.startKryptering();
+    let samlet = [];
+    let samletBytes = 0;
+    let klartekstBytes = 0;
+    let kryptertBytes = k.hodeLengde;
+
+    // Blokkene deles på nøyaktig blokkStorrelse, ikke på det strømmen
+    // tilfeldigvis leverer. Uten det ville én stor del fra strømmen blitt
+    // én stor blokk, og minnetaket fulgt innkommende delstørrelse.
+    const tomBuffer = async (tving = false) => {
+        if (samletBytes === 0) return;
+        let rest = Buffer.concat(samlet, samletBytes);
+        samlet = [];
+        samletBytes = 0;
+        while (rest.length >= blokkStorrelse) {
+            const blokk = rest.subarray(0, blokkStorrelse);
+            rest = rest.subarray(blokkStorrelse);
+            kryptertBytes += blokk.length;
+            await sink.skriv(blokk);
+        }
+        if (rest.length === 0) return;
+        if (tving) {
+            kryptertBytes += rest.length;
+            await sink.skriv(rest);
+        } else {
+            samlet = [rest];
+            samletBytes = rest.length;
+        }
+    };
+
+    for await (const del of somModerneStrom(strom)) {
+        klartekstBytes += del.length;
+        const ct = k.oppdater(del);
+        if (ct.length) { samlet.push(ct); samletBytes += ct.length; }
+        if (samletBytes >= blokkStorrelse) await tomBuffer();
+    }
+
+    const { siste, hode } = k.avslutt();
+    if (siste.length) { samlet.push(siste); samletBytes += siste.length; }
+    await tomBuffer(true);
+    await sink.avslutt(hode);
+
+    return { klartekstBytes, kryptertBytes };
+}
+
+/**
+ * Bygg zip-innholdet. Returnerer JSZip-objektet uten å generere fila.
+ *
+ * Her ligger den gjenstående minnebruken: JSZip holder innholdet i alle
+ * blobbene til zipen genereres. Det er én gang datamengden, og samme tak som
+ * restore har — `restore.apneOgDekrypter` laster hele zipen i minnet uansett.
+ * Skal det under, må både backup og restore legges om til et arkivformat som
+ * kan skrives og leses sekvensielt.
+ */
+async function byggZip(log, fremdrift) {
+    const zip = new (jszip())();
     const tider = {};
 
     const manifest = {
@@ -112,7 +243,6 @@ async function byggBackup(log = () => {}, fremdrift = () => {}) {
         containers: []
     };
 
-    // Tabeller
     const tabellStart = Date.now();
     for (const spec of TABELLER) {
         const navn = tabellNavn(spec);
@@ -123,7 +253,6 @@ async function byggBackup(log = () => {}, fremdrift = () => {}) {
     }
     tider.tabellerSek = Math.round((Date.now() - tabellStart) / 1000);
 
-    // Blob-containere
     const blobStart = Date.now();
     for (const navn of BLOB_CONTAINERE) {
         fremdrift(`leser container ${navn}`);
@@ -133,20 +262,66 @@ async function byggBackup(log = () => {}, fremdrift = () => {}) {
     tider.blobberSek = Math.round((Date.now() - blobStart) / 1000);
 
     zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+    return { zip, manifest, tider };
+}
 
-    fremdrift('komprimerer zip');
-    log(`backup: genererer zip…`);
+/**
+ * Bygg, krypter og skriv en komplett backup til en sink.
+ *
+ * Zipen genereres som strøm og krypteres underveis, så verken den ferdige
+ * zipen, ciphertexten eller containeren finnes som egen kopi i minnet.
+ */
+async function byggOgKrypter(sink, log = () => {}, fremdrift = () => {}) {
+    const start = Date.now();
+    const { zip, manifest, tider } = await byggZip(log, fremdrift);
+
+    fremdrift('komprimerer og krypterer');
+    log('backup: genererer zip…');
     const zipStart = Date.now();
-    const buffer = await zip.generateAsync({
-        type: 'nodebuffer',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 6 }
-    });
+
+    let sistMeldt = 0;
+    const strom = zip.generateNodeStream(
+        { type: 'nodebuffer', compression: 'DEFLATE', compressionOptions: { level: 6 } },
+        (status) => {
+            // Meldes hvert tiende prosentpoeng — statusraden skrives til Table
+            // Storage, og det er ingen grunn til å gjøre det hundre ganger.
+            const p = Math.floor(status.percent / 10) * 10;
+            if (p > sistMeldt) { sistMeldt = p; fremdrift(`komprimerer og krypterer (${p} %)`); }
+        }
+    );
+
+    const { klartekstBytes, kryptertBytes } = await skrivKryptertStrom(strom, sink);
     tider.zipSek = Math.round((Date.now() - zipStart) / 1000);
 
     const varighetSek = Math.round((Date.now() - start) / 1000);
-    log(`backup: zip ferdig — ${Math.round(buffer.length / 1024 / 1024 * 10) / 10} MB (${varighetSek}s: tabeller ${tider.tabellerSek}s, blobs ${tider.blobberSek}s, komprimering ${tider.zipSek}s)`);
-    return { buffer, manifest, varighetSekunder: varighetSek, tider };
+    const mb = (b) => Math.round(b / 1024 / 1024 * 10) / 10;
+    log(`backup: ferdig — ${mb(klartekstBytes)} MB zip → ${mb(kryptertBytes)} MB kryptert `
+        + `(${varighetSek}s: tabeller ${tider.tabellerSek}s, blobs ${tider.blobberSek}s, `
+        + `komprimering+kryptering ${tider.zipSek}s)`);
+
+    return {
+        manifest,
+        storrelseKlar: klartekstBytes,
+        storrelseKryptert: kryptertBytes,
+        varighetSekunder: varighetSek,
+        tider
+    };
 }
 
-module.exports = { byggBackup, TABELLER, BLOB_CONTAINERE };
+/** Bygg backup direkte til en block blob. Minnebruken følger ikke filstørrelsen. */
+async function byggOgKrypterTilBlob(blob, blobHTTPHeaders, log, fremdrift) {
+    return byggOgKrypter(blokkSink(blob, blobHTTPHeaders), log, fremdrift);
+}
+
+/** Bygg backup til en Buffer — for last-ned-endepunktet, som må svare med hele fila. */
+async function byggOgKrypterTilBuffer(log, fremdrift) {
+    const sink = bufferSink();
+    const res = await byggOgKrypter(sink, log, fremdrift);
+    return { ...res, buffer: sink.hentResultat() };
+}
+
+module.exports = {
+    byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
+    byggZip, skrivKryptertStrom, blokkSink, bufferSink,
+    TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE
+};
