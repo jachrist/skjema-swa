@@ -8,7 +8,7 @@
  * Hvorfor: deploy-steget kjører testene UTEN `npm ci`, fordi de skal være
  * raske og fordi Azure-SDK-ene lastes lat. En test som likevel drar inn en
  * pakke, feiler først i deployen — og stopper utrullingen. Det skjedde
- * 01.09.2026 og holdt to commits tilbake. Med denne kjøres samme betingelse
+ * 31.08.2026 og holdt to commits tilbake. Med denne kjøres samme betingelse
  * lokalt og i CI, der den koster sekunder i stedet for en feilsøkingsrunde.
  *
  * Trenger en test en pakke for å dekke noe ekte (som jszip i
