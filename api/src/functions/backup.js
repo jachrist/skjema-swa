@@ -43,6 +43,7 @@ const { app } = require('@azure/functions');
 const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const backup = require('../lib/backup');
+const graphOpplast = require('../lib/graph-opplast');
 const restore = require('../lib/restore');
 const innstillinger = require('../lib/innstillinger-storage');
 const hendelser = require('../lib/hendelser-storage');
@@ -149,7 +150,45 @@ async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
         varighet_sek: String(res.varighetSekunder)
     });
 
-    return { filnavn, ...res };
+    // Blob-klienten følger med ut: Graph-opplastingen leser fila derfra i
+    // biter, i stedet for å hente den ned igjen over en SAS-URL.
+    return { filnavn, blob, ...res };
+}
+
+/**
+ * Kopier backupen ut av Azure.
+ *
+ * To veier, i prioritert rekkefølge:
+ *   1. Microsoft Graph rett til et SharePoint-bibliotek. Vi styrer bitene selv,
+ *      og får bekreftet størrelse i samme kall — altså en ekte kontroll på at
+ *      fila kom hel fram.
+ *   2. Power Automate-flyten, som før. Beholdt så et miljø uten Graph-oppsett
+ *      fortsatt har en kopi, og så overgangen kan tas ett miljø om gangen.
+ *
+ * Er Graph konfigurert, men feiler, faller vi IKKE tilbake til flyten: da er
+ * det en reell feil som skal ses, ikke skjules bak en reservevei.
+ */
+async function lastOppKopi(res, sasUrl, sti, jobbLog, fremdrift) {
+    if (graphOpplast.erKonfigurert()) {
+        fremdrift('laster opp til SharePoint');
+        try {
+            const g = await graphOpplast.lastOppBackup(
+                { blob: res.blob, filnavn: res.filnavn, storrelseBytes: res.storrelseKryptert },
+                jobbLog
+            );
+            return {
+                kanal: 'graph',
+                flytStatus: g.status === 'ok' ? 'ok' : 'feilet',
+                flytMelding: g.status === 'ok' ? null : g.melding,
+                graph: g
+            };
+        } catch (e) {
+            jobbLog(`backup/kjor: Graph-opplasting feilet — ${e.message}`);
+            return { kanal: 'graph', flytStatus: 'feilet', flytMelding: `Graph-opplasting feilet: ${e.message}` };
+        }
+    }
+    fremdrift('kaller PA-flyt');
+    return { kanal: 'pa-flyt', ...(await kallBackupFlyt(res, sasUrl, sti, jobbLog)) };
 }
 
 /** Full URL til kvitteringsendepunktet, slik flyten slipper å ha den hardkodet. */
@@ -232,7 +271,17 @@ async function kjorBackupJobb(aktor, jobbLog) {
         const sasUrl = lagSasUrl(res.filnavn);
         const stiInnst = await innstillinger.hent('BackupOneDriveSti');
         const sti = stiInnst?.Verdi || '';
-        const { flytStatus, flytMelding } = await kallBackupFlyt(res, sasUrl, sti, jobbLog);
+        const { kanal, flytStatus, flytMelding, graph } = await lastOppKopi(res, sasUrl, sti, jobbLog, fremdrift);
+
+        // Graph kvitterer i samme kall — vi vet utfallet med én gang, og
+        // trenger ingen kvittering tilbake fra en flyt. PA-veien får fortsatt
+        // sine felter satt av /api/backup/kvittering.
+        const graphStatus = kanal === 'graph' ? {
+            OneDriveStatus: flytStatus === 'ok' ? 'ok' : 'feil',
+            OneDriveKvittert: new Date().toISOString(),
+            OneDriveStorrelse: Number(graph?.storrelseBytes) || 0,
+            OneDriveMelding: (graph?.melding || '').slice(0, 500)
+        } : {};
 
         await settStatus({
             Status: flytStatus === 'feilet' ? 'feil' : 'ok',
@@ -244,15 +293,18 @@ async function kjorBackupJobb(aktor, jobbLog) {
             VarighetSekunder: res.varighetSekunder,
             Tider: JSON.stringify(res.tider || {}),
             FlytStatus: flytStatus,
-            OneDriveSti: sti,
-            SistFeil: flytMelding || ''
+            Kanal: kanal,
+            OneDriveSti: kanal === 'graph' ? (graph?.sti || '') : sti,
+            SistFeil: flytMelding || '',
+            ...graphStatus
         });
 
+        const kanalNavn = kanal === 'graph' ? 'SharePoint (Graph)' : 'PA-flyt';
         hendelser.logg({
             Type: 'backup.kjort', Aktor: aktor,
             ObjektType: 'backup', ObjektId: res.filnavn,
-            Melding: `Backup kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. PA-flyt: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
-            Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, flytStatus, flytMelding }
+            Melding: `Backup kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. ${kanalNavn}: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
+            Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, kanal, flytStatus, flytMelding, webUrl: graph?.webUrl || null }
         });
     } catch (e) {
         jobbLog(`backup/kjor FEIL: ${e.message}`);

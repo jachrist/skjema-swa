@@ -10,13 +10,17 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 // om de er satt eller ikke, evt. lengde/prefiks for identifisering.
 const OFFENTLIGE_ENV = [
     'MILJO', 'SWA_URL', 'STORAGE_ACCOUNT_NAME', 'KEYVAULT_NAME',
-    'FS_API_URL', 'FS_EIER_ORG_KODE', 'ADMIN_UPNS'
+    'FS_API_URL', 'FS_EIER_ORG_KODE', 'ADMIN_UPNS',
+    // Hvor backupen lastes opp. Ikke hemmelig, og det som oftest er feil
+    // konfigurert når kopien ikke dukker opp der noen leter etter den.
+    'BACKUP_SHAREPOINT_SITE', 'BACKUP_SHAREPOINT_BIBLIOTEK', 'BACKUP_SHAREPOINT_MAPPE'
 ];
 const HEMMELIGE_ENV = [
     'STORAGE_CONNECTION_STRING', 'TODO_STORAGE_CONNECTION_STRING',
     'AAD_CLIENT_ID', 'AAD_CLIENT_SECRET',
     'HASH_SALT', 'OTP_HMAC_KEY', 'FLOW_CALLBACK_KEY', 'SCHEDULER_KEY',
     'FS_API_USER', 'FS_API_PASSWORD',
+    'GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET',
     'VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL', 'PURRE_FLOW_URL',
     'BACKUP_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL',
     'UTSENDING_FLOW_URL'
