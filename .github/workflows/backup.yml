@@ -1,0 +1,63 @@
+name: Backup
+
+# SWA Managed Functions støtter ikke timer-triggere.
+#
+# To kadenser:
+#   full  — søndag natt. Alt: tabeller, delte tabeller, Postnumre og alle blobber.
+#   delta — de øvrige nettene. Alle dynamiske tabeller i sin helhet, men bare
+#           blobber som er kommet til siden forrige fulle backup.
+#
+# Gjenoppretting: siste fulle + siste natts delta får løsningen opp. Vil man ha
+# vedlegg som kom til i mellomtiden, kjøres deltaene imellom etterpå — de
+# fyller på uten å slette.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'   # søndag 02:00 UTC — full
+    - cron: '0 2 * * 1-6' # mandag-lørdag 02:00 UTC — delta
+  workflow_dispatch:
+    inputs:
+      modus:
+        description: 'full eller delta'
+        required: true
+        default: full
+        type: choice
+        options: [full, delta]
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: backup (${{ matrix.env }})
+    steps:
+      - name: Kall backup/kjor (${{ matrix.env }})
+        env:
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
+          # Søndagskjøringen er full, resten delta. Manuell kjøring velger selv.
+          MODUS: ${{ github.event_name == 'workflow_dispatch' && inputs.modus || (github.event.schedule == '0 2 * * 0' && 'full' || 'delta') }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
+          fi
+          echo "Kaller $SWA_URL/api/backup/kjor (${{ matrix.env }}, modus=$MODUS) …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/backup/kjor" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d "{\"modus\":\"$MODUS\"}")
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          # 202 = jobben er startet. Den kjører videre i bakgrunnen, og
+          # resultatet leses fra /api/backup/status eller Hendelser.
+          if [ "$RESP" != "202" ] && [ "$RESP" != "200" ]; then exit 1; fi

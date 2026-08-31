@@ -123,10 +123,14 @@ function lagSasUrl(blobNavn) {
     return `https://${konto}.blob.core.windows.net/${BACKUP_CONTAINER}/${encodeURIComponent(blobNavn)}?${sas}`;
 }
 
-async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
+async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}, opsjoner = {}) {
+    const erDelta = opsjoner.modus === 'delta';
     const stempel = new Date().toISOString().replace(/[:.]/g, '-');
     const miljø = (process.env.MILJO || 'ukjent').replace(/[^a-z0-9]/gi, '');
-    const filnavn = `${miljø}-backup-${stempel}.fsbk`;
+    // Ulikt ord i filnavnet, ikke bare i manifestet: da kan Azures
+    // lifecycle-regler skille på prefiks og gi deltaene kortere levetid enn
+    // de fulle, og et blikk i fillista sier hva som er hva.
+    const filnavn = `${miljø}-${erDelta ? 'delta' : 'backup'}-${stempel}.fsbk`;
     const c = await backupContainer();
     const blob = c.getBlockBlobClient(filnavn);
 
@@ -137,13 +141,15 @@ async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
         blob,
         { blobContentType: 'application/octet-stream' },
         jobbLog,
-        fremdrift
+        fremdrift,
+        opsjoner
     );
 
     // Metadata settes etter commit — størrelse og varighet er ikke kjent
     // før siste blokk er skrevet.
     await blob.setMetadata({
         miljo: process.env.MILJO || 'ukjent',
+        modus: erDelta ? 'delta' : 'full',
         opprettet: new Date().toISOString(),
         opprettet_av: aktor,
         klartekst_bytes: String(res.storrelseKlar),
@@ -152,7 +158,36 @@ async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}) {
 
     // Blob-klienten følger med ut: Graph-opplastingen leser fila derfra i
     // biter, i stedet for å hente den ned igjen over en SAS-URL.
-    return { filnavn, blob, ...res };
+    return { filnavn, blob, modus: erDelta ? 'delta' : 'full', ...res };
+}
+
+// Peker på siste vellykkede FULLE backup. Et delta bygger på den, og trenger
+// både navnet — for å kunne si hva det hviler på — og starttidspunktet, for å
+// vite hvilke blobber som er nye.
+//
+// Vi bruker starttiden, ikke sluttiden: en blobb som kom til mens den fulle
+// kjørte kan ha blitt oversett av den. Å ta den med i deltaet også er
+// ufarlig — en dobbel blobb skrives bare over ved gjenoppretting — mens å
+// hoppe over den ville betydd at den aldri fantes i noen backup.
+const FULL_RK = 'BackupSisteFulle';
+
+async function hentSisteFulle() {
+    try {
+        const rad = await tabellKlient('CacheMetadata').getEntity(STATUS_PK, FULL_RK);
+        return { filnavn: rad.Filnavn || null, startet: rad.Startet || null };
+    } catch (e) {
+        if (e.statusCode === 404) return null;
+        throw e;
+    }
+}
+
+async function settSisteFulle(filnavn, startet) {
+    try {
+        await tabellKlient('CacheMetadata').upsertEntity(
+            { partitionKey: STATUS_PK, rowKey: FULL_RK, Filnavn: filnavn, Startet: startet },
+            'Merge'
+        );
+    } catch (_) { /* neste delta faller da tilbake til full — trygt nok */ }
 }
 
 /**
@@ -256,7 +291,7 @@ async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
  * holder en forbindelse åpen, så svaret må sendes før jobben er ferdig.
  * Framdrift leses fra statusraden i CacheMetadata.
  */
-async function kjorBackupJobb(aktor, jobbLog) {
+async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
     // Hjerteslag: hvert steg stempler statusraden, slik at admin-panelet kan
     // skille «jobber fortsatt» fra «døde stille». En bakgrunnsjobb som blir
     // drept av minnetak eller instansresirkulering rekker ikke å sette Status,
@@ -267,7 +302,23 @@ async function kjorBackupJobb(aktor, jobbLog) {
     };
 
     try {
-        const res = await byggOgLagre(aktor, jobbLog, fremdrift);
+        // Et delta krever en full å bygge på. Finnes ingen — første kjøring,
+        // eller statusraden er borte — tas en full i stedet. Alternativet
+        // ville vært en deltafil som ikke kan gjenopprettes alene.
+        const startet = new Date().toISOString();
+        let opsjoner = { modus: 'full' };
+        if (onsketModus === 'delta') {
+            const full = await hentSisteFulle();
+            if (full?.filnavn && full?.startet) {
+                opsjoner = { modus: 'delta', basertPa: full.filnavn, blobberSiden: full.startet };
+                jobbLog(`backup/kjor: delta basert på ${full.filnavn} (blobber endret etter ${full.startet})`);
+            } else {
+                jobbLog('backup/kjor: ba om delta, men fant ingen full backup å bygge på — kjører full');
+            }
+        }
+
+        const res = await byggOgLagre(aktor, jobbLog, fremdrift, opsjoner);
+        if (res.modus === 'full') await settSisteFulle(res.filnavn, startet);
         const sasUrl = lagSasUrl(res.filnavn);
         const stiInnst = await innstillinger.hent('BackupOneDriveSti');
         const sti = stiInnst?.Verdi || '';
@@ -295,6 +346,8 @@ async function kjorBackupJobb(aktor, jobbLog) {
             Tider: JSON.stringify(res.tider || {}),
             FlytStatus: flytStatus,
             Kanal: kanal,
+            Modus: res.modus,
+            BasertPa: res.modus === 'delta' ? (opsjoner.basertPa || '') : '',
             OneDriveSti: kanal === 'graph' ? (graph?.sti || '') : sti,
             SistFeil: flytMelding || '',
             ...graphStatus
@@ -304,7 +357,7 @@ async function kjorBackupJobb(aktor, jobbLog) {
         hendelser.logg({
             Type: 'backup.kjort', Aktor: aktor,
             ObjektType: 'backup', ObjektId: res.filnavn,
-            Melding: `Backup kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. ${kanalNavn}: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
+            Melding: `Backup (${res.modus}) kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. ${kanalNavn}: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
             Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, kanal, flytStatus, flytMelding, webUrl: graph?.webUrl || null }
         });
     } catch (e) {
@@ -331,17 +384,23 @@ app.http('backupKjor', {
         const auth = schedulerEllerAdmin(request);
         if (!auth.ok) return { status: auth.status, jsonBody: { status: 'feil', melding: auth.melding } };
 
+        // modus: 'full' (standard) eller 'delta'. Et delta tar alle dynamiske
+        // tabeller i sin helhet, men bare blobber som er kommet til siden
+        // forrige fulle backup.
+        const body = await request.json().catch(() => ({}));
+        const onsketModus = String(body?.modus || '').trim().toLowerCase() === 'delta' ? 'delta' : 'full';
+
         const startTid = new Date().toISOString();
         await settStatus({
             Status: 'kjører', Startet: startTid, Kilde: auth.upn,
             SistOppdatert: startTid, Steg: 'starter',
-            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: '', Tider: '',
+            Ferdig: '', Filnavn: '', FlytStatus: '', SistFeil: '', Tider: '', Modus: '', BasertPa: '',
             OneDriveStatus: '', OneDriveKvittert: '', OneDriveMelding: '', OneDriveStorrelse: 0
         });
 
         const jobbLog = (...a) => context.log(...a);
-        jobbLog(`backup/kjor: trigget av ${auth.upn} (fire-and-forget)`);
-        kjorBackupJobb(auth.upn, jobbLog).catch(e => jobbLog(`backup/kjor: uventet feil i bakgrunnsjobb — ${e.message}`));
+        jobbLog(`backup/kjor: trigget av ${auth.upn}, modus=${onsketModus} (fire-and-forget)`);
+        kjorBackupJobb(auth.upn, jobbLog, onsketModus).catch(e => jobbLog(`backup/kjor: uventet feil i bakgrunnsjobb — ${e.message}`));
 
         return {
             status: 202,
@@ -380,6 +439,8 @@ app.http('backupStatus', {
                     // 'graph' = SharePoint via Microsoft Graph, 'pa-flyt' = OneDrive
                     // via Power Automate. Avgjør hvordan panelet skal formulere seg.
                     kanal: rad.Kanal || null,
+                    modus: rad.Modus || null,
+                    basertPa: rad.BasertPa || null,
                     oneDriveStatus: rad.OneDriveStatus || null,
                     oneDriveKvittert: rad.OneDriveKvittert || null,
                     oneDriveMelding: rad.OneDriveMelding || null,

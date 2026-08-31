@@ -1966,12 +1966,19 @@
                 <div class="panel">
                     <h2>Kjør backup</h2>
                     <div class="knapp-rad">
-                        <button class="knapp primær" onclick="bKjor()">💾 Kjør backup nå</button>
+                        <button class="knapp primær" onclick="bKjor('full')">💾 Full backup nå</button>
+                        <button class="knapp" onclick="bKjor('delta')">➕ Delta siden siste fulle</button>
                         <button class="knapp" onclick="bLastNed()">⬇ Last ned kryptert backup lokalt</button>
                     </div>
-                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
-                        Backup inkluderer alle tabeller + blob-innhold (vedlegg + logoer). AES-256-GCM-kryptert med BACKUP_PASSPHRASE.
-                        Kan ta 30 sekunder til flere minutter avhengig av datamengde.
+                    <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                        <strong>Full</strong> tar alt: tabeller, delte tabeller, postnumre og alle blobber.
+                        Kjøres automatisk søndag natt.<br>
+                        <strong>Delta</strong> tar alle dynamiske tabeller i sin helhet, men bare vedlegg og logoer
+                        som er kommet til siden forrige fulle. Kjøres de øvrige nettene, og er langt raskere og mindre.<br>
+                        Alt AES-256-GCM-krypteres med BACKUP_PASSPHRASE.
+                        Ved gjenoppretting: kjør den fulle først, deretter deltaene i rekkefølge —
+                        de fyller på uten å slette. <em>Merk at sletting ikke fanges opp av et delta:
+                        et vedlegg som ble slettet etter siste fulle, kommer tilbake.</em>
                     </div>
                     <div id="b-kjor-status" style="margin-top: 10px;"></div>
                 </div>
@@ -2148,12 +2155,15 @@
             }
         };
 
-        window.bKjor = async () => {
-            if (!confirm('Kjør backup nå? Den kjører i bakgrunnen og kan ta flere minutter.')) return;
+        window.bKjor = async (modus = 'full') => {
+            const tekst = modus === 'delta'
+                ? 'Kjør delta-backup? Den tar bare vedlegg og logoer som er kommet til siden forrige fulle backup.'
+                : 'Kjør full backup? Den tar alt, kjører i bakgrunnen og kan ta flere minutter.';
+            if (!confirm(tekst)) return;
             const s = document.getElementById('b-kjor-status');
-            s.innerHTML = '<div class="banner info">Starter backup…</div>';
+            s.innerHTML = `<div class="banner info">Starter ${escHtml(modus)}-backup…</div>`;
             try {
-                await api.post('/api/backup/kjor', {});
+                await api.post('/api/backup/kjor', { modus });
                 await bFolgStatus();
             } catch (e) {
                 s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
@@ -2209,7 +2219,8 @@
 
                     s.innerHTML = `
                         <div class="banner ${klasse}">
-                            <strong>${feilet ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
+                            <strong>${feilet ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.modus ? ` (${escHtml(st.modus)})` : ''}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
+                            ${st.modus === 'delta' && st.basertPa ? `<br><small>Bygger på <code>${escHtml(st.basertPa)}</code> — begge trengs ved gjenoppretting.</small>` : ''}
                             ${mb !== null ? `<br><small>${mb} MB kryptert · ${st.varighetSekunder}s · ${escHtml(kanalNavn)}: ${escHtml(st.flytStatus || '-')}</small>` : ''}
                             ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
                             ${kopi}

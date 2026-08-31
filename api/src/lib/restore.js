@@ -18,8 +18,9 @@ function jszip() {
     if (!JSZipKlasse) JSZipKlasse = require('jszip');
     return JSZipKlasse;
 }
-const { tabellKlient, sikreTabell } = require('./storage');
-const { containerKlient } = require('./blob');
+// Via modulobjektet, ikke destrukturert — se samme begrunnelse i backup.js.
+const storage = require('./storage');
+const blobLager = require('./blob');
 const { dekrypterBufferMed } = require('./backup-krypto');
 
 /**
@@ -36,7 +37,7 @@ async function apneOgDekrypter(kryptertBuffer, passphrase) {
 }
 
 async function wipeTabell(navn, log) {
-    const t = tabellKlient(navn);
+    const t = storage.tabellKlient(navn);
     let slettet = 0;
     try {
         for await (const e of t.listEntities({ queryOptions: { select: ['PartitionKey', 'RowKey'] } })) {
@@ -53,7 +54,7 @@ async function wipeTabell(navn, log) {
 
 async function importerTabell(navn, rader, log) {
     if (rader.length === 0) return 0;
-    const t = await sikreTabell(navn);
+    const t = await storage.sikreTabell(navn);
     let skrevet = 0;
     for (const r of rader) {
         if (!r.partitionKey && !r.PartitionKey) continue;
@@ -72,7 +73,7 @@ async function importerTabell(navn, rader, log) {
 }
 
 async function wipeContainer(navn, log) {
-    const c = containerKlient(navn);
+    const c = blobLager.containerKlient(navn);
     let slettet = 0;
     try {
         for await (const blob of c.listBlobsFlat()) {
@@ -88,7 +89,7 @@ async function wipeContainer(navn, log) {
 }
 
 async function importerContainer(navn, zip, meta, log) {
-    const c = containerKlient(navn);
+    const c = blobLager.containerKlient(navn);
     try { await c.createIfNotExists(); } catch (e) { if (e.statusCode !== 409) throw e; }
     let skrevet = 0;
     const prefiks = `blobs/${navn}/`;
@@ -106,12 +107,33 @@ async function importerContainer(navn, zip, meta, log) {
 }
 
 /**
- * Kjør full restore fra en allerede-åpnet backup.
- * @returns { tabeller: [{navn, slettet, skrevet}], containere: [{navn, slettet, skrevet}] }
+ * Kjør restore fra en allerede-åpnet backup.
+ *
+ * To modus, styrt av manifestet:
+ *
+ *   full  — som før: hver tabell og container i manifestet tømmes før den
+ *           skrives på nytt.
+ *   delta — containerne tømmes IKKE. En deltafil inneholder bare blobbene som
+ *           kom til siden forrige fulle backup; tømmer vi først, sletter vi
+ *           alt det deltaet ikke inneholder. Det er den farligste enkeltfellen
+ *           i hele opplegget, og derfor leses modus fra manifestet, ikke fra
+ *           et valg noen må huske å sette.
+ *
+ * Tabellene eksporteres i sin helhet også i et delta, så der er tøm-og-skriv
+ * riktig i begge modus. Tabeller som ikke er med i manifestet (f.eks.
+ * Postnumre i et delta) røres ikke — løkka går bare over det manifestet har.
+ *
+ * @returns { modus, tabeller: [{navn, slettet, skrevet}], containere: [...] }
  */
 async function kjorRestore({ manifest, zip }, log = () => {}) {
     const start = Date.now();
-    const resultat = { tabeller: [], containere: [] };
+    const modus = manifest.modus === 'delta' ? 'delta' : 'full';
+    const resultat = { modus, tabeller: [], containere: [] };
+
+    if (modus === 'delta') {
+        log(`restore: DELTA basert på ${manifest.basertPa || 'ukjent full backup'} — `
+            + `containere fylles på, ingenting slettes. Gjenopprett den fulle først.`);
+    }
 
     for (const t of (manifest.tabeller || [])) {
         const fil = zip.file(`tabeller/${t.navn}.json`);
@@ -125,7 +147,7 @@ async function kjorRestore({ manifest, zip }, log = () => {}) {
     for (const c of (manifest.containers || [])) {
         const metaFil = zip.file(`blobs/${c.navn}/_meta.json`);
         const meta = metaFil ? JSON.parse(await metaFil.async('string')) : [];
-        const slettet = await wipeContainer(c.navn, log);
+        const slettet = modus === 'delta' ? 0 : await wipeContainer(c.navn, log);
         const skrevet = await importerContainer(c.navn, zip, meta, log);
         resultat.containere.push({ navn: c.navn, slettet, skrevet });
     }

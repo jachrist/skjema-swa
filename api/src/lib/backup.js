@@ -27,8 +27,10 @@ function jszip() {
     return JSZipKlasse;
 }
 const { PassThrough } = require('stream');
-const { tabellKlient, tabellKlientFra } = require('./storage');
-const { containerKlient } = require('./blob');
+// Hentes via modulobjektet, ikke destrukturert: da kan testene bytte ut
+// lagringslaget uten å røre produksjonskoden. Samme mønster som backupKrypto.
+const storage = require('./storage');
+const blobLager = require('./blob');
 const backupKrypto = require('./backup-krypto');
 
 // Tabeller vi tar backup av. Utsendinger + Hendelser inkluderes for full
@@ -69,6 +71,10 @@ const TABELLER = [
  */
 const DELTE_TABELLER = ['TodoPunkter', 'Nokkelkalender'];
 
+// Tabeller som bare tas i fulle kjøringer. Postnumre er stor, endrer seg
+// sjelden, og har ingen endringssporing å bygge et delta på.
+const TABELLER_KUN_FULL = ['Postnumre'];
+
 // Blob-containere vi tar backup av
 const BLOB_CONTAINERE = ['vedlegg', 'logoer'];
 
@@ -79,7 +85,7 @@ function tabellNavn(spec) {
 async function eksporterTabell(spec, log, klient = null) {
     const navn = tabellNavn(spec);
     const maksAlder = spec.maksAlderDager;
-    const t = klient || tabellKlient(navn);
+    const t = klient || storage.tabellKlient(navn);
     const rader = [];
     try {
         const grenseISO = maksAlder ? new Date(Date.now() - maksAlder * 24 * 3600 * 1000).toISOString() : null;
@@ -101,12 +107,23 @@ async function eksporterTabell(spec, log, klient = null) {
     return rader;
 }
 
-async function eksporterContainer(navn, zip, log, fremdrift = () => {}) {
-    const c = containerKlient(navn);
+async function eksporterContainer(navn, zip, log, fremdrift = () => {}, siden = null) {
+    const c = blobLager.containerKlient(navn);
     const meta = [];
     let totalBytes = 0;
+    let hoppetOver = 0;
     try {
         for await (const blob of c.listBlobsFlat()) {
+            // I deltamodus tas bare det som er kommet til eller endret siden
+            // forrige fulle backup. Merk at sletting ikke fanges opp: en blobb
+            // som er fjernet finnes ikke i lista, og vil komme tilbake ved en
+            // gjenoppretting av full + deltaer. Det er et bevisst valg — å
+            // gjenoppstå et slettet vedlegg er mindre alvorlig enn å miste et.
+            if (siden && blob.properties.lastModified
+                && new Date(blob.properties.lastModified).toISOString() <= siden) {
+                hoppetOver++;
+                continue;
+            }
             const b = c.getBlockBlobClient(blob.name);
             const buffer = await b.downloadToBuffer();
             // Vedlegg er stort sett PDF, JPEG og PNG — allerede komprimert.
@@ -125,12 +142,13 @@ async function eksporterContainer(navn, zip, log, fremdrift = () => {}) {
             totalBytes += buffer.length;
         }
         zip.file(`blobs/${navn}/_meta.json`, JSON.stringify(meta, null, 2));
-        log(`backup: container ${navn} — ${meta.length} blobs (${Math.round(totalBytes / 1024 / 1024 * 10) / 10} MB)`);
+        log(`backup: container ${navn} — ${meta.length} blobs (${Math.round(totalBytes / 1024 / 1024 * 10) / 10} MB)`
+            + (siden ? `, ${hoppetOver} uendret siden ${siden.slice(0, 10)}` : ''));
     } catch (e) {
         if (e.statusCode === 404) log(`backup: container ${navn} — finnes ikke (0 blobs)`);
         else throw e;
     }
-    return { antall: meta.length, bytes: totalBytes };
+    return { antall: meta.length, bytes: totalBytes, hoppetOver };
 }
 
 // Blokkstørrelse ved opplasting. Stor nok til at 100+ MB blir få kall, liten
@@ -256,7 +274,8 @@ async function skrivKryptertStrom(strom, sink, blokkStorrelse = BLOKK_STORRELSE)
  * Skal det under, må både backup og restore legges om til et arkivformat som
  * kan skrives og leses sekvensielt.
  */
-async function byggZip(log, fremdrift) {
+async function byggZip(log, fremdrift, { modus = 'full', basertPa = null, blobberSiden = null } = {}) {
+    const erDelta = modus === 'delta';
     const zip = new (jszip())();
     const tider = {};
 
@@ -264,6 +283,10 @@ async function byggZip(log, fremdrift) {
         versjon: 1,
         tid: new Date().toISOString(),
         miljø: process.env.MILJO || 'ukjent',
+        // Leses av restore: et delta skal fylle på containerne, ikke tømme dem.
+        modus: erDelta ? 'delta' : 'full',
+        basertPa: erDelta ? basertPa : null,
+        blobberSiden: erDelta ? blobberSiden : null,
         tabeller: [],
         delteTabeller: [],
         containers: []
@@ -272,6 +295,13 @@ async function byggZip(log, fremdrift) {
     const tabellStart = Date.now();
     for (const spec of TABELLER) {
         const navn = tabellNavn(spec);
+        // Trege tabeller tas bare i fulle kjøringer. Delta på en tabell ville
+        // krevd endringssporing vi ikke har, og Postnumre endrer seg sjelden.
+        // Utelates den fra manifestet, rører restore den heller ikke.
+        if (erDelta && TABELLER_KUN_FULL.includes(navn)) {
+            log(`backup: ${navn} hoppes over i delta (kun i fulle kjøringer)`);
+            continue;
+        }
         fremdrift(`leser tabell ${navn}`);
         const rader = await eksporterTabell(spec, log);
         zip.file(`tabeller/${navn}.json`, JSON.stringify(rader, null, 2));
@@ -282,12 +312,14 @@ async function byggZip(log, fremdrift) {
     // Delte tabeller: egen connection string, egen manifestnøkkel. Feiler
     // oppslaget — typisk en SAS som ikke dekker Table — skal ikke hele
     // backupen ryke for det. Miljøets egne data er viktigere.
-    const deltCs = process.env.TODO_STORAGE_CONNECTION_STRING || '';
+    // Delte tabeller er små og tas i sin helhet, men bare i fulle kjøringer —
+    // de endrer seg sjelden nok til at daglig kopi er sløsing.
+    const deltCs = erDelta ? '' : (process.env.TODO_STORAGE_CONNECTION_STRING || '');
     if (deltCs) {
         for (const navn of DELTE_TABELLER) {
             fremdrift(`leser delt tabell ${navn}`);
             try {
-                const klient = tabellKlientFra(deltCs, navn, 'TODO_STORAGE_CONNECTION_STRING');
+                const klient = storage.tabellKlientFra(deltCs, navn, 'TODO_STORAGE_CONNECTION_STRING');
                 const rader = await eksporterTabell(navn, log, klient);
                 zip.file(`delte-tabeller/${navn}.json`, JSON.stringify(rader, null, 2));
                 manifest.delteTabeller.push({ navn, antall: rader.length });
@@ -303,7 +335,7 @@ async function byggZip(log, fremdrift) {
     const blobStart = Date.now();
     for (const navn of BLOB_CONTAINERE) {
         fremdrift(`leser container ${navn}`);
-        const res = await eksporterContainer(navn, zip, log, fremdrift);
+        const res = await eksporterContainer(navn, zip, log, fremdrift, erDelta ? blobberSiden : null);
         manifest.containers.push({ navn, ...res });
     }
     tider.blobberSek = Math.round((Date.now() - blobStart) / 1000);
@@ -318,9 +350,9 @@ async function byggZip(log, fremdrift) {
  * Zipen genereres som strøm og krypteres underveis, så verken den ferdige
  * zipen, ciphertexten eller containeren finnes som egen kopi i minnet.
  */
-async function byggOgKrypter(sink, log = () => {}, fremdrift = () => {}) {
+async function byggOgKrypter(sink, log = () => {}, fremdrift = () => {}, opsjoner = {}) {
     const start = Date.now();
-    const { zip, manifest, tider } = await byggZip(log, fremdrift);
+    const { zip, manifest, tider } = await byggZip(log, fremdrift, opsjoner);
 
     fremdrift('komprimerer og krypterer');
     log('backup: genererer zip…');
@@ -356,8 +388,8 @@ async function byggOgKrypter(sink, log = () => {}, fremdrift = () => {}) {
 }
 
 /** Bygg backup direkte til en block blob. Minnebruken følger ikke filstørrelsen. */
-async function byggOgKrypterTilBlob(blob, blobHTTPHeaders, log, fremdrift) {
-    return byggOgKrypter(blokkSink(blob, blobHTTPHeaders), log, fremdrift);
+async function byggOgKrypterTilBlob(blob, blobHTTPHeaders, log, fremdrift, opsjoner) {
+    return byggOgKrypter(blokkSink(blob, blobHTTPHeaders), log, fremdrift, opsjoner);
 }
 
 // Power Automates HTTP-handling leser hele responsen inn i minnet, med et
@@ -457,5 +489,5 @@ module.exports = {
     byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
     byggZip, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
     verifiserKryptertStrom,
-    TABELLER, DELTE_TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
+    TABELLER, DELTE_TABELLER, TABELLER_KUN_FULL, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
 };
