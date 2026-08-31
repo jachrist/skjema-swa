@@ -142,6 +142,40 @@ async function kjor() {
         sjekk('full wiper containeren', kilde.wipet, ['vedlegg']);
     }
 
+    // ---------- ekstern kilde ----------
+    {
+        // Backup av et annet miljø: alt skal leses fra den oppgitte kilden, og
+        // ingenting fra vårt eget lager. Går det galt her, får man en fil
+        // merket «Production» full av dev-data — en backup som ser riktig ut
+        // og er ubrukelig.
+        const sett = [];
+        const kilde = {
+            tabell: (navn) => { sett.push(`tabell:${navn}`); return fakeTabell([{ partitionKey: 'p', rowKey: navn }]); },
+            container: (navn) => { sett.push(`container:${navn}`); return fakeContainer(navn === 'vedlegg' ? BLOBBER : []); },
+            deltCs: ''
+        };
+        const zip = fakeZip();
+        const res = await medStubber(zip, () => backup.byggZip(() => {}, () => {}, {
+            modus: 'full', kilde, miljo: 'Production'
+        }));
+
+        sjekk('miljømerket kommer fra parameteren', res.manifest.miljø, 'Production');
+        sjekk('alle tabeller ble lest fra den eksterne kilden',
+            res.manifest.tabeller.every(t => sett.includes(`tabell:${t.navn}`)), true);
+        sjekk('containerne også', sett.includes('container:vedlegg'), true);
+        // Våre egne delte tabeller skal ikke havne i en annen tenants backup.
+        sjekk('delte tabeller utelates for ekstern kilde', res.manifest.delteTabeller, []);
+    }
+
+    // ---------- kildeFra bygger klienter av en connection string ----------
+    {
+        const cs = 'DefaultEndpointsProtocol=https;AccountName=stfhsprod;AccountKey=abc==;EndpointSuffix=core.windows.net';
+        const k = backup.kildeFra(cs);
+        sjekk('kildeFra gir en tabellklient', typeof k.tabell, 'function');
+        sjekk('kildeFra gir en containerklient', typeof k.container, 'function');
+        sjekk('og tar ikke med våre delte tabeller', k.deltCs, '');
+    }
+
     console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 }

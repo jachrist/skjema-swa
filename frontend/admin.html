@@ -1650,6 +1650,63 @@
             }
         };
 
+        // ---- Midlertidig: backup av et annet miljø ----
+        //
+        // Feltene tømmes så snart kallet er sendt. Legitimasjonen skal ikke bli
+        // liggende i en åpen fane resten av dagen.
+        window.bEksternKjor = async () => {
+            const miljo = document.getElementById('be-miljo').value.trim();
+            const cs = document.getElementById('be-cs').value.trim();
+            const pass = document.getElementById('be-pass').value.trim();
+            const s = document.getElementById('b-ekstern-status');
+
+            if (!miljo || !cs) {
+                s.innerHTML = '<div class="banner feil">Miljønavn og connection string må fylles ut.</div>';
+                return;
+            }
+            if (!confirm(`Kjøre backup av «${miljo}» fra den oppgitte lagringskontoen?\n\n`
+                + `Fila havner i dette miljøets SharePoint-bibliotek.`)) return;
+
+            s.innerHTML = '<div class="banner info">Starter…</div>';
+            try {
+                const res = await api.post('/api/backup/kjor-eksternt', {
+                    connectionString: cs, miljo, passphrase: pass, bekreftelse: 'EKSTERN'
+                });
+                document.getElementById('be-cs').value = '';
+                document.getElementById('be-pass').value = '';
+                s.innerHTML = `<div class="banner info">Kjører mot <strong>${escHtml(res.konto || '')}</strong>
+                    som «${escHtml(res.miljo || '')}» — passphrase: ${escHtml(res.passphrase || '')}.</div>`;
+                await bEksternFolg(s);
+            } catch (e) {
+                s.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        async function bEksternFolg(s) {
+            const start = Date.now();
+            const MAKS_MS = 30 * 60 * 1000;
+            while (Date.now() - start < MAKS_MS) {
+                await new Promise(r => setTimeout(r, 4000));
+                let st;
+                try { st = await api.get('/api/backup/eksternt-status'); }
+                catch (e) { s.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`; return; }
+
+                if (st.status === 'ok' || st.status === 'feil') {
+                    const mb = st.storrelseBytes ? Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10 : null;
+                    s.innerHTML = st.status === 'ok'
+                        ? `<div class="banner suksess"><strong>✓ ${escHtml(st.miljo || '')} sikkerhetskopiert</strong>
+                             <br><small>${escHtml(st.filnavn || '')}${mb !== null ? ` · ${mb} MB` : ''} · fra ${escHtml(st.konto || '')} · ${st.varighetSekunder}s</small>
+                             <br><small>${escHtml(st.melding || '')}</small></div>`
+                        : `<div class="banner feil"><strong>⚠ Feilet</strong><br><small>${escHtml(st.sistFeil || 'ukjent feil')}</small></div>`;
+                    return;
+                }
+                s.innerHTML = `<div class="banner info">Kjører mot ${escHtml(st.konto || '')}…
+                    ${st.steg ? `<br><small>${escHtml(st.steg)}</small>` : ''}
+                    <br><small>${Math.round((Date.now() - start) / 1000)}s</small></div>`;
+            }
+            s.innerHTML = '<div class="banner advarsel">Tok mer enn 30 minutter. Se Hendelser for utfallet.</div>';
+        }
+
         // ---- Verifisering uten gjenoppretting ----
         //
         // Jobben kjører i bakgrunnen som backup-kjøringen: 400 MB tar lengre
@@ -1981,6 +2038,44 @@
                         et vedlegg som ble slettet etter siste fulle, kommer tilbake.</em>
                     </div>
                     <div id="b-kjor-status" style="margin-top: 10px;"></div>
+                </div>
+                <div class="panel" style="border: 1px solid var(--warning, #ff9500);">
+                    <h2>Midlertidig: backup av et annet miljø</h2>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px;">
+                        For miljøer som ennå ikke har egen app-registrering mot SharePoint. Dette miljøet leser
+                        det andre miljøets lagringskonto, bygger backupen og laster den opp med sitt eget
+                        Graph-oppsett.
+                        <br><br>
+                        <strong>Legitimasjonen lagres ikke</strong> — verken i Key Vault, tabell eller logg. Den
+                        lever i minnet så lenge jobben kjører. Bruk helst et <strong>kortlevd, lesebegrenset
+                        SAS</strong> framfor kontonøkkelen: <code>ss=bt</code>, <code>srt=sco</code>,
+                        <code>sp=rl</code>, og <code>se=</code> noen timer fram.
+                        <br><br>
+                        Ordningen er ment å fjernes når det andre miljøet står på egne bein.
+                    </div>
+                    <div class="rad">
+                        <label style="min-width: 180px;">Miljønavn</label>
+                        <input type="text" id="be-miljo" placeholder="Production" style="flex: 1;">
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-secondary); margin: 2px 0 8px 188px;">
+                        Blir prefiks i filnavnet. Må skille seg fra dette miljøets, ellers kan filene ikke skilles i biblioteket.
+                    </div>
+                    <div class="rad">
+                        <label style="min-width: 180px;">Connection string</label>
+                        <input type="password" id="be-cs" placeholder="BlobEndpoint=…;TableEndpoint=…;SharedAccessSignature=…" style="flex: 1;" autocomplete="off">
+                    </div>
+                    <div class="rad">
+                        <label style="min-width: 180px;">Deres BACKUP_PASSPHRASE</label>
+                        <input type="password" id="be-pass" placeholder="(valgfritt — tomt gir dette miljøets)" style="flex: 1;" autocomplete="off">
+                    </div>
+                    <div style="font-size: 11px; color: var(--text-secondary); margin: 2px 0 8px 188px;">
+                        Uten denne krypteres fila med dette miljøets passphrase, og kan da ikke åpnes av
+                        miljøet den er en backup av.
+                    </div>
+                    <div class="knapp-rad" style="margin-top: 10px;">
+                        <button class="knapp primær" onclick="bEksternKjor()">🔐 Kjør backup av annet miljø</button>
+                    </div>
+                    <div id="b-ekstern-status" style="margin-top: 10px;"></div>
                 </div>
                 <div class="panel">
                     <h2>Verifiser uten å gjenopprette</h2>

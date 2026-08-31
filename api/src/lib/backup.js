@@ -107,8 +107,8 @@ async function eksporterTabell(spec, log, klient = null) {
     return rader;
 }
 
-async function eksporterContainer(navn, zip, log, fremdrift = () => {}, siden = null) {
-    const c = blobLager.containerKlient(navn);
+async function eksporterContainer(navn, zip, log, fremdrift = () => {}, siden = null, klient = null) {
+    const c = klient || blobLager.containerKlient(navn);
     const meta = [];
     let totalBytes = 0;
     let hoppetOver = 0;
@@ -219,8 +219,10 @@ function somModerneStrom(strom) {
     return gjennom;
 }
 
-async function skrivKryptertStrom(strom, sink, blokkStorrelse = BLOKK_STORRELSE) {
-    const k = backupKrypto.startKryptering();
+async function skrivKryptertStrom(strom, sink, blokkStorrelse = BLOKK_STORRELSE, passphrase = null) {
+    // Egen passphrase brukes når ett miljø tar backup av et annet: fila skal
+    // kunne gjenopprettes i DET miljøet, med DERES nøkkel.
+    const k = passphrase ? backupKrypto.startKrypteringMed(passphrase) : backupKrypto.startKryptering();
     let samlet = [];
     let samletBytes = 0;
     let klartekstBytes = 0;
@@ -274,15 +276,44 @@ async function skrivKryptertStrom(strom, sink, blokkStorrelse = BLOKK_STORRELSE)
  * Skal det under, må både backup og restore legges om til et arkivformat som
  * kan skrives og leses sekvensielt.
  */
-async function byggZip(log, fremdrift, { modus = 'full', basertPa = null, blobberSiden = null } = {}) {
+/**
+ * Hvor dataene leses fra. Standard er miljøets eget lager.
+ *
+ * `kildeFra` finnes for den midlertidige ordningen der ett miljø tar backup av
+ * et annet, mens Graph-oppsettet i det andre miljøet venter på å komme på
+ * plass. Connection stringen sendes inn per kjøring og lagres aldri.
+ */
+function standardKilde() {
+    return {
+        tabell: (navn) => storage.tabellKlient(navn),
+        container: (navn) => blobLager.containerKlient(navn),
+        deltCs: process.env.TODO_STORAGE_CONNECTION_STRING || ''
+    };
+}
+
+function kildeFra(connectionString, varNavn = 'ekstern connection string') {
+    return {
+        tabell: (navn) => storage.tabellKlientFra(connectionString, navn, varNavn),
+        container: (navn) => blobLager.containerKlientFra(connectionString, navn, varNavn),
+        // De delte tabellene hører til dette miljøet, ikke det eksterne. En
+        // ekstern backup skal ikke inneholde vår egen oppgaveliste.
+        deltCs: ''
+    };
+}
+
+async function byggZip(log, fremdrift, {
+    modus = 'full', basertPa = null, blobberSiden = null,
+    kilde = null, miljo = null
+} = {}) {
     const erDelta = modus === 'delta';
+    const k = kilde || standardKilde();
     const zip = new (jszip())();
     const tider = {};
 
     const manifest = {
         versjon: 1,
         tid: new Date().toISOString(),
-        miljø: process.env.MILJO || 'ukjent',
+        miljø: miljo || process.env.MILJO || 'ukjent',
         // Leses av restore: et delta skal fylle på containerne, ikke tømme dem.
         modus: erDelta ? 'delta' : 'full',
         basertPa: erDelta ? basertPa : null,
@@ -303,7 +334,7 @@ async function byggZip(log, fremdrift, { modus = 'full', basertPa = null, blobbe
             continue;
         }
         fremdrift(`leser tabell ${navn}`);
-        const rader = await eksporterTabell(spec, log);
+        const rader = await eksporterTabell(spec, log, k.tabell(navn));
         zip.file(`tabeller/${navn}.json`, JSON.stringify(rader, null, 2));
         manifest.tabeller.push({ navn, antall: rader.length, maksAlderDager: spec.maksAlderDager || null });
     }
@@ -314,7 +345,7 @@ async function byggZip(log, fremdrift, { modus = 'full', basertPa = null, blobbe
     // backupen ryke for det. Miljøets egne data er viktigere.
     // Delte tabeller er små og tas i sin helhet, men bare i fulle kjøringer —
     // de endrer seg sjelden nok til at daglig kopi er sløsing.
-    const deltCs = erDelta ? '' : (process.env.TODO_STORAGE_CONNECTION_STRING || '');
+    const deltCs = erDelta ? '' : (k.deltCs || '');
     if (deltCs) {
         for (const navn of DELTE_TABELLER) {
             fremdrift(`leser delt tabell ${navn}`);
@@ -335,7 +366,7 @@ async function byggZip(log, fremdrift, { modus = 'full', basertPa = null, blobbe
     const blobStart = Date.now();
     for (const navn of BLOB_CONTAINERE) {
         fremdrift(`leser container ${navn}`);
-        const res = await eksporterContainer(navn, zip, log, fremdrift, erDelta ? blobberSiden : null);
+        const res = await eksporterContainer(navn, zip, log, fremdrift, erDelta ? blobberSiden : null, k.container(navn));
         manifest.containers.push({ navn, ...res });
     }
     tider.blobberSek = Math.round((Date.now() - blobStart) / 1000);
@@ -369,7 +400,7 @@ async function byggOgKrypter(sink, log = () => {}, fremdrift = () => {}, opsjone
         }
     );
 
-    const { klartekstBytes, kryptertBytes } = await skrivKryptertStrom(strom, sink);
+    const { klartekstBytes, kryptertBytes } = await skrivKryptertStrom(strom, sink, BLOKK_STORRELSE, opsjoner.passphrase || null);
     tider.zipSek = Math.round((Date.now() - zipStart) / 1000);
 
     const varighetSek = Math.round((Date.now() - start) / 1000);
@@ -488,6 +519,6 @@ async function byggOgKrypterTilBuffer(log, fremdrift) {
 module.exports = {
     byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
     byggZip, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
-    verifiserKryptertStrom,
+    verifiserKryptertStrom, standardKilde, kildeFra,
     TABELLER, DELTE_TABELLER, TABELLER_KUN_FULL, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
 };

@@ -48,7 +48,7 @@ const restore = require('../lib/restore');
 const innstillinger = require('../lib/innstillinger-storage');
 const hendelser = require('../lib/hendelser-storage');
 const { containerKlient, serviceKlient } = require('../lib/blob');
-const { tabellKlient } = require('../lib/storage');
+const { tabellKlient, kontoNavnFra } = require('../lib/storage');
 const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } = require('@azure/storage-blob');
 
 const BACKUP_CONTAINER = 'backups';
@@ -708,6 +708,215 @@ app.http('backupRestore', {
         }
     }
 });
+
+// ==================== MIDLERTIDIG: BACKUP AV ET ANNET MILJØ ====================
+//
+// Prod venter på egen app-registrering og Graph-oppsett. Inntil den er på
+// plass, kan dette miljøet ta backup av prod og laste den opp til SharePoint
+// med sitt eget Graph-oppsett.
+//
+// Legitimasjonen til det andre miljøet limes inn per kjøring og lagres ALDRI —
+// ikke i Key Vault, ikke i en tabell, ikke i loggen. Den lever i minnet så
+// lenge jobben kjører. Bruk helst et kortlevd, lesebegrenset SAS framfor
+// kontonøkkelen; se docs/BACKUP-SHAREPOINT.md.
+//
+// Endepunktet krever admin — bevisst ikke x-scheduler-key. Dette skal ikke
+// kunne automatiseres i stillhet, og ordningen skal være ubehagelig nok til
+// at den blir fjernet når prod står på egne bein.
+//
+// Kjøringen rører ikke dette miljøets egen backup-status eller pekeren til
+// siste fulle, så delta-kjeden her forblir intakt.
+
+const EKSTERN_RK = 'BackupEksternt';
+
+async function settEksternStatus(felter) {
+    try {
+        const t = tabellKlient('CacheMetadata');
+        await t.upsertEntity({ partitionKey: STATUS_PK, rowKey: EKSTERN_RK, ...felter }, 'Merge');
+    } catch (_) { /* statusraden er ikke kritisk */ }
+}
+
+async function kjorEksternBackup(aktor, { connectionString, miljo, passphrase }, jobbLog) {
+    const start = Date.now();
+    // Kontonavnet er trygt å logge og er det eneste som er verdt å se: det
+    // avslører med én gang om man har limt inn feil miljøs streng.
+    const konto = kontoNavnFra(connectionString) || 'ukjent konto';
+    try {
+        const stempel = new Date().toISOString().replace(/[:.]/g, '-');
+        const rentMiljo = miljo.replace(/[^a-z0-9]/gi, '');
+        const filnavn = `${rentMiljo}-backup-${stempel}.fsbk`;
+
+        await settEksternStatus({
+            Status: 'kjører', Steg: `leser fra ${konto}`,
+            SistOppdatert: new Date().toISOString(), Filnavn: filnavn, Konto: konto
+        });
+        jobbLog(`backup/eksternt: leser fra ${konto} som ${miljo}`);
+
+        const c = await backupContainer();
+        const blob = c.getBlockBlobClient(filnavn);
+
+        const res = await backup.byggOgKrypterTilBlob(
+            blob,
+            { blobContentType: 'application/octet-stream' },
+            jobbLog,
+            (steg) => settEksternStatus({ Steg: steg, SistOppdatert: new Date().toISOString() }),
+            {
+                modus: 'full',
+                kilde: backup.kildeFra(connectionString, 'ekstern connection string'),
+                miljo,
+                // Fila krypteres med DET andre miljøets passphrase når den er
+                // oppgitt, slik at den faktisk kan gjenopprettes der.
+                passphrase: passphrase || null
+            }
+        );
+
+        await blob.setMetadata({
+            miljo, modus: 'full', ekstern: 'ja', kilde_konto: konto,
+            opprettet: new Date().toISOString(), opprettet_av: aktor,
+            klartekst_bytes: String(res.storrelseKlar)
+        });
+
+        let opplasting = { status: 'hoppet-over', melding: 'Graph ikke satt opp i dette miljøet' };
+        if (graphOpplast.erKonfigurert()) {
+            opplasting = await graphOpplast.lastOppBackup(
+                { blob, filnavn, storrelseBytes: res.storrelseKryptert }, jobbLog);
+        }
+
+        const sek = Math.round((Date.now() - start) / 1000);
+        await settEksternStatus({
+            Status: opplasting.status === 'ok' ? 'ok' : 'feil',
+            Ferdig: new Date().toISOString(), SistOppdatert: new Date().toISOString(),
+            Steg: 'ferdig', StorrelseBytes: res.storrelseKryptert,
+            VarighetSekunder: sek, Miljo: miljo,
+            Melding: opplasting.melding || '', SistFeil: opplasting.status === 'ok' ? '' : (opplasting.melding || '')
+        });
+        hendelser.logg({
+            Type: 'backup.eksternt', Aktor: aktor,
+            ObjektType: 'backup', ObjektId: filnavn,
+            Melding: `Ekstern backup av ${miljo} fra ${konto} — `
+                + `${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB, `
+                + `SharePoint: ${opplasting.status} (${sek}s)`
+        });
+        jobbLog(`backup/eksternt: ferdig — ${filnavn}, SharePoint ${opplasting.status}`);
+    } catch (e) {
+        // Meldingen kan i teorien inneholde deler av connection stringen fra
+        // en SDK-feil. Vi tar bare kontonavnet og feiltypen med videre.
+        const trygg = `${e.name || 'Feil'}: ${String(e.message || '').replace(/(SharedAccessSignature|AccountKey)=[^;]*/gi, '$1=***').slice(0, 400)}`;
+        jobbLog(`backup/eksternt FEIL (${konto}): ${trygg}`);
+        await settEksternStatus({
+            Status: 'feil', Ferdig: new Date().toISOString(),
+            SistOppdatert: new Date().toISOString(), SistFeil: trygg
+        });
+        hendelser.logg({
+            Type: 'backup.eksternt-feil', Aktor: aktor,
+            ObjektType: 'backup', ObjektId: konto,
+            Melding: `Ekstern backup feilet: ${trygg}`.slice(0, 500)
+        });
+    }
+}
+
+/**
+ * POST /api/backup/kjor-eksternt — ADMIN ONLY.
+ * Body: { connectionString, miljo, passphrase?, bekreftelse: 'EKSTERN' }
+ *
+ * Svarer 202 og kjører videre i bakgrunnen. Legitimasjonen lagres ikke.
+ */
+app.http('backupKjorEksternt', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'backup/kjor-eksternt',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+
+        const body = await request.json().catch(() => ({}));
+        const connectionString = String(body?.connectionString || '').trim();
+        const miljo = String(body?.miljo || '').trim();
+        const passphrase = String(body?.passphrase || '').trim();
+
+        if (String(body?.bekreftelse || '') !== 'EKSTERN') {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'bekreftelse må være strengen "EKSTERN"' } };
+        }
+        if (!connectionString) {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'connectionString mangler' } };
+        }
+        if (!miljo || !/^[a-z0-9-]{2,30}$/i.test(miljo)) {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'miljo må være 2-30 tegn (bokstaver, tall, bindestrek) — blir prefiks i filnavnet' } };
+        }
+        // Uten dette får fila dette miljøets passphrase, og kan ikke åpnes av
+        // det miljøet den er en backup av. Bedre å si fra enn å oppdage det
+        // under en gjenoppretting.
+        if (passphrase && passphrase.length < 16) {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'passphrase må være minst 16 tegn' } };
+        }
+        const konto = kontoNavnFra(connectionString);
+        if (!konto) {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'Fant verken AccountName eller endepunkt i connection stringen' } };
+        }
+
+        const egenKonto = kontoNavnFra(process.env.STORAGE_CONNECTION_STRING || '');
+        if (egenKonto && konto.toLowerCase() === egenKonto.toLowerCase()) {
+            return {
+                status: 400,
+                jsonBody: {
+                    status: 'feil',
+                    melding: `Connection stringen peker på ${konto} — dette miljøets egen lagringskonto. `
+                        + `Bruk vanlig backup for det, ellers får du en fil merket «${miljo}» med feil miljøs data.`
+                }
+            };
+        }
+
+        await settEksternStatus({
+            Status: 'kjører', Startet: new Date().toISOString(), Aktor: a.upn,
+            SistOppdatert: new Date().toISOString(), Steg: 'starter',
+            Miljo: miljo, Konto: konto, Ferdig: '', SistFeil: '', Melding: '', StorrelseBytes: 0
+        });
+
+        const jobbLog = (...m) => context.log(...m);
+        kjorEksternBackup(a.upn, { connectionString, miljo, passphrase }, jobbLog)
+            .catch(e => jobbLog(`backup/eksternt: uventet feil — ${e.message}`));
+
+        return {
+            status: 202,
+            jsonBody: {
+                status: 'startet', miljo, konto,
+                passphrase: passphrase ? 'egen' : 'dette miljøets',
+                melding: 'Backupen kjører i bakgrunnen. Følg med på /api/backup/eksternt-status.'
+            }
+        };
+    }
+});
+
+/** GET /api/backup/eksternt-status — admin. Siste eksterne kjøring. */
+app.http('backupEksterntStatus', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'backup/eksternt-status',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const rad = await tabellKlient('CacheMetadata').getEntity(STATUS_PK, EKSTERN_RK);
+            return {
+                jsonBody: {
+                    status: rad.Status || 'ukjent',
+                    startet: rad.Startet || null, ferdig: rad.Ferdig || null,
+                    steg: rad.Steg || null, sistOppdatert: rad.SistOppdatert || null,
+                    filnavn: rad.Filnavn || null, miljo: rad.Miljo || null,
+                    konto: rad.Konto || null,
+                    storrelseBytes: rad.StorrelseBytes ?? null,
+                    varighetSekunder: rad.VarighetSekunder ?? null,
+                    melding: rad.Melding || null, sistFeil: rad.SistFeil || null,
+                    aktor: rad.Aktor || null
+                }
+            };
+        } catch (e) {
+            if (e.statusCode === 404) return { jsonBody: { status: 'aldri-kjørt' } };
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 
 // ==================== VERIFISERING UTEN GJENOPPRETTING ====================
 //
