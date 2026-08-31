@@ -19,6 +19,7 @@
         { "route": "/api/systemlogo",                 "allowedRoles": ["anonymous"] },
         { "route": "/api/postnumre/refresh-bring",    "allowedRoles": ["anonymous"] },
         { "route": "/api/backup/kjor",                "allowedRoles": ["anonymous"] },
+        { "route": "/api/backup/verifiser-lagret",     "allowedRoles": ["anonymous"] },
         { "route": "/api/cache/teammedlemskap",       "allowedRoles": ["anonymous"] },
         { "route": "/api/nokkelkalender/sjekk",             "allowedRoles": ["anonymous"] },
         { "route": "/api/utsending/send-forfalte",          "allowedRoles": ["anonymous"] },

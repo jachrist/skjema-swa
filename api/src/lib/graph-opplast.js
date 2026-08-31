@@ -363,8 +363,54 @@ async function lastOppBackup({ blob, filnavn, storrelseBytes }, log = () => {}, 
     };
 }
 
+/**
+ * Leser for en fil som allerede ligger i biblioteket.
+ *
+ * Poenget er å kunne verifisere *kopien* — den som ligger utenfor Azure og
+ * som faktisk skal redde oss. En verifisering av blobben i Azure sier
+ * ingenting om hva som kom fram til SharePoint.
+ *
+ * `@microsoft.graph.downloadUrl` er en kortlevd, forhåndsautorisert adresse.
+ * Den tåler Range-forespørsler, og skal ikke ha Authorization-header.
+ */
+async function lagNedlaster(filnavn, log = () => {}, deps = {}) {
+    const fetchFn = deps.fetchFn || fetch;
+    const k = deps.konfig || konfig();
+    const mangler = manglerKonfig(k);
+    if (mangler.length) throw graphFeil(`Graph er ikke satt opp — mangler ${mangler.join(', ')}`, 400);
+
+    const token = await medRetry('token', () => hentToken(k, fetchFn), log);
+    const { driveId, driveNavn } = await medRetry('oppslag', () => finnDrive(k, token, fetchFn, log), log);
+    const sti = elementSti(k.mappe, filnavn);
+
+    const element = await medRetry('elementoppslag',
+        () => graphGet(`/drives/${driveId}/root:/${kodetSti(sti)}`, token, fetchFn), log);
+    const url = element['@microsoft.graph.downloadUrl'];
+    if (!url) throw graphFeil(`Fant ingen nedlastingsadresse for ${sti}`, 404);
+
+    return {
+        sti,
+        bibliotek: driveNavn,
+        webUrl: element.webUrl || null,
+        storrelseBytes: Number(element.size) || 0,
+        async lesBit(fra, antall) {
+            return medRetry(`les ${fra}+${antall}`, async () => {
+                const svar = await fetchFn(url, {
+                    headers: { Range: `bytes=${fra}-${fra + antall - 1}` },
+                    signal: AbortSignal.timeout(HTTP_TIMEOUT_MS)
+                });
+                if (svar.status !== 206 && svar.status !== 200) {
+                    throw graphFeil(`Nedlasting av bytes ${fra}-${fra + antall - 1} feilet`, svar.status,
+                        await svar.text().catch(() => ''));
+                }
+                return Buffer.from(await svar.arrayBuffer());
+            }, log);
+        }
+    };
+}
+
 module.exports = {
-    lastOppBackup, erKonfigurert, manglerKonfig, konfig,
+    lastOppBackup, lagNedlaster, erKonfigurert, manglerKonfig, konfig,
     siteReferanse, elementSti, kodetSti, beregnBiter, nesteForventet,
     hentToken, tomTokenCache,
     BIT_STORRELSE, BIT_JUSTERING

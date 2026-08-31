@@ -280,7 +280,8 @@ async function kjorBackupJobb(aktor, jobbLog) {
             OneDriveStatus: flytStatus === 'ok' ? 'ok' : 'feil',
             OneDriveKvittert: new Date().toISOString(),
             OneDriveStorrelse: Number(graph?.storrelseBytes) || 0,
-            OneDriveMelding: (graph?.melding || '').slice(0, 500)
+            OneDriveMelding: (graph?.melding || '').slice(0, 500),
+            OneDriveUrl: graph?.webUrl || ''
         } : {};
 
         await settStatus({
@@ -376,10 +377,15 @@ app.http('backupStatus', {
                     storrelseBytes: rad.StorrelseBytes ?? null,
                     varighetSekunder: rad.VarighetSekunder ?? null,
                     flytStatus: rad.FlytStatus || null,
+                    // 'graph' = SharePoint via Microsoft Graph, 'pa-flyt' = OneDrive
+                    // via Power Automate. Avgjør hvordan panelet skal formulere seg.
+                    kanal: rad.Kanal || null,
                     oneDriveStatus: rad.OneDriveStatus || null,
                     oneDriveKvittert: rad.OneDriveKvittert || null,
                     oneDriveMelding: rad.OneDriveMelding || null,
                     oneDriveSti: rad.OneDriveSti || null,
+                    oneDriveStorrelse: rad.OneDriveStorrelse ?? null,
+                    kopiUrl: rad.OneDriveUrl || null,
                     sistFeil: rad.SistFeil || null
                 }
             };
@@ -637,6 +643,198 @@ app.http('backupRestore', {
                 ObjektType: 'backup', ObjektId: '',
                 Melding: `Restore feilet: ${e.message}`.slice(0, 500)
             });
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+// ==================== VERIFISERING UTEN GJENOPPRETTING ====================
+//
+// En backup ingen har prøvd å lese er en antakelse, ikke en sikkerhet. Men å
+// laste ned 400 MB og opp igjen for å teste den er tungvint nok til at ingen
+// gjør det.
+//
+// Her leses fila der den ligger, dekrypteres strømmende, og klarteksten
+// kastes fortløpende. AES-GCM autentiserer hver eneste byte, så går
+// dekrypteringen igjennom, er fila komplett og uendret — og passphrasen
+// virker. Ingenting skrives, ingenting gjenopprettes, minnebruken er én bit
+// om gangen.
+//
+// Kilden bør normalt være 'sharepoint': det er kopien utenfor Azure som
+// faktisk skal redde oss, og en verifisering av blobben sier ingenting om
+// hva som kom fram dit.
+
+const VERIFISER_RK = 'BackupVerifisering';
+
+async function settVerifiserStatus(felter) {
+    try {
+        const t = tabellKlient('CacheMetadata');
+        await t.upsertEntity({ partitionKey: STATUS_PK, rowKey: VERIFISER_RK, ...felter }, 'Merge');
+    } catch (_) { /* statusraden er ikke kritisk for selve verifiseringen */ }
+}
+
+async function kjorVerifisering(aktor, filnavn, kilde, jobbLog) {
+    const start = Date.now();
+    try {
+        const passphrase = String(process.env.BACKUP_PASSPHRASE || '').trim();
+        if (!passphrase || passphrase.length < 16) {
+            throw new Error('BACKUP_PASSPHRASE mangler eller er kortere enn 16 tegn');
+        }
+
+        let lesBit, total, hvor;
+        if (kilde === 'sharepoint') {
+            const ned = await graphOpplast.lagNedlaster(filnavn, jobbLog);
+            lesBit = ned.lesBit;
+            total = ned.storrelseBytes;
+            hvor = `${ned.bibliotek}/${ned.sti}`;
+        } else {
+            const c = await backupContainer();
+            const blob = c.getBlockBlobClient(filnavn);
+            const props = await blob.getProperties();
+            total = Number(props.contentLength) || 0;
+            lesBit = (fra, antall) => blob.downloadToBuffer(fra, antall);
+            hvor = `blob-storage/${BACKUP_CONTAINER}`;
+        }
+
+        await settVerifiserStatus({
+            Status: 'kjører', Steg: `leser ${Math.round(total / 1024 / 1024)} MB fra ${kilde}`,
+            SistOppdatert: new Date().toISOString()
+        });
+        jobbLog(`backup/verifiser-lagret: ${filnavn} fra ${hvor} — ${total} bytes`);
+
+        const res = await backup.verifiserKryptertStrom({ lesBit, total }, passphrase);
+        const sek = Math.round((Date.now() - start) / 1000);
+
+        // Taggen holdt, men er innholdet en zip? Billig ekstrasjekk som skiller
+        // «dekrypterte riktig» fra «dekrypterte riktig til noe meningsfullt».
+        const melding = res.zipSignatur
+            ? `Verifisert: ${Math.round(res.kryptertBytes / 1024 / 1024)} MB dekryptert og autentisert, innholdet er en gyldig zip`
+            : `Dekrypteringen gikk igjennom, men innholdet starter ikke som en zip — undersøk fila`;
+
+        await settVerifiserStatus({
+            Status: res.zipSignatur ? 'ok' : 'feil',
+            Ferdig: new Date().toISOString(), SistOppdatert: new Date().toISOString(),
+            Steg: 'ferdig', Filnavn: filnavn, Kilde: kilde, Hvor: hvor,
+            KryptertBytes: res.kryptertBytes, KlartekstBytes: res.klartekstBytes,
+            VarighetSekunder: sek, Melding: melding, SistFeil: ''
+        });
+        hendelser.logg({
+            Type: res.zipSignatur ? 'backup.verifisert' : 'backup.verifisering-avvik',
+            Aktor: aktor, ObjektType: 'backup', ObjektId: filnavn,
+            Melding: `${melding} (${hvor}, ${sek}s)`
+        });
+        jobbLog(`backup/verifiser-lagret: ${melding}`);
+    } catch (e) {
+        // «Unsupported state or unable to authenticate data» er GCM-taggen som
+        // ikke stemmer: fila er ufullstendig, endret, eller passphrasen er feil.
+        const autentiseringsfeil = /unable to authenticate|unsupported state/i.test(e.message || '');
+        const melding = autentiseringsfeil
+            ? `Fila kunne IKKE autentiseres. Den er ufullstendig eller endret, eller BACKUP_PASSPHRASE er en annen enn da den ble laget. (${e.message})`
+            : String(e.message || e);
+        jobbLog(`backup/verifiser-lagret FEIL: ${melding}`);
+        await settVerifiserStatus({
+            Status: 'feil', Ferdig: new Date().toISOString(),
+            SistOppdatert: new Date().toISOString(),
+            Filnavn: filnavn, Kilde: kilde,
+            SistFeil: melding.slice(0, 500), Melding: ''
+        });
+        hendelser.logg({
+            Type: 'backup.verifisering-feil', Aktor: aktor,
+            ObjektType: 'backup', ObjektId: filnavn,
+            Melding: melding.slice(0, 500)
+        });
+    }
+}
+
+/**
+ * POST /api/backup/verifiser-lagret
+ * Admin eller x-scheduler-key. Body: { filnavn?, kilde? }
+ *
+ * filnavn utelatt → siste backup fra statusraden.
+ * kilde: 'sharepoint' (standard når Graph er satt opp) eller 'blob'.
+ *
+ * Svarer 202 og kjører videre i bakgrunnen — 400 MB tar lengre tid enn
+ * SWA-gatewayen holder en forbindelse åpen. Følg med på verifiser-status.
+ */
+app.http('backupVerifiserLagret', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'backup/verifiser-lagret',
+    handler: async (request, context) => {
+        const auth = schedulerEllerAdmin(request);
+        if (!auth.ok) return { status: auth.status, jsonBody: { status: 'feil', melding: auth.melding } };
+
+        const body = await request.json().catch(() => ({}));
+        let filnavn = String(body?.filnavn || '').trim();
+        if (!filnavn) {
+            try {
+                const rad = await tabellKlient('CacheMetadata').getEntity(STATUS_PK, STATUS_RK);
+                filnavn = rad.Filnavn || '';
+            } catch (_) { /* ingen tidligere kjøring */ }
+        }
+        if (!filnavn) {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'Fant ingen backup å verifisere — oppgi filnavn' } };
+        }
+
+        const onsket = String(body?.kilde || '').trim().toLowerCase();
+        const kilde = onsket === 'blob' ? 'blob'
+            : onsket === 'sharepoint' ? 'sharepoint'
+            : (graphOpplast.erKonfigurert() ? 'sharepoint' : 'blob');
+        if (kilde === 'sharepoint' && !graphOpplast.erKonfigurert()) {
+            return { status: 400, jsonBody: { status: 'feil', melding: 'Graph er ikke satt opp — kan bare verifisere kilde "blob"' } };
+        }
+
+        const startTid = new Date().toISOString();
+        await settVerifiserStatus({
+            Status: 'kjører', Startet: startTid, Kilde: kilde, Aktor: auth.upn,
+            SistOppdatert: startTid, Steg: 'starter', Filnavn: filnavn,
+            Ferdig: '', SistFeil: '', Melding: '', KryptertBytes: 0, KlartekstBytes: 0
+        });
+
+        const jobbLog = (...m) => context.log(...m);
+        kjorVerifisering(auth.upn, filnavn, kilde, jobbLog);
+
+        return {
+            status: 202,
+            jsonBody: {
+                status: 'startet', filnavn, kilde,
+                melding: 'Verifiseringen kjører i bakgrunnen. Følg med på /api/backup/verifiser-status.'
+            }
+        };
+    }
+});
+
+/** GET /api/backup/verifiser-status — admin. Resultat for siste verifisering. */
+app.http('backupVerifiserStatus', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'backup/verifiser-status',
+    handler: async (request, context) => {
+        const a = admin(request);
+        if (!a.ok) return { status: a.status, jsonBody: { status: 'feil', melding: a.melding } };
+        try {
+            const rad = await tabellKlient('CacheMetadata').getEntity(STATUS_PK, VERIFISER_RK);
+            return {
+                jsonBody: {
+                    status: rad.Status || 'ukjent',
+                    startet: rad.Startet || null,
+                    ferdig: rad.Ferdig || null,
+                    steg: rad.Steg || null,
+                    sistOppdatert: rad.SistOppdatert || null,
+                    filnavn: rad.Filnavn || null,
+                    kilde: rad.Kilde || null,
+                    hvor: rad.Hvor || null,
+                    kryptertBytes: rad.KryptertBytes ?? null,
+                    klartekstBytes: rad.KlartekstBytes ?? null,
+                    varighetSekunder: rad.VarighetSekunder ?? null,
+                    melding: rad.Melding || null,
+                    sistFeil: rad.SistFeil || null,
+                    aktor: rad.Aktor || null
+                }
+            };
+        } catch (e) {
+            if (e.statusCode === 404) return { jsonBody: { status: 'aldri-kjørt' } };
+            context.log('backup/verifiser-status FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

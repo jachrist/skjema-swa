@@ -97,6 +97,42 @@ function startKrypteringMed(passphrase) {
     };
 }
 
+/**
+ * Strømmende dekryptering — til verifisering uten å holde klarteksten.
+ *
+ * Hodet leses først; det inneholder salt, IV og auth-taggen. Deretter mates
+ * ciphertexten inn i biter, og `avslutt()` kaster hvis taggen ikke stemmer.
+ * Siden AES-GCM autentiserer hver eneste byte, er en vellykket avslutning et
+ * bevis på at fila er komplett og uendret — uten at klarteksten trenger å
+ * finnes noe sted.
+ */
+const HODE_LENGDE = 4 + 1 + SALT_LEN + IV_LEN + TAG_LEN;
+
+function startDekrypteringMed(passphrase, hode) {
+    if (!Buffer.isBuffer(hode)) hode = Buffer.from(hode);
+    if (hode.length < HODE_LENGDE) throw new Error('For kort container');
+    if (!hode.subarray(0, 4).equals(MAGIC)) throw new Error('Ugyldig magic — ikke en FSBK-backup');
+    const versjon = hode[4];
+    if (versjon !== VERSJON) throw new Error(`Ustøttet versjon: ${versjon}`);
+    const salt = hode.subarray(5, 5 + SALT_LEN);
+    const iv = hode.subarray(5 + SALT_LEN, 5 + SALT_LEN + IV_LEN);
+    const tag = hode.subarray(5 + SALT_LEN + IV_LEN, HODE_LENGDE);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', utledNokkel(passphrase, salt), iv);
+    decipher.setAuthTag(tag);
+    let avsluttet = false;
+    return {
+        oppdater(del) {
+            if (avsluttet) throw new Error('Dekrypteringen er avsluttet');
+            return decipher.update(del);
+        },
+        avslutt() {
+            if (avsluttet) throw new Error('Dekrypteringen er allerede avsluttet');
+            avsluttet = true;
+            return decipher.final();
+        }
+    };
+}
+
 // Convenience-wrappers som bruker env-passphrase
 const krypterBuffer = (klartekst) => krypterBufferMed(envPassphrase(), klartekst);
 const dekrypterBuffer = (container) => dekrypterBufferMed(envPassphrase(), container);
@@ -104,5 +140,6 @@ const startKryptering = () => startKrypteringMed(envPassphrase());
 
 module.exports = {
     krypterBuffer, dekrypterBuffer, krypterBufferMed, dekrypterBufferMed,
-    startKryptering, startKrypteringMed, MAGIC
+    startKryptering, startKrypteringMed, startDekrypteringMed,
+    MAGIC, HODE_LENGDE
 };

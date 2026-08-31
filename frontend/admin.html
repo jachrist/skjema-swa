@@ -1650,6 +1650,57 @@
             }
         };
 
+        // ---- Verifisering uten gjenoppretting ----
+        //
+        // Jobben kjører i bakgrunnen som backup-kjøringen: 400 MB tar lengre
+        // tid enn SWA-gatewayen holder en forbindelse åpen.
+        window.bVerifiser = async (kilde) => {
+            const s = document.getElementById('b-verifiser-status');
+            const maal = kilde === 'sharepoint' ? 'kopien i SharePoint' : 'fila i blob-storage';
+            s.innerHTML = `<div class="banner info">Starter verifisering av ${escHtml(maal)}…</div>`;
+            try {
+                await api.post('/api/backup/verifiser-lagret', { kilde });
+            } catch (e) {
+                s.innerHTML = `<div class="banner feil">Kunne ikke starte: ${escHtml(e.message)}</div>`;
+                return;
+            }
+            await bVerifiserFolg(s, maal);
+        };
+
+        async function bVerifiserFolg(s, maal) {
+            const start = Date.now();
+            const MAKS_MS = 20 * 60 * 1000;
+            while (Date.now() - start < MAKS_MS) {
+                await new Promise(r => setTimeout(r, 3000));
+                let st;
+                try {
+                    st = await api.get('/api/backup/verifiser-status');
+                } catch (e) {
+                    s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+                    return;
+                }
+                if (st.status === 'ok' || st.status === 'feil') {
+                    const mb = st.kryptertBytes ? Math.round(st.kryptertBytes / 1024 / 1024 * 10) / 10 : null;
+                    s.innerHTML = st.status === 'ok'
+                        ? `<div class="banner suksess">
+                             <strong>✓ ${escHtml(st.filnavn || '')} er lesbar</strong>
+                             <br><small>${escHtml(st.melding || '')}</small>
+                             ${mb !== null ? `<br><small>${mb} MB lest fra ${escHtml(st.hvor || st.kilde || '')} på ${st.varighetSekunder}s</small>` : ''}
+                           </div>`
+                        : `<div class="banner feil">
+                             <strong>⚠ Verifiseringen feilet${st.filnavn ? ' for ' + escHtml(st.filnavn) : ''}</strong>
+                             <br><small>${escHtml(st.sistFeil || st.melding || 'ukjent feil')}</small>
+                           </div>`;
+                    return;
+                }
+                const sek = Math.round((Date.now() - start) / 1000);
+                s.innerHTML = `<div class="banner info">Verifiserer ${escHtml(maal)}…
+                    ${st.steg ? `<br><small>${escHtml(st.steg)}</small>` : ''}
+                    <br><small>${sek}s</small></div>`;
+            }
+            s.innerHTML = '<div class="banner advarsel">Verifiseringen tok mer enn 20 minutter. Se Hendelser for utfallet.</div>';
+        }
+
         // ==================== POSTNUMRE / FS-FANE ====================
 
         function rendrPostnumreFs() {
@@ -1900,20 +1951,22 @@
                 <div class="panel">
                     <h2>Innstillinger</h2>
                     <div class="rad">
-                        <label style="min-width: 180px;">OneDrive-sti</label>
+                        <label style="min-width: 180px;">OneDrive-sti (PA-flyt)</label>
                         <input type="text" id="b-sti" placeholder="/Backups/FHS-Skjema" style="flex: 1;">
                         <button class="knapp mini primær" onclick="bLagreSti()">Lagre</button>
                     </div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
-                        Sendes til PA-flyten (BACKUP_FLOW_URL) som destinasjonsmappe.
-                        Format og gyldige stier avhenger av PA-flytens OneDrive-connector-oppsett.
+                        Brukes bare av den gamle veien om Power Automate (<code>BACKUP_FLOW_URL</code>).
+                        Går backupen til SharePoint via Graph, styres destinasjonen av
+                        <code>BACKUP_SHAREPOINT_SITE</code>, <code>_BIBLIOTEK</code> og <code>_MAPPE</code>
+                        — se <a href="#system">System-fanen</a>.
                     </div>
                     <div id="b-sti-status" style="margin-top: 8px;"></div>
                 </div>
                 <div class="panel">
                     <h2>Kjør backup</h2>
                     <div class="knapp-rad">
-                        <button class="knapp primær" onclick="bKjor()">💾 Kjør backup nå (til OneDrive)</button>
+                        <button class="knapp primær" onclick="bKjor()">💾 Kjør backup nå</button>
                         <button class="knapp" onclick="bLastNed()">⬇ Last ned kryptert backup lokalt</button>
                     </div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
@@ -1921,6 +1974,20 @@
                         Kan ta 30 sekunder til flere minutter avhengig av datamengde.
                     </div>
                     <div id="b-kjor-status" style="margin-top: 10px;"></div>
+                </div>
+                <div class="panel">
+                    <h2>Verifiser uten å gjenopprette</h2>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px;">
+                        Leser fila der den ligger, dekrypterer den strømmende og kaster innholdet fortløpende.
+                        AES-GCM autentiserer hver eneste byte, så går dekrypteringen igjennom, er fila komplett
+                        og uendret — og passphrasen virker. Ingenting skrives, ingenting gjenopprettes.
+                        Velg kopien utenfor Azure: det er den som faktisk skal redde deg.
+                    </div>
+                    <div class="knapp-rad">
+                        <button class="knapp primær" onclick="bVerifiser('sharepoint')">🔍 Verifiser kopien i SharePoint</button>
+                        <button class="knapp" onclick="bVerifiser('blob')">Verifiser fila i blob-storage</button>
+                    </div>
+                    <div id="b-verifiser-status" style="margin-top: 10px;"></div>
                 </div>
                 <div class="panel">
                     <h2>Historikk</h2>
@@ -2114,27 +2181,40 @@
                     // OneDrive, og det tar et par minutter. Uten kvittering vet
                     // vi bare at flyten ble kalt — ikke at fila kom fram.
                     if (ferdigTid === null) ferdigTid = Date.now();
-                    const venterPaKvittering = st.status === 'ok' && st.flytStatus === 'ok'
+                    // Graph kvitterer i samme kall som opplastingen. Bare
+                    // PA-veien har et vindu der utfallet ennå er ukjent.
+                    const erGraph = st.kanal === 'graph';
+                    const maal = erGraph ? 'SharePoint' : 'OneDrive';
+                    const kanalNavn = erGraph ? 'SharePoint (Graph)' : 'PA-flyt';
+                    const venterPaKvittering = !erGraph && st.status === 'ok' && st.flytStatus === 'ok'
                         && !st.oneDriveStatus && (Date.now() - ferdigTid) < KVITTERING_MS;
 
                     const mb = st.storrelseBytes ? Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10 : null;
                     const feilet = st.status === 'feil' || st.oneDriveStatus === 'feil';
                     const klasse = feilet ? 'advarsel' : (st.oneDriveStatus === 'ok' ? 'suksess' : 'info');
 
-                    let onedrive;
-                    if (st.oneDriveStatus === 'ok') onedrive = '<br><small>✓ Bekreftet i OneDrive</small>';
-                    else if (st.oneDriveStatus === 'feil') onedrive = `<br><small>⚠ Kom ikke trygt i OneDrive: ${escHtml(st.oneDriveMelding || 'flyten meldte feil')}</small>`;
-                    else if (venterPaKvittering) onedrive = '<br><small>Venter på kvittering fra flyten…</small>';
-                    else if (st.flytStatus === 'ok') onedrive = '<br><small>Ingen kvittering mottatt — fila ligger i blob-storage, men OneDrive er ubekreftet.</small>';
-                    else onedrive = '';
+                    let kopi;
+                    if (st.oneDriveStatus === 'ok') {
+                        const bekreftet = st.oneDriveStorrelse
+                            ? ` — ${Math.round(st.oneDriveStorrelse / 1024 / 1024 * 10) / 10} MB bekreftet av ${erGraph ? 'Graph' : 'flyten'}`
+                            : '';
+                        kopi = `<br><small>✓ Bekreftet i ${maal}${bekreftet}</small>`;
+                    } else if (st.oneDriveStatus === 'feil') {
+                        kopi = `<br><small>⚠ Kom ikke trygt i ${maal}: ${escHtml(st.oneDriveMelding || 'meldte feil')}</small>`;
+                    } else if (venterPaKvittering) {
+                        kopi = '<br><small>Venter på kvittering fra flyten…</small>';
+                    } else if (st.flytStatus === 'ok') {
+                        kopi = `<br><small>Ingen kvittering mottatt — fila ligger i blob-storage, men ${maal} er ubekreftet.</small>`;
+                    } else kopi = '';
 
                     s.innerHTML = `
                         <div class="banner ${klasse}">
                             <strong>${feilet ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
-                            ${mb !== null ? `<br><small>${mb} MB kryptert · ${st.varighetSekunder}s · PA-flyt: ${escHtml(st.flytStatus || '-')}</small>` : ''}
+                            ${mb !== null ? `<br><small>${mb} MB kryptert · ${st.varighetSekunder}s · ${escHtml(kanalNavn)}: ${escHtml(st.flytStatus || '-')}</small>` : ''}
                             ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
-                            ${onedrive}
-                            ${st.oneDriveSti ? `<br><small>OneDrive-sti: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}
+                            ${kopi}
+                            ${st.oneDriveSti ? `<br><small>${erGraph ? 'Sti i biblioteket' : 'OneDrive-sti'}: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}
+                            ${st.kopiUrl ? `<br><small><a href="${escAttr(st.kopiUrl)}" target="_blank" rel="noopener">Åpne fila i ${maal}</a></small>` : ''}
                         </div>
                     `;
                     if (venterPaKvittering) {

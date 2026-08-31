@@ -73,6 +73,10 @@
             "allowedRoles": ["anonymous"]
         },
         {
+            "route": "/api/backup/verifiser-lagret",
+            "allowedRoles": ["anonymous"]
+        },
+        {
             "route": "/api/cache/teammedlemskap",
             "allowedRoles": ["anonymous"]
         },

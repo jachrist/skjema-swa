@@ -353,6 +353,52 @@ function byggDeler(filnavn, storrelseBytes, maks = DEL_MAKS_BYTES) {
     return deler;
 }
 
+// Signaturen en zip-fil starter med. Et billig tillegg til tagg-sjekken:
+// den sier at det faktisk er en zip vi har dekryptert, ikke bare noe som
+// autentiserte riktig.
+const ZIP_SIGNATUR = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+
+/**
+ * Verifiser en kryptert backup uten å gjenopprette noe.
+ *
+ * Leser fila i biter, dekrypterer den strømmende og kaster klarteksten
+ * fortløpende. AES-GCM autentiserer hver eneste byte, så en vellykket
+ * `avslutt()` er et bevis på at fila er komplett og uendret — og at
+ * passphrasen er den rette. Minnebruken er én bit om gangen.
+ *
+ * @param {(fra:number, antall:number)=>Promise<Buffer>} lesBit
+ * @param {number} total  Filas størrelse i bytes
+ */
+async function verifiserKryptertStrom({ lesBit, total }, passphrase, bitStorrelse = 8 * 1024 * 1024) {
+    const hodeLengde = backupKrypto.HODE_LENGDE;
+    if (!Number.isFinite(total) || total <= hodeLengde) {
+        throw new Error(`Fila er ${total} bytes — for kort til å være en backup`);
+    }
+    const d = backupKrypto.startDekrypteringMed(passphrase, await lesBit(0, hodeLengde));
+
+    let lest = hodeLengde;
+    let klartekstBytes = 0;
+    let forste = null;
+    while (lest < total) {
+        const antall = Math.min(bitStorrelse, total - lest);
+        const ut = d.oppdater(await lesBit(lest, antall));
+        if (forste === null && ut.length >= 4) forste = Buffer.from(ut.subarray(0, 4));
+        klartekstBytes += ut.length;
+        lest += antall;
+    }
+    // Kaster hvis taggen ikke stemmer — altså hvis én eneste byte mangler,
+    // er endret eller kom i feil rekkefølge.
+    const siste = d.avslutt();
+    if (forste === null && siste.length >= 4) forste = Buffer.from(siste.subarray(0, 4));
+    klartekstBytes += siste.length;
+
+    return {
+        kryptertBytes: total,
+        klartekstBytes,
+        zipSignatur: !!forste && forste.equals(ZIP_SIGNATUR)
+    };
+}
+
 /** Bygg backup til en Buffer — for last-ned-endepunktet, som må svare med hele fila. */
 async function byggOgKrypterTilBuffer(log, fremdrift) {
     const sink = bufferSink();
@@ -363,5 +409,6 @@ async function byggOgKrypterTilBuffer(log, fremdrift) {
 module.exports = {
     byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
     byggZip, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
+    verifiserKryptertStrom,
     TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
 };
