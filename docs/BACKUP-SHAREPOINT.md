@@ -36,6 +36,11 @@ Filnavnene skiller miljøene fra hverandre: `Production-backup-…` mot
 Opprett (eller velg) et SharePoint-område og et dokumentbibliotek. Noter
 adressen, f.eks. `https://fhs.sharepoint.com/sites/Skjemasystem`.
 
+> **Skript:** `scripts/opprett-graph-apper.sh` gjør steg 2 og 3 under — og
+> setter samtidig opp appene for e-post og oppslag, hvis PA-flytene skal
+> legges om. Kjør `--sjekk` først for å se hvilke tillatelser som i det hele
+> tatt finnes som applikasjonsroller, og `--torrkjor` før du lar den endre noe.
+
 ### 2. App-registrering
 
 Entra ID → App registrations → New registration. Ingen redirect-URI trengs.
