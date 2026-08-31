@@ -28,7 +28,14 @@ const HEMMELIGE_ENV = [
 
 function maskLengde(verdi) {
     if (!verdi) return { satt: false };
-    return { satt: true, lengde: String(verdi).length };
+    const s = String(verdi);
+    // En Key Vault-referanse som ikke ble løst står igjen som selve
+    // referansestrengen. Da er varen «satt», men verdien er ubrukelig — og
+    // symptomet er en 401 langt unna årsaken. Si det heller her.
+    if (/^@Microsoft\.KeyVault\(/i.test(s.trim())) {
+        return { satt: true, lengde: s.length, feil: 'uløst Key Vault-referanse — sjekk at SWA-ens managed identity har «Key Vault Secrets User», og at hemmelighetsnavnet stemmer' };
+    }
+    return { satt: true, lengde: s.length };
 }
 
 /**
