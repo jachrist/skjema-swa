@@ -7,7 +7,22 @@
  *     lengre tid enn SWA-gatewayen holder en forbindelse åpen.
  *     Bygger komplett backup (tabeller + blobs), AES-krypterer, lagrer i
  *     midlertidig blob-container 'backups', kaller BACKUP_FLOW_URL (PA-flyt)
- *     med { url, filnavn, sti, kvitteringUrl } så PA laster opp til OneDrive.
+ *     så PA laster opp til OneDrive.
+ *
+ *     Payload til flyten:
+ *       { handling, filnavn, sti, url, storrelseBytes, antallDeler, deler[],
+ *         miljø, tid, kvitteringUrl }
+ *
+ *     `deler` er en deleplan. Power Automates HTTP-handling leser hele
+ *     responsen inn i minnet med et tak på 100 MiB, og backupen passerte det
+ *     31.08.2026. Flyten skal derfor gå gjennom `deler`, hente én del om
+ *     gangen fra `url` med headeren `Range: <del.range>`, og lagre hver del
+ *     som `del.filnavn`. Er det bare én del, er filnavnet uendret og flyten
+ *     oppfører seg som før.
+ *
+ *     Kvittering sendes ÉN gang, når alle delene er lastet opp, med det
+ *     opprinnelige `filnavn` og summen av delenes størrelse — ellers slår
+ *     størrelsessjekken i vurderKvittering ut.
  *
  *   GET  /api/backup/status
  *     Auth: admin. Framdrift og resultat for siste kjøring, fra statusraden
@@ -148,6 +163,11 @@ function kvitteringUrl() {
  * Returnerer { flytStatus, flytMelding } — kaster aldri.
  */
 async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
+    const deler = backup.byggDeler(res.filnavn, res.storrelseKryptert);
+    if (deler.length > 1) {
+        jobbLog(`backup/kjor: fila deles i ${deler.length} deler for OneDrive `
+            + `(PA-flytens HTTP-handling tar maks 100 MiB per kall)`);
+    }
     const flytUrl = String(process.env.BACKUP_FLOW_URL || '').trim();
     if (!flytUrl) {
         const melding = 'BACKUP_FLOW_URL ikke satt — backup ligger i blob-storage men er ikke opplastet til OneDrive';
@@ -164,6 +184,10 @@ async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
                 sti,
                 url: sasUrl,
                 storrelseBytes: res.storrelseKryptert,
+                // Flyten henter én del om gangen med Range-headeren under.
+                // Én del = uendret oppførsel; flere = én OneDrive-fil per del.
+                antallDeler: deler.length,
+                deler,
                 miljø: process.env.MILJO || 'ukjent',
                 tid: new Date().toISOString(),
                 kvitteringUrl: kvitteringUrl()

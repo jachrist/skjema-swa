@@ -313,6 +313,46 @@ async function byggOgKrypterTilBlob(blob, blobHTTPHeaders, log, fremdrift) {
     return byggOgKrypter(blokkSink(blob, blobHTTPHeaders), log, fremdrift);
 }
 
+// Power Automates HTTP-handling leser hele responsen inn i minnet, med et
+// tak på 100 MiB (104857600). Backupen passerte det i prod 25.08.2026, og
+// flyten døde med «Cannot write more bytes to the buffer». Fila i Azure er
+// hel — det er kopieringen til OneDrive som må gjøres i biter.
+//
+// 64 MiB gir god margin til taket, og holder seg under OneDrive-koblingens
+// egen grense for én fil.
+const DEL_MAKS_BYTES = Math.max(1, Number(process.env.BACKUP_DEL_MAKS_MB) || 64) * 1024 * 1024;
+
+/**
+ * Del en backupfil i biter som hver kan hentes med én Range-forespørsel.
+ *
+ * Én del betyr én fil med uendret navn — små backuper oppfører seg som før.
+ * Flere deler får selvforklarende navn (…fsbk.001av003), slik at det går an
+ * å se i OneDrive om noe mangler. Delene settes sammen igjen med
+ * `copy /b del1+del2 hel.fsbk` (Windows) eller `cat del* > hel.fsbk`.
+ */
+function byggDeler(filnavn, storrelseBytes, maks = DEL_MAKS_BYTES) {
+    const total = Math.max(0, Number(storrelseBytes) || 0);
+    // En tom fil er fortsatt én del — flyten skal ikke stå uten noe å hente.
+    const antall = total === 0 ? 1 : Math.ceil(total / maks);
+    const pad = (n) => String(n).padStart(3, "0");
+    const deler = [];
+    for (let nr = 1; nr <= antall; nr++) {
+        const fra = (nr - 1) * maks;
+        const til = Math.min(total, nr * maks) - 1;
+        deler.push({
+            nr,
+            av: antall,
+            filnavn: antall === 1 ? filnavn : `${filnavn}.${pad(nr)}av${pad(antall)}`,
+            fra,
+            til: Math.max(fra, til),
+            bytes: Math.max(0, til - fra + 1),
+            // Ferdig Range-header, så flyten slipper å regne selv.
+            range: `bytes=${fra}-${Math.max(fra, til)}`
+        });
+    }
+    return deler;
+}
+
 /** Bygg backup til en Buffer — for last-ned-endepunktet, som må svare med hele fila. */
 async function byggOgKrypterTilBuffer(log, fremdrift) {
     const sink = bufferSink();
@@ -322,6 +362,6 @@ async function byggOgKrypterTilBuffer(log, fremdrift) {
 
 module.exports = {
     byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
-    byggZip, skrivKryptertStrom, blokkSink, bufferSink,
-    TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE
+    byggZip, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
+    TABELLER, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
 };

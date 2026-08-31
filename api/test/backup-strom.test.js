@@ -161,6 +161,54 @@ async function kjor() {
             krypto.dekrypterBufferMed(PASSORD, gammel).equals(klartekst), true);
     }
 
+
+    // ---------- deleplan for OneDrive ----------
+    // Power Automates HTTP-handling tar maks 100 MiB. En feil her betyr enten en
+    // død flyt igjen, eller — verre — en OneDrive-kopi med hull i.
+    {
+        const MiB = 1024 * 1024;
+        const navn = 'pilot-backup-2026-08-31.fsbk';
+
+        const en = backup.byggDeler(navn, 10 * MiB, 64 * MiB);
+        sjekk('liten fil blir én del', en.length, 1);
+        sjekk('og beholder filnavnet uendret', en[0].filnavn, navn);
+        sjekk('med hele fila i rangen', en[0].range, `bytes=0-${10 * MiB - 1}`);
+
+        const kant = backup.byggDeler(navn, 64 * MiB, 64 * MiB);
+        sjekk('nøyaktig maks er fortsatt én del', kant.length, 1);
+        sjekk('og har ingen tom hale', kant[0].bytes, 64 * MiB);
+
+        const over = backup.byggDeler(navn, 64 * MiB + 1, 64 * MiB);
+        sjekk('én byte over gir to deler', over.length, 2);
+        sjekk('siste del er én byte', over[1].bytes, 1);
+        sjekk('navnene blir selvforklarende',
+            over.map(d => d.filnavn),
+            [`${navn}.001av002`, `${navn}.002av002`]);
+
+        // Det som virkelig teller: at delene dekker fila nøyaktig, uten hull og
+        // uten overlapp. En feil her oppdages først når noen skal gjenopprette.
+        const total = 237 * MiB + 12345;
+        const deler = backup.byggDeler(navn, total, 64 * MiB);
+        sjekk('nok deler til å dekke fila', deler.length, Math.ceil(total / (64 * MiB)));
+        sjekk('summen av delene er hele fila', deler.reduce((s, d) => s + d.bytes, 0), total);
+        sjekk('ingen del over grensen', deler.every(d => d.bytes <= 64 * MiB), true);
+        sjekk('første del starter på null', deler[0].fra, 0);
+        sjekk('siste del slutter på siste byte', deler[deler.length - 1].til, total - 1);
+        sjekk('delene henger sammen uten hull',
+            deler.every((d, i) => i === 0 || d.fra === deler[i - 1].til + 1), true);
+        sjekk('range-headerne stemmer med grensene',
+            deler.every(d => d.range === `bytes=${d.fra}-${d.til}`), true);
+        sjekk('alle deler vet hvor mange de er', new Set(deler.map(d => d.av)).size, 1);
+        sjekk('numrene er fortløpende', deler.map(d => d.nr), deler.map((_, i) => i + 1));
+
+        // 100 MiB er PA-grensen. Standardstørrelsen må ha margin til den.
+        sjekk('standard delstørrelse er under PA-grensen', backup.DEL_MAKS_BYTES < 100 * MiB, true);
+
+        const tom = backup.byggDeler(navn, 0);
+        sjekk('tom fil gir én del, ikke null', tom.length, 1);
+        sjekk('og flyten har noe å hente', tom[0].range, 'bytes=0-0');
+    }
+
     // ---------- ekte zip gjennom hele veien ----------
     if (!JSZip) {
         hoppet++;
