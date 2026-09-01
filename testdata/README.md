@@ -30,10 +30,10 @@ navnekollisjon utvides forbokstaven, som i virkeligheten.
 ## Opprette brukerne i tenanten
 
 ```powershell
-Install-Module Microsoft.Graph -Scope CurrentUser   # én gang
-.	estdataopprett-testbrukere.ps1 -Torrkjor        # vis hva som skjer
-.	estdataopprett-testbrukere.ps1                  # opprett
-.	estdataopprett-testbrukere.ps1 -Fjern           # rydd opp
+Install-Module Microsoft.Graph -Scope CurrentUser    # én gang
+.\testdata\opprett-testbrukere.ps1 -Torrkjor        # vis hva som skjer
+.\testdata\opprett-testbrukere.ps1                  # opprett
+.\testdata\opprett-testbrukere.ps1 -Fjern           # rydd opp
 ```
 
 Skriptet er idempotent, spør om det felles passordet uten å vise det, og
