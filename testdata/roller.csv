@@ -1,0 +1,25 @@
+Rolle;Omfang;UPN;Fornavn;Etternavn;Rollebeskrivelse
+Sjef;Befalsskolen;stangen@jcconsulting.no;Sindre;Tangen;Øverste leder ved skolen
+Sjef;Cyberingeniørskolen;hjoergensen@jcconsulting.no;Henrik;Jørgensen;Øverste leder ved skolen
+Administrativ godkjenner;Fagstab;ervik@jcconsulting.no;Erik;Vik;Godkjenner administrative søknader
+Administrativ godkjenner;Fagstab;ebraaten@jcconsulting.no;Emilie;Bråten;Godkjenner administrative søknader
+Administrativ godkjenner;Fagstab;blund@jcconsulting.no;Berit;Lund;Godkjenner administrative søknader
+Administrativ godkjenner;Fellesadministrasjonen;oloeken@jcconsulting.no;Øyvind;Løken;Godkjenner administrative søknader
+Administrativ godkjenner;Fellesadministrasjonen;ssandvik@jcconsulting.no;Sindre;Sandvik;Godkjenner administrative søknader
+Kvalitetsmedarbeider;Kvalitetsarbeid;tpedersen@jcconsulting.no;Trond;Pedersen;Følger opp kvalitetsavvik og evalueringer
+Kvalitetsmedarbeider;Kvalitetsarbeid;ljohannessen@jcconsulting.no;Linnea;Johannessen;Følger opp kvalitetsavvik og evalueringer
+Kvalitetsmedarbeider;Kvalitetsarbeid;mhaugen@jcconsulting.no;Marit;Haugen;Følger opp kvalitetsavvik og evalueringer
+Anskaffelsesansvarlig;Fellesadministrasjonen;ikarlsen@jcconsulting.no;Ida;Karlsen;Behandler anskaffelsesplaner
+Anskaffelsesansvarlig;Fellesadministrasjonen;bjohansen@jcconsulting.no;Bjørn;Johansen;Behandler anskaffelsesplaner
+Økonomiansvarlig;Fellesadministrasjonen;jhaugen@jcconsulting.no;Jørgen;Haugen;Vurderer økonomiske konsekvenser
+Økonomiansvarlig;Fellesadministrasjonen;tfoss@jcconsulting.no;Thea;Foss;Vurderer økonomiske konsekvenser
+Personellansvarlig;Personell;blund@jcconsulting.no;Berit;Lund;Behandler personellsaker
+Personellansvarlig;Personell;mnilsen@jcconsulting.no;Mona;Nilsen;Behandler personellsaker
+Verneombud;Befalsskolen;majensen@jcconsulting.no;Magnus;Jensen;Verneombud for skolen
+Verneombud;Cyberingeniørskolen;jhaugen@jcconsulting.no;Jørgen;Haugen;Verneombud for skolen
+Systemeier;;lfoss@jcconsulting.no;Live;Foss;Eier av skjemaløsningen
+Arkivar;;lfoss@jcconsulting.no;Live;Foss;Arkivfaglig ansvar
+Arkivar;;skvam@jcconsulting.no;Steinar;Kvam;Arkivfaglig ansvar
+Skjemaskaper;;shansen@jcconsulting.no;Sondre;Hansen;Kan opprette og redigere skjematyper
+Skjemaskaper;;hnilsen@jcconsulting.no;Hanne;Nilsen;Kan opprette og redigere skjematyper
+Skjemaskaper;;hjoergensen@jcconsulting.no;Henrik;Jørgensen;Kan opprette og redigere skjematyper

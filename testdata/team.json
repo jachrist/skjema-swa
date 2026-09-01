@@ -1,0 +1,286 @@
+{
+  "grupper": [
+    {
+      "Team": "Fagstab utdanning",
+      "Beskrivelse": "Planlegging og oppfølging av utdanningsløp",
+      "Medlemmer": [
+        {
+          "EP": "ljohannessen@jcconsulting.no",
+          "FN": "Linnea",
+          "EN": "Johannessen",
+          "Navn": "Linnea Johannessen"
+        },
+        {
+          "EP": "oloeken@jcconsulting.no",
+          "FN": "Øyvind",
+          "EN": "Løken",
+          "Navn": "Øyvind Løken"
+        },
+        {
+          "EP": "viversen@jcconsulting.no",
+          "FN": "Vegard",
+          "EN": "Iversen",
+          "Navn": "Vegard Iversen"
+        }
+      ]
+    },
+    {
+      "Team": "Kvalitetsarbeid",
+      "Beskrivelse": "Kvalitetssikring og evaluering",
+      "Medlemmer": [
+        {
+          "EP": "majensen@jcconsulting.no",
+          "FN": "Magnus",
+          "EN": "Jensen",
+          "Navn": "Magnus Jensen"
+        },
+        {
+          "EP": "shansen@jcconsulting.no",
+          "FN": "Sondre",
+          "EN": "Hansen",
+          "Navn": "Sondre Hansen"
+        },
+        {
+          "EP": "tnygaard@jcconsulting.no",
+          "FN": "Trond",
+          "EN": "Nygård",
+          "Navn": "Trond Nygård"
+        },
+        {
+          "EP": "mhaugen@jcconsulting.no",
+          "FN": "Marit",
+          "EN": "Haugen",
+          "Navn": "Marit Haugen"
+        },
+        {
+          "EP": "viversen@jcconsulting.no",
+          "FN": "Vegard",
+          "EN": "Iversen",
+          "Navn": "Vegard Iversen"
+        },
+        {
+          "EP": "lfoss@jcconsulting.no",
+          "FN": "Live",
+          "EN": "Foss",
+          "Navn": "Live Foss"
+        }
+      ]
+    },
+    {
+      "Team": "Anskaffelser",
+      "Beskrivelse": "Behandling av anskaffelsesplaner",
+      "Medlemmer": [
+        {
+          "EP": "majensen@jcconsulting.no",
+          "FN": "Magnus",
+          "EN": "Jensen",
+          "Navn": "Magnus Jensen"
+        },
+        {
+          "EP": "afoss@jcconsulting.no",
+          "FN": "Anders",
+          "EN": "Foss",
+          "Navn": "Anders Foss"
+        },
+        {
+          "EP": "ijohnsen@jcconsulting.no",
+          "FN": "Ida",
+          "EN": "Johnsen",
+          "Navn": "Ida Johnsen"
+        },
+        {
+          "EP": "rgulbrandsen@jcconsulting.no",
+          "FN": "Randi",
+          "EN": "Gulbrandsen",
+          "Navn": "Randi Gulbrandsen"
+        },
+        {
+          "EP": "tpedersen@jcconsulting.no",
+          "FN": "Trond",
+          "EN": "Pedersen",
+          "Navn": "Trond Pedersen"
+        }
+      ]
+    },
+    {
+      "Team": "Personell og HR",
+      "Beskrivelse": "Personalsaker og fraværshåndtering",
+      "Medlemmer": [
+        {
+          "EP": "ihalvorsen@jcconsulting.no",
+          "FN": "Ingrid",
+          "EN": "Halvorsen",
+          "Navn": "Ingrid Halvorsen"
+        },
+        {
+          "EP": "afoss@jcconsulting.no",
+          "FN": "Anders",
+          "EN": "Foss",
+          "Navn": "Anders Foss"
+        },
+        {
+          "EP": "slarsen@jcconsulting.no",
+          "FN": "Solveig",
+          "EN": "Larsen",
+          "Navn": "Solveig Larsen"
+        },
+        {
+          "EP": "mnilsen@jcconsulting.no",
+          "FN": "Mona",
+          "EN": "Nilsen",
+          "Navn": "Mona Nilsen"
+        },
+        {
+          "EP": "akvam@jcconsulting.no",
+          "FN": "Aslak",
+          "EN": "Kvam",
+          "Navn": "Aslak Kvam"
+        },
+        {
+          "EP": "mkarlsen@jcconsulting.no",
+          "FN": "Morten",
+          "EN": "Karlsen",
+          "Navn": "Morten Karlsen"
+        }
+      ]
+    },
+    {
+      "Team": "Digitalisering",
+      "Beskrivelse": "Systemforvaltning og automatisering",
+      "Medlemmer": [
+        {
+          "EP": "mkarlsen@jcconsulting.no",
+          "FN": "Morten",
+          "EN": "Karlsen",
+          "Navn": "Morten Karlsen"
+        },
+        {
+          "EP": "ikristiansen@jcconsulting.no",
+          "FN": "Ida",
+          "EN": "Kristiansen",
+          "Navn": "Ida Kristiansen"
+        },
+        {
+          "EP": "rgulbrandsen@jcconsulting.no",
+          "FN": "Randi",
+          "EN": "Gulbrandsen",
+          "Navn": "Randi Gulbrandsen"
+        },
+        {
+          "EP": "skvam@jcconsulting.no",
+          "FN": "Steinar",
+          "EN": "Kvam",
+          "Navn": "Steinar Kvam"
+        },
+        {
+          "EP": "jhaugen@jcconsulting.no",
+          "FN": "Jørgen",
+          "EN": "Haugen",
+          "Navn": "Jørgen Haugen"
+        },
+        {
+          "EP": "ikarlsen@jcconsulting.no",
+          "FN": "Ida",
+          "EN": "Karlsen",
+          "Navn": "Ida Karlsen"
+        }
+      ]
+    },
+    {
+      "Team": "Cyberingeniørskolen",
+      "Beskrivelse": "Skolens administrative team",
+      "Medlemmer": [
+        {
+          "EP": "mkarlsen@jcconsulting.no",
+          "FN": "Morten",
+          "EN": "Karlsen",
+          "Navn": "Morten Karlsen"
+        },
+        {
+          "EP": "ikarlsen@jcconsulting.no",
+          "FN": "Ida",
+          "EN": "Karlsen",
+          "Navn": "Ida Karlsen"
+        },
+        {
+          "EP": "ijohnsen@jcconsulting.no",
+          "FN": "Ida",
+          "EN": "Johnsen",
+          "Navn": "Ida Johnsen"
+        },
+        {
+          "EP": "hnilsen@jcconsulting.no",
+          "FN": "Hanne",
+          "EN": "Nilsen",
+          "Navn": "Hanne Nilsen"
+        }
+      ]
+    },
+    {
+      "Team": "Befalsskolen",
+      "Beskrivelse": "Skolens administrative team",
+      "Medlemmer": [
+        {
+          "EP": "akristiansen@jcconsulting.no",
+          "FN": "Astrid",
+          "EN": "Kristiansen",
+          "Navn": "Astrid Kristiansen"
+        },
+        {
+          "EP": "lfoss@jcconsulting.no",
+          "FN": "Live",
+          "EN": "Foss",
+          "Navn": "Live Foss"
+        },
+        {
+          "EP": "evik@jcconsulting.no",
+          "FN": "Elin",
+          "EN": "Vik",
+          "Navn": "Elin Vik"
+        },
+        {
+          "EP": "tfoss@jcconsulting.no",
+          "FN": "Thea",
+          "EN": "Foss",
+          "Navn": "Thea Foss"
+        },
+        {
+          "EP": "cmoe@jcconsulting.no",
+          "FN": "Camilla",
+          "EN": "Moe",
+          "Navn": "Camilla Moe"
+        },
+        {
+          "EP": "ervik@jcconsulting.no",
+          "FN": "Erik",
+          "EN": "Vik",
+          "Navn": "Erik Vik"
+        }
+      ]
+    },
+    {
+      "Team": "Ledergruppen",
+      "Beskrivelse": "Skolens ledelse",
+      "Medlemmer": [
+        {
+          "EP": "akristiansen@jcconsulting.no",
+          "FN": "Astrid",
+          "EN": "Kristiansen",
+          "Navn": "Astrid Kristiansen"
+        },
+        {
+          "EP": "tlarsen@jcconsulting.no",
+          "FN": "Thea",
+          "EN": "Larsen",
+          "Navn": "Thea Larsen"
+        },
+        {
+          "EP": "mkarlsen@jcconsulting.no",
+          "FN": "Morten",
+          "EN": "Karlsen",
+          "Navn": "Morten Karlsen"
+        }
+      ]
+    }
+  ]
+}

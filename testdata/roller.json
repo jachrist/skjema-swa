@@ -1,0 +1,194 @@
+[
+  {
+    "Rolle": "Sjef",
+    "Omfang": "Befalsskolen",
+    "UPN": "stangen@jcconsulting.no",
+    "FN": "Sindre",
+    "EN": "Tangen",
+    "Rollebeskrivelse": "Øverste leder ved skolen"
+  },
+  {
+    "Rolle": "Sjef",
+    "Omfang": "Cyberingeniørskolen",
+    "UPN": "hjoergensen@jcconsulting.no",
+    "FN": "Henrik",
+    "EN": "Jørgensen",
+    "Rollebeskrivelse": "Øverste leder ved skolen"
+  },
+  {
+    "Rolle": "Administrativ godkjenner",
+    "Omfang": "Fagstab",
+    "UPN": "ervik@jcconsulting.no",
+    "FN": "Erik",
+    "EN": "Vik",
+    "Rollebeskrivelse": "Godkjenner administrative søknader"
+  },
+  {
+    "Rolle": "Administrativ godkjenner",
+    "Omfang": "Fagstab",
+    "UPN": "ebraaten@jcconsulting.no",
+    "FN": "Emilie",
+    "EN": "Bråten",
+    "Rollebeskrivelse": "Godkjenner administrative søknader"
+  },
+  {
+    "Rolle": "Administrativ godkjenner",
+    "Omfang": "Fagstab",
+    "UPN": "blund@jcconsulting.no",
+    "FN": "Berit",
+    "EN": "Lund",
+    "Rollebeskrivelse": "Godkjenner administrative søknader"
+  },
+  {
+    "Rolle": "Administrativ godkjenner",
+    "Omfang": "Fellesadministrasjonen",
+    "UPN": "oloeken@jcconsulting.no",
+    "FN": "Øyvind",
+    "EN": "Løken",
+    "Rollebeskrivelse": "Godkjenner administrative søknader"
+  },
+  {
+    "Rolle": "Administrativ godkjenner",
+    "Omfang": "Fellesadministrasjonen",
+    "UPN": "ssandvik@jcconsulting.no",
+    "FN": "Sindre",
+    "EN": "Sandvik",
+    "Rollebeskrivelse": "Godkjenner administrative søknader"
+  },
+  {
+    "Rolle": "Kvalitetsmedarbeider",
+    "Omfang": "Kvalitetsarbeid",
+    "UPN": "tpedersen@jcconsulting.no",
+    "FN": "Trond",
+    "EN": "Pedersen",
+    "Rollebeskrivelse": "Følger opp kvalitetsavvik og evalueringer"
+  },
+  {
+    "Rolle": "Kvalitetsmedarbeider",
+    "Omfang": "Kvalitetsarbeid",
+    "UPN": "ljohannessen@jcconsulting.no",
+    "FN": "Linnea",
+    "EN": "Johannessen",
+    "Rollebeskrivelse": "Følger opp kvalitetsavvik og evalueringer"
+  },
+  {
+    "Rolle": "Kvalitetsmedarbeider",
+    "Omfang": "Kvalitetsarbeid",
+    "UPN": "mhaugen@jcconsulting.no",
+    "FN": "Marit",
+    "EN": "Haugen",
+    "Rollebeskrivelse": "Følger opp kvalitetsavvik og evalueringer"
+  },
+  {
+    "Rolle": "Anskaffelsesansvarlig",
+    "Omfang": "Fellesadministrasjonen",
+    "UPN": "ikarlsen@jcconsulting.no",
+    "FN": "Ida",
+    "EN": "Karlsen",
+    "Rollebeskrivelse": "Behandler anskaffelsesplaner"
+  },
+  {
+    "Rolle": "Anskaffelsesansvarlig",
+    "Omfang": "Fellesadministrasjonen",
+    "UPN": "bjohansen@jcconsulting.no",
+    "FN": "Bjørn",
+    "EN": "Johansen",
+    "Rollebeskrivelse": "Behandler anskaffelsesplaner"
+  },
+  {
+    "Rolle": "Økonomiansvarlig",
+    "Omfang": "Fellesadministrasjonen",
+    "UPN": "jhaugen@jcconsulting.no",
+    "FN": "Jørgen",
+    "EN": "Haugen",
+    "Rollebeskrivelse": "Vurderer økonomiske konsekvenser"
+  },
+  {
+    "Rolle": "Økonomiansvarlig",
+    "Omfang": "Fellesadministrasjonen",
+    "UPN": "tfoss@jcconsulting.no",
+    "FN": "Thea",
+    "EN": "Foss",
+    "Rollebeskrivelse": "Vurderer økonomiske konsekvenser"
+  },
+  {
+    "Rolle": "Personellansvarlig",
+    "Omfang": "Personell",
+    "UPN": "blund@jcconsulting.no",
+    "FN": "Berit",
+    "EN": "Lund",
+    "Rollebeskrivelse": "Behandler personellsaker"
+  },
+  {
+    "Rolle": "Personellansvarlig",
+    "Omfang": "Personell",
+    "UPN": "mnilsen@jcconsulting.no",
+    "FN": "Mona",
+    "EN": "Nilsen",
+    "Rollebeskrivelse": "Behandler personellsaker"
+  },
+  {
+    "Rolle": "Verneombud",
+    "Omfang": "Befalsskolen",
+    "UPN": "majensen@jcconsulting.no",
+    "FN": "Magnus",
+    "EN": "Jensen",
+    "Rollebeskrivelse": "Verneombud for skolen"
+  },
+  {
+    "Rolle": "Verneombud",
+    "Omfang": "Cyberingeniørskolen",
+    "UPN": "jhaugen@jcconsulting.no",
+    "FN": "Jørgen",
+    "EN": "Haugen",
+    "Rollebeskrivelse": "Verneombud for skolen"
+  },
+  {
+    "Rolle": "Systemeier",
+    "Omfang": "",
+    "UPN": "lfoss@jcconsulting.no",
+    "FN": "Live",
+    "EN": "Foss",
+    "Rollebeskrivelse": "Eier av skjemaløsningen"
+  },
+  {
+    "Rolle": "Arkivar",
+    "Omfang": "",
+    "UPN": "lfoss@jcconsulting.no",
+    "FN": "Live",
+    "EN": "Foss",
+    "Rollebeskrivelse": "Arkivfaglig ansvar"
+  },
+  {
+    "Rolle": "Arkivar",
+    "Omfang": "",
+    "UPN": "skvam@jcconsulting.no",
+    "FN": "Steinar",
+    "EN": "Kvam",
+    "Rollebeskrivelse": "Arkivfaglig ansvar"
+  },
+  {
+    "Rolle": "Skjemaskaper",
+    "Omfang": "",
+    "UPN": "shansen@jcconsulting.no",
+    "FN": "Sondre",
+    "EN": "Hansen",
+    "Rollebeskrivelse": "Kan opprette og redigere skjematyper"
+  },
+  {
+    "Rolle": "Skjemaskaper",
+    "Omfang": "",
+    "UPN": "hnilsen@jcconsulting.no",
+    "FN": "Hanne",
+    "EN": "Nilsen",
+    "Rollebeskrivelse": "Kan opprette og redigere skjematyper"
+  },
+  {
+    "Rolle": "Skjemaskaper",
+    "Omfang": "",
+    "UPN": "hjoergensen@jcconsulting.no",
+    "FN": "Henrik",
+    "EN": "Jørgensen",
+    "Rollebeskrivelse": "Kan opprette og redigere skjematyper"
+  }
+]
