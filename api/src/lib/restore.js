@@ -125,17 +125,47 @@ async function importerContainer(navn, zip, meta, log) {
  *
  * @returns { modus, tabeller: [{navn, slettet, skrevet}], containere: [...] }
  */
-async function kjorRestore({ manifest, zip }, log = () => {}) {
+/**
+ * Tabellene og containerne som utgjør «oppsettet» — det som har verdi i et
+ * testmiljø.
+ *
+ * Alt annet er innhold: innsendte skjemaer, utsendinger, hendelseslogg,
+ * tilgangstokens og rollemedlemskap. Det inneholder ekte personer, og hører
+ * ikke hjemme i et annet miljø enn det det ble sendt inn i.
+ *
+ * Bevisste valg i lista:
+ *   Postnumre  — offentlige referansedata uten personinnhold, og uten dem
+ *                virker ikke adressefeltene i et gjenopprettet skjema.
+ *   logoer     — virksomhetslogoer, ikke personopplysninger. Uten dem ser
+ *                skjematypene feil ut. `vedlegg` er derimot innsendt innhold.
+ *   Kryptonokler og Teller er UTELATT med vilje. Nøklene hører til miljøet som
+ *                eier dataene, og telleren finner seg selv når det ikke finnes
+ *                skjemaer å kollidere med.
+ */
+const DEFINISJON_TABELLER = ['Skjemadefinisjoner', 'Rapporttyper', 'SystemInnstillinger', 'Postnumre'];
+const DEFINISJON_CONTAINERE = ['logoer'];
+
+async function kjorRestore({ manifest, zip }, log = () => {}, { kunDefinisjoner = false } = {}) {
     const start = Date.now();
     const modus = manifest.modus === 'delta' ? 'delta' : 'full';
-    const resultat = { modus, tabeller: [], containere: [] };
+    const resultat = { modus, kunDefinisjoner, tabeller: [], containere: [], hoppetOver: [] };
 
     if (modus === 'delta') {
         log(`restore: DELTA basert på ${manifest.basertPa || 'ukjent full backup'} — `
             + `containere fylles på, ingenting slettes. Gjenopprett den fulle først.`);
     }
 
+    if (kunDefinisjoner) {
+        log('restore: KUN DEFINISJONER — skjematyper, rapporttyper, innstillinger, '
+            + 'postnumre og logoer. Innsendte skjemaer, vedlegg, utsendinger, '
+            + 'hendelser, tilgangstokens og rollemedlemskap hoppes over.');
+    }
+
     for (const t of (manifest.tabeller || [])) {
+        if (kunDefinisjoner && !DEFINISJON_TABELLER.includes(t.navn)) {
+            resultat.hoppetOver.push(t.navn);
+            continue;
+        }
         const fil = zip.file(`tabeller/${t.navn}.json`);
         if (!fil) { log(`restore: tabell/${t.navn}.json mangler — hoppet over`); continue; }
         const rader = JSON.parse(await fil.async('string'));
@@ -145,6 +175,10 @@ async function kjorRestore({ manifest, zip }, log = () => {}) {
     }
 
     for (const c of (manifest.containers || [])) {
+        if (kunDefinisjoner && !DEFINISJON_CONTAINERE.includes(c.navn)) {
+            resultat.hoppetOver.push(c.navn);
+            continue;
+        }
         const metaFil = zip.file(`blobs/${c.navn}/_meta.json`);
         const meta = metaFil ? JSON.parse(await metaFil.async('string')) : [];
         const slettet = modus === 'delta' ? 0 : await wipeContainer(c.navn, log);
@@ -156,4 +190,4 @@ async function kjorRestore({ manifest, zip }, log = () => {}) {
     return resultat;
 }
 
-module.exports = { apneOgDekrypter, kjorRestore };
+module.exports = { apneOgDekrypter, kjorRestore, DEFINISJON_TABELLER, DEFINISJON_CONTAINERE };

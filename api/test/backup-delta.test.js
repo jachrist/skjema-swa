@@ -142,6 +142,51 @@ async function kjor() {
         sjekk('full wiper containeren', kilde.wipet, ['vedlegg']);
     }
 
+    // ---------- kun definisjoner ----------
+    {
+        // Oppsettet har verdi i et testmiljø; innsendt innhold har det ikke, og
+        // inneholder ekte personer. Går denne filtreringen galt, havner
+        // produksjonsdata i feil tenant — som det gjorde 01.09.2026.
+        const restore = require('../src/lib/restore');
+        const kilde = fs2();
+        const zip = {
+            file: (navn) => navn.endsWith('_meta.json')
+                ? { async: async () => JSON.stringify([]) }
+                : { async: async () => JSON.stringify([]) }
+        };
+        const manifest = {
+            tabeller: [
+                { navn: 'Skjemadefinisjoner' }, { navn: 'Rapporttyper' },
+                { navn: 'SystemInnstillinger' }, { navn: 'Postnumre' },
+                { navn: 'Skjemaer' }, { navn: 'Utsendinger' }, { navn: 'Hendelser' },
+                { navn: 'Tilgangskontroll' }, { navn: 'Rollemedlemskap' },
+                { navn: 'Kryptonokler' }, { navn: 'Teller' }
+            ],
+            containers: [{ navn: 'vedlegg' }, { navn: 'logoer' }]
+        };
+
+        const res = await kilde.kjor(() => restore.kjorRestore(
+            { manifest, zip }, () => {}, { kunDefinisjoner: true }));
+
+        sjekk('bare oppsettstabellene gjenopprettes',
+            res.tabeller.map(t => t.navn).sort(),
+            ['Postnumre', 'Rapporttyper', 'Skjemadefinisjoner', 'SystemInnstillinger']);
+        sjekk('innsendte skjemaer hoppes over', res.hoppetOver.includes('Skjemaer'), true);
+        sjekk('vedlegg hoppes over', res.hoppetOver.includes('vedlegg'), true);
+        sjekk('logoer følger med — virksomhetslogoer, ikke personopplysninger',
+            res.containere.map(c => c.navn), ['logoer']);
+        // Nøkler og teller hører til miljøet som eier dataene.
+        sjekk('krypteringsnøkler hoppes over', res.hoppetOver.includes('Kryptonokler'), true);
+        sjekk('telleren hoppes over', res.hoppetOver.includes('Teller'), true);
+        sjekk('resultatet sier at det var kun definisjoner', res.kunDefinisjoner, true);
+
+        // Uten flagget skal alt med, som før.
+        kilde.nullstill();
+        const alt = await kilde.kjor(() => restore.kjorRestore({ manifest, zip }, () => {}));
+        sjekk('vanlig restore tar alt', alt.tabeller.length, 11);
+        sjekk('og hopper ikke over noe', alt.hoppetOver, []);
+    }
+
     // ---------- ekstern kilde ----------
     {
         // Backup av et annet miljø: alt skal leses fra den oppgitte kilden, og
@@ -235,7 +280,11 @@ function fs2() {
         get wipet() { return wipet; },
         nullstill() { wipet.length = 0; },
         async kjor(fn) {
-            const orig = { containerKlient: blob.containerKlient, tabellKlient: storage.tabellKlient };
+            const orig = {
+                containerKlient: blob.containerKlient,
+                tabellKlient: storage.tabellKlient,
+                sikreTabell: storage.sikreTabell
+            };
             blob.containerKlient = (navn) => ({
                 // wipeContainer er det eneste som lister — registrerer vi kallet
                 // her, ser vi presist om containeren ble tømt.
@@ -246,8 +295,19 @@ function fs2() {
                     async uploadData() { return {}; }
                 })
             });
+            const tomTabell = () => ({
+                async *listEntities() { /* tom — ingenting å wipe */ },
+                async deleteEntity() {},
+                async upsertEntity() {}
+            });
+            storage.tabellKlient = tomTabell;
+            storage.sikreTabell = async () => tomTabell();
             try { return await fn(); }
-            finally { blob.containerKlient = orig.containerKlient; storage.tabellKlient = orig.tabellKlient; }
+            finally {
+                blob.containerKlient = orig.containerKlient;
+                storage.tabellKlient = orig.tabellKlient;
+                storage.sikreTabell = orig.sikreTabell;
+            }
         }
     };
 }

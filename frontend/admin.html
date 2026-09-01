@@ -2122,7 +2122,17 @@
                     <div id="r-verifiser-resultat" style="margin-top: 10px;"></div>
                     <div id="r-restore-omrade" style="display: none; margin-top: 16px; padding: 14px; background: var(--danger-light); border-radius: 8px;">
                         <div style="font-weight: 600; color: var(--danger); margin-bottom: 8px;">Bekreft restore</div>
-                        <div style="font-size: 13px; margin-bottom: 8px;">Skriv <code>RESTORE</code> for å bekrefte at alle nåværende data skal overskrives:</div>
+                        <label class="checkbox-rad" style="margin: 0 0 10px; font-size: 13px;">
+                            <input type="checkbox" id="r-kun-definisjoner">
+                            <span><strong>Kun definisjoner</strong> — skjematyper, rapporttyper, innstillinger,
+                            postnumre og logoer. Innsendte skjemaer, vedlegg, utsendinger, hendelser,
+                            tilgangstokens og rollemedlemskap hoppes over.</span>
+                        </label>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin: 0 0 10px 24px;">
+                            Bruk dette når du henter oppsettet fra ett miljø til et annet. Innsendt innhold
+                            inneholder ekte personer og hører hjemme bare der det ble sendt inn.
+                        </div>
+                        <div style="font-size: 13px; margin-bottom: 8px;">Skriv <code>RESTORE</code> for å bekrefte at nåværende data skal overskrives:</div>
                         <div class="rad">
                             <input type="text" id="r-bekreftelse" placeholder="RESTORE">
                             <button class="knapp danger" onclick="rKjor()">Kjør restore nå</button>
@@ -2206,20 +2216,27 @@
             const fd = await rBuildForm();
             if (!fd) return;
             fd.append('bekreftelse', 'RESTORE');
+            const kunDef = document.getElementById('r-kun-definisjoner')?.checked;
+            if (kunDef) fd.append('kunDefinisjoner', 'ja');
             const status = document.getElementById('r-restore-status');
-            status.innerHTML = '<div class="banner info">Kjører restore — ikke lukk vinduet…</div>';
+            status.innerHTML = `<div class="banner info">Kjører restore${kunDef ? ' (kun definisjoner)' : ''} — ikke lukk vinduet…</div>`;
             try {
                 const res = await fetch('/api/backup/restore', { method: 'POST', body: fd });
                 const data = await res.json();
                 if (!res.ok) { status.innerHTML = `<div class="banner feil">${escHtml(data.melding)}</div>`; return; }
                 const tRows = (data.resultat.tabeller || []).map(t => `<div>${escHtml(t.navn)}: slettet ${t.slettet}, skrev ${t.skrevet}</div>`).join('');
                 const cRows = (data.resultat.containere || []).map(c => `<div>${escHtml(c.navn)}: slettet ${c.slettet}, skrev ${c.skrevet}</div>`).join('');
+                // Hva som IKKE ble gjenopprettet er like viktig å se som hva som ble det —
+                // ellers er det lett å tro at innholdet er der.
+                const hoppet = data.resultat.hoppetOver || [];
                 status.innerHTML = `
                     <div class="banner suksess">
-                        <strong>✓ Restore fullført på ${data.varighetSekunder}s</strong>
+                        <strong>✓ Restore fullført${data.resultat.kunDefinisjoner ? ' (kun definisjoner)' : ''} på ${data.varighetSekunder}s</strong>
                         <div style="font-size: 12px; margin-top: 8px; font-family: 'SF Mono', Menlo, monospace;">
                             ${tRows}${cRows}
                         </div>
+                        ${hoppet.length ? `<div style="font-size: 12px; margin-top: 8px; color: var(--text-secondary);">
+                            Hoppet over: ${escHtml(hoppet.join(', '))}</div>` : ''}
                     </div>
                 `;
             } catch (e) {

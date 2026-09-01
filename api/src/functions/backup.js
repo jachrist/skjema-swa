@@ -679,12 +679,20 @@ app.http('backupRestore', {
             const apnet = await restore.apneOgDekrypter(buf, passphrase);
             jobbLog(`restore: manifest ok — ${apnet.manifest.tabeller?.length || 0} tabeller, ${apnet.manifest.containers?.length || 0} containere`);
 
-            const res = await restore.kjorRestore(apnet, jobbLog);
+            // Kun definisjoner: skjematyper, rapporttyper, innstillinger,
+            // postnumre og logoer. Innsendte skjemaer og vedlegg inneholder
+            // ekte personer, og hører ikke hjemme i et annet miljø enn det de
+            // ble sendt inn i. Det som har verdi i test er oppsettet.
+            const kunDefinisjoner = String(fd.get('kunDefinisjoner') || '') === 'ja';
+            const res = await restore.kjorRestore(apnet, jobbLog, { kunDefinisjoner });
 
             hendelser.logg({
                 Type: 'restore.kjort', Aktor: a.upn,
                 ObjektType: 'backup', ObjektId: fil.name,
-                Melding: `Restore fullført — ${res.tabeller.length} tabeller, ${res.containere.length} containere (${res.varighetSekunder}s)`,
+                Melding: `Restore fullført${kunDefinisjoner ? ' (kun definisjoner)' : ''} — `
+                    + `${res.tabeller.length} tabeller, ${res.containere.length} containere`
+                    + `${res.hoppetOver.length ? `, ${res.hoppetOver.length} hoppet over` : ''} `
+                    + `(${res.varighetSekunder}s)`,
                 Detaljer: { ...res, backupTid: apnet.manifest.tid, backupMiljo: apnet.manifest.miljø }
             });
 
