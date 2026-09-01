@@ -21,10 +21,30 @@ node testdata/generer.js --seed 42   # et helt annet utvalg
 | `team.json` | 8 team med 3–6 medlemmer hver | Klar payload til `POST /api/cache/teammedlemskap` |
 | `roller.json` | 24 rolletildelinger | Kilde for en PA-flyt, eller for `POST /api/roller/leggtil` én om gangen |
 | `roller.csv` | Samme rader, semikolonseparert | Import i admin-panelet under **Roller** |
+| `opprett-testbrukere.ps1` | PowerShell mot Microsoft Graph | Oppretter brukerne i Entra ID |
 
 Brukernavnene følger samme mønster som i produksjon — forbokstav pluss
 etternavn, `bjohansen@` — slik at testdataene ligner det de erstatter. Ved
 navnekollisjon utvides forbokstaven, som i virkeligheten.
+
+## Opprette brukerne i tenanten
+
+```powershell
+Install-Module Microsoft.Graph -Scope CurrentUser   # én gang
+.	estdataopprett-testbrukere.ps1 -Torrkjor        # vis hva som skjer
+.	estdataopprett-testbrukere.ps1                  # opprett
+.	estdataopprett-testbrukere.ps1 -Fjern           # rydd opp
+```
+
+Skriptet er idempotent, spør om det felles passordet uten å vise det, og
+legger alle brukerne i sikkerhetsgruppa `FHS-Testbrukere`.
+
+Gruppa finnes fordi **MFA ikke kan slås av per bruker** — kravet styres av
+Security Defaults eller en betinget tilgang-policy for hele tenanten. Med en
+gruppe blir unntaket én operasjon i stedet for femti, og opprydding likeså.
+
+Brukerne får ingen lisens og ingen roller i tenanten. De skal befolke roller
+og team-cachen i skjemaløsningen, ikke brukes i Teams eller e-post.
 
 ## Team
 
