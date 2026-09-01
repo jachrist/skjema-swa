@@ -416,6 +416,10 @@
         function manglerNullpunkt(t) {
             if (!nullpunkt.konfigurert) return false;
             if (!(t.ErEier || erAdminBruker)) return false;
+            // Bare skjematyper som faktisk er i produksjon. Under utvikling er
+            // et manglende nullpunkt helt normalt, og å merke dem ville gjort
+            // merket til bakgrunnsstøy — og dermed verdiløst der det teller.
+            if ((t.Fase || 'Produksjon') !== 'Produksjon') return false;
             // Baseline-skjemaet trenger ikke sitt eget nullpunkt.
             if (String(t.Skjematype_id) === String(nullpunkt.baselineTypeId)) return false;
             return !nullpunkt.dekkede.includes(String(t.Skjematype_id));
