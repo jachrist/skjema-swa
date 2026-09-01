@@ -44,12 +44,17 @@ const FLATER = {
     '/velgrapporttype.html': { type: 'rapporter',     ikon: '📊' },
     '/rapporteditor.html':   { type: 'rapporteditor', ikon: '📈' },
     '/rapport.html':         { type: 'rapport',       ikon: '📉' },
+    '/register.html':        { type: 'register',      ikon: '🗄' },
     '/index.html':           { type: 'utfylling',     ikon: '🧪', kunFra: 'editor' }
 };
 
 // Parametrene som skiller én oppgave fra en annen. Alt annet — visningsvalg,
 // filtre, sporing — skal ikke lage en ny fane.
-const IDENT_PARAM = ['skjematype_id', 'skjema_id', 'rapporttype_id', 'kopi_fra'];
+//
+// `status` er med fordi registeret har to innganger fra skjemaoversikten:
+// Register er de aktive skjemaene, Arkiv er de avsluttede (status=5). Det er
+// to ulike lister, og skal kunne stå som to faner.
+const IDENT_PARAM = ['skjematype_id', 'skjema_id', 'rapporttype_id', 'kopi_fra', 'status'];
 
 // ==================== ren logikk ====================
 

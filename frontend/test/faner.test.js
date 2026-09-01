@@ -60,6 +60,12 @@ async function kjor() {
         sjekk('parameterrekkefølge spiller ingen rolle',
             n('/evaluering.html?skjema_id=2&skjematype_id=10'),
             n('/evaluering.html?skjematype_id=10&skjema_id=2'));
+
+        // Registeret har to innganger fra skjemaoversikten: Register er de
+        // aktive skjemaene, Arkiv er de avsluttede. To lister, to faner.
+        sjekk('register og arkiv er ulike faner',
+            n('/register.html?skjematype_id=10')
+            === n('/register.html?skjematype_id=10&status=5'), false);
     }
 
     // ---------- hvilke sider som blir faner ----------
@@ -67,8 +73,10 @@ async function kjor() {
         const e = (u) => f.erArbeidsflate(`${BASE}${u}`);
         sjekk('editoren er en arbeidsflate', e('/editor.html?skjematype_id=1')?.type, 'editor');
         sjekk('admin er en arbeidsflate', e('/admin.html')?.type, 'admin');
+        sjekk('registeret er en arbeidsflate', e('/register.html?skjematype_id=1')?.type, 'register');
+        // Kvitteringen er en endestasjon etter innsending, ikke en oppgave man
+        // vender tilbake til.
         sjekk('kvitteringen er det ikke', e('/kvittering.html'), null);
-        sjekk('registrering er det ikke', e('/register.html'), null);
 
         // Utfyllingssiden nås også av eksterne via OTP-lenke. Den skal bare
         // telle som arbeid når den er åpnet fra editoren for å teste live.
