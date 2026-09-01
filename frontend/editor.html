@@ -448,6 +448,28 @@
             display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
         }
 
+        /* ===== Kanaloppsett per steg ===== */
+        .kanal-oppsett { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+        /* En kanal med eget oppsett skal skille seg fra en som arver e-postmalen. */
+        .kanal-oppsett .knapp.konfigurert {
+            border-color: var(--accent);
+            color: var(--accent);
+            font-weight: 600;
+        }
+        .kanal-hint { font-size: 11px; color: var(--text-secondary); margin-top: 5px; }
+        .konfig-hjelp { font-size: 13px; color: var(--text-secondary); margin: 0 0 12px; line-height: 1.5; }
+        .konfig-felter { display: flex; flex-direction: column; gap: 10px; }
+        .konfig-rad label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+        .konfig-rad label small { font-weight: 400; color: var(--text-secondary); }
+        .konfig-rad textarea { font-family: inherit; font-size: 13px; line-height: 1.5; resize: vertical; }
+        .konfig-plassholdere {
+            margin-top: 12px; font-size: 11px; color: var(--text-secondary);
+            border-top: 1px solid var(--border-color); padding-top: 8px;
+        }
+        .konfig-plassholdere code {
+            background: var(--bg-section); padding: 1px 4px; border-radius: 3px; margin-right: 2px;
+        }
+
         /* ===== Varsling-checkbokser ===== */
         .varsling-kanaler {
             display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px;
@@ -1236,9 +1258,23 @@
                                 onchange="setVarslingKanal(${idx}, 'teamskanal', this.checked)"> <span>Teams-kanal</span>
                         </label>
                     </div>
-                    <div style="margin-top: 6px;">
+                    <div class="kanal-oppsett">
                         <button class="knapp mini sekundær" onclick="apneTilBehandlerEditor(${idx})">${tbTekst} — til behandler</button>
+                        ${varsling.includes('teams') ? `
+                            <button class="knapp mini sekundær ${harOppsett(steg.TeamsMelding) ? 'konfigurert' : ''}"
+                                onclick="apneTeamsMeldingEditor(${idx})">
+                                💬 Teams-melding${harOppsett(steg.TeamsMelding) ? ' ✓' : ''}</button>` : ''}
+                        ${varsling.includes('planner') ? `
+                            <button class="knapp mini sekundær ${harOppsett(steg.PlannerOppgave) ? 'konfigurert' : ''}"
+                                onclick="apnePlannerEditor(${idx})">
+                                📋 Planner-oppgave${harOppsett(steg.PlannerOppgave) ? ' ✓' : ''}</button>` : ''}
+                        ${varsling.includes('teamskanal') ? `
+                            <button class="knapp mini sekundær ${harOppsett(steg.TeamsKanalInnlegg) ? 'konfigurert' : ''}"
+                                onclick="apneTeamskanalEditor(${idx})">
+                                📢 Teams-kanal${harOppsett(steg.TeamsKanalInnlegg) ? ' ✓' : ''}</button>` : ''}
                     </div>
+                    ${varsling.length > 1 || varsling.includes('planner') || varsling.includes('teamskanal') ? `
+                        <div class="kanal-hint">Uten eget oppsett bruker kanalene meldingen til behandler.</div>` : ''}
                 </div>
             `;
 
@@ -1378,6 +1414,190 @@
             if (aktivert) naa.add(kanal); else naa.delete(kanal);
             steg.Varsling = [...naa];
             rendrerBehandling();
+        };
+
+        // ==================== KANALOPPSETT PER STEG ====================
+        //
+        // E-post har alltid hatt egen mal. De tre andre kanalene var bare
+        // på/av, og arvet e-postteksten — så en Planner-oppgave havnet i
+        // standardplanen uten frist, og et kanalinnlegg gikk dit flyten
+        // tilfeldigvis pekte. Her får hver kanal sitt eget oppsett.
+        //
+        // Alt er valgfritt. Tomme felter betyr «som før»: e-postmalen brukes,
+        // og flyten bestemmer resten.
+
+        const KANAL_PLASSHOLDERE = [
+            '$skjemanavn', '$skjema_id', '$stegnavn', '$innsender',
+            '$innsender_navn', '$tidspunkt', '$lenke'
+        ];
+
+        /** Har kanalen fått et eget oppsett? Styrer hake og utheving på knappen. */
+        function harOppsett(obj) {
+            if (!obj || typeof obj !== 'object') return false;
+            return Object.values(obj).some(v => String(v || '').trim() !== '');
+        }
+
+        /**
+         * Enkel skjemamodal bygget fra en feltspesifikasjon.
+         *
+         * Returnerer verdiene, eller null hvis brukeren avbrøt. Samme
+         * bakteppe og knapperad som de øvrige modalene i editoren.
+         */
+        function apneKonfigModal(verdier, { tittel, hjelp = '', felter }) {
+            return new Promise((resolve) => {
+                const bakgrunn = document.createElement('div');
+                bakgrunn.className = 'meldingsmodal-bakgrunn';
+                bakgrunn.innerHTML = `
+                    <div class="meldingsmodal-boks">
+                        <div class="meldingsmodal-topp">
+                            <h3 class="meldingsmodal-tittel">${escapeHtml(tittel)}</h3>
+                            <button class="meldingsmodal-lukk" title="Avbryt (Esc)">✕</button>
+                        </div>
+                        ${hjelp ? `<p class="konfig-hjelp">${hjelp}</p>` : ''}
+                        <div class="konfig-felter"></div>
+                        <div class="konfig-plassholdere">
+                            Plassholdere: ${KANAL_PLASSHOLDERE.map(p => `<code>${p}</code>`).join(' ')}
+                        </div>
+                        <div class="meldingsmodal-knapper">
+                            <button class="modal-knapp" data-svar="avbryt">Avbryt</button>
+                            <button class="modal-knapp primær" data-svar="lagre">Lagre</button>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(bakgrunn);
+                const boks = bakgrunn.querySelector('.meldingsmodal-boks');
+                const felterEl = boks.querySelector('.konfig-felter');
+                const inputs = {};
+
+                for (const f of felter) {
+                    const rad = document.createElement('div');
+                    rad.className = 'konfig-rad';
+                    const verdi = verdier[f.navn] ?? '';
+                    let kontroll;
+                    if (f.type === 'valg') {
+                        kontroll = document.createElement('select');
+                        for (const v of f.valg) {
+                            const o = document.createElement('option');
+                            o.value = typeof v === 'string' ? v : v.verdi;
+                            o.textContent = typeof v === 'string' ? v : v.tekst;
+                            if (o.value === String(verdi)) o.selected = true;
+                            kontroll.appendChild(o);
+                        }
+                    } else if (f.type === 'tekstomrade') {
+                        kontroll = document.createElement('textarea');
+                        kontroll.rows = f.rader || 4;
+                        kontroll.value = verdi;
+                    } else {
+                        kontroll = document.createElement('input');
+                        kontroll.type = 'text';
+                        kontroll.value = verdi;
+                    }
+                    if (f.plassholder) kontroll.placeholder = f.plassholder;
+                    kontroll.style.width = '100%';
+                    rad.innerHTML = `<label>${escapeHtml(f.etikett)}${f.hjelp ? ` <small>${f.hjelp}</small>` : ''}</label>`;
+                    rad.appendChild(kontroll);
+                    felterEl.appendChild(rad);
+                    inputs[f.navn] = kontroll;
+                }
+
+                const lukk = (svar) => {
+                    document.removeEventListener('keydown', paEsc);
+                    document.body.removeChild(bakgrunn);
+                    if (svar !== 'lagre') return resolve(null);
+                    const ut = {};
+                    for (const [navn, el] of Object.entries(inputs)) ut[navn] = el.value.trim();
+                    resolve(ut);
+                };
+                const paEsc = (e) => { if (e.key === 'Escape') lukk('avbryt'); };
+                document.addEventListener('keydown', paEsc);
+                boks.querySelectorAll('button[data-svar]').forEach(b =>
+                    b.addEventListener('click', () => lukk(b.dataset.svar)));
+                boks.querySelector('.meldingsmodal-lukk').addEventListener('click', () => lukk('avbryt'));
+                bakgrunn.addEventListener('click', (e) => { if (e.target === bakgrunn) lukk('avbryt'); });
+                felterEl.querySelector('input, select, textarea')?.focus();
+            });
+        }
+
+        /** Rollene som kan velges som ansvarlig — samme kilde som Reserverolle. */
+        function rolleValg(valgt) {
+            const valg = rolleGrupper.map(g => ({
+                verdi: g.Omfang ? `${g.Rolle}(${g.Omfang})` : g.Rolle,
+                tekst: g.Omfang ? `${g.Rolle} — ${g.Omfang}` : g.Rolle
+            }));
+            // En lagret rolle som har mistet innehaverne sine er ikke i
+            // rolleGrupper. Ta den med, ellers faller den bort stille.
+            if (valgt && !valg.some(o => o.verdi === valgt)) {
+                valg.unshift({ verdi: valgt, tekst: `${valgt} (uten innehavere)` });
+            }
+            return [{ verdi: '', tekst: '(stegets behandlere)' }, ...valg];
+        }
+
+        /** Lagre oppsettet, eller fjern det helt hvis alle felter er tømt. */
+        function lagreKanalOppsett(steg, felt, verdier) {
+            if (harOppsett(verdier)) steg[felt] = verdier;
+            else delete steg[felt];
+            rendrerBehandling();
+        }
+
+        window.apneTeamsMeldingEditor = async (stegIdx) => {
+            const steg = data.Behandling[stegIdx];
+            if (!steg) return;
+            const ny = await apneKonfigModal(steg.TeamsMelding || {}, {
+                tittel: `Teams-melding — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
+                hjelp: 'Direktemelding til hver behandler. Lar du feltene stå tomme, brukes meldingen til behandler.',
+                felter: [
+                    { navn: 'Tittel', etikett: 'Tittel', plassholder: 'Skjema til behandling: $skjemanavn' },
+                    { navn: 'Innhold', etikett: 'Innhold', type: 'tekstomrade', rader: 5,
+                      hjelp: '(HTML er tillatt)', plassholder: '<p>Du har fått $skjemanavn til behandling.</p>' }
+                ]
+            });
+            if (ny) lagreKanalOppsett(steg, 'TeamsMelding', ny);
+        };
+
+        window.apnePlannerEditor = async (stegIdx) => {
+            const steg = data.Behandling[stegIdx];
+            if (!steg) return;
+            const naa = steg.PlannerOppgave || {};
+            const ny = await apneKonfigModal(naa, {
+                tittel: `Planner-oppgave — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
+                hjelp: 'Tomme felter overlates til flyten, som før. Frist godtar <code>{idag}</code>, <code>{idag+7}</code> eller en dato på formen <code>2026-09-15</code>.',
+                felter: [
+                    { navn: 'Tittel', etikett: 'Oppgavetittel', plassholder: 'Godkjenn $skjemanavn' },
+                    { navn: 'TeamOgPlan', etikett: 'Team og plan', plassholder: 'Automatisering:Oppgaver',
+                      hjelp: '(på formen Team:Plan)' },
+                    { navn: 'Bucket', etikett: 'Bucket', plassholder: 'Til godkjenning' },
+                    { navn: 'AnsvarligRolle', etikett: 'Ansvarlig', type: 'valg',
+                      valg: rolleValg(naa.AnsvarligRolle),
+                      hjelp: '(tom = de som skal behandle steget)' },
+                    { navn: 'Forfallsdato', etikett: 'Frist', plassholder: '{idag+7}' },
+                    { navn: 'Prioritet', etikett: 'Prioritet', type: 'valg',
+                      valg: ['Lav', 'Medium', 'Viktig', 'Haster'] },
+                    { navn: 'Status', etikett: 'Startstatus', type: 'valg',
+                      valg: ['Ikke startet', 'Pågår', 'Ferdig'] },
+                    { navn: 'Sjekkliste', etikett: 'Sjekkliste', type: 'tekstomrade', rader: 4,
+                      hjelp: '(ett punkt per linje, maks 20)', plassholder: 'Les gjennom skjemaet\nKontroller vedlegg\nFatt beslutning' },
+                    { navn: 'Notater', etikett: 'Notat', type: 'tekstomrade', rader: 3,
+                      hjelp: '(tomt gir en lenke til skjemaet)' }
+                ]
+            });
+            if (ny) lagreKanalOppsett(steg, 'PlannerOppgave', ny);
+        };
+
+        window.apneTeamskanalEditor = async (stegIdx) => {
+            const steg = data.Behandling[stegIdx];
+            if (!steg) return;
+            const ny = await apneKonfigModal(steg.TeamsKanalInnlegg || {}, {
+                tittel: `Teams-kanal — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
+                hjelp: 'Innlegg i en kanal. Står team eller kanal tomt, bruker flyten sitt eget standardvalg.',
+                felter: [
+                    { navn: 'Team', etikett: 'Team', plassholder: 'FHS Behandling' },
+                    { navn: 'Kanal', etikett: 'Kanal', plassholder: 'Generelt' },
+                    { navn: 'Tittel', etikett: 'Tittel', plassholder: 'Nytt skjema til behandling: $skjemanavn' },
+                    { navn: 'Innhold', etikett: 'Innhold', type: 'tekstomrade', rader: 5,
+                      hjelp: '(HTML er tillatt)' }
+                ]
+            });
+            if (ny) lagreKanalOppsett(steg, 'TeamsKanalInnlegg', ny);
         };
 
         window.apneTilBehandlerEditor = async (stegIdx) => {

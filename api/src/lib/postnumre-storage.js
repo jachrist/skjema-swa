@@ -7,8 +7,7 @@
  *     RowKey       = fullt postnummer (4 siffer)
  *     Egenskaper: Postnr, Poststed, Kommune
  */
-const { tabellKlient, sikreTabell } = require('./storage');
-const { odata } = require('@azure/data-tables');
+const { tabellKlient, sikreTabell, odata } = require('./storage');
 
 const TABELL = 'Postnumre';
 

@@ -113,8 +113,20 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
             emne: args.emne || '',
             html: args.html || ''
         },
-        // Planner-oppgave: PA-flyten kan bruke disse feltene når 'planner' er i varslinger
-        planner: args.planner || null
+        // Ett objekt per kanal, satt bare når kanalen er aktiv. Feltene er
+        // ferdig oppløst — flyten skal ikke kunne noe om plassholdere,
+        // rollemodellen vår eller hvordan en frist skal regnes ut.
+        //
+        //   planner    { tittel, plan, bucket, status, prioritet, forfallsdato,
+        //                sjekkliste[], notat, ansvarlige[{epost,navn}] }
+        //   teamskanal { team, kanal, tittel, innhold }
+        //   teams      { tittel, innhold }
+        //
+        // Tomme strenger betyr «ikke satt» — da skal flyten bruke sitt eget
+        // standardvalg, slik den gjorde før kanaloppsettet fantes.
+        planner: args.planner || null,
+        teamskanal: args.teamskanal || null,
+        teams: args.teams || null
     };
     log(`flyt payload: kanaler=[${varslinger.join(',')}] base_url=${base || '(TOM!)'} mottakere=${payload.mottakere.length}`);
     return await kallVarslingFlyt(payload, log);

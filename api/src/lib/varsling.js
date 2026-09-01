@@ -49,6 +49,135 @@ function standardFraBehandler() {
     };
 }
 
+// ==================== KANALOPPSETT PER STEG ====================
+//
+// E-post har alltid hatt egen mal (TilBehandler). De tre andre kanalene ble
+// bygget som «på/av» og arvet e-postteksten, så en Planner-oppgave havnet i
+// standardplanen uten frist og et kanalinnlegg gikk dit flyten tilfeldigvis
+// pekte. Her får hver kanal sitt eget oppsett på steget.
+//
+// Alt er valgfritt: er oppsettet tomt, faller vi tilbake på e-postmalen og
+// oppfører oss nøyaktig som før. Ingen eksisterende skjematype endrer atferd
+// av at feltene finnes.
+
+const PLANNER_STATUS = ['Ikke startet', 'Pågår', 'Ferdig'];
+const PLANNER_PRIORITET = ['Lav', 'Medium', 'Viktig', 'Haster'];
+
+function somPlannerOppgave(v) {
+    const o = v && typeof v === 'object' ? v : {};
+    return {
+        Tittel: String(o.Tittel || ''),
+        TeamOgPlan: String(o.TeamOgPlan || ''),
+        Bucket: String(o.Bucket || ''),
+        Status: PLANNER_STATUS.includes(o.Status) ? o.Status : PLANNER_STATUS[0],
+        Prioritet: PLANNER_PRIORITET.includes(o.Prioritet) ? o.Prioritet : 'Medium',
+        Forfallsdato: String(o.Forfallsdato || ''),
+        Sjekkliste: String(o.Sjekkliste || ''),
+        Notater: String(o.Notater || ''),
+        // Tom = oppgaven tilordnes stegets behandlere, som før.
+        AnsvarligRolle: String(o.AnsvarligRolle || '')
+    };
+}
+
+function somTeamskanal(v) {
+    const o = v && typeof v === 'object' ? v : {};
+    return {
+        Team: String(o.Team || ''),
+        Kanal: String(o.Kanal || ''),
+        Tittel: String(o.Tittel || ''),
+        Innhold: String(o.Innhold || '')
+    };
+}
+
+function somTeamsMelding(v) {
+    const o = v && typeof v === 'object' ? v : {};
+    return { Tittel: String(o.Tittel || ''), Innhold: String(o.Innhold || '') };
+}
+
+/**
+ * Frist for en Planner-oppgave.
+ *
+ * Godtar `{idag}`, `{idag+N}` og `ÅÅÅÅ-MM-DD`. Alt annet gir tom streng — vi
+ * lar heller flyten stå uten frist enn å sende en dato vi har gjettet oss til.
+ * `new Date('1. september')` gir 2001-09-01 i V8 uten å klage, og en frist 25
+ * år tilbake ville vært verre enn ingen frist.
+ */
+function løsForfallsdato(verdi, na = new Date()) {
+    const s = String(verdi || '').trim();
+    if (!s) return '';
+
+    const m = /^\{idag(?:\s*\+\s*(\d{1,4}))?\}$/i.exec(s);
+    if (m) {
+        const dager = m[1] ? Number(m[1]) : 0;
+        const d = new Date(na.getTime());
+        d.setUTCDate(d.getUTCDate() + dager);
+        return d.toISOString().slice(0, 10);
+    }
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const d = new Date(`${s}T00:00:00.000Z`);
+        // Fanger 2026-02-31, som Date ellers ruller videre til 3. mars.
+        if (!isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s) return s;
+    }
+    return '';
+}
+
+/** Sjekkliste: én linje per punkt, med plassholdere løst og tomme linjer bort. */
+function byggSjekkliste(tekst, kontekst) {
+    return String(tekst || '')
+        .split(/\r?\n/)
+        .map(l => erstattPlassholdere(l.replace(/^\s*[-*]\s*/, '').trim(), kontekst))
+        .filter(Boolean)
+        .slice(0, 20);
+}
+
+/**
+ * Planner-delen av varslingspayloaden.
+ *
+ * Er `AnsvarligRolle` satt, løses den til konkrete mottakere her — flyten skal
+ * slippe å kunne noe om rollemodellen vår. Løses den til ingen, faller vi
+ * tilbake til stegets behandlere framfor å lage en oppgave uten eier.
+ */
+async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, log, rolleOppslag = løsMottakere }) {
+    const p = somPlannerOppgave(steg?.PlannerOppgave);
+    let ansvarlige = behandlere;
+    if (p.AnsvarligRolle) {
+        const løst = await rolleOppslag({ Roller: [p.AnsvarligRolle] }, skjema, log);
+        if (løst.length > 0) ansvarlige = løst;
+        else log(`varsling: Planner-ansvarlig "${p.AnsvarligRolle}" har ingen innehavere — bruker behandlerne`);
+    }
+    return {
+        tittel: erstattPlassholdere(p.Tittel, kontekst) || emne,
+        plan: erstattPlassholdere(p.TeamOgPlan, kontekst),
+        bucket: erstattPlassholdere(p.Bucket, kontekst),
+        status: p.Status,
+        prioritet: p.Prioritet,
+        forfallsdato: løsForfallsdato(p.Forfallsdato),
+        sjekkliste: byggSjekkliste(p.Sjekkliste, kontekst),
+        notat: erstattPlassholdere(p.Notater, kontekst) || `Åpne skjemaet: ${lenke}`,
+        ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' }))
+    };
+}
+
+/** Teams-kanalinnlegg. Tomt team eller kanal betyr at flyten må bruke sin egen. */
+function byggTeamskanal(steg, kontekst, { emne, html }) {
+    const t = somTeamskanal(steg?.TeamsKanalInnlegg);
+    return {
+        team: erstattPlassholdere(t.Team, kontekst),
+        kanal: erstattPlassholdere(t.Kanal, kontekst),
+        tittel: erstattPlassholdere(t.Tittel, kontekst) || emne,
+        innhold: erstattPlassholdere(t.Innhold, kontekst) || html
+    };
+}
+
+/** Direktemelding i Teams. Uten eget oppsett brukes e-postmalen, som før. */
+function byggTeamsMelding(steg, kontekst, { emne, html }) {
+    const t = somTeamsMelding(steg?.TeamsMelding);
+    return {
+        tittel: erstattPlassholdere(t.Tittel, kontekst) || emne,
+        innhold: erstattPlassholdere(t.Innhold, kontekst) || html
+    };
+}
+
 function skjemaLenke(skjematypeId, skjemaId, request) {
     const base = baseUrl(request);
     if (!base) return '';
@@ -240,17 +369,24 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
     const kontekst = byggKontekst({ skjema, skjematype, steg, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardTilBehandler().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardTilBehandler().Tekst, kontekst);
-    // Planner-oppgave: bruk emne som tittel + lenke som notat. Frist kan settes
-    // av PA-flyten (f.eks. +7 dager fra nå) — SWA sender ingen frist selv.
-    const planner = kanaler.includes('planner') ? {
-        tittel: emne,
-        notat: `Åpne skjemaet: ${lenke}`
-    } : null;
+    // Hver kanal får sitt eget oppsett fra steget, med e-postmalen som
+    // fallback. Bygges bare for kanaler som faktisk er på, så payloaden ikke
+    // vokser med felter flyten skal ignorere.
+    const planner = kanaler.includes('planner')
+        ? await byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere: mottakere, log })
+        : null;
+    const teamskanal = kanaler.includes('teamskanal')
+        ? byggTeamskanal(steg, kontekst, { emne, html })
+        : null;
+    const teams = kanaler.includes('teams')
+        ? byggTeamsMelding(steg, kontekst, { emne, html })
+        : null;
+
     return await sendVarslerViaFlyt({
         mottakere,
         varslinger: kanaler,
         emne, html, lenke,
-        planner,
+        planner, teamskanal, teams,
         skjemaId: skjema.Skjema_id,
         skjematypeId: skjema.Skjematype_id,
         skjemaNavn: kontekst.skjemanavn,
@@ -357,5 +493,9 @@ module.exports = {
     løsMottakere,
     forklarMottakere,
     _samleBehandlerMottakere: samleBehandlerMottakere,
-    _skjemaLenke: skjemaLenke
+    _skjemaLenke: skjemaLenke,
+    // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
+    somPlannerOppgave, somTeamskanal, somTeamsMelding,
+    løsForfallsdato, byggSjekkliste, byggPlanner, byggTeamskanal, byggTeamsMelding,
+    PLANNER_STATUS, PLANNER_PRIORITET
 };

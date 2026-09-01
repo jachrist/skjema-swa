@@ -9,8 +9,7 @@
  *
  * Skrivinger er fire-and-forget fra kalleren — feiler aldri hovedhandlingen.
  */
-const { tabellKlient, sikreTabell } = require('./storage');
-const { odata } = require('@azure/data-tables');
+const { tabellKlient, sikreTabell, odata } = require('./storage');
 const crypto = require('crypto');
 
 const TABELL = 'Hendelser';

@@ -56,6 +56,18 @@ async function sikreTabellFra(connectionString, tabellNavn, varNavn) {
     return k;
 }
 
+/**
+ * `odata`-hjelperen fra SDK-en, lastet lat.
+ *
+ * Den brukes som tagget mal — odata`PartitionKey eq ${x}` — og er den eneste
+ * grunnen til at seks lagringsmoduler ellers måtte importere @azure/data-tables
+ * på toppnivå. Med denne kan hele lib-mappa importeres uten node_modules, slik
+ * testene og deploy-steget forutsetter.
+ */
+function odata(...args) {
+    return require('@azure/data-tables').odata(...args);
+}
+
 function tabellKlient(tabellNavn) {
     return tabellKlientFra(cs, tabellNavn);
 }
@@ -92,5 +104,5 @@ function kontoNavnFra(connectionString) {
 module.exports = {
     tabellKlient, sikreTabell,
     tabellKlientFra, sikreTabellFra,
-    glemOpprettelse, kontoNavnFra
+    glemOpprettelse, kontoNavnFra, odata
 };

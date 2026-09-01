@@ -23,8 +23,7 @@
  * Alle tre er tomme for utsendinger opprettet uten dem, og da oppfører raden
  * seg nøyaktig som før feltene fantes.
  */
-const { tabellKlient, sikreTabell } = require('./storage');
-const { odata } = require('@azure/data-tables');
+const { tabellKlient, sikreTabell, odata } = require('./storage');
 
 const TABELL = 'Utsendinger';
 

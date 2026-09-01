@@ -9,8 +9,7 @@
  *
  * All skriving er upsert. Full erstatning skjer via slettAllePartisjoner + upsertBatch.
  */
-const { tabellKlient, sikreTabell } = require('./storage');
-const { odata } = require('@azure/data-tables');
+const { tabellKlient, sikreTabell, odata } = require('./storage');
 
 const TABELL_EMNER = 'Emner';
 const TABELL_STUDENTER = 'EmneStudenter';
