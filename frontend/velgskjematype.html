@@ -405,6 +405,21 @@
         let alle = [];
         // Rapporter er låst til admin/Skjemaskaper — settes fra /api/whoami før lista rendres.
         let kanLageRapport = false;
+        let erAdminBruker = false;
+
+        // Nullpunktstatus for gevinstoppfølging. Ett kall dekker hele lista, i
+        // stedet for én tabellskanning per skjematype. Merkingen er en
+        // påminnelse til eiere og admin — den skal ikke vises for andre, og
+        // den skal aldri hindre at oversikten kommer opp.
+        let nullpunkt = { konfigurert: false, dekkede: [] };
+
+        function manglerNullpunkt(t) {
+            if (!nullpunkt.konfigurert) return false;
+            if (!(t.ErEier || erAdminBruker)) return false;
+            // Baseline-skjemaet trenger ikke sitt eget nullpunkt.
+            if (String(t.Skjematype_id) === String(nullpunkt.baselineTypeId)) return false;
+            return !nullpunkt.dekkede.includes(String(t.Skjematype_id));
+        }
 
         window.toggleTheme = () => {
             const root = document.documentElement;
@@ -431,6 +446,7 @@
             try {
                 const meg = await api.get('/api/whoami');
                 if (meg.erAdmin) {
+                    erAdminBruker = true;
                     document.getElementById('knapp-admin-panel').style.display = 'inline-flex';
                 }
                 if (meg.kanOppretteSkjematype) {
@@ -439,6 +455,14 @@
                     document.getElementById('knapp-rapporter').style.display = 'inline-flex';
                 }
             } catch (_) { /* ikke kritisk */ }
+
+            // Nullpunktstatus hentes bare for dem merkingen gjelder, og aldri
+            // slik at et treigt eller feilende kall holder lista tilbake.
+            if (erAdminBruker || kanLageRapport) {
+                api.get('/api/gevinst/nullpunkt-status')
+                    .then(res => { nullpunkt = res || nullpunkt; filtrer(); })
+                    .catch(() => { /* merking er en påminnelse, ikke kritisk */ });
+            }
 
             await lastListe();
         }
@@ -696,6 +720,8 @@
                         </h2>
                         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
                             ${behBadge}
+                            ${manglerNullpunkt(t) ? `<span class="fase-badge" style="background: #ff9500;"
+                                title="Nullpunktdefinisjon (baseline) for gevinstoppfølging er ikke registrert for denne skjematypen. Vises bare for eiere og admin.">📉 Mangler nullpunkt</span>` : ''}
                             ${t.AlleTilgang ? '<span class="fase-badge" style="background: #34c759;" title="Alle innloggede kan fylle ut">Åpen for alle</span>' : ''}
                             <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
                         </div>

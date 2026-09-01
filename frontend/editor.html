@@ -448,6 +448,22 @@
             display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
         }
 
+        /* ===== Påminnelse om manglende nullpunkt ===== */
+        .nullpunkt-advarsel {
+            display: flex;
+            gap: 14px;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin: 0 0 16px;
+            padding: 12px 16px;
+            font-size: 13px;
+            line-height: 1.5;
+            background: var(--danger-light);
+            border: 1px solid var(--danger);
+            border-radius: var(--radius-md);
+        }
+        .nullpunkt-advarsel strong { color: var(--danger); }
+
         /* ===== Kanaloppsett per steg ===== */
         .kanal-oppsett { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
         /* En kanal med eget oppsett skal skille seg fra en som arver e-postmalen. */
@@ -1418,6 +1434,31 @@
             steg.Varsling = [...naa];
             rendrerBehandling();
         };
+
+        /**
+         * Påminnelse om manglende nullpunkt ved produksjonssetting.
+         *
+         * En toast forsvinner av seg selv, og dette er nettopp noe eieren skal
+         * ta stilling til. Banneret blir stående til det lukkes — men det
+         * hindrer ingenting: skjemaet er allerede lagret i produksjon.
+         */
+        function visNullpunktAdvarsel(melding) {
+            document.getElementById('nullpunkt-advarsel')?.remove();
+            const el = document.createElement('div');
+            el.id = 'nullpunkt-advarsel';
+            el.className = 'nullpunkt-advarsel';
+            el.innerHTML = `
+                <div>
+                    <strong>Nullpunkt mangler</strong><br>
+                    <span>${escapeHtml(melding)}</span>
+                </div>
+                <button class="knapp mini sekundær" title="Lukk">✕</button>
+            `;
+            el.querySelector('button').addEventListener('click', () => el.remove());
+            const innhold = document.getElementById('innhold');
+            innhold.insertBefore(el, innhold.firstChild);
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
 
         // ==================== KANALOPPSETT PER STEG ====================
         //
@@ -3234,6 +3275,10 @@
                 sistServerLagring = new Date();
                 fjernUtkast();
                 oppdaterLagreStatus();
+                // Manglende nullpunkt stopper ingenting — skjemaet ER lagret i
+                // produksjon. Men eieren skal ikke gå videre uten å ha sett det,
+                // så advarselen står til den lukkes, i motsetning til toasten.
+                if (svar.advarsel) visNullpunktAdvarsel(svar.advarsel);
                 toast('Lagret ✓');
                 // Hvis dette var ny, oppdater URL slik at ytterligere lagringer blir oppdatering
                 if (svar.erNy) {

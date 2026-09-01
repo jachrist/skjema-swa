@@ -16,6 +16,7 @@ const { hentDropdownVerdier } = require('../lib/oppslag');
 const { erTilgjengeligNaa } = require('../lib/periode');
 const rollerStorage = require('../lib/roller-storage');
 const hendelser = require('../lib/hendelser-storage');
+const gevinstSjekk = require('../lib/gevinst-sjekk');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -236,7 +237,27 @@ app.http('lagreSkjematype', {
                 Melding: `${erNy ? 'Opprettet' : 'Oppdaterte'} skjematype "${body.Skjema_navn || ''}"`,
                 Detaljer: { fase: body.Fase || '', krypteres: body.Krypteres || 'Nei', anonymiseres: !!body.Anonymiseres }
             });
-            return { jsonBody: { status: 'ok', Skjematype_id: body.Skjematype_id, erNy } };
+            // Nullpunktsjekk ved produksjonssetting. Advarsel, ikke sperre:
+            // eieren skal kunne gå videre, men ikke uten å vite at baseline
+            // mangler. Feiler sjekken, lagres skjematypen likevel — en
+            // påminnelse er ikke verdt å miste et lagret skjema for.
+            let nullpunkt = null;
+            if (String(body.Fase || '') === 'Produksjon') {
+                try {
+                    nullpunkt = await gevinstSjekk.nullpunktRegistrert(body.Skjematype_id);
+                } catch (e) {
+                    context.log('skjematyper: nullpunktsjekk feilet — ' + e.message);
+                }
+            }
+
+            return {
+                jsonBody: {
+                    status: 'ok', Skjematype_id: body.Skjematype_id, erNy,
+                    ...(nullpunkt && nullpunkt.sjekket && !nullpunkt.registrert
+                        ? { advarsel: nullpunkt.melding }
+                        : {})
+                }
+            };
         } catch (e) {
             context.log('skjematyper POST FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
