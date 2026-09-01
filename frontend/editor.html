@@ -757,7 +757,7 @@
                     <button class="knapp primær" onclick="lagre()">💾 Lagre</button>
                     <span id="lagre-status" class="lagre-status"></span>
                     <button class="knapp sekundær" onclick="visForhandsvisning()" title="Åpne skjemaet i ny fane med gjeldende (ulagrede) endringer">👁 Vis skjema</button>
-                    ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}" target="_blank">🧪 Test utfylling (lagret)</a>` : ''}
+                    ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}&fra=editor" target="_blank">🧪 Test utfylling (lagret)</a>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="kopier()">📋 Kopier</button>` : ''}
                     ${meg?.erAdmin ? `<button class="knapp sekundær" onclick="apneAiImportModal()" title="Last opp bilde eller PDF av papirskjema — AI genererer definisjonen">🤖 Importer med AI…</button>` : ''}
                     ${kanSlett ? `<button class="knapp danger" style="margin-left: auto;" onclick="aapneSlettModal()">🗑 Slett</button>` : ''}
@@ -3170,6 +3170,9 @@
             // rendrer() kaller hit også før vakten er startet. Uten dette ville
             // editoren blinket rødt «Ulagrede endringer» ved hver åpning.
             if (sistLagretSerialisert === null) return;
+            // Arbeidsfanen viser samme signal ett hakk høyere, så du ser at et
+            // skjema har ulagret arbeid uten å måtte bytte til det.
+            window.faner?.settUlagret(harUlagredeEndringer());
             if (!harUlagredeEndringer()) {
                 settLagreStatus(sistServerLagring ? `Lagret ${klokkeslett(sistServerLagring)}` : 'Ingen endringer');
                 return;
@@ -3335,5 +3338,6 @@
         init();
     </script>
     <script type="module" src="/js/systemtopp.js"></script>
+    <script type="module" src="/js/faner.js"></script>
 </body>
 </html>

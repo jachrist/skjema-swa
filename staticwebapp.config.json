@@ -1,5 +1,13 @@
 {
     "routes": [
+
+        {
+
+            "route": "/js/*",
+
+            "headers": { "Cache-Control": "no-cache" }
+
+        },
         {
             "route": "/api/ping",
             "allowedRoles": ["anonymous"]

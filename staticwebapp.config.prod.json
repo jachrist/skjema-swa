@@ -1,6 +1,10 @@
 {
     "_kommentar": "Prod-tenant. Bruker sertifikat-basert AAD-auth via Key Vault-referanse. Fyll ut PROD_TENANT_ID, PROD_KV_NAME og CERT_NAME før første deploy.",
     "routes": [
+        {
+            "route": "/js/*",
+            "headers": { "Cache-Control": "no-cache" }
+        },
         { "route": "/api/ping",                       "allowedRoles": ["anonymous"] },
         { "route": "/api/refresh-fs",                 "allowedRoles": ["anonymous"] },
         { "route": "/api/power-bi",                   "allowedRoles": ["anonymous"] },
