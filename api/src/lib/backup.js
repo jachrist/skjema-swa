@@ -428,9 +428,15 @@ async function byggOgKrypterTilBlob(blob, blobHTTPHeaders, log, fremdrift, opsjo
 // flyten døde med «Cannot write more bytes to the buffer». Fila i Azure er
 // hel — det er kopieringen til OneDrive som må gjøres i biter.
 //
-// 64 MiB gir god margin til taket, og holder seg under OneDrive-koblingens
-// egen grense for én fil.
-const DEL_MAKS_BYTES = Math.max(1, Number(process.env.BACKUP_DEL_MAKS_MB) || 64) * 1024 * 1024;
+// Delstørrelsen styres ikke av overføringstaket, men av en lavere terskel:
+// blir svaret stort nok, lagrer PA det som «large aggregated partial content»,
+// og da kan verken body(), base64ToBinary() eller Compose røre det. 64 MiB var
+// over den terskelen (testet 31.08.2026). Å slå på chunking hjelper ikke — da
+// overtar PA Range-headeren selv og kolliderer med vår egen.
+//
+// 20 MB ligger trygt under. Prisen er flere filer, og den betales bare av
+// miljøer som fortsatt går om Power Automate; med Graph lastes fila opp hel.
+const DEL_MAKS_BYTES = Math.max(1, Number(process.env.BACKUP_DEL_MAKS_MB) || 20) * 1024 * 1024;
 
 /**
  * Del en backupfil i biter som hver kan hentes med én Range-forespørsel.
