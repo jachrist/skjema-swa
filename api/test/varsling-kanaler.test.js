@@ -85,6 +85,36 @@ async function kjor() {
             v.byggSjekkliste(Array.from({ length: 30 }, (_, i) => `P${i}`).join('\n'), KONTEKST).length, 20);
     }
 
+    // ---------- sjekkliste i Graph-form ----------
+    {
+        // Graph vil ha et kart med klientgenererte nøkler, ikke en array.
+        // Bygger vi det ikke her, må Power Automate lage et objekt med
+        // dynamiske nøkler — og det er noe av det klumpeteste PA gjør.
+        const g = v.sjekklisteTilGraph(['Les skjemaet', 'Beslutt']);
+        const nøkler = Object.keys(g);
+        sjekk('ett oppslag per punkt', nøkler.length, 2);
+        sjekk('nøklene er GUID-er',
+            nøkler.every(k => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(k)), true);
+        sjekk('nøklene er unike', new Set(nøkler).size, 2);
+        sjekk('hvert punkt har riktig odata-type',
+            Object.values(g).every(o => o['@odata.type'] === 'microsoft.graph.plannerChecklistItem'), true);
+        sjekk('tekstene følger med',
+            Object.values(g).map(o => o.title), ['Les skjemaet', 'Beslutt']);
+        sjekk('alle starter uavkrysset',
+            Object.values(g).every(o => o.isChecked === false), true);
+        // En ugyldig orderHint gir 400 på hele PATCH-kallet. Da er ingen hint
+        // det trygge valget — Planner tildeler sine egne.
+        sjekk('ingen orderHint sendes',
+            Object.values(g).every(o => !('orderHint' in o)), true);
+        sjekk('tom liste gir tomt kart', v.sjekklisteTilGraph([]), {});
+
+        // To kall skal ikke gjenbruke nøkler — de identifiserer punkter i
+        // hver sin oppgave.
+        const a = Object.keys(v.sjekklisteTilGraph(['X']))[0];
+        const b = Object.keys(v.sjekklisteTilGraph(['X']))[0];
+        sjekk('nøkler gjenbrukes ikke mellom oppgaver', a === b, false);
+    }
+
     // ---------- Planner uten oppsett: som før ----------
     {
         const p = await v.byggPlanner({}, KONTEKST, BASIS);
@@ -118,6 +148,8 @@ async function kjor() {
         sjekk('status og prioritet følger med', [p.status, p.prioritet], ['Pågår', 'Viktig']);
         sjekk('fristen er regnet ut', typeof p.forfallsdato === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.forfallsdato), true);
         sjekk('sjekklista er en liste', p.sjekkliste, ['Les', 'Beslutt']);
+        sjekk('og finnes også i Graph-form med samme punkter',
+            Object.values(p.sjekkliste_graph).map(o => o.title), ['Les', 'Beslutt']);
         sjekk('notatet overstyrer lenka', p.notat, 'Gjelder steg Godkjenning');
     }
 

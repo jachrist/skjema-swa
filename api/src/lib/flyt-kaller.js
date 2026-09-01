@@ -118,7 +118,13 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
         // rollemodellen vår eller hvordan en frist skal regnes ut.
         //
         //   planner    { tittel, plan, bucket, status, prioritet, forfallsdato,
-        //                sjekkliste[], notat, ansvarlige[{epost,navn}] }
+        //                sjekkliste[], sjekkliste_graph{}, notat,
+        //                ansvarlige[{epost,navn}] }
+        //
+        // sjekkliste_graph er de samme punktene i formen Graph vil ha dem på
+        // PATCH /planner/tasks/{id}/details — et kart med klientgenererte
+        // GUID-nøkler. Det sendes ferdig fordi objekter med dynamiske nøkler
+        // er tungvint å bygge i Power Automate.
         //   teamskanal { team, kanal, tittel, innhold }
         //   teams      { tittel, innhold }
         //

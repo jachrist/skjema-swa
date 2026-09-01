@@ -11,6 +11,7 @@
  *                    FraBehandler: [{ BeslutningNr, Emne, Tekst, Format }] }
  */
 
+const crypto = require('crypto');
 const { sendEpostViaFlyt, sendVarslerViaFlyt, baseUrl } = require('./flyt-kaller');
 const { erstattPlassholdere, byggKontekst } = require('./placeholder');
 const rollerStorage = require('./roller-storage');
@@ -121,13 +122,42 @@ function løsForfallsdato(verdi, na = new Date()) {
     return '';
 }
 
-/** Sjekkliste: én linje per punkt, med plassholdere løst og tomme linjer bort. */
+/**
+ * Sjekkliste: én linje per punkt, med plassholdere løst og tomme linjer bort.
+ * Planner tar maks 20 punkter per oppgave, så vi kutter der.
+ */
 function byggSjekkliste(tekst, kontekst) {
     return String(tekst || '')
         .split(/\r?\n/)
         .map(l => erstattPlassholdere(l.replace(/^\s*[-*]\s*/, '').trim(), kontekst))
         .filter(Boolean)
         .slice(0, 20);
+}
+
+/**
+ * Sjekklista i formen Graph vil ha den på `PATCH /planner/tasks/{id}/details`.
+ *
+ * Graph bruker et kart der nøkkelen er en klientgenerert identifikator — ikke
+ * en array. Nøklene tildeles ikke av tjenesten; vi finner dem på selv, og de
+ * trenger bare å være unike innenfor oppgaven. Å bygge et objekt med dynamiske
+ * nøkler er noe av det klumpeteste Power Automate gjør, så vi sender det
+ * ferdig i stedet for å be flyten om å sette det sammen.
+ *
+ * `orderHint` settes bevisst ikke. Planner sorterer på den, men formatet er en
+ * egen sammenligningsalgoritme, og en ugyldig hint gir 400 på hele kallet.
+ * Uten hint tildeler Planner sine egne — rekkefølgen kan avvike fra
+ * innskrivingen, men oppgaven blir opprettet.
+ */
+function sjekklisteTilGraph(punkter) {
+    const ut = {};
+    for (const tekst of punkter) {
+        ut[crypto.randomUUID()] = {
+            '@odata.type': 'microsoft.graph.plannerChecklistItem',
+            title: tekst,
+            isChecked: false
+        };
+    }
+    return ut;
 }
 
 /**
@@ -145,6 +175,7 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         if (løst.length > 0) ansvarlige = løst;
         else log(`varsling: Planner-ansvarlig "${p.AnsvarligRolle}" har ingen innehavere — bruker behandlerne`);
     }
+    const sjekkliste = byggSjekkliste(p.Sjekkliste, kontekst);
     return {
         tittel: erstattPlassholdere(p.Tittel, kontekst) || emne,
         plan: erstattPlassholdere(p.TeamOgPlan, kontekst),
@@ -152,7 +183,9 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         status: p.Status,
         prioritet: p.Prioritet,
         forfallsdato: løsForfallsdato(p.Forfallsdato),
-        sjekkliste: byggSjekkliste(p.Sjekkliste, kontekst),
+        sjekkliste: sjekkliste,
+        // Samme punkter, men i Graph-formen — se sjekklisteTilGraph.
+        sjekkliste_graph: sjekklisteTilGraph(sjekkliste),
         notat: erstattPlassholdere(p.Notater, kontekst) || `Åpne skjemaet: ${lenke}`,
         ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' }))
     };
@@ -496,6 +529,6 @@ module.exports = {
     _skjemaLenke: skjemaLenke,
     // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
     somPlannerOppgave, somTeamskanal, somTeamsMelding,
-    løsForfallsdato, byggSjekkliste, byggPlanner, byggTeamskanal, byggTeamsMelding,
+    løsForfallsdato, byggSjekkliste, sjekklisteTilGraph, byggPlanner, byggTeamskanal, byggTeamsMelding,
     PLANNER_STATUS, PLANNER_PRIORITET
 };
