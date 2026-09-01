@@ -102,6 +102,19 @@
             margin: 0;
             letter-spacing: -0.02em;
         }
+        /* Ikonet skal lese som et ikon foran tittelen, ikke som en banner ved
+           siden av den. 140 px bredde konkurrerte med overskriften; her følger
+           høyden tittelens egen, og bredden får aldri ta mer enn det dobbelte.
+           flex-shrink: 0 hindrer at et bredt ikon presses sammen når tittelen
+           er lang. */
+        .skjema-ikon {
+            height: 2.1em;
+            max-width: 4.2em;
+            object-fit: contain;
+            object-position: left center;
+            flex-shrink: 0;
+        }
+        .skjema-ikon:not([src]), .skjema-ikon[src=""] { display: none; }
         .brukerinfo {
             font-size: 13px;
             color: var(--text-secondary);
@@ -156,6 +169,12 @@
         .seksjon.kollapset .seksjon-kollaps-pil { transform: rotate(-90deg); }
         .seksjon.kollapset .seksjon-tittel { margin-bottom: 0; }
         .seksjon.kollapset > .felt { display: none; }
+        .seksjon-verktoy {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-bottom: 10px;
+        }
         /* Rød stjerne på seksjonen når den inneholder obligatoriske felt, så
            lukket tilstand ikke skjuler at det er noe som må fylles ut. */
         .seksjon-oblig { color: var(--danger); font-weight: 700; }
@@ -336,7 +355,7 @@
              (gradering) til høyre. systemtopp.js finner #systemmerke-plass. -->
         <div class="topplinje">
             <div class="tittelrad">
-                <img id="logo" alt="" style="display: none; max-height: 50px; max-width: 140px; object-fit: contain;">
+                <img id="logo" class="skjema-ikon" alt="">
                 <h1 id="tittel">Laster skjema…</h1>
             </div>
             <div id="systemmerke-plass"></div>
@@ -640,6 +659,29 @@
             const form = document.createElement('form');
             form.id = 'skjema-form';
             form.onsubmit = (e) => { e.preventDefault(); submitSkjema(); };
+
+            // Seksjonene starter lukket, og overskriften folder ut ved klikk.
+            // I et stort skjema er det tungvint å åpne dem én for én, og at
+            // overskriften i det hele tatt er klikkbar er ikke opplagt — så
+            // knappene gjør begge deler synlig. Vises bare når det er nok
+            // seksjoner til at det betyr noe.
+            const medOverskrift = (skjematype.Seksjoner || []).filter(s => s.Seksjon_overskrift);
+            if (medOverskrift.length > 1) {
+                const verktoy = document.createElement('div');
+                verktoy.className = 'seksjon-verktoy';
+                verktoy.innerHTML = `
+                    <button type="button" class="knapp mini sekundær" data-handling="vis">▸ Vis alle</button>
+                    <button type="button" class="knapp mini sekundær" data-handling="skjul">▾ Skjul alle</button>
+                `;
+                verktoy.addEventListener('click', (e) => {
+                    const h = e.target.dataset?.handling;
+                    if (!h) return;
+                    for (const s of form.querySelectorAll('.seksjon')) {
+                        s.classList.toggle('kollapset', h === 'skjul');
+                    }
+                });
+                form.appendChild(verktoy);
+            }
 
             for (const seksjon of (skjematype.Seksjoner || [])) {
                 form.appendChild(byggSeksjon(seksjon));

@@ -25,6 +25,21 @@
 const OPERATORER_VILKAR = ['=', '!=', '<', '<=', '>', '>=', 'tom', 'ikke_tom', 'inneholder'];
 const OPERATORER_FASTE_DATA = ['=', '!=', 'inneholder']; // enklere sett for filter
 
+// Symbolene sier lite for den som ikke skriver kode til daglig, og «!=» er
+// særlig lett å lese feil. Teksten vises i nedtrekket; symbolet blir stående
+// som en kort etikett når valget er gjort.
+const OPERATOR_FORKLARING = {
+    '=': 'er lik',
+    '!=': 'er forskjellig fra',
+    '<': 'er mindre enn',
+    '<=': 'er mindre enn eller lik',
+    '>': 'er større enn',
+    '>=': 'er større enn eller lik',
+    'tom': 'er ikke besvart',
+    'ikke_tom': 'er besvart',
+    'inneholder': 'inneholder teksten'
+};
+
 export function byggDNFEditor(container, initial, options) {
     const modus = options.modus || 'vilkår';
     const feltOptions = options.feltOptions || [];
@@ -293,17 +308,22 @@ export function byggDNFEditor(container, initial, options) {
 
         // Operator
         const opSel = document.createElement('select');
-        opSel.style.cssText = 'padding: 3px 6px; font-size: 12px; width: 100px;';
+        // Bredere enn før: teksten skal få plass uten å bli kuttet.
+        opSel.style.cssText = 'padding: 3px 6px; font-size: 12px; width: 190px;';
         const opts = modus === 'faste-data' ? OPERATORER_FASTE_DATA : OPERATORER_VILKAR;
         for (const op of opts) {
             const o = document.createElement('option');
             o.value = op;
-            o.textContent = op;
+            const forklaring = OPERATOR_FORKLARING[op];
+            o.textContent = forklaring ? `${op}  —  ${forklaring}` : op;
+            o.title = forklaring || op;
             if (op === (betingelse.Operator || '=')) o.selected = true;
             opSel.appendChild(o);
         }
+        opSel.title = OPERATOR_FORKLARING[betingelse.Operator || '='] || '';
         opSel.addEventListener('change', () => {
             betingelse.Operator = opSel.value;
+            opSel.title = OPERATOR_FORKLARING[opSel.value] || '';
             ferdig();
             render(); // så verdi-input evt skjules for tom/ikke_tom
         });

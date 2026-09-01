@@ -275,6 +275,9 @@
         <div class="topprad">
             <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
             <div class="brukerinfo">
+                <button id="kopier-lenke-knapp" class="modal-knapp" style="margin-right: 12px;"
+                    onclick="kopierSkjemaLenke()"
+                    title="Kopier en lenke rett til dette skjemaet">🔗 Kopier lenke</button>
                 <button id="pdf-knapp" class="modal-knapp" style="margin-right: 12px; display: none;" onclick="lastNedPdf()">📄 Last ned PDF</button>
                 <span class="upn" id="upn">…</span>
             </div>
@@ -611,6 +614,41 @@
             div.appendChild(knapper);
             return div;
         }
+
+        /**
+         * Kopier en lenke rett til dette skjemaet.
+         *
+         * Adressefeltet har alt riktig URL, så den er kilden — da får man med
+         * seg eventuelle parametere uten å gjette på formatet. Knappen
+         * kvitterer i seg selv i to sekunder; en toast for en kopiering er mer
+         * oppmerksomhet enn handlingen fortjener.
+         *
+         * Clipboard-API-et krever sikker kontekst og kan avvises av
+         * nettleseren. Da faller vi tilbake til å markere adressen i en
+         * midlertidig input, slik at brukeren kan kopiere selv.
+         */
+        window.kopierSkjemaLenke = async () => {
+            const knapp = document.getElementById('kopier-lenke-knapp');
+            const url = window.location.href;
+            const kvitter = (tekst) => {
+                const original = knapp.textContent;
+                knapp.textContent = tekst;
+                setTimeout(() => { knapp.textContent = original; }, 2000);
+            };
+            try {
+                await navigator.clipboard.writeText(url);
+                kvitter('✓ Kopiert');
+            } catch (_) {
+                const felt = document.createElement('input');
+                felt.value = url;
+                felt.style.cssText = 'position: fixed; top: 0; left: 0; opacity: 0;';
+                document.body.appendChild(felt);
+                felt.select();
+                const ok = document.execCommand?.('copy');
+                document.body.removeChild(felt);
+                kvitter(ok ? '✓ Kopiert' : 'Kunne ikke kopiere');
+            }
+        };
 
         window.lastNedPdf = async () => {
             const knapp = document.getElementById('pdf-knapp');

@@ -853,7 +853,10 @@
                     <h2 onclick="togglePanel('tilgjengelighet')"><span class="kollaps-pil">▼</span>Tilgjengelighetsperioder <small style="font-weight: 400; text-transform: none;">— når utfylling er tillatt (utenfor perioden er skjemaet kun synlig for eiere)</small></h2>
                     <div id="perioder-container"></div>
                     <button class="knapp mini sekundær" onclick="leggTilPeriode()" style="margin-top: 6px;">+ Legg til periode</button>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">Ingen perioder = alltid tilgjengelig.</div>
+                    <!-- Ingen fast hjelpetekst her: #perioder-container skriver
+                         «Ingen perioder — skjematypen er alltid tilgjengelig» selv
+                         når lista er tom, og to like setninger under hverandre er
+                         mer forvirrende enn én. -->
                 </div>
 
                 <div class="panel" data-panel-id="tilgang">
