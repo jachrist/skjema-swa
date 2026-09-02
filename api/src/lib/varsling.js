@@ -379,11 +379,12 @@ async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
     if (!til) log(`varsling: ingen innsender-epost, men ${kopi.length} kopimottaker(e) — sender til dem`);
 
     const mal = kv.Aktiv === true || kv.Emne || kv.Tekst ? kv : standardKvittering();
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request, 'kvittering.html');
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request, 'visning.html');
     const kontekst = byggKontekst({ skjema, skjematype, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardKvittering().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardKvittering().Tekst, kontekst);
     return await sendEpostViaFlyt({
+        handling: 'sendInnsenderKvittering',
         mottakere,
         emne, html, lenke,
         skjemaId: skjema.Skjema_id,
@@ -425,6 +426,7 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
         : null;
 
     return await sendVarslerViaFlyt({
+        handling: 'sendBehandlingsVarsling',
         mottakere,
         varslinger: kanaler,
         emne, html, lenke,
@@ -460,7 +462,9 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
     const treff = fraBehandler.find(f => Number(f.BeslutningNr) === Number(beslutningNr));
     const mal = treff && (treff.Emne || treff.Tekst) ? treff : standardFraBehandler();
 
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request);
+    // Beslutningen går til innsenderen, som ikke har tilgang til
+    // behandlersiden. visning.html viser skjemaet med beslutningen.
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request, 'visning.html');
     const kontekst = byggKontekst({
         skjema, skjematype, steg,
         beslutningTekst,
@@ -470,6 +474,7 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
     const emne = erstattPlassholdere(mal.Emne || standardFraBehandler().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardFraBehandler().Tekst, kontekst);
     return await sendEpostViaFlyt({
+        handling: 'sendBeslutningVarsling',
         mottakere: [{ epost: til, navn: skjema?.Innsender_Navn || '' }],
         emne, html, lenke,
         skjemaId: skjema.Skjema_id,
@@ -517,6 +522,7 @@ async function sendFerdigVarsling(skjema, skjematype, opts = {}) {
     const html = erstattPlassholdere(fv.Tekst || standardFerdigVarsling().Tekst, kontekst);
     log(`varsling: ferdigvarsling for ${skjema.Skjema_id} til ${mottakere.length} mottaker(e)`);
     return await sendEpostViaFlyt({
+        handling: 'sendFerdigVarsling',
         mottakere,
         emne, html, lenke,
         skjemaId: skjema.Skjema_id,

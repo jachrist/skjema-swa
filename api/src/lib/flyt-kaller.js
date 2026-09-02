@@ -11,7 +11,8 @@
  *
  * Payload-kontrakt (samme som legacy — se docs/FASE-6A-EPOST.md):
  *   {
- *     handling: 'sendBehandlingsVarsling',
+ *     handling: 'sendBehandlingsVarsling',   // se args.handling — kun for logg
+
  *     mottakere: [{ epost, navn }],
  *     varslinger: ['epost'],           // 0..4: epost/teams/planner/teamskanal
  *     skjema_id, skjematype_id, skjema_navn, stegnavn,
@@ -100,7 +101,10 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
 
     const base = baseUrl(args.request);
     const payload = {
-        handling: 'sendBehandlingsVarsling',
+        // Flyten leser ikke denne — all nødvendig input ligger i resten av
+        // payloaden. Den finnes for å kunne se i flytens kjørelogg hvilken
+        // varsling et kall stammer fra, og er derfor verdt å skille på.
+        handling: args.handling || 'sendBehandlingsVarsling',
         mottakere: mottakere.map(m => ({ epost: m.epost, navn: m.navn || '' })),
         varslinger,
         skjema_id: args.skjemaId || '',

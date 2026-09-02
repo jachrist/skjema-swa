@@ -28,12 +28,27 @@ process.env.SWA_URL = 'https://eksempel.net';
         'https://eksempel.net/evaluering.html?skjematype_id=7&skjema_id=42');
 }
 
-// ---------- kvitteringen peker til sin egen side ----------
+// ---------- innsenderen skal til visningssiden ----------
 {
-    sjekk('kvittering', skjemaLenke('7', '42', null, 'kvittering.html'),
-        'https://eksempel.net/kvittering.html?skjematype_id=7&skjema_id=42');
     sjekk('visning', skjemaLenke('7', '42', null, 'visning.html'),
         'https://eksempel.net/visning.html?skjematype_id=7&skjema_id=42');
+    sjekk('kvittering', skjemaLenke('7', '42', null, 'kvittering.html'),
+        'https://eksempel.net/kvittering.html?skjematype_id=7&skjema_id=42');
+}
+
+// ---------- hver varsling har sin egen handling ----------
+{
+    // Flyten leser ikke handling — all input ligger i resten av payloaden.
+    // Den finnes for å kunne se i kjøreloggen hvilken varsling et kall kom
+    // fra, og er dermed bare nyttig så lenge verdiene faktisk er ulike.
+    const fs = require('fs');
+    const path = require('path');
+    const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'varsling.js'), 'utf8');
+    const verdier = [...kilde.matchAll(/^\s*handling: '([^']+)'/gm)].map(m => m[1]);
+    sjekk('fire varslinger, fire verdier', verdier.length, 4);
+    sjekk('alle er unike', new Set(verdier).size, verdier.length);
+    sjekk('behandlervarslingen beholder sin gamle verdi',
+        verdier.includes('sendBehandlingsVarsling'), true);
 }
 
 // ---------- parameternavn må matche sidene ----------
