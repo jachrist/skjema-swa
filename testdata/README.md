@@ -22,6 +22,7 @@ node testdata/generer.js --seed 42   # et helt annet utvalg
 | `roller.json` | 24 rolletildelinger | Kilde for en PA-flyt, eller for `POST /api/roller/leggtil` én om gangen |
 | `roller.csv` | Samme rader, semikolonseparert | Import i admin-panelet under **Roller** |
 | `opprett-testbrukere.ps1` | PowerShell mot Microsoft Graph | Oppretter brukerne i Entra ID |
+| `last-inn-team.ps1` | PowerShell mot SWA-en | Sender `team.json` inn i team-cachen |
 
 Brukernavnene følger samme mønster som i produksjon — forbokstav pluss
 etternavn, `bjohansen@` — slik at testdataene ligner det de erstatter. Ved
@@ -71,8 +72,16 @@ noe vises enn at noe ikke vises.
 
 ## Team
 
-`team.json` er allerede i det formatet cache-endepunktet forventer, så den kan
-sendes rett inn:
+```powershell
+.\testdata\last-inn-team.ps1 -Url https://<miljøet> -Torrkjor   # vis hva som sendes
+.\testdata\last-inn-team.ps1 -Url https://<miljøet>             # send
+```
+
+Skriptet spør om `FLOW_CALLBACK_KEY` uten å vise den, og kan kjøres om igjen —
+endepunktet erstatter medlemslista per team i stedet for å legge til.
+
+`team.json` er allerede i det formatet cache-endepunktet forventer, så skriptet
+gjør lite annet enn å sende den. Manuelt blir det:
 
 ```
 POST /api/cache/teammedlemskap
@@ -93,12 +102,14 @@ samme felter som PA-flyten normaliserer til.
 `roller.json` har `Rolle`, `Omfang`, `UPN`, `FN`, `EN` og `Rollebeskrivelse`.
 Tomt `Omfang` betyr at rollen gjelder uten avgrensning.
 
-Det finnes ikke noe endepunkt som tar imot hele lista i én JSON. To veier inn:
+Rollene kan ikke lastes fra et skript slik teamene kan: rolle-endepunktene
+godtar ikke `x-flow-key`, bare en innlogget administrator. To veier inn:
 
-- **Admin-panelet → Roller → Importer**, med `roller.csv`. Importen eier bare
-  rader med `Kilde='import'`, så manuelt innlagte innehavere står urørt.
-- **`POST /api/roller/leggtil`** med ett objekt om gangen. Passer for en flyt
-  som går gjennom lista.
+- **Admin-panelet → 👥 Roller → 📥 Importer**, med `roller.csv`. Én operasjon
+  for hele lista. Importen eier bare rader med `Kilde='import'`, så manuelt
+  innlagte innehavere står urørt, og den kan trygt kjøres om igjen.
+- **`POST /api/roller/leggtil`** med ett objekt om gangen, fra en innlogget
+  sesjon. Passer for en flyt som går gjennom lista.
 
 ### Hvorfor ingen FS-roller her
 
