@@ -8,6 +8,10 @@ name: Deploy pilot (test/utvikling)
 # både kode og dokumentasjon, kjører deployen som normalt.
 
 on:
+  # Manuell kjøring fra Actions-fanen. Trengs når siste push bare rørte
+  # dokumentasjon, eller når en deploy skal kjøres om igjen uten en ny commit
+  # — for eksempel etter at en innstilling er endret i Azure.
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -30,7 +34,7 @@ on:
 # ikke deployes; CI-jobben validerer dem i stedet.
 jobs:
   build_and_deploy_job:
-    if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed'))
+    if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action != 'closed'))
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     environment: pilot
