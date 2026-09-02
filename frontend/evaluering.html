@@ -384,7 +384,7 @@
             // Slår opp på feltets Id først, posisjon som fallback. Lagret
             // visningstekst — klassenavn i stedet for FS-nøkkel, personnavn i
             // stedet for UPN — følger samme rekkefølge.
-            const oppslag = byggSvarOppslag(skjema.Seksjoner);
+            const oppslag = byggSvarOppslag(skjema.Seksjoner, skjematype.Seksjoner);
             const seksjonerMedSvar = (skjematype.Seksjoner || []).map(sek => ({
                 Seksjon_nummer: sek.Seksjon_nummer, Nummer: sek.Seksjon_nummer,
                 Felter: (sek.Felter || []).map(f => ({

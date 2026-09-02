@@ -647,7 +647,7 @@
             // Bygg svar-lookup fra skjemaet
             // Id først, posisjon som fallback. Lagret visningstekst —
             // klassenavn og personnavn i stedet for koder — følger med.
-            const oppslag = byggSvarOppslag(s.Seksjoner);
+            const oppslag = byggSvarOppslag(s.Seksjoner, state.skjematype?.Seksjoner);
 
             // Bygg detaljpanel som DOM (så modul-widgets kan appendChild med event-listeners)
             hoyre.innerHTML = '';

@@ -628,7 +628,7 @@
         let oppslag = byggSvarOppslag(null);
 
         function rendrer() {
-            oppslag = byggSvarOppslag(eksisterendeSkjema?.Seksjoner);
+            oppslag = byggSvarOppslag(eksisterendeSkjema?.Seksjoner, skjematype?.Seksjoner);
             document.getElementById('tittel').textContent = skjematype.Skjema_navn || 'Skjema';
             document.title = skjematype.Skjema_navn || 'Skjema';
             const logoEl = document.getElementById('logo');

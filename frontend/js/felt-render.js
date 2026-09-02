@@ -1349,15 +1349,30 @@ export function svarNokkel(seksjon, felt) {
  * Skjemaer lagret før Id-en fulgte med har bare posisjonsveien, derfor
  * beholdes den.
  */
-export function byggSvarOppslag(seksjoner) {
+export function byggSvarOppslag(seksjoner, definisjonSeksjoner) {
+    // Hvilke felt-id-er kjenner definisjonen fortsatt? Et lagret svar som hører
+    // til en av dem skal BARE nås via Id. Uten dette ville feltet som nå står
+    // på svarets gamle posisjon fått det i tillegg, og samme svar dukket opp
+    // to steder — det ene riktig, det andre ikke.
+    const idIDefinisjonen = new Set();
+    for (const seksjon of (definisjonSeksjoner || [])) {
+        for (const felt of (seksjon.Felter || [])) {
+            if (felt.Id) idIDefinisjonen.add(felt.Id);
+        }
+    }
+
     const svarPåId = new Map(), svarPåPos = new Map();
     const tekstPåId = new Map(), tekstPåPos = new Map();
 
     for (const seksjon of (seksjoner || [])) {
         for (const felt of (seksjon.Felter || [])) {
             const pos = svarNokkel(seksjon, felt);
-            svarPåPos.set(pos, felt.Svar || []);
-            if (Array.isArray(felt.SvarTekst)) tekstPåPos.set(pos, felt.SvarTekst);
+            // Posisjonsveien er for svar definisjonen ikke kan finne på Id:
+            // eldre skjemaer uten felt-id, og felt som har mistet sin.
+            if (!(felt.Id && idIDefinisjonen.has(felt.Id))) {
+                svarPåPos.set(pos, felt.Svar || []);
+                if (Array.isArray(felt.SvarTekst)) tekstPåPos.set(pos, felt.SvarTekst);
+            }
             if (felt.Id) {
                 svarPåId.set(felt.Id, felt.Svar || []);
                 if (Array.isArray(felt.SvarTekst)) tekstPåId.set(felt.Id, felt.SvarTekst);

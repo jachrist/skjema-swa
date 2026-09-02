@@ -280,7 +280,7 @@
             // Bygg lookup: skjema.Seksjoner har svar; skjematype.Seksjoner har definisjonen
             // Id først, posisjon som fallback. Lagret visningstekst —
             // klassenavn og personnavn i stedet for koder — følger med.
-            const oppslag = byggSvarOppslag(skjema.Seksjoner);
+            const oppslag = byggSvarOppslag(skjema.Seksjoner, skjematype.Seksjoner);
 
             const innhold = document.getElementById('innhold');
             innhold.className = '';

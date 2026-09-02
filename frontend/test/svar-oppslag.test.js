@@ -44,12 +44,73 @@ const A = 'id-a', B = 'id-b', C = 'id-c';
         { Id: B, Nummer: '02', Svar: ['svar B'] },
         { Id: C, Nummer: '03', Svar: ['svar C'] }
     ] }];
-    const o = byggSvarOppslag(lagret);
-
     // Definisjonen etter at A ble slettet: B og C har rykket opp.
+    const def = [{ Seksjon_nummer: 1, Felter: [{ Id: B, Nummer: '01' }, { Id: C, Nummer: '02' }] }];
+    const o = byggSvarOppslag(lagret, def);
+
     const sek = { Seksjon_nummer: 1 };
     sjekk('B beholder sitt svar', o.svar(sek, { Id: B, Nummer: '01' }), ['svar B']);
     sjekk('C beholder sitt svar', o.svar(sek, { Id: C, Nummer: '02' }), ['svar C']);
+}
+
+// ---------- nytt felt satt inn foran skal være BLANKT ----------
+{
+    // Dette er feilen som ble observert i produksjon 02.09.2026: et nytt felt
+    // ble satt inn foran et eksisterende, og begge viste det gamle svaret.
+    //
+    // Det gamle feltet fant svaret sitt på Id — riktig. Det NYE feltet stod nå
+    // på svarets gamle posisjon og plukket det opp via fallbacken — galt. Ett
+    // svar, to steder, og det ene av dem plausibelt nok til å bli trodd.
+    const lagret = [{ Seksjon_nummer: 1, Felter: [
+        { Id: A, Nummer: '01', Svar: ['Emne'] },
+        { Id: B, Nummer: '02', Svar: ['Banan'] }
+    ] }];
+    // Nytt felt C satt inn på plass 02; B har rykket ned til 03.
+    const def = [{ Seksjon_nummer: 1, Felter: [
+        { Id: A, Nummer: '01' }, { Id: C, Nummer: '02' }, { Id: B, Nummer: '03' }
+    ] }];
+    const o = byggSvarOppslag(lagret, def);
+    const sek = { Seksjon_nummer: 1 };
+
+    sjekk('nytt felt er blankt', o.svar(sek, { Id: C, Nummer: '02' }), []);
+    sjekk('gammelt felt beholder svaret', o.svar(sek, { Id: B, Nummer: '03' }), ['Banan']);
+    sjekk('første felt urørt', o.svar(sek, { Id: A, Nummer: '01' }), ['Emne']);
+}
+
+// ---------- et svar kan ikke vises to steder ----------
+{
+    const lagret = [{ Seksjon_nummer: 1, Felter: [{ Id: B, Nummer: '02', Svar: ['bare her'] }] }];
+    const def = [{ Seksjon_nummer: 1, Felter: [{ Id: C, Nummer: '02' }, { Id: B, Nummer: '03' }] }];
+    const o = byggSvarOppslag(lagret, def);
+    const sek = { Seksjon_nummer: 1 };
+    const treff = [
+        o.svar(sek, { Id: C, Nummer: '02' }),
+        o.svar(sek, { Id: B, Nummer: '03' })
+    ].filter(s => s.length > 0);
+    sjekk('svaret finnes nøyaktig ett sted', treff.length, 1);
+}
+
+// ---------- visningstekst følger samme regel ----------
+{
+    const lagret = [{ Seksjon_nummer: 1, Felter: [
+        { Id: B, Nummer: '02', Svar: ['ING2308'], SvarTekst: ['Kull 23'] }
+    ] }];
+    const def = [{ Seksjon_nummer: 1, Felter: [{ Id: C, Nummer: '02' }, { Id: B, Nummer: '03' }] }];
+    const o = byggSvarOppslag(lagret, def);
+    const sek = { Seksjon_nummer: 1 };
+    sjekk('nytt felt har ingen visningstekst', o.tekst(sek, { Id: C, Nummer: '02' }), null);
+    sjekk('teksten følger sitt eget felt', o.tekst(sek, { Id: B, Nummer: '03' }), ['Kull 23']);
+}
+
+// ---------- felt som har mistet Id-en beholder posisjonsveien ----------
+{
+    // Definisjonen kjenner ikke lenger denne id-en, så svaret ville vært
+    // uoppnåelig via Id. Da må posisjonen fortsatt gjelde.
+    const lagret = [{ Seksjon_nummer: 1, Felter: [{ Id: 'foreldet', Nummer: '01', Svar: ['x'] }] }];
+    const def = [{ Seksjon_nummer: 1, Felter: [{ Id: A, Nummer: '01' }] }];
+    const o = byggSvarOppslag(lagret, def);
+    sjekk('ukjent lagret id faller til posisjon',
+        o.svar({ Seksjon_nummer: 1 }, { Id: A, Nummer: '01' }), ['x']);
 }
 
 // ---------- posisjon når Id mangler ----------
