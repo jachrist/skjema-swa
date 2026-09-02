@@ -69,6 +69,27 @@ function definisjonsNokler(def) {
     return ut;
 }
 
+/**
+ * Posisjoner der definisjonen har et Informasjon-felt.
+ *
+ * Både komprimering og ekspandering hopper over Informasjon, så disse
+ * posisjonene finnes ikke i nøkkelkartet. Et svar som bommer HIT betyr noe
+ * annet enn et svar som bommer på ingenting: her står det nå et
+ * informasjonsfelt der det før stod et spørsmål — altså en omnummerering,
+ * ikke bare en sletting.
+ */
+function informasjonsPosisjoner(def) {
+    const ut = new Set();
+    for (const seksjon of (def?.Seksjoner || [])) {
+        const sekNr = seksjon.Nummer ?? seksjon.Seksjon_nummer;
+        for (const felt of (seksjon.Felter || [])) {
+            if (felt.Type !== 'Informasjon') continue;
+            ut.add(`${sekNr}-${String(felt.Nummer).padStart(2, '0')}`);
+        }
+    }
+    return ut;
+}
+
 /** Nøklene de lagrede svarene tilbyr — slik ekspanderSkjema bygger kartet. */
 function svarNokler(kompakt) {
     const ut = new Map();
@@ -193,10 +214,16 @@ function analyser(skjema, def) {
     else if (bom.length > 0) verdikt = 'kompakt, delvis match';
     else verdikt = 'kompakt, alle nøkler matcher';
 
+    // Skill de to slagene bom fra hverandre — de betyr ulike ting.
+    const info = informasjonsPosisjoner(def);
+    const bomPåInfo = bom.filter(k => info.has(k));
+    const bomPåIngenting = bom.filter(k => !info.has(k));
+
     return {
         verdikt,
         detalj: `${treff.length}/${sn.size} svarnøkler funnet i definisjonen (definisjonen har ${dn.size} felt)`,
         bom: bom.slice(0, 10),
+        bomPåInfo, bomPåIngenting,
         // Typene avslører den klassiske årsaken: "01-01" mot "1-01".
         typer: {
             svar: sn.size ? [...sn.values()][0] : null,
@@ -326,6 +353,20 @@ Skriver aldri ut svarverdier — bare nøkler, typer og antall.
                 `  |  def sek=${f.typer.def.sekType} felt=${f.typer.def.feltType}`);
         }
         if (f.bom?.length) console.log(`   svarnøkler uten treff: ${f.bom.join(', ')}`);
+
+        // Summer bom-typene over gruppa. Bom på et Informasjon-felt betyr at
+        // posisjonen er gjenbrukt — altså forskyvning. Bom på ingenting betyr
+        // som regel bare at spørsmålet er slettet.
+        const medBom = rader.filter(r => r.bomPåInfo || r.bomPåIngenting);
+        if (medBom.length) {
+            const påInfo = medBom.reduce((a, r) => a + (r.bomPåInfo?.length || 0), 0);
+            const påIngenting = medBom.reduce((a, r) => a + (r.bomPåIngenting?.length || 0), 0);
+            const raderPåInfo = medBom.filter(r => (r.bomPåInfo?.length || 0) > 0).length;
+            if (påInfo || påIngenting) {
+                console.log(`   bom på Informasjon-felt: ${påInfo} (i ${raderPåInfo} rad(er)) — posisjonen er gjenbrukt`);
+                console.log(`   bom på ingenting:        ${påIngenting} — spørsmålet er trolig slettet`);
+            }
+        }
         if (f.eksempelDefNokler?.length) console.log(`   definisjonens nøkler:  ${f.eksempelDefNokler.join(', ')}`);
 
         // Summer Id-dekning og drift over hele gruppa, ikke bare eksempelrada.
