@@ -49,9 +49,19 @@ console.log(`Publiserte ${Object.keys(publicVerdier).length} public-verdier: ${O
 // Pilot og prod har ulik auth-konfig (ClientSecret vs sertifikat via KV).
 const swaConfigKilde = path.join(__dirname, '..', `staticwebapp.config.${effektivtMiljo}.json`);
 if (fs.existsSync(swaConfigKilde)) {
-    const swaConfigMal = path.join(__dirname, '..', 'staticwebapp.config.json');
-    fs.copyFileSync(swaConfigKilde, swaConfigMal);
-    console.log(`Kopierte staticwebapp.config.${effektivtMiljo}.json → staticwebapp.config.json`);
+    // SWA leser staticwebapp.config.json fra app_location — som er frontend/,
+    // ikke repo-roten. Kopien i roten er derfor bare til lesing og lokal
+    // referanse; det er den i frontend/ plattformen faktisk bruker.
+    //
+    // Sto den bare i roten, ble hele fila ignorert i stillhet: ingen
+    // ruteregler, ingen globale headere, og innloggingen falt tilbake til
+    // SWA sin innebygde AAD-provider mot /common/. Alt så ut til å virke.
+    const mal = [
+        path.join(__dirname, '..', 'staticwebapp.config.json'),
+        path.join(__dirname, '..', 'frontend', 'staticwebapp.config.json')
+    ];
+    for (const m of mal) fs.copyFileSync(swaConfigKilde, m);
+    console.log(`Kopierte staticwebapp.config.${effektivtMiljo}.json → ${mal.map(m => path.relative(path.join(__dirname, '..'), m)).join(' og ')}`);
 } else if (effektivtMiljo !== 'lokal' && effektivtMiljo !== 'development') {
     console.warn(`ADVARSEL: ${swaConfigKilde} finnes ikke — beholder eksisterende staticwebapp.config.json`);
 }

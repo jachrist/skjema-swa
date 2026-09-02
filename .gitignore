@@ -13,3 +13,6 @@ Thumbs.db
 # Azure Functions
 bin/
 obj/
+
+# Genereres av scripts/build-config.js ved deploy — SWA leser den herfra.
+frontend/staticwebapp.config.json

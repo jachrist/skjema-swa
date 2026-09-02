@@ -1,116 +1,166 @@
 {
     "routes": [
-
         {
-
             "route": "/js/*",
-
-            "headers": { "Cache-Control": "no-cache" }
-
+            "headers": {
+                "Cache-Control": "no-cache"
+            }
         },
         {
             "route": "/api/ping",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/refresh-fs",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/power-bi",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/otp/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/skjematyper/*/publikum",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/skjemaer",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/skjemaer/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/ny-skjema-id/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/vedlegg/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/valider",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/for-meg",
-            "allowedRoles": ["authenticated"]
+            "allowedRoles": [
+                "authenticated"
+            ]
         },
         {
             "route": "/api/oppslag",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/purre",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/logo/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/systemlogo",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/postnumre/refresh-bring",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/backup/kjor",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/backup/verifiser-lagret",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/cache/teammedlemskap",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/nokkelkalender/sjekk",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/send-forfalte",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/*",
-            "allowedRoles": ["authenticated"]
+            "allowedRoles": [
+                "authenticated"
+            ]
         },
         {
             "route": "/admin.html",
-            "allowedRoles": ["admin"]
+            "allowedRoles": [
+                "admin"
+            ]
         },
         {
             "route": "/migrer.html",
-            "allowedRoles": ["admin"]
+            "allowedRoles": [
+                "admin"
+            ]
         },
         {
             "route": "/editor.html",
-            "allowedRoles": ["authenticated"]
+            "allowedRoles": [
+                "authenticated"
+            ]
         },
         {
             "route": "/login",
@@ -123,34 +173,20 @@
     ],
     "navigationFallback": {
         "rewrite": "/index.html",
-        "exclude": ["/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"]
+        "exclude": [
+            "/api/*",
+            "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"
+        ]
     },
     "auth": {
         "identityProviders": {
             "azureActiveDirectory": {
                 "registration": {
-                    "_kommentar": [
-                        "openIdIssuer er tenant FOER /v2.0. Sto segmentene omvendt, og",
-                        "clientIdSettingName inneholdt selve client-id-en i stedet for navnet",
-                        "paa app-settingen som holder den. Begge deler gjorde blokka ugyldig,",
-                        "og SWA falt tilbake til sin innebygde AAD-provider UTEN aa feile:",
-                        "innlogging gikk mot /common/ med Microsofts felles app-registrering,",
-                        "som godtar konti fra hvilken som helst tenant.",
-                        "Formen her skal matche staticwebapp.config.prod.json og docs/DEPLOY.md."
-                    ],
                     "openIdIssuer": "https://login.microsoftonline.com/e4fcc393-7190-4d3d-a38d-fa6429f870f3/v2.0",
                     "clientIdSettingName": "AAD_CLIENT_ID",
                     "clientSecretSettingName": "AAD_CLIENT_SECRET"
                 },
                 "login": {
-                    "_kommentar": [
-                        "prompt=select_account tvinger Entra til aa vise kontovelgeren i stedet",
-                        "for aa gjenbruke en eksisterende sesjon i stillhet.",
-                        "Uten den logges man automatisk inn som Windows-brukeren via Primary",
-                        "Refresh Token. Det skjer i Entra, foer nettleseren er inne i bildet,",
-                        "saa privat vindu, hard refresh og /.auth/logout hjelper ikke.",
-                        "Kun pilot: i prod ville dette gitt alle et ekstra klikk hver gang."
-                    ],
                     "loginParameters": [
                         "prompt=select_account"
                     ]
