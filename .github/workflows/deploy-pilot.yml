@@ -52,6 +52,22 @@ jobs:
       # koster noen få sekunder. Feiler det, stopper deployen.
       - name: Kjør tester
         run: node scripts/kjor-tester.js
+
+      # Kjøres som eget steg, ikke via app_build_command.
+      #
+      # Oryx leter etter en kjent plattform i app_location. frontend/ har ingen
+      # package.json, så Oryx svarte «Could not detect the language from repo»,
+      # hoppet over hele byggetrinnet — og dermed også vår egen kommando. Den
+      # ble aldri kjørt, i noen deploy, i noe miljø.
+      #
+      # Utslaget var stille: frontend/js/config.js og
+      # frontend/staticwebapp.config.json ble liggende slik de sist ble sjekket
+      # inn. Pilot serverte derfor MILJO=production, og hele
+      # staticwebapp.config.json — ruteregler, headere og auth — var aldri i
+      # kraft.
+      - name: Bygg konfigurasjon
+        run: node scripts/build-config.js pilot
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
@@ -62,7 +78,8 @@ jobs:
           app_location: "./frontend"
           api_location: "api"
           output_location: ""
-          app_build_command: "node ../scripts/build-config.js pilot"
+          # Ingen app_build_command: konfigurasjonen er alt bygget i steget over.
+          skip_app_build: true
 
   close_pull_request_job:
     if: github.actor != 'dependabot[bot]' && github.event_name == 'pull_request' && github.event.action == 'closed'

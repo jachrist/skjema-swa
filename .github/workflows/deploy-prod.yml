@@ -48,6 +48,13 @@ jobs:
       # koster noen få sekunder. Feiler det, stopper deployen.
       - name: Kjør tester
         run: node scripts/kjor-tester.js
+
+      # Eget steg, ikke app_build_command — se forklaringen i deploy-pilot.yml.
+      # Oryx hoppet over byggetrinnet fordi frontend/ ikke har en package.json,
+      # så kommandoen ble aldri kjørt.
+      - name: Bygg konfigurasjon
+        run: node scripts/build-config.js prod
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
@@ -58,4 +65,5 @@ jobs:
           app_location: "./frontend"
           api_location: "api"
           output_location: ""
-          app_build_command: "node ../scripts/build-config.js prod"
+          # Ingen app_build_command: konfigurasjonen er alt bygget i steget over.
+          skip_app_build: true
