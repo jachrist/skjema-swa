@@ -298,6 +298,54 @@ async function hentDefinisjon(conn, skjematypeId, cache) {
     return def;
 }
 
+/**
+ * Hvilke skjematyper er omnummerert — og hvor mange skjemaer står i fare?
+ *
+ * Dette er den viktigste utskriften, og grunnen er ubehagelig: i kompaktformat
+ * finnes ingen Id. Et svar som er forskjøvet til en posisjon der det FINNES et
+ * felt, teller derfor som treff. Analysen kan bare se de forskyvningene som
+ * lander på et Informasjon-felt eller utenfor skjemaet.
+ *
+ * Ett slikt synlig treff er likevel bevis for at skjematypen er omnummerert.
+ * Og er den det, er alle kompakte rader av samme type usikre — også de som
+ * ser friske ut. Derfor rapporteres eksponeringen per type, ikke per rad.
+ */
+function skrivTypeoversikt(alle) {
+    const perType = new Map();
+    for (const r of alle) {
+        const t = String(r.pk);
+        if (!perType.has(t)) perType.set(t, { rader: 0, kompakte: 0, påInfo: 0, påIngenting: 0, forskjøvet: 0 });
+        const s = perType.get(t);
+        s.rader++;
+        if (String(r.verdikt).startsWith('kompakt')) s.kompakte++;
+        s.påInfo += r.bomPåInfo?.length || 0;
+        s.påIngenting += r.bomPåIngenting?.length || 0;
+        s.forskjøvet += r.drift?.forskjøvet || 0;
+    }
+
+    const mistenkte = [...perType.entries()]
+        .filter(([, s]) => s.påInfo > 0 || s.forskjøvet > 0)
+        .sort((a, b) => b[1].kompakte - a[1].kompakte);
+
+    console.log('══ Skjematyper med spor av omnummerering ══\n');
+    if (mistenkte.length === 0) {
+        console.log('  Ingen. Ingen svar har landet på en gjenbrukt posisjon.\n');
+        return;
+    }
+
+    let usikre = 0;
+    console.log('  type   rader  kompakte  bom på info  forskjøvet');
+    for (const [t, s] of mistenkte) {
+        usikre += s.kompakte;
+        console.log(`  ${t.padEnd(6)} ${String(s.rader).padStart(5)} ${String(s.kompakte).padStart(9)} ` +
+            `${String(s.påInfo).padStart(12)} ${String(s.forskjøvet).padStart(11)}`);
+    }
+    console.log(`\n  ${mistenkte.length} skjematype(r) er omnummerert.`);
+    console.log(`  ${usikre} kompakt(e) rad(er) av disse typene kan ha svar under feil spørsmål`);
+    console.log('  uten at det lar seg påvise herfra — kompaktformatet lagrer ingen Id.');
+    console.log('  Avklaring krever den gamle definisjonen fra backup.\n');
+}
+
 async function kjor() {
     const args = parseArgs(process.argv);
     if (args.hjelp || !args.conn || (!args.type && !args.alle)) {
@@ -386,7 +434,12 @@ Skriver aldri ut svarverdier — bare nøkler, typer og antall.
         console.log('');
     }
 
-    if (perVerdikt.size === 0) console.log('Ingen rader traff filteret.');
+    if (perVerdikt.size === 0) {
+        console.log('Ingen rader traff filteret.');
+        return;
+    }
+
+    skrivTypeoversikt([...perVerdikt.values()].flat());
 }
 
 if (require.main === module) {
