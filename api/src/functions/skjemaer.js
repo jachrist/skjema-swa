@@ -46,6 +46,39 @@ async function autentiserEkstern(request, skjematypeId) {
     return { ok: true, mottaker: v.mottaker, kanal: v.kanal };
 }
 
+/**
+ * Har requesten et OTP-token?
+ *
+ * Et `x-otp-token` er et eksplisitt valg: brukeren har nettopp verifisert seg
+ * som ekstern innsender for denne skjematypen. En SWA-cookie i samme nettleser
+ * er derimot bare noe som ligger der — typisk fordi den som tester flyten også
+ * er innlogget som seg selv.
+ *
+ * Derfor må tokenet gå foran cookien. Uten det ble ekstern innsending avvist
+ * med «Ingen tilgang til denne skjematypen» så snart nettleseren hadde en
+ * SWA-sesjon — og feilen traff bare dem som testet fra egen maskin, altså
+ * nesten alltid oss selv og aldri den eksterne brukeren.
+ */
+function harOtpToken(request) {
+    return !!request.headers.get('x-otp-token');
+}
+
+/**
+ * Hvilken autentiseringsvei gjelder for denne requesten?
+ *
+ * Rekkefølgen er regelen, og den er verdt å ha ett sted:
+ *   1. utsendings-token — en konkret invitasjon til én mottaker
+ *   2. OTP-token       — brukeren har verifisert seg som ekstern
+ *   3. SWA-cookie      — det som ligger igjen
+ *
+ * Uten token og uten cookie faller vi til «ekstern», som da avviser med 401.
+ */
+function velgAuthvei(request, upn) {
+    if (request.headers.get('x-utsending-token')) return 'utsending';
+    if (harOtpToken(request)) return 'ekstern';
+    return upn ? 'innlogget' : 'ekstern';
+}
+
 function eksternInnsenderUpn(mottaker, kanal) {
     // Bruker mottaker som "identitet" i innsender-feltet.
     // E-post går i Innsender_Epost; mobilnr merkes med prefiks for å unngå
@@ -614,11 +647,16 @@ app.http('nyttSkjemaId', {
                 if (!v.gyldig || v.skjematypeId !== skjematypeId) {
                     return { status: 401, jsonBody: { status: 'feil', melding: v.melding || 'Ugyldig utsendings-token' } };
                 }
-            } else if (!upn) {
-                // Ekstern-flyt: krev gyldig OTP-token + EksternTilgang=true
+            } else if (velgAuthvei(request, upn) === 'ekstern') {
+                // Ekstern-flyt: krev gyldig OTP-token + EksternTilgang=true.
+                // Tokenet går foran en eventuell SWA-cookie, men er det ugyldig
+                // og brukeren likevel innlogget, faller vi tilbake til den
+                // vanlige sjekken i stedet for å avvise.
                 const eksternAuth = await autentiserEkstern(request, skjematypeId);
                 if (!eksternAuth.ok) {
-                    return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
+                    if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
+                    const tillatt = await harPublikumTilgang(skjematypeId, upn);
+                    if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
                 }
             } else {
                 const tillatt = await harPublikumTilgang(skjematypeId, upn);
@@ -673,10 +711,19 @@ app.http('lagreSkjema', {
                     };
                 }
                 utsendingAuth = { batchId: v.batchId, mottaker: v.mottaker, prefilled: post.Prefilled || null };
-            } else if (!upn) {
-                eksternAuth = await autentiserEkstern(request, skjematypeId);
-                if (!eksternAuth.ok) {
-                    return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
+            } else if (velgAuthvei(request, upn) === 'ekstern') {
+                // OTP-tokenet går foran en eventuell SWA-cookie — se harOtpToken.
+                const forsøk = await autentiserEkstern(request, skjematypeId);
+                if (forsøk.ok) {
+                    eksternAuth = forsøk;
+                } else if (!upn) {
+                    return { status: 401, jsonBody: { status: 'feil', melding: forsøk.melding || 'Ikke innlogget' } };
+                } else {
+                    // Ugyldig token, men innlogget: behandle som vanlig bruker.
+                    const tillatt = await harPublikumTilgang(skjematypeId, upn);
+                    if (!tillatt) {
+                        return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang til denne skjematypen' } };
+                    }
                 }
             } else {
                 // Innlogget: standard publikum/eier-sjekk
@@ -1095,20 +1142,27 @@ app.http('hentSkjema', {
 
             const upn = hentInnloggetUpn(request);
 
-            // Ekstern-tilgang via OTP-token
-            if (!upn) {
+            // Ekstern-tilgang via OTP-token. Tokenet går foran en eventuell
+            // SWA-cookie — se harOtpToken.
+            if (velgAuthvei(request, upn) === 'ekstern') {
                 const eksternAuth = await autentiserEkstern(request, skjematypeId);
-                if (!eksternAuth.ok) {
+                if (!eksternAuth.ok && !upn) {
                     return { status: 401, jsonBody: { status: 'feil', melding: eksternAuth.melding || 'Ikke innlogget' } };
                 }
-                const innsenderId = eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal);
-                const eksistInns = (skjema.Innsender_Epost || skjema.Innsender_epost || '').toLowerCase();
-                if (eksistInns !== innsenderId.toLowerCase()) {
-                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Ikke ditt skjema' } };
+                if (eksternAuth.ok) {
+                    const innsenderId = eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal);
+                    const eksistInns = (skjema.Innsender_Epost || skjema.Innsender_epost || '').toLowerCase();
+                    if (eksistInns === innsenderId.toLowerCase()) {
+                        // Ekstern får skjemaet dekryptert (uten behandler-info-berikelse)
+                        skjema = await dekrypterHvisKryptert(skjema, skjematypeId, context);
+                        return { jsonBody: skjema };
+                    }
+                    // Ikke den eksternes eget skjema. Er brukeren også innlogget,
+                    // avgjøres tilgangen av de vanlige reglene nedenfor.
+                    if (!upn) {
+                        return { status: 403, jsonBody: { status: 'avvist', melding: 'Ikke ditt skjema' } };
+                    }
                 }
-                // Ekstern får skjemaet dekryptert (uten behandler-info-berikelse)
-                skjema = await dekrypterHvisKryptert(skjema, skjematypeId, context);
-                return { jsonBody: skjema };
             }
 
             // Tilgang: admin, eier, innsender selv, ELLER behandler (Personer/Roller)
@@ -1151,3 +1205,8 @@ app.http('hentSkjema', {
         }
     }
 });
+
+// Eksporteres for test. Rekkefølgen mellom OTP-token og SWA-cookie er lett å
+// snu ved en senere opprydding, og feilen den gir viser seg bare for den som
+// tester fra en innlogget nettleser — derfor er den festet i test.
+module.exports = { _harOtpToken: harOtpToken, _velgAuthvei: velgAuthvei };
