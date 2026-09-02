@@ -125,11 +125,29 @@ async function kjor() {
 
     // ---------- lesLagret ----------
     {
-        sjekk('tom lagring gir tom liste', f.lesLagret(null), []);
-        sjekk('ugyldig JSON velter ingenting', f.lesLagret('{ ikke json'), []);
-        sjekk('feil struktur gir tom liste', f.lesLagret('{"faner":"nei"}'), []);
-        sjekk('halve rader lukes ut',
-            f.lesLagret('{"faner":[{"nokkel":"a","url":"a","navn":"A"},{"nokkel":"b"}]}').length, 1);
+        const MEG = 'kari@fhs.no';
+        const lag = (faner, upn = MEG) => JSON.stringify({ versjon: 2, upn, faner });
+        const to = [{ nokkel: 'a', url: 'a', navn: 'A' }, { nokkel: 'b' }];
+
+        sjekk('tom lagring gir tom liste', f.lesLagret(null, MEG), []);
+        sjekk('ugyldig JSON velter ingenting', f.lesLagret('{ ikke json', MEG), []);
+        sjekk('feil struktur gir tom liste', f.lesLagret('{"faner":"nei"}', MEG), []);
+        sjekk('halve rader lukes ut', f.lesLagret(lag(to), MEG).length, 1);
+
+        // ---------- fanene tilhører én bruker ----------
+        //
+        // Fanenavnene er skjematyper, rapporter og skjema-ID-er. Arves de av
+        // neste som logger på samme maskin, er det en lekkasje — ikke en
+        // kosmetisk feil. Derfor er dette den viktigste testen i fila.
+        {
+            const enFane = [{ nokkel: 'a', url: 'a', navn: 'Sykefravær 2026' }];
+            sjekk('egen bruker ser sine faner', f.lesLagret(lag(enFane), MEG).length, 1);
+            sjekk('annen bruker ser ingenting', f.lesLagret(lag(enFane), 'ola@fhs.no'), []);
+            sjekk('ulik kasus er samme bruker', f.lesLagret(lag(enFane, 'Kari@FHS.no'), MEG).length, 1);
+            sjekk('ingen innlogget gir ingenting', f.lesLagret(lag(enFane), ''), []);
+            sjekk('lagring uten eier forkastes',
+                f.lesLagret(JSON.stringify({ versjon: 1, faner: enFane }), MEG), []);
+        }
     }
 
     console.log(`\n${ok} OK, ${feil} feil`);

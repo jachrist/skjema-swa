@@ -115,10 +115,22 @@ export function leggTil(faner, ny, maks = MAKS) {
 }
 
 /** Rydd bort faner som ikke lenger er gyldige — f.eks. etter en omlegging. */
-export function lesLagret(rå) {
+/**
+ * Leser lagrede faner — men bare hvis de tilhører denne brukeren.
+ *
+ * Fanene bærer sidenavn: skjematyper, rapporter, skjema-ID-er. Uten
+ * eier-sjekken ville neste som logger på samme maskin sett hva forrige bruker
+ * hadde åpne. På en delt PC er det en lekkasje, ikke en kosmetisk feil.
+ *
+ * Lagring uten `upn` er fra før denne sjekken fantes, og forkastes: vi vet
+ * ikke hvem den tilhørte.
+ */
+export function lesLagret(rå, upn) {
     try {
         const data = JSON.parse(rå || '{}');
         if (!Array.isArray(data.faner)) return [];
+        if (!data.upn || !upn) return [];
+        if (String(data.upn).toLowerCase() !== String(upn).toLowerCase()) return [];
         return data.faner.filter(f => f && f.nokkel && f.url && f.navn);
     } catch (_) {
         return [];
@@ -129,31 +141,56 @@ export function lesLagret(rå) {
 
 const erNettleser = typeof document !== 'undefined' && typeof window !== 'undefined';
 
+// Hvem stripa tilhører. Settes i start(), før noe leses eller tegnes.
+let eier = '';
+
 function lagre(faner) {
     try {
-        localStorage.setItem(NOKKEL, JSON.stringify({ versjon: 1, faner }));
+        if (!eier) return;
+        localStorage.setItem(NOKKEL, JSON.stringify({ versjon: 2, upn: eier, faner }));
     } catch (_) { /* full localStorage skal ikke velte siden */ }
 }
 
 function hent() {
-    try { return lesLagret(localStorage.getItem(NOKKEL)); } catch (_) { return []; }
+    try { return lesLagret(localStorage.getItem(NOKKEL), eier); } catch (_) { return []; }
+}
+
+/** Hvem er innlogget? Serveres av SWA-plattformen, ikke av API-et vårt. */
+async function hentUpn() {
+    try {
+        const r = await fetch('/.auth/me');
+        if (!r.ok) return '';
+        const d = await r.json();
+        return d?.clientPrincipal?.userDetails || '';
+    } catch (_) {
+        return '';
+    }
 }
 
 /**
- * Har brukeren nytte av stripa?
+ * Har brukeren nytte av stripa? Kun admin og skjemaskapere.
  *
- * Svaret caches i sessionStorage. Uten det ville hver eneste navigasjon kostet
- * et ekstra /api/whoami-kall — og faner er nettopp laget for å navigere ofte.
+ * Svaret caches i sessionStorage sammen med UPN-en det gjelder. Uten det ville
+ * hver navigasjon kostet et /api/whoami-kall — og faner er nettopp laget for å
+ * navigere ofte. Men uten UPN-en i cachen overlevde svaret et brukerbytte, og
+ * neste bruker arvet forrige brukers «ja». Det var slik stripa dukket opp for
+ * folk som ikke skulle ha den.
  */
-async function harTilgang() {
-    const bufret = sessionStorage.getItem('arbeidsfaner-tilgang');
-    if (bufret !== null) return bufret === 'ja';
+async function harTilgang(upn) {
+    if (!upn) return false;
+    try {
+        const bufret = JSON.parse(sessionStorage.getItem('arbeidsfaner-tilgang') || 'null');
+        if (bufret && String(bufret.upn).toLowerCase() === String(upn).toLowerCase()) {
+            return bufret.ja === true;
+        }
+    } catch (_) { /* ugyldig cache leses som miss */ }
+
     try {
         const svar = await fetch('/api/whoami');
         if (!svar.ok) return false;
         const meg = await svar.json();
         const ja = !!(meg.erAdmin || meg.kanOppretteSkjematype);
-        sessionStorage.setItem('arbeidsfaner-tilgang', ja ? 'ja' : 'nei');
+        sessionStorage.setItem('arbeidsfaner-tilgang', JSON.stringify({ upn, ja }));
         return ja;
     } catch (_) {
         return false;
@@ -288,7 +325,14 @@ function settUlagret(ulagret) {
 async function start() {
     const flate = erArbeidsflate(window.location.href);
     if (!flate) return;
-    if (!(await harTilgang())) return;
+
+    eier = await hentUpn();
+    if (!(await harTilgang(eier))) {
+        // Er stripa ikke for denne brukeren, skal forrige brukers faner heller
+        // ikke bli liggende igjen på maskinen.
+        try { localStorage.removeItem(NOKKEL); } catch (_) { /* ignorer */ }
+        return;
+    }
 
     gjeldende = faneNokkel(window.location.href);
     const faner = leggTil(hent(), {
