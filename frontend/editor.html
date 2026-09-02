@@ -485,6 +485,15 @@
         .konfig-plassholdere code {
             background: var(--bg-section); padding: 1px 4px; border-radius: 3px; margin-right: 2px;
         }
+        .konfig-chips-rad {
+            display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 6px;
+        }
+        .konfig-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+        .konfig-feltdropdown {
+            font-size: 11px; padding: 2px 4px; max-width: 320px;
+            background: var(--bg-section); color: var(--text-primary);
+            border: 1px solid var(--border-color); border-radius: 4px;
+        }
 
         /* ===== Varsling-checkbokser ===== */
         .varsling-kanaler {
@@ -1492,7 +1501,25 @@
          * Returnerer verdiene, eller null hvis brukeren avbrøt. Samme
          * bakteppe og knapperad som de øvrige modalene i editoren.
          */
-        function apneKonfigModal(verdier, { tittel, hjelp = '', felter }) {
+        /**
+         * Sett inn tekst der markøren står i et input- eller textarea-felt.
+         *
+         * Melding-editoren gjør det samme, men mot et contenteditable-område —
+         * derfor kan ikke koden deles rett over. Feltreferanselista er derimot
+         * den samme (`samleFeltreferanser`), så referansene som tilbys her er
+         * identiske med dem i e-postmalene.
+         */
+        function settInnIKontroll(el, tekst) {
+            if (!el || el.tagName === 'SELECT') return;
+            const start = el.selectionStart ?? el.value.length;
+            const slutt = el.selectionEnd ?? start;
+            el.value = el.value.slice(0, start) + tekst + el.value.slice(slutt);
+            const pos = start + tekst.length;
+            el.focus();
+            el.setSelectionRange(pos, pos);
+        }
+
+        function apneKonfigModal(verdier, { tittel, hjelp = '', felter, feltreferanser = [] }) {
             return new Promise((resolve) => {
                 const bakgrunn = document.createElement('div');
                 bakgrunn.className = 'meldingsmodal-bakgrunn';
@@ -1505,7 +1532,16 @@
                         ${hjelp ? `<p class="konfig-hjelp">${hjelp}</p>` : ''}
                         <div class="konfig-felter"></div>
                         <div class="konfig-plassholdere">
-                            Plassholdere: ${KANAL_PLASSHOLDERE.map(p => `<code>${p}</code>`).join(' ')}
+                            <div class="konfig-chips-rad">
+                                <span>Plassholdere:</span>
+                                <span class="konfig-chips"></span>
+                            </div>
+                            <div class="konfig-chips-rad konfig-feltref" style="display: none;">
+                                <span>Svar fra skjemaet:</span>
+                                <select class="konfig-feltdropdown">
+                                    <option value="">— velg felt —</option>
+                                </select>
+                            </div>
                         </div>
                         <div class="meldingsmodal-knapper">
                             <button class="modal-knapp" data-svar="avbryt">Avbryt</button>
@@ -1547,6 +1583,43 @@
                     rad.appendChild(kontroll);
                     felterEl.appendChild(rad);
                     inputs[f.navn] = kontroll;
+                }
+
+                // Plassholdere og feltreferanser settes inn der markøren sist
+                // stod. Uten den sporingen ville de alltid havnet i det første
+                // feltet, som sjelden er det man skriver i.
+                let sistFokusert = null;
+                for (const el of Object.values(inputs)) {
+                    if (el.tagName === 'SELECT') continue;
+                    if (!sistFokusert) sistFokusert = el;
+                    el.addEventListener('focus', () => { sistFokusert = el; });
+                }
+
+                const chipsEl = boks.querySelector('.konfig-chips');
+                for (const p of KANAL_PLASSHOLDERE) {
+                    const chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'meldingsmodal-chip';
+                    chip.textContent = p;
+                    chip.addEventListener('click', () => settInnIKontroll(sistFokusert, p));
+                    chipsEl.appendChild(chip);
+                }
+
+                const feltDropdown = boks.querySelector('.konfig-feltdropdown');
+                if (feltreferanser.length > 0) {
+                    for (const f of feltreferanser) {
+                        const o = document.createElement('option');
+                        o.value = f.ref;
+                        o.textContent = f.tekst;
+                        feltDropdown.appendChild(o);
+                    }
+                    boks.querySelector('.konfig-feltref').style.display = '';
+                    feltDropdown.addEventListener('change', () => {
+                        const v = feltDropdown.value;
+                        if (!v) return;
+                        settInnIKontroll(sistFokusert, `{${v}}`);
+                        feltDropdown.value = '';
+                    });
                 }
 
                 const lukk = (svar) => {
@@ -1598,7 +1671,8 @@
                     { navn: 'Tittel', etikett: 'Tittel', plassholder: 'Skjema til behandling: $skjemanavn' },
                     { navn: 'Innhold', etikett: 'Innhold', type: 'tekstomrade', rader: 5,
                       hjelp: '(HTML er tillatt)', plassholder: '<p>Du har fått $skjemanavn til behandling.</p>' }
-                ]
+                ],
+                feltreferanser: samleFeltreferanser(data)
             });
             if (ny) lagreKanalOppsett(steg, 'TeamsMelding', ny);
         };
@@ -1627,7 +1701,8 @@
                       hjelp: '(ett punkt per linje, maks 20)', plassholder: 'Les gjennom skjemaet\nKontroller vedlegg\nFatt beslutning' },
                     { navn: 'Notater', etikett: 'Notat', type: 'tekstomrade', rader: 3,
                       hjelp: '(tomt gir en lenke til skjemaet)' }
-                ]
+                ],
+                feltreferanser: samleFeltreferanser(data)
             });
             if (ny) lagreKanalOppsett(steg, 'PlannerOppgave', ny);
         };
@@ -1644,7 +1719,8 @@
                     { navn: 'Tittel', etikett: 'Tittel', plassholder: 'Nytt skjema til behandling: $skjemanavn' },
                     { navn: 'Innhold', etikett: 'Innhold', type: 'tekstomrade', rader: 5,
                       hjelp: '(HTML er tillatt)' }
-                ]
+                ],
+                feltreferanser: samleFeltreferanser(data)
             });
             if (ny) lagreKanalOppsett(steg, 'TeamsKanalInnlegg', ny);
         };
