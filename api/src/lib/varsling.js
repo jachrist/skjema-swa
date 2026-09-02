@@ -211,11 +211,20 @@ function byggTeamsMelding(steg, kontekst, { emne, html }) {
     };
 }
 
-function skjemaLenke(skjematypeId, skjemaId, request) {
+/**
+ * Lenke til et skjema.
+ *
+ * `side` avgjør hvor mottakeren havner. Behandlere skal til evaluering.html,
+ * der de kan gjøre en beslutning. Innsenderen skal ikke dit: kvitteringen er
+ * en bekreftelse, ikke en oppgave, og evaluering.html gir dessuten ingen
+ * tilgang for den som bare har sendt inn.
+ *
+ * Query-param-navnene må matche sidene, som leser skjematype_id/skjema_id.
+ */
+function skjemaLenke(skjematypeId, skjemaId, request, side = 'evaluering.html') {
     const base = baseUrl(request);
     if (!base) return '';
-    // Query-param-navn må matche evaluering.html (som leser skjematype_id/skjema_id)
-    return `${base}/evaluering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
+    return `${base}/${side}?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
 }
 
 function harEpostVarsling(steg) {
@@ -370,7 +379,7 @@ async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
     if (!til) log(`varsling: ingen innsender-epost, men ${kopi.length} kopimottaker(e) — sender til dem`);
 
     const mal = kv.Aktiv === true || kv.Emne || kv.Tekst ? kv : standardKvittering();
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request);
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request, 'kvittering.html');
     const kontekst = byggKontekst({ skjema, skjematype, lenke });
     const emne = erstattPlassholdere(mal.Emne || standardKvittering().Emne, kontekst);
     const html = erstattPlassholdere(mal.Tekst || standardKvittering().Tekst, kontekst);

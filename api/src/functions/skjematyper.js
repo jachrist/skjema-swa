@@ -18,6 +18,7 @@ const rollerStorage = require('../lib/roller-storage');
 const hendelser = require('../lib/hendelser-storage');
 const gevinstSjekk = require('../lib/gevinst-sjekk');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
+const svarReparasjon = require('../lib/svar-reparasjon');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -183,6 +184,56 @@ app.http('antallSkjemaerForType', {
     }
 });
 
+/**
+ * Hva ville en lagring gjort med de eksisterende svarene?
+ *
+ * Editoren spør om dette rett før den lagrer, så brukeren kan få se antallet
+ * og bestemme. Etter lagring er spørsmålet umulig å stille: da er den gamle
+ * definisjonen overskrevet, og det finnes ikke lenger noe å sammenligne med.
+ *
+ * Endrer ingenting — body er den foreslåtte definisjonen, ikke en lagring.
+ */
+app.http('analyserFlytting', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/{id}/analyser-flytting',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const id = request.params.id;
+            const tillatt = await harEierPåType(id, upn);
+            if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin' } };
+
+            const forrige = await skjemaStorage.hentSkjematype(id);
+            if (!forrige?.JSON) return { jsonBody: { flyttinger: 0, berørte: 0, fjernet: 0 } };
+
+            const foreslått = await request.json();
+            const kart = svarReparasjon.byggFlyttekart(forrige.JSON, foreslått);
+            if (kart.flyttinger.length === 0) {
+                return { jsonBody: { flyttinger: 0, berørte: 0, fjernet: kart.fjernet.length } };
+            }
+
+            const res = await svarReparasjon.reparerAlle({
+                skjematypeId: id, flyttinger: kart.flyttinger, torrkjor: true
+            }, { log: (m) => context.log(m) });
+
+            return {
+                jsonBody: {
+                    flyttinger: kart.flyttinger.length,
+                    fjernet: kart.fjernet.length,
+                    berørte: res.berørte,
+                    vurdert: res.vurdert
+                }
+            };
+        } catch (e) {
+            context.log('skjematyper/analyser-flytting FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
 app.http('hentSkjematype', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -263,6 +314,18 @@ app.http('lagreSkjematype', {
                 if (!tillatt) return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin kan endre denne skjematypen' } };
             }
 
+            // Flyttekartet må regnes ut FØR lagring — etterpå er den gamle
+            // definisjonen borte, og da finnes det ikke lenger noe å
+            // sammenligne med. Selve reparasjonen skjer etter lagring, og bare
+            // hvis klienten har bedt om den.
+            let flyttinger = [];
+            if (!erNy) {
+                const forrige = await skjemaStorage.hentSkjematype(body.Skjematype_id);
+                if (forrige?.JSON) {
+                    flyttinger = svarReparasjon.byggFlyttekart(forrige.JSON, body).flyttinger;
+                }
+            }
+
             await skjemaStorage.lagreSkjematype(body);
             context.log(`skjematyper: ${upn} ${erNy ? 'opprettet' : 'oppdaterte'} skjematype ${body.Skjematype_id}`);
             hendelser.logg({
@@ -285,9 +348,37 @@ app.http('lagreSkjematype', {
                 }
             }
 
+            // Har feltnumre flyttet seg, teller vi hvor mange lagrede skjemaer
+            // som er rammet — og reparerer dem hvis klienten ba om det.
+            // Tørrkjøring er standard: en reparasjon som treffer feil er
+            // vanskeligere å oppdage enn en som ikke ble kjørt.
+            let reparasjon = null;
+            if (flyttinger.length > 0) {
+                try {
+                    reparasjon = await svarReparasjon.reparerAlle({
+                        skjematypeId: body.Skjematype_id,
+                        flyttinger,
+                        torrkjor: body.reparerSvar !== true
+                    }, { log: (m) => context.log(m) });
+
+                    if (!reparasjon.torrkjor) {
+                        context.log(`skjematyper: ${upn} reparerte ${reparasjon.reparert} skjema(er) etter omnummerering av ${body.Skjematype_id}`);
+                        hendelser.logg({
+                            Type: 'skjematype.reparer-svar', Aktor: upn,
+                            ObjektType: 'skjematype', ObjektId: String(body.Skjematype_id),
+                            Melding: `Flyttet svar i ${reparasjon.reparert} skjema etter omnummerering`,
+                            Detaljer: { berørte: reparasjon.berørte, feilet: reparasjon.feilet, flyttinger: flyttinger.length }
+                        });
+                    }
+                } catch (e) {
+                    context.log('skjematyper: svar-reparasjon feilet — ' + e.message);
+                }
+            }
+
             return {
                 jsonBody: {
                     status: 'ok', Skjematype_id: body.Skjematype_id, erNy,
+                    ...(reparasjon ? { reparasjon } : {}),
                     ...(nullpunkt && nullpunkt.sjekket && !nullpunkt.registrert
                         ? { advarsel: nullpunkt.melding }
                         : {})

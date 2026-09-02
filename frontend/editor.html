@@ -3378,6 +3378,40 @@
             hopperOverAdvarsel = true;
         }
 
+        /**
+         * Spør om lagrede svar skal flyttes med når feltnumre har endret seg.
+         *
+         * Returnerer 'ja', 'nei' eller 'avbryt'.
+         *
+         * Spørsmålet stilles bare når det finnes noe å reparere — altså når
+         * felt faktisk har byttet posisjon OG det finnes lagrede skjemaer som
+         * koblet svarene sine på den gamle posisjonen. Skjemaer som bærer
+         * feltets id er allerede trygge og telles ikke med.
+         *
+         * Feiler analysen, lagrer vi som før. En utilgjengelig teller er ingen
+         * grunn til å nekte noen å lagre arbeidet sitt.
+         */
+        async function spørOmReparasjon() {
+            if (!data.Skjematype_id) return 'nei';
+            let a;
+            try {
+                a = await api.post(`/api/skjematyper/${encodeURIComponent(data.Skjematype_id)}/analyser-flytting`, data);
+            } catch (e) {
+                console.warn('analyser-flytting feilet:', e.message);
+                return 'nei';
+            }
+            if (!a || !a.berørte) return 'nei';
+
+            const n = a.berørte;
+            const svar = confirm(
+                `${n} lagret${n === 1 ? '' : 'e'} skjema har svar knyttet til feltenes gamle rekkefølge.\n\n` +
+                'Uten oppretting vil disse svarene vises under feil spørsmål.\n\n' +
+                `OK  = lagre og flytt svarene i ${n} skjema\n` +
+                'Avbryt = ikke lagre, så du kan angre endringen først'
+            );
+            return svar ? 'ja' : 'avbryt';
+        }
+
         // ---- Lagre / Slett / Kopier ----
         window.lagre = async () => {
             if (!data.Skjema_navn?.trim()) {
@@ -3385,8 +3419,21 @@
                 return;
             }
             try {
-                const svar = await api.post('/api/skjematyper', data);
+                // Har feltnumre flyttet seg, må brukeren få velge før vi lagrer.
+                // Etterpå er den gamle definisjonen overskrevet, og da kan ingen
+                // lenger regne ut hvor svarene hørte hjemme.
+                const reparer = await spørOmReparasjon();
+                if (reparer === 'avbryt') return;
+
+                const svar = await api.post('/api/skjematyper',
+                    reparer === 'ja' ? { ...data, reparerSvar: true } : data);
                 data.Skjematype_id = svar.Skjematype_id;
+                if (svar.reparasjon && !svar.reparasjon.torrkjor) {
+                    const { reparert, feilet } = svar.reparasjon;
+                    toast(feilet
+                        ? `Flyttet svar i ${reparert} skjema — ${feilet} feilet, se logg`
+                        : `Flyttet svar i ${reparert} skjema ✓`, feilet ? 'feil' : 'ok');
+                }
                 sistLagretSerialisert = serialisert();
                 sistServerLagring = new Date();
                 fjernUtkast();
