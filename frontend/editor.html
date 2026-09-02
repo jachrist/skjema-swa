@@ -2296,6 +2296,8 @@
                         <input type="text" placeholder="Overskrift…"
                             value="${escapeAttr(seksjon.Seksjon_overskrift || '')}"
                             oninput="setSeksjonOverskrift(${sIdx}, this.value)">
+                        <button class="knapp mini sekundær" data-action="sett-inn-seksjon-for" data-seksjon="${sIdx}" title="Sett inn ny seksjon før denne">＋↑</button>
+                        <button class="knapp mini sekundær" data-action="sett-inn-seksjon-etter" data-seksjon="${sIdx}" title="Sett inn ny seksjon etter denne">＋↓</button>
                         <button class="knapp mini sekundær" data-action="flytt-seksjon-opp" data-seksjon="${sIdx}" ${sIdx === 0 ? 'disabled' : ''}>↑</button>
                         <button class="knapp mini sekundær" data-action="flytt-seksjon-ned" data-seksjon="${sIdx}" ${sIdx === data.Seksjoner.length - 1 ? 'disabled' : ''}>↓</button>
                         <button class="knapp mini danger" data-action="slett-seksjon" data-seksjon="${sIdx}">Slett seksjon</button>
@@ -2334,6 +2336,8 @@
                             ${typeOpts}
                         </select>
                         <div style="display: flex; gap: 4px;">
+                            <button class="knapp mini sekundær" data-action="sett-inn-felt-for" data-seksjon="${sIdx}" data-felt="${fIdx}" title="Sett inn nytt felt før dette">＋↑</button>
+                            <button class="knapp mini sekundær" data-action="sett-inn-felt-etter" data-seksjon="${sIdx}" data-felt="${fIdx}" title="Sett inn nytt felt etter dette">＋↓</button>
                             <button class="knapp mini sekundær" data-action="flytt-felt-opp" data-seksjon="${sIdx}" data-felt="${fIdx}" ${fIdx === 0 ? 'disabled' : ''}>↑</button>
                             <button class="knapp mini sekundær" data-action="flytt-felt-ned" data-seksjon="${sIdx}" data-felt="${fIdx}" ${fIdx === antall - 1 ? 'disabled' : ''}>↓</button>
                             <button class="knapp mini sekundær" data-action="kopier-felt" data-seksjon="${sIdx}" data-felt="${fIdx}" title="Kopier felt">⧉</button>
@@ -2599,7 +2603,11 @@
                 case 'slett-seksjon':
                     if (bekreftStrukturendring('Slett hele seksjonen?')) slettSeksjon(sIdx);
                     break;
+                case 'sett-inn-seksjon-for': settInnSeksjon(sIdx); break;
+                case 'sett-inn-seksjon-etter': settInnSeksjon(sIdx + 1); break;
                 case 'legg-til-felt': leggTilFelt(sIdx); break;
+                case 'sett-inn-felt-for': settInnFelt(sIdx, fIdx); break;
+                case 'sett-inn-felt-etter': settInnFelt(sIdx, fIdx + 1); break;
                 case 'flytt-felt-opp':
                     if (bekreftStrukturendring('', true)) flyttFelt(sIdx, fIdx, -1);
                     break;
@@ -2944,10 +2952,36 @@
 
         // ---- Seksjon ----
         window.leggTilSeksjon = () => {
-            const nr = (data.Seksjoner?.length || 0) + 1;
             if (!data.Seksjoner) data.Seksjoner = [];
-            data.Seksjoner.push({ Seksjon_nummer: nr, Seksjon_overskrift: '', Felter: [] });
+            settInnSeksjon(data.Seksjoner.length);
+        };
+
+        /**
+         * Sett inn en ny seksjon på en gitt posisjon.
+         *
+         * Som for felt: nederst forskyver ingenting og skal ikke advare. Lenger
+         * opp renummereres seksjonene under, og da flytter svarnøklene seg for
+         * skjemaer som ikke har stabil felt-id.
+         */
+        function settInnSeksjon(pos) {
+            if (!data.Seksjoner) data.Seksjoner = [];
+            if (pos < data.Seksjoner.length && !bekreftStrukturendring('', true)) return;
+
+            // Kollaps-tilstanden er lagret per posisjon, så den må følge med når
+            // seksjonene under forskyves — ellers står feil kort sammenslått.
+            // Kartet er nøklet på objektidentitet, så den nye seksjonen finnes
+            // ikke i det og blir stående ekspandert. Det er nettopp det vi vil.
+            const kart = fangKollapsKart();
+            data.Seksjoner.splice(pos, 0, { Seksjon_nummer: pos + 1, Seksjon_overskrift: '', Felter: [] });
+            renummererSeksjoner();
+            oppdaterKollapsEtterFlytting(kart);
             rendrerSeksjoner();
+            fokuserSeksjon(pos);
+        }
+
+        /** Rull fram den nye seksjonen og sett markøren i overskriften. */
+        function fokuserSeksjon(pos) {
+            const nr = pos + 1;
             const kollapsede = lesSet(nokkelSeksjoner());
             if (kollapsede.delete(nr)) skrivSet(nokkelSeksjoner(), kollapsede);
             const el = document.querySelector(`.seksjon[data-seksjon-nr="${nr}"]`);
@@ -2956,7 +2990,7 @@
                 el.scrollIntoView({ block: 'nearest' });
                 el.querySelector('.seksjon-topp input')?.focus();
             }
-        };
+        }
         window.setSeksjonOverskrift = (sIdx, v) => {
             data.Seksjoner[sIdx].Seksjon_overskrift = v;
         };
@@ -2984,20 +3018,20 @@
             return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
         }
 
-        function leggTilFelt(sIdx) {
-            const seksjon = data.Seksjoner[sIdx];
-            const nr = String((seksjon.Felter?.length || 0) + 1).padStart(2, '0');
-            if (!seksjon.Felter) seksjon.Felter = [];
-            seksjon.Felter.push({
+        function nyttFelt() {
+            return {
                 Id: nyId(),
-                Nummer: nr,
+                Nummer: '01',   // settes riktig av renummererFelter
                 Type: 'Tekst',
                 Tekst: { Verdi: '', Format: 'Tekst' },
                 Obligatorisk: false
-            });
-            rendrerSeksjoner();
-            // Nytt felt havner nederst i seksjonen — rull det fram og sett
-            // markøren i spørsmålsteksten så bruker beholder styringen.
+            };
+        }
+
+        /** Rull fram det nye feltet og sett markøren i spørsmålsteksten. */
+        function fokuserFelt(sIdx, fIdx) {
+            const nr = data.Seksjoner[sIdx].Felter[fIdx]?.Nummer;
+            if (!nr) return;
             const nokkel = `${sIdx + 1}-${nr}`;
             const kollapsede = lesSet(nokkelFelter());
             if (kollapsede.delete(nokkel)) skrivSet(nokkelFelter(), kollapsede);
@@ -3007,6 +3041,34 @@
                 el.scrollIntoView({ block: 'nearest' });
                 el.querySelector('input[type="text"]')?.focus();
             }
+        }
+
+        function leggTilFelt(sIdx) {
+            const seksjon = data.Seksjoner[sIdx];
+            if (!seksjon.Felter) seksjon.Felter = [];
+            settInnFelt(sIdx, seksjon.Felter.length);
+        }
+
+        /**
+         * Sett inn et nytt felt på en gitt posisjon.
+         *
+         * Innsetting nederst forskyver ingenting, og skal derfor ikke advare —
+         * det er samme operasjon som «Legg til felt». Settes feltet inn lenger
+         * opp, flytter `renummererFelter` på numrene under, og eldre skjemaer
+         * uten stabil felt-id kan da vise svarene sine under feil spørsmål.
+         */
+        function settInnFelt(sIdx, pos) {
+            const felter = data.Seksjoner[sIdx].Felter || (data.Seksjoner[sIdx].Felter = []);
+            if (pos < felter.length && !bekreftStrukturendring('', true)) return;
+
+            // Som for seksjoner: kollaps-tilstanden er posisjonsbasert og må
+            // følge feltene som forskyves nedover.
+            const kart = fangKollapsKart();
+            felter.splice(pos, 0, nyttFelt());
+            renummererFelter(sIdx);
+            oppdaterKollapsEtterFlytting(kart);
+            rendrerSeksjoner();
+            fokuserFelt(sIdx, pos);
         }
         window.setFeltTekst = (sIdx, fIdx, v) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];
