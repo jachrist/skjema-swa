@@ -3,12 +3,15 @@
  *
  *   GET    /api/rapporttyper           — mine rapporttyper (filtrert på tilgang)
  *   GET    /api/rapporttyper/:id       — hent én rapporttype (må ha tilgang)
- *   POST   /api/rapporttyper           — opprett/oppdater (admin eller Skjemaskaper)
+ *   POST   /api/rapporttyper           — NY: admin eller Skjemaskaper.
+ *                                        ENDRE: eier eller admin.
  *   DELETE /api/rapporttyper/:id       — slett (eier eller admin)
  *
- * Auth via SWA. Bruker samme tilgangsmodell som skjematyper (Publikum/Eiere),
- * men hele rapport-funksjonaliteten er i tillegg låst til admin/Skjemaskaper
- * mens den er i Utvikling-fase — se `krevSkjemaskaper`.
+ * Auth via SWA. Samme tilgangsmodell som skjematyper: å opprette noe nytt er en
+ * kvalifikasjon og krever rollen «Skjemaskaper», mens det å videreutvikle noe
+ * man eier ikke gjør det. Hvem som ser hva styres av Eiere/Publikum og
+ * fase-filteret — rapporttyper i Utvikling-fase er bare synlige for eiere og
+ * admin, akkurat som skjematyper.
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
@@ -18,16 +21,32 @@ const { filtrerTyperPåTilgang, erSkjemaskaper } = require('../lib/tilgang');
 const hendelser = require('../lib/hendelser-storage');
 
 /**
- * Felles inngangssjekk for alle rapport-endepunkt: innlogget + admin/Skjemaskaper.
- * Returnerer { upn } ved OK, eller { svar } med ferdig HTTP-respons ved avvisning.
+ * Innlogget bruker, eller ferdig 401-svar.
+ *
+ * Hvem som ser hva avgjøres lenger inne, av Eiere/Publikum og fase-filteret —
+ * samme modell som skjematyper. Rapporttyper i Utvikling-fase er dermed
+ * fortsatt bare synlige for eiere og admin.
  */
-async function krevSkjemaskaper(request) {
+function krevInnlogget(request) {
     const upn = hentInnloggetUpn(request);
     if (!upn) return { svar: { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } } };
-    if (!await erSkjemaskaper(upn)) {
-        return { svar: { status: 403, jsonBody: { status: 'avvist', melding: 'Rapporter er foreløpig forbeholdt admin og rollen "Skjemaskaper"' } } };
-    }
     return { upn };
+}
+
+/**
+ * Å OPPRETTE en ny rapporttype krever admin eller rollen «Skjemaskaper».
+ *
+ * Skillet er bevisst: det å lage noe nytt er en kvalifikasjon, mens det å
+ * videreutvikle noe man eier ikke er det. Uten dette skillet måtte enhver
+ * eier også vært skjemaskaper for å rette en skrivefeil i sin egen rapport.
+ * Samme regel gjelder for skjematyper.
+ */
+async function krevSkjemaskaper(upn) {
+    if (await erSkjemaskaper(upn)) return null;
+    return {
+        status: 403,
+        jsonBody: { status: 'avvist', melding: 'Krever admin eller rollen "Skjemaskaper" for å opprette ny rapporttype' }
+    };
 }
 
 async function nesteRapporttypeId() {
@@ -67,7 +86,7 @@ app.http('mineRapporttyper', {
     authLevel: 'anonymous',
     route: 'rapporttyper',
     handler: async (request, context) => {
-        const { upn, svar } = await krevSkjemaskaper(request);
+        const { upn, svar } = krevInnlogget(request);
         if (svar) return svar;
 
         try {
@@ -115,7 +134,7 @@ app.http('hentRapporttype', {
     authLevel: 'anonymous',
     route: 'rapporttyper/{id}',
     handler: async (request, context) => {
-        const { upn, svar } = await krevSkjemaskaper(request);
+        const { upn, svar } = krevInnlogget(request);
         if (svar) return svar;
 
         try {
@@ -145,14 +164,17 @@ app.http('lagreRapporttype', {
     authLevel: 'anonymous',
     route: 'rapporttyper',
     handler: async (request, context) => {
-        const { upn, svar } = await krevSkjemaskaper(request);
+        const { upn, svar } = krevInnlogget(request);
         if (svar) return svar;
 
         try {
             const body = await request.json();
             let erNy = false;
             if (!body.Rapporttype_id) {
-                // Selve opprettelses-kravet (admin/Skjemaskaper) dekkes av krevSkjemaskaper
+                // Ny rapporttype: krever admin eller Skjemaskaper. Oppretteren
+                // legges som eier, og kan deretter videreutvikle den uten rollen.
+                const avvist = await krevSkjemaskaper(upn);
+                if (avvist) return avvist;
                 body.Rapporttype_id = await nesteRapporttypeId();
                 erNy = true;
                 if (!body.Eiere || typeof body.Eiere !== 'object') body.Eiere = { Personer: [], Roller: [], Team: [] };
@@ -196,7 +218,7 @@ app.http('slettRapporttype', {
     authLevel: 'anonymous',
     route: 'rapporttyper/{id}',
     handler: async (request, context) => {
-        const { upn, svar } = await krevSkjemaskaper(request);
+        const { upn, svar } = krevInnlogget(request);
         if (svar) return svar;
 
         try {

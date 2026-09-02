@@ -4,30 +4,44 @@
  *   POST /api/rapport/kjor
  *   Body: { Rapporttype_id, brukerVerdier?: { <filterId>: <verdi> } }
  *
- * Krever admin/Skjemaskaper (rapport-funksjonaliteten er i Utvikling-fase) i
- * tillegg til publikum- eller eier-tilgang på rapporttypen. Motoren opererer på
- * dekrypterte, fullt formaterte skjemaer.
+ * Krever eier- eller publikumstilgang på rapporttypen. Publikum slipper til
+ * først når rapporttypen står i Produksjon. Rollen «Skjemaskaper» gjelder bare
+ * det å opprette nye rapporttyper, ikke å kjøre dem.
+ *
+ * Motoren opererer på dekrypterte, fullt formaterte skjemaer.
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const rapportStorage = require('../lib/rapport-storage');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
-const { filtrerTyperPåTilgang, erSkjemaskaper } = require('../lib/tilgang');
+const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const kryptering = require('../lib/kryptering');
 const nokkelStorage = require('../lib/nokkel-storage');
 const rapportMotor = require('../lib/rapport-motor');
 const { løsRollefiltre } = require('../lib/rapport-rollefilter');
 const hendelser = require('../lib/hendelser-storage');
 
-async function harTilgang(rapporttype, upn) {
-    if (erAdmin(upn)) return { ok: true, erEier: true };
+/**
+ * Hvem kan kjøre denne rapporten?
+ *
+ * Eiere og admin alltid. Publikum bare når rapporttypen står i Produksjon —
+ * samme regel som lista bruker. Uten fase-sjekken her ville en rapport under
+ * utvikling vært skjult i oversikten, men fullt kjørbar for den som kjente
+ * ID-en.
+ */
+async function harTilgang(rapporttype, upn, deps = {}) {
+    const admin = deps.erAdmin || erAdmin;
+    const filtrer = deps.filtrerTyperPåTilgang || filtrerTyperPåTilgang;
+    if (admin(upn)) return { ok: true, erEier: true };
     const [eier, publikum] = await Promise.all([
-        filtrerTyperPåTilgang([rapporttype], upn, 'Eiere'),
-        filtrerTyperPåTilgang([rapporttype], upn, 'Publikum')
+        filtrer([rapporttype], upn, 'Eiere'),
+        filtrer([rapporttype], upn, 'Publikum')
     ]);
     if (eier.length > 0) return { ok: true, erEier: true };
-    if (publikum.length > 0) return { ok: true, erEier: false };
+
+    const fase = rapporttype?.JSON?.Fase || 'Produksjon';
+    if (publikum.length > 0 && fase === 'Produksjon') return { ok: true, erEier: false };
     return { ok: false };
 }
 
@@ -38,9 +52,9 @@ app.http('kjorRapport', {
     handler: async (request, context) => {
         const upn = hentInnloggetUpn(request);
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-        if (!await erSkjemaskaper(upn)) {
-            return { status: 403, jsonBody: { status: 'avvist', melding: 'Rapporter er foreløpig forbeholdt admin og rollen "Skjemaskaper"' } };
-        }
+        // Å kjøre en rapport styres av Eiere/Publikum på rapporttypen, ikke av
+        // rollen Skjemaskaper — den gjelder bare det å opprette nye. Sjekken
+        // ligger i harTilgang() nedenfor.
 
         try {
             const body = await request.json();
@@ -121,3 +135,6 @@ app.http('kjorRapport', {
         }
     }
 });
+
+// Eksporteres for test — tilgangsregelen er verdt å verifisere for seg.
+module.exports = { _harTilgang: harTilgang };

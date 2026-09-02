@@ -453,11 +453,16 @@
                     erAdminBruker = true;
                     document.getElementById('knapp-admin-panel').style.display = 'inline-flex';
                 }
+                // «Ny skjematype» og «Ny rapport» krever rollen Skjemaskaper —
+                // det å lage noe nytt er en kvalifikasjon.
                 if (meg.kanOppretteSkjematype) {
                     kanLageRapport = true;
                     document.getElementById('knapp-ny-skjematype').style.display = 'inline-flex';
-                    document.getElementById('knapp-rapporter').style.display = 'inline-flex';
                 }
+                // Selve rapportoversikten er åpen for alle innloggede. Lista
+                // filtrerer på eier og publikum, og viser rapporter under
+                // utvikling bare til eierne — så knappen skjuler ingenting.
+                document.getElementById('knapp-rapporter').style.display = 'inline-flex';
             } catch (_) { /* ikke kritisk */ }
 
             // Nullpunktstatus hentes bare for dem merkingen gjelder, og aldri
