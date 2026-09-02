@@ -46,6 +46,29 @@ gruppe blir unntaket én operasjon i stedet for femti, og opprydding likeså.
 Brukerne får ingen lisens og ingen roller i tenanten. De skal befolke roller
 og team-cachen i skjemaløsningen, ikke brukes i Teams eller e-post.
 
+## De fem å registrere MFA for
+
+De 50 brukerne finnes for å **befolke roller og team-cachen**. Det er data, og
+leses fra tabellene våre — ikke fra en innlogget sesjon. De aller fleste trenger
+derfor aldri å logge inn.
+
+Skal du se løsningen *som* en bestemt bruker, holder det med disse fem. De er
+valgt for å dekke hver sin tilgangssituasjon:
+
+| Bruker | Navn | Dekker |
+|---|---|---|
+| `hjoergensen@jcconsulting.no` | Henrik Jørgensen | **Sjef** (Cyberingeniørskolen) + **Skjemaskaper** — rolletilgang uten teammedlemskap. Skjemaskaper gir også rapporter og AI-import |
+| `blund@jcconsulting.no` | Berit Lund | **To roller** — administrativ godkjenner (Fagstab) og personellansvarlig. Tester overlapp |
+| `oloeken@jcconsulting.no` | Øyvind Løken | **Rolle og team** — administrativ godkjenner (Fellesadministrasjonen), medlem i Fagstab utdanning |
+| `afoss@jcconsulting.no` | Anders Foss | **Bare team** — Anskaffelser og Personell og HR, ingen roller |
+| `msolberg@jcconsulting.no` | Maja Solberg | **Verken rolle eller team** — skal se minst mulig. Den beste testen på at tilgangskontrollen faktisk stenger |
+
+Microsoft Authenticator tar mange kontoer i samme app, så alle fem kan
+registreres på én telefon.
+
+Den siste er lett å hoppe over, men er den viktigste: det er enklere å teste at
+noe vises enn at noe ikke vises.
+
 ## Team
 
 `team.json` er allerede i det formatet cache-endepunktet forventer, så den kan
