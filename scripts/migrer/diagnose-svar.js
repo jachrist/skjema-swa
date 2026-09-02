@@ -13,17 +13,26 @@
  * Det skriver ALDRI ut svarverdier — bare nøkler, typer og antall. Da kan
  * utskriften limes inn i en sak uten å ta med persondata.
  *
+ * Tabellen med utfylte skjemaer heter «Skjemaresultater» i legacy og «Skjemaer»
+ * i SWA — migreringen døper den om. Skriptet prøver begge, så det kan peke på
+ * en legacy-konto og en SWA-konto uten at man trenger å vite hvilken man har.
+ * Definisjonene heter «Skjemadefinisjoner» begge steder.
+ *
  * Bruk:
  *   node diagnose-svar.js --conn "<connection string>" --type 113
  *   node diagnose-svar.js --conn "<...>" --type 113 --skjema 42
  *   node diagnose-svar.js --conn "<...>" --alle          # alle typer, sammendrag
+ *   node diagnose-svar.js --conn "<...>" --alle --tabell Skjemaresultater
  *
  * Connection string kan også ligge i STORAGE_CONN.
  */
-const { TableClient, odata } = require('@azure/data-tables');
+const { TableClient, TableServiceClient, odata } = require('@azure/data-tables');
+
+/** Legacy først eller SWA først spiller ingen rolle — vi tar den som finnes. */
+const SKJEMATABELLER = ['Skjemaer', 'Skjemaresultater'];
 
 function parseArgs(argv) {
-    const a = { conn: process.env.STORAGE_CONN || '', type: '', skjema: '', alle: false, maks: 200 };
+    const a = { conn: process.env.STORAGE_CONN || '', type: '', skjema: '', alle: false, maks: 200, tabell: '' };
     for (let i = 2; i < argv.length; i++) {
         const v = argv[i + 1];
         switch (argv[i]) {
@@ -31,6 +40,7 @@ function parseArgs(argv) {
             case '--type': a.type = String(v); i++; break;
             case '--skjema': a.skjema = String(v); i++; break;
             case '--maks': a.maks = parseInt(v, 10) || 200; i++; break;
+            case '--tabell': a.tabell = String(v); i++; break;
             case '--alle': a.alle = true; break;
             case '--hjelp': case '-h': a.hjelp = true; break;
         }
@@ -129,6 +139,51 @@ function analyser(skjema, def) {
     };
 }
 
+/** Navnene på tabellene i kontoen — brukes bare for å gi en nyttig feilmelding. */
+async function listTabeller(conn) {
+    try {
+        const svc = TableServiceClient.fromConnectionString(conn);
+        const ut = [];
+        for await (const t of svc.listTables()) ut.push(t.name);
+        return ut.sort();
+    } catch (_) {
+        return null;
+    }
+}
+
+/**
+ * Finn tabellen med utfylte skjemaer. En tabell kan finnes og likevel være tom
+ * — da er den ikke den vi leter etter, så vi krever at den har minst én rad.
+ */
+async function finnSkjemaTabell(conn, overstyrt) {
+    const kandidater = overstyrt ? [overstyrt] : SKJEMATABELLER;
+    let sisteFeil = null;
+    let tomTreff = null;
+
+    for (const navn of kandidater) {
+        const t = TableClient.fromConnectionString(conn, navn);
+        try {
+            // Vi bryter etter første rad, så dette henter aldri mer enn én side.
+            for await (const _ of t.listEntities()) {
+                return { klient: t, navn };
+            }
+            tomTreff = tomTreff || navn;   // finnes, men tom
+        } catch (e) {
+            sisteFeil = e;
+        }
+    }
+
+    if (tomTreff) return { klient: TableClient.fromConnectionString(conn, tomTreff), navn: tomTreff, tom: true };
+
+    const finnes = await listTabeller(conn);
+    const prøvd = kandidater.join(' og ');
+    let melding = `Fant ingen skjematabell (prøvde ${prøvd}).`;
+    if (finnes) melding += `\nTabeller i kontoen: ${finnes.join(', ') || '(ingen)'}`;
+    else if (sisteFeil) melding += `\nSiste feil: ${sisteFeil.message}`;
+    melding += `\nOverstyr med --tabell <navn>.`;
+    throw new Error(melding);
+}
+
 async function hentDefinisjon(conn, skjematypeId, cache) {
     if (cache.has(skjematypeId)) return cache.get(skjematypeId);
     const t = TableClient.fromConnectionString(conn, 'Skjemadefinisjoner');
@@ -157,13 +212,19 @@ Bruk:
   node diagnose-svar.js --conn "<connection string>" --type 113
   node diagnose-svar.js --conn "<...>" --type 113 --skjema 42
   node diagnose-svar.js --conn "<...>" --alle
+  node diagnose-svar.js --conn "<...>" --alle --tabell Skjemaresultater
+
+Tabellen finnes som «Skjemaer» (SWA) eller «Skjemaresultater» (legacy).
+Skriptet prøver begge; --tabell overstyrer.
 
 Skriver aldri ut svarverdier — bare nøkler, typer og antall.
 `);
         process.exit(args.hjelp ? 0 : 1);
     }
 
-    const skjemaer = TableClient.fromConnectionString(args.conn, 'Skjemaer');
+    const funnet = await finnSkjemaTabell(args.conn, args.tabell);
+    const skjemaer = funnet.klient;
+    console.log(`\nLeser fra tabellen «${funnet.navn}»${funnet.tom ? ' (som er tom)' : ''}.`);
     const defCache = new Map();
 
     const filter = args.skjema
