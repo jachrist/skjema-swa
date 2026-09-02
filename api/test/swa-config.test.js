@@ -84,6 +84,19 @@ for (const fil of filer) {
         sjekk(`${fil}: cron-endepunkter er anonyme`, kreves.filter(r => !anonyme.has(r)), []);
     }
 
+    // ---------- landingssiden ----------
+    {
+        // index.html er utfyllingssiden og krever en skjematype_id i URL-en.
+        // Sender vi «/» eller en ukjent sti dit, moetes brukeren av «Mangler
+        // skjematype_id» rett etter innlogging. Skjemavelgeren er landingssiden.
+        const rot = (j.routes || []).find(r => r.route === '/');
+        sjekk(`${fil}: / peker på skjemavelgeren`, rot?.rewrite, '/velgskjematype.html');
+        sjekk(`${fil}: ukjent sti peker på skjemavelgeren`,
+            j.navigationFallback?.rewrite, '/velgskjematype.html');
+        // Rota må ligge før eventuelle bredere treff — SWA tar det første.
+        sjekk(`${fil}: /-ruta ligger først`, (j.routes || [])[0]?.route, '/');
+    }
+
     // ---------- auth-blokka ----------
     {
         const reg = j.auth?.identityProviders?.azureActiveDirectory?.registration;

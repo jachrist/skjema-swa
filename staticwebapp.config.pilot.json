@@ -1,6 +1,10 @@
 {
     "routes": [
         {
+            "route": "/",
+            "rewrite": "/velgskjematype.html"
+        },
+        {
             "route": "/js/*",
             "headers": {
                 "Cache-Control": "no-cache"
@@ -172,7 +176,7 @@
         }
     ],
     "navigationFallback": {
-        "rewrite": "/index.html",
+        "rewrite": "/velgskjematype.html",
         "exclude": [
             "/api/*",
             "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"

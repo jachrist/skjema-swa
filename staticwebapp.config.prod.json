@@ -2,6 +2,10 @@
     "_kommentar": "Prod-tenant. Bruker sertifikat-basert AAD-auth via Key Vault-referanse. Fyll ut PROD_TENANT_ID, PROD_KV_NAME og CERT_NAME før første deploy.",
     "routes": [
         {
+            "route": "/",
+            "rewrite": "/velgskjematype.html"
+        },
+        {
             "route": "/js/*",
             "headers": {
                 "Cache-Control": "no-cache"
@@ -179,7 +183,7 @@
         }
     ],
     "navigationFallback": {
-        "rewrite": "/index.html",
+        "rewrite": "/velgskjematype.html",
         "exclude": [
             "/api/*",
             "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"
