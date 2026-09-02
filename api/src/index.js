@@ -6,6 +6,8 @@ require('./functions/ping');
 require('./functions/hello-storage');
 require('./functions/whoami');
 require('./functions/skjematyper');
+require('./functions/roller-swa');
+require('./functions/tilgang-avvist');
 require('./functions/skjemaer');
 require('./functions/vedlegg');
 require('./functions/seed-eksempel');

@@ -102,6 +102,37 @@ function settInn(merke) {
     vert.insertBefore(merke, vert.firstChild);
 }
 
+/**
+ * Miljømerke — vises bare når dette IKKE er produksjon.
+ *
+ * Pilot og prod ser identiske ut, og forveksling går begge veier: man tester
+ * på det man tror er pilot, eller demonstrerer på det man tror er prod. Et
+ * merke som bare står i produksjon ville vært lett å overse; dette står
+ * derimot bare der man IKKE skal gjøre skade, som er den nyttige retningen.
+ *
+ * Verdien kommer fra frontend/js/config.js, som genereres av build-config.js
+ * per miljø.
+ */
+async function miljomerke() {
+    let miljo = '';
+    try {
+        const { CONFIG } = await import('./config.js');
+        miljo = String(CONFIG?.MILJO || '');
+    } catch (_) {
+        return null;   // uten config.js sier vi ingenting
+    }
+    if (!miljo || /^prod/i.test(miljo)) return null;
+
+    const el = document.createElement('span');
+    el.className = 'miljomerke';
+    el.textContent = miljo.toUpperCase();
+    el.title = `Dette er ${miljo}-miljøet, ikke produksjon`;
+    el.style.cssText = 'flex: 0 0 auto; padding: 3px 10px; border-radius: 999px; ' +
+        'background: #ff9500; color: #1c1c1e; font-size: 11px; font-weight: 700; ' +
+        'letter-spacing: 0.06em; white-space: nowrap;';
+    return el;
+}
+
 // Tekstvarianten settes inn med en gang, og byttes ut med logoen når
 // innstillingene er lastet. Da står siden aldri umerket mens kallet går —
 // heller ikke om /api/systemlogo henger eller feiler.
@@ -111,3 +142,4 @@ boks.style.cssText = 'display: flex; align-items: center; gap: 10px; flex: 0 0 a
 fyllMerke(boks, STANDARD);
 settInn(boks);
 hentMerke().then(m => fyllMerke(boks, m));
+miljomerke().then(el => { if (el) boks.appendChild(el); });

@@ -143,6 +143,12 @@
             ]
         },
         {
+            "route": "/api/roller-swa",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": [
                 "authenticated"
@@ -196,7 +202,8 @@
                     ]
                 }
             }
-        }
+        },
+        "rolesSource": "/api/roller-swa"
     },
     "responseOverrides": {
         "401": {

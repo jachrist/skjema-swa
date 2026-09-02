@@ -147,6 +147,16 @@
         } catch (_) {
             // Uten /.auth/me viser vi bare den generelle teksten.
         }
+
+        // Logg forsøket. SWA blokkerer før forespørselen når API-et vårt, så
+        // dette er den eneste måten et avvist forsøk kan bli synlig i
+        // Hendelser. Fire-and-forget: siden skal vises uansett, og en bruker
+        // som havner her ved et uhell skal ikke møte en feilmelding i tillegg.
+        fetch('/api/tilgang-avvist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sti: location.pathname + location.search })
+        }).catch(() => { });
     </script>
     <script type="module" src="/js/systemtopp.js"></script>
 </body>
