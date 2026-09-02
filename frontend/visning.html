@@ -215,7 +215,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggReadonlyVisning, escapeHtml, renderTekstInline } from './js/felt-render.js';
+        import { byggReadonlyVisning, escapeHtml, renderTekstInline, svarNokkel } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
@@ -282,7 +282,7 @@
             const tekstMap = new Map();
             for (const seksjon of (skjema.Seksjoner || [])) {
                 for (const felt of (seksjon.Felter || [])) {
-                    const key = `${seksjon.Nummer}-${felt.Nummer}`;
+                    const key = svarNokkel(seksjon, felt);
                     svarMap.set(key, felt.Svar || []);
                     // Lagret visningstekst — klassenavn og personnavn i stedet for koder
                     if (Array.isArray(felt.SvarTekst)) tekstMap.set(key, felt.SvarTekst);
@@ -301,7 +301,7 @@
                     Id: f.Id,
                     Nummer: f.Nummer,
                     Type: f.Type,
-                    Svar: svarMap.get(`${sek.Seksjon_nummer}-${f.Nummer}`) || []
+                    Svar: svarMap.get(svarNokkel(sek, f)) || []
                 }))
             }));
 
@@ -332,7 +332,7 @@
                     // Hopp over felt som ikke skal vises
                     if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
-                    const key = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    const key = svarNokkel(seksjon, felt);
                     const svar = svarMap.get(key) || [];
                     div.appendChild(byggFelt(felt, visningsNr, svar, skjema.Skjematype_id, skjema.Skjema_id, tekstMap.get(key) || null));
                 }

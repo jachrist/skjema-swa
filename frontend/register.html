@@ -421,7 +421,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline } from './js/felt-render.js';
+        import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline, svarNokkel } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
@@ -649,7 +649,7 @@
             const tekstMap = new Map();
             for (const seksjon of (s.Seksjoner || [])) {
                 for (const felt of (seksjon.Felter || [])) {
-                    const n = `${seksjon.Nummer}-${felt.Nummer}`;
+                    const n = svarNokkel(seksjon, felt);
                     svarMap.set(n, felt.Svar || []);
                     // Lagret visningstekst — klassenavn og personnavn i stedet for koder
                     if (Array.isArray(felt.SvarTekst)) tekstMap.set(n, felt.SvarTekst);
@@ -697,7 +697,7 @@
                 Nummer: sek.Seksjon_nummer,
                 Felter: (sek.Felter || []).map(f => ({
                     Id: f.Id, Nummer: f.Nummer, Type: f.Type,
-                    Svar: svarMap.get(`${sek.Seksjon_nummer}-${f.Nummer}`) || []
+                    Svar: svarMap.get(svarNokkel(sek, f)) || []
                 }))
             }));
 
@@ -727,7 +727,7 @@
                 for (const felt of (seksjon.Felter || [])) {
                     if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
-                    const n = `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+                    const n = svarNokkel(seksjon, felt);
                     sDiv.appendChild(byggFeltRad(felt, seksjon.Seksjon_nummer, visningsNr,
                         svarMap.get(n) || [], state.redigerer, tekstMap.get(n) || null));
                 }

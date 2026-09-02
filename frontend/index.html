@@ -368,7 +368,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline, svarNokkel } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
 
@@ -629,7 +629,7 @@
             if (!eksisterendeSkjema?.Seksjoner) return map;
             for (const seksjon of eksisterendeSkjema.Seksjoner) {
                 for (const felt of (seksjon.Felter || [])) {
-                    const key = `${seksjon.Nummer}-${padFelt(felt.Nummer)}`;
+                    const key = svarNokkel(seksjon, felt);
                     map.set(key, felt.Svar || []);
                 }
             }
@@ -894,7 +894,7 @@
                 }
             }
 
-            const initialSvar = svarMap.get(`${seksjonNr}-${padFelt(felt.Nummer)}`) || [];
+            const initialSvar = svarMap.get(svarNokkel(seksjonNr, felt)) || [];
             div.appendChild(byggEditWidget(felt, feltId, initialSvar));
 
             const feil = document.createElement('div');

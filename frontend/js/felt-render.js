@@ -1309,6 +1309,34 @@ function _erGyldigKontonummer(s) {
     return k === parseInt(n[10], 10);
 }
 
+// ==================== SVAR-OPPSLAG ====================
+
+/**
+ * Nøkkel for å koble et lagret svar til feltet i definisjonen: «seksjon-felt».
+ *
+ * Seksjonsnummeret heter to ting. Skjemaer lagret av denne appen har begge —
+ * `samleSeksjonerFraDom` nedenfor skriver `Seksjon_nummer` og `Nummer` med
+ * samme verdi. Skjemadefinisjoner og skjemaer fra den opprinnelige Function
+ * App-versjonen har bare `Seksjon_nummer`.
+ *
+ * Leser man bare `Nummer`, blir nøkkelen «undefined-01» for de sistnevnte.
+ * Da bommer hvert eneste oppslag, og skjemaet viser «(ikke besvart)» på alle
+ * felt selv om svarene ligger urørt i rada. Det er ikke en delvis feil som
+ * lar seg oppdage på ett felt — det ser ut som tapte data.
+ *
+ * Feltnummeret paddes alltid, slik at «1» og «01» er samme nøkkel uansett
+ * hvilken side den kommer fra.
+ *
+ * Tar både objekter og rene numre, siden kallerne har det ene eller det andre.
+ */
+export function svarNokkel(seksjon, felt) {
+    const sek = (seksjon && typeof seksjon === 'object')
+        ? (seksjon.Nummer ?? seksjon.Seksjon_nummer)
+        : seksjon;
+    const nr = (felt && typeof felt === 'object') ? felt.Nummer : felt;
+    return `${sek}-${String(nr).padStart(2, '0')}`;
+}
+
 // ==================== SEKSJONER FRA DOM ====================
 
 /**
