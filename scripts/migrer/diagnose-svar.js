@@ -95,6 +95,65 @@ function tellFulltFormat(skjema) {
     return { felt, besvart };
 }
 
+/** Definisjonens felt slått opp på Id, og på posisjon. */
+function definisjonsIndeks(def) {
+    const påId = new Map();
+    const påPosisjon = new Map();
+    for (const seksjon of (def?.Seksjoner || [])) {
+        const sekNr = seksjon.Nummer ?? seksjon.Seksjon_nummer;
+        for (const felt of (seksjon.Felter || [])) {
+            if (felt.Type === 'Informasjon') continue;
+            const pos = `${sekNr}-${String(felt.Nummer).padStart(2, '0')}`;
+            påPosisjon.set(pos, felt);
+            if (felt.Id) påId.set(felt.Id, pos);
+        }
+    }
+    return { påId, påPosisjon };
+}
+
+/**
+ * Måler om posisjonsnøkkelen fortsatt peker på det feltet svaret hører til.
+ *
+ * `renummererFelter` i editoren tildeler Nummer etter posisjon. Slettes et felt
+ * midt i en seksjon, forskyves alle under, og gamle svar peker på nabospørsmålet
+ * — samme spørsmål, feil svar, uten noe synlig varsel. Feltets Id endrer seg
+ * derimot ikke, så avviket mellom de to er selve målingen.
+ *
+ * Rapporterer også hvor mange lagrede felt som i det hele tatt HAR en Id.
+ * Uten Id kan et forskjøvet svar ikke kobles tilbake, og da er en Id-basert
+ * løsning bare noe som hjelper framover, ikke bakover.
+ */
+function målDrift(skjema, def) {
+    const { påId, påPosisjon } = definisjonsIndeks(def);
+    let besvart = 0, medId = 0, forskjøvet = 0, borteFraDef = 0, gjenkoblbar = 0;
+
+    for (const seksjon of (skjema.Seksjoner || [])) {
+        const sekNr = seksjon.Nummer ?? seksjon.Seksjon_nummer;
+        for (const f of (seksjon.Felter || [])) {
+            if (f.Type === 'Informasjon') continue;
+            const harSvar = Array.isArray(f.Svar) && f.Svar.length > 0 && f.Svar[0] !== '';
+            if (!harSvar) continue;
+            besvart++;
+            if (!f.Id) continue;
+            medId++;
+
+            const posNå = `${sekNr}-${String(f.Nummer).padStart(2, '0')}`;
+            const posIDef = påId.get(f.Id);
+            if (posIDef === undefined) {
+                // Feltet finnes ikke lenger i definisjonen — svaret hører til et
+                // spørsmål som er slettet.
+                borteFraDef++;
+            } else if (posIDef !== posNå) {
+                forskjøvet++;
+                gjenkoblbar++;
+            } else if (!påPosisjon.has(posNå)) {
+                borteFraDef++;
+            }
+        }
+    }
+    return { besvart, medId, utenId: besvart - medId, forskjøvet, borteFraDef, gjenkoblbar };
+}
+
 function analyser(skjema, def) {
     if (!skjema) return { verdikt: 'rad uten gyldig JSON' };
 
@@ -106,9 +165,17 @@ function analyser(skjema, def) {
                 detalj: `mangler både Svar-array og Seksjoner — nøkler i rada: ${Object.keys(skjema).slice(0, 12).join(', ')}`
             };
         }
+        const drift = def ? målDrift(skjema, def) : null;
+        let verdikt;
+        if (t.besvart === 0) verdikt = 'fullt format, MEN alle felt tomme';
+        else if (drift && drift.forskjøvet > 0) verdikt = 'fullt format, svar FORSKJØVET av omnummerering';
+        else if (drift && drift.borteFraDef > 0) verdikt = 'fullt format, svar på felt som er slettet fra definisjonen';
+        else verdikt = 'fullt format, svar til stede';
+
         return {
-            verdikt: t.besvart > 0 ? 'fullt format, svar til stede' : 'fullt format, MEN alle felt tomme',
-            detalj: `${t.besvart}/${t.felt} felt besvart`
+            verdikt,
+            detalj: `${t.besvart}/${t.felt} felt besvart`,
+            drift
         };
     }
 
@@ -260,6 +327,21 @@ Skriver aldri ut svarverdier — bare nøkler, typer og antall.
         }
         if (f.bom?.length) console.log(`   svarnøkler uten treff: ${f.bom.join(', ')}`);
         if (f.eksempelDefNokler?.length) console.log(`   definisjonens nøkler:  ${f.eksempelDefNokler.join(', ')}`);
+
+        // Summer Id-dekning og drift over hele gruppa, ikke bare eksempelrada.
+        const meddrift = rader.filter(r => r.drift);
+        if (meddrift.length) {
+            const sum = meddrift.reduce((a, r) => ({
+                besvart: a.besvart + r.drift.besvart,
+                medId: a.medId + r.drift.medId,
+                utenId: a.utenId + r.drift.utenId,
+                forskjøvet: a.forskjøvet + r.drift.forskjøvet,
+                borteFraDef: a.borteFraDef + r.drift.borteFraDef,
+                gjenkoblbar: a.gjenkoblbar + r.drift.gjenkoblbar
+            }), { besvart: 0, medId: 0, utenId: 0, forskjøvet: 0, borteFraDef: 0, gjenkoblbar: 0 });
+            console.log(`   svar totalt: ${sum.besvart}  |  med Id: ${sum.medId}  |  uten Id: ${sum.utenId}`);
+            console.log(`   forskjøvet: ${sum.forskjøvet}  |  felt slettet fra def: ${sum.borteFraDef}  |  gjenkoblbare via Id: ${sum.gjenkoblbar}`);
+        }
         console.log('');
     }
 
