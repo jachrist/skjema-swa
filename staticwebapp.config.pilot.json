@@ -129,8 +129,17 @@
         "identityProviders": {
             "azureActiveDirectory": {
                 "registration": {
-                    "openIdIssuer": "https://login.microsoftonline.com/v2.0/e4fcc393-7190-4d3d-a38d-fa6429f870f3",
-                    "clientIdSettingName": "ad0eed27-4fd3-48cf-9b78-80637eb8d2f2",
+                    "_kommentar": [
+                        "openIdIssuer er tenant FOER /v2.0. Sto segmentene omvendt, og",
+                        "clientIdSettingName inneholdt selve client-id-en i stedet for navnet",
+                        "paa app-settingen som holder den. Begge deler gjorde blokka ugyldig,",
+                        "og SWA falt tilbake til sin innebygde AAD-provider UTEN aa feile:",
+                        "innlogging gikk mot /common/ med Microsofts felles app-registrering,",
+                        "som godtar konti fra hvilken som helst tenant.",
+                        "Formen her skal matche staticwebapp.config.prod.json og docs/DEPLOY.md."
+                    ],
+                    "openIdIssuer": "https://login.microsoftonline.com/e4fcc393-7190-4d3d-a38d-fa6429f870f3/v2.0",
+                    "clientIdSettingName": "AAD_CLIENT_ID",
                     "clientSecretSettingName": "AAD_CLIENT_SECRET"
                 },
                 "login": {
