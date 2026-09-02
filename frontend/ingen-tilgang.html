@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ingen tilgang</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <style>
+        :root {
+            --bg-page: #e8edf2;
+            --bg-container: rgba(255, 255, 255, 0.85);
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --accent: #0a84ff;
+            --accent-light: rgba(10, 132, 255, 0.12);
+            --warning: #ff9500;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
+            --radius-md: 12px;
+            --radius-xl: 24px;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-container: rgba(30, 35, 45, 0.85);
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 24px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .container {
+            max-width: 560px;
+            margin: 12vh auto 0;
+            background: var(--bg-container);
+            backdrop-filter: blur(20px);
+            padding: 36px 40px;
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow);
+            border: 1px solid var(--border-color);
+            text-align: center;
+        }
+        .merke {
+            font-size: 40px;
+            line-height: 1;
+            margin-bottom: 14px;
+        }
+        h1 {
+            font-size: 1.5em;
+            font-weight: 700;
+            margin: 0 0 10px;
+            letter-spacing: -0.02em;
+        }
+        p {
+            color: var(--text-secondary);
+            font-size: 14px;
+            line-height: 1.55;
+            margin: 0 0 14px;
+        }
+        .bruker {
+            display: inline-block;
+            margin-top: 4px;
+            padding: 5px 12px;
+            background: var(--accent-light);
+            border-radius: 999px;
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+        .knapperad {
+            margin-top: 26px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .knapp {
+            display: inline-block;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: var(--radius-md);
+            text-decoration: none;
+            border: 1px solid var(--accent);
+        }
+        .knapp.primær { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .knapp.sekundær { background: transparent; color: var(--accent); }
+        .knapp.sekundær:hover { background: var(--accent-light); }
+        .fotnote {
+            margin-top: 22px;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="merke">🔒</div>
+        <h1>Ingen tilgang</h1>
+
+        <!--
+            Bevisst ordknapp. Sidene som havner her er rollestyrte, og den som
+            skrev inn adressen direkte prøver som regel noe. Vi bekrefter ikke
+            hva som ligger bak, hvilken rolle som kreves, eller om siden i det
+            hele tatt finnes — bare at denne brukeren ikke slipper inn.
+        -->
+        <p>Du er innlogget, men kontoen din har ikke tilgang til denne siden.</p>
+        <p id="bruker-rad" style="display: none;">
+            <span class="bruker" id="bruker"></span>
+        </p>
+
+        <div class="knapperad">
+            <a href="/velgskjematype.html" class="knapp primær">Til skjemaoversikten</a>
+            <a href="/.auth/logout" class="knapp sekundær">Logg ut</a>
+        </div>
+
+        <div class="fotnote">
+            Mener du at dette er feil, ta kontakt med den som eier skjematypen
+            eller med systemansvarlig.
+        </div>
+    </div>
+
+    <script type="module">
+        // Viser hvem man er innlogget som. Det er det nyttigste enkeltsvaret
+        // her: den vanligste ekte aarsaken er at man er logget inn med feil
+        // konto, og da ser man det med en gang.
+        try {
+            const r = await fetch('/.auth/me');
+            const d = await r.json();
+            const upn = d?.clientPrincipal?.userDetails;
+            if (upn) {
+                document.getElementById('bruker').textContent = 'Innlogget som ' + upn;
+                document.getElementById('bruker-rad').style.display = '';
+            }
+        } catch (_) {
+            // Uten /.auth/me viser vi bare den generelle teksten.
+        }
+    </script>
+    <script type="module" src="/js/systemtopp.js"></script>
+</body>
+</html>

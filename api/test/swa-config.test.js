@@ -97,6 +97,32 @@ for (const fil of filer) {
         sjekk(`${fil}: /-ruta ligger først`, (j.routes || [])[0]?.route, '/');
     }
 
+    // ---------- rewrite-mål må finnes ----------
+    {
+        // En skrivefeil i en rewrite gir en tom side, ikke en feilmelding.
+        // Særlig ille for 403-siden: da ser en avvist bruker ingenting, og vi
+        // ville trodd at overriden bare ikke virket.
+        const mal = [
+            ...(j.routes || []).map(r => r.rewrite),
+            j.navigationFallback?.rewrite,
+            ...Object.values(j.responseOverrides || {}).map(o => o.rewrite)
+        ].filter(Boolean).filter(m => !m.includes('*'));
+
+        const mangler = [...new Set(mal)]
+            .filter(m => !fs.existsSync(path.join(rot, 'frontend', m.replace(/^\//, ''))));
+        sjekk(`${fil}: alle rewrite-mål finnes i frontend/`, mangler, []);
+    }
+
+    // ---------- avviste brukere får en forklaring ----------
+    {
+        sjekk(`${fil}: 403 peker på ingen-tilgang-siden`,
+            j.responseOverrides?.['403']?.rewrite, '/ingen-tilgang.html');
+        // 401 skal fortsatt sende til innlogging — det er den som gjoer at en
+        // utlogget bruker havner hos Microsoft i stedet for paa en feilside.
+        sjekk(`${fil}: 401 sender til innlogging`,
+            (j.responseOverrides?.['401']?.redirect || '').startsWith('/.auth/login/aad'), true);
+    }
+
     // ---------- auth-blokka ----------
     {
         const reg = j.auth?.identityProviders?.azureActiveDirectory?.registration;
