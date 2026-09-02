@@ -132,6 +132,19 @@
                     "openIdIssuer": "https://login.microsoftonline.com/v2.0/e4fcc393-7190-4d3d-a38d-fa6429f870f3",
                     "clientIdSettingName": "ad0eed27-4fd3-48cf-9b78-80637eb8d2f2",
                     "clientSecretSettingName": "AAD_CLIENT_SECRET"
+                },
+                "login": {
+                    "_kommentar": [
+                        "prompt=select_account tvinger Entra til aa vise kontovelgeren i stedet",
+                        "for aa gjenbruke en eksisterende sesjon i stillhet.",
+                        "Uten den logges man automatisk inn som Windows-brukeren via Primary",
+                        "Refresh Token. Det skjer i Entra, foer nettleseren er inne i bildet,",
+                        "saa privat vindu, hard refresh og /.auth/logout hjelper ikke.",
+                        "Kun pilot: i prod ville dette gitt alle et ekstra klikk hver gang."
+                    ],
+                    "loginParameters": [
+                        "prompt=select_account"
+                    ]
                 }
             }
         }
