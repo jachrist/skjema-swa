@@ -368,7 +368,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline, svarNokkel } from './js/felt-render.js';
+        import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
 
@@ -528,7 +528,7 @@
 
                 // Prefilled kan treffe to slags felt:
                 //  1) Input-felt (Tekst, Skala, Flervalg osv.) — legges i pseudo-
-                //     eksisterendeSkjema så svarMap plukker det opp, og feltet
+                //     eksisterendeSkjema så oppslaget plukker det opp, og feltet
                 //     låses i lasUtsendingFelter.
                 //  2) Informasjon-felt — ingen input; vi overstyrer Tekst.Verdi
                 //     direkte i skjematypen så info-boksen viser dynamisk tekst
@@ -622,23 +622,13 @@
         // Normaliser feltnummer til padded to-sifret streng ("1" → "01", "01" → "01")
         function padFelt(n) { return String(Number(n) || 0).padStart(2, '0'); }
 
-        // Bygg lookup fra eksisterende svar (ved fortsett): "sek-felt" -> array.
-        // Nøkkelen er alltid padded feltnummer så oppslag er trygt uansett kilde-format.
-        function bySvarMap() {
-            const map = new Map();
-            if (!eksisterendeSkjema?.Seksjoner) return map;
-            for (const seksjon of eksisterendeSkjema.Seksjoner) {
-                for (const felt of (seksjon.Felter || [])) {
-                    const key = svarNokkel(seksjon, felt);
-                    map.set(key, felt.Svar || []);
-                }
-            }
-            return map;
-        }
-        let svarMap = new Map();
+        // Oppslag i eksisterende svar (ved fortsett). Feltets Id går foran
+        // posisjon: her fylles svarene inn i widgetene, så en feilkobling
+        // ville blitt lagret tilbake som brukerens eget svar.
+        let oppslag = byggSvarOppslag(null);
 
         function rendrer() {
-            svarMap = bySvarMap();
+            oppslag = byggSvarOppslag(eksisterendeSkjema?.Seksjoner);
             document.getElementById('tittel').textContent = skjematype.Skjema_navn || 'Skjema';
             document.title = skjematype.Skjema_navn || 'Skjema';
             const logoEl = document.getElementById('logo');
@@ -894,7 +884,7 @@
                 }
             }
 
-            const initialSvar = svarMap.get(svarNokkel(seksjonNr, felt)) || [];
+            const initialSvar = oppslag.svar(seksjonNr, felt);
             div.appendChild(byggEditWidget(felt, feltId, initialSvar));
 
             const feil = document.createElement('div');

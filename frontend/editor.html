@@ -700,6 +700,11 @@
                 if (eksisterendeId) {
                     data = await api.get(`/api/skjematyper/${encodeURIComponent(eksisterendeId)}?rå=1`);
                     document.getElementById('tittel').textContent = `Rediger: ${data.Skjema_navn || eksisterendeId} (ID ${eksisterendeId})`;
+                    // Hentes i bakgrunnen — advarselen er en hjelp, ikke noe
+                    // editoren skal vente på eller stoppe for.
+                    api.get(`/api/skjematyper/${encodeURIComponent(eksisterendeId)}/antall-skjemaer`)
+                        .then(r => { antallLagredeSkjemaer = Number(r?.antall) || 0; })
+                        .catch(() => { });
                 } else if (kopiFraId) {
                     data = await api.get(`/api/skjematyper/${encodeURIComponent(kopiFraId)}?rå=1`);
                     // Klar for kopi: fjern id, marker som ny fase, endre navn
@@ -2547,19 +2552,65 @@
             felt.Undertittel.Verdi = v;
         };
 
+        // Antall lagrede skjemaer av denne typen. Styrer om strukturendringer
+        // skal advares om. 0 for nye skjematyper — da er det ingenting å ødelegge.
+        let antallLagredeSkjemaer = 0;
+        let harAdvartOmOmrokering = false;
+
+        /**
+         * Advarsel før en endring som flytter på feltnumrene.
+         *
+         * Feltnummer tildeles etter posisjon (`renummererFelter`). Skjemaer som
+         * ble lagret før feltene fikk stabil id, kobler svarene sine på nettopp
+         * den posisjonen — så en sletting eller flytting kan gi dem svar under
+         * feil spørsmål. Det er verre enn et tomt felt, for det ser riktig ut.
+         *
+         * Nye skjemaer lagrer feltets id og tåler endringen.
+         *
+         * @param {string} spørsmål   — den vanlige bekreftelsen
+         * @param {boolean} kunFørste — advar bare én gang per økt (for omrokering,
+         *                              som gjøres mange ganger på rad)
+         */
+        function bekreftStrukturendring(spørsmål, kunFørste = false) {
+            if (!antallLagredeSkjemaer) return spørsmål ? confirm(spørsmål) : true;
+            if (kunFørste && harAdvartOmOmrokering) return true;
+
+            const n = antallLagredeSkjemaer;
+            const svar = confirm(
+                (spørsmål ? spørsmål + '\n\n' : '') +
+                `Det finnes ${n} lagret${n === 1 ? '' : 'e'} skjema av denne typen.\n\n` +
+                'Feltnumrene tildeles etter rekkefølge. Skjemaer som ble lagret før ' +
+                'feltene fikk fast referanse, kan derfor vise svarene sine under feil ' +
+                'spørsmål etter denne endringen — uten at det synes.\n\n' +
+                'Fortsette?'
+            );
+            if (svar && kunFørste) harAdvartOmOmrokering = true;
+            return svar;
+        }
+
         function håndterAksjon(action, sIdx, fIdx, vIdx) {
             switch (action) {
-                case 'flytt-seksjon-opp': flyttSeksjon(sIdx, -1); break;
-                case 'flytt-seksjon-ned': flyttSeksjon(sIdx, 1); break;
+                case 'flytt-seksjon-opp':
+                    if (bekreftStrukturendring('', true)) flyttSeksjon(sIdx, -1);
+                    break;
+                case 'flytt-seksjon-ned':
+                    if (bekreftStrukturendring('', true)) flyttSeksjon(sIdx, 1);
+                    break;
                 case 'slett-seksjon':
-                    if (confirm('Slett hele seksjonen?')) slettSeksjon(sIdx);
+                    if (bekreftStrukturendring('Slett hele seksjonen?')) slettSeksjon(sIdx);
                     break;
                 case 'legg-til-felt': leggTilFelt(sIdx); break;
-                case 'flytt-felt-opp': flyttFelt(sIdx, fIdx, -1); break;
-                case 'flytt-felt-ned': flyttFelt(sIdx, fIdx, 1); break;
-                case 'kopier-felt': kopierFelt(sIdx, fIdx); break;
+                case 'flytt-felt-opp':
+                    if (bekreftStrukturendring('', true)) flyttFelt(sIdx, fIdx, -1);
+                    break;
+                case 'flytt-felt-ned':
+                    if (bekreftStrukturendring('', true)) flyttFelt(sIdx, fIdx, 1);
+                    break;
+                case 'kopier-felt':
+                    if (bekreftStrukturendring('', true)) kopierFelt(sIdx, fIdx);
+                    break;
                 case 'slett-felt':
-                    if (confirm('Slett feltet?')) slettFelt(sIdx, fIdx);
+                    if (bekreftStrukturendring('Slett feltet?')) slettFelt(sIdx, fIdx);
                     break;
                 case 'legg-til-valg': leggTilValg(sIdx, fIdx); break;
                 case 'slett-valg': slettValg(sIdx, fIdx, vIdx); break;

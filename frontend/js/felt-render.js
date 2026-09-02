@@ -1337,6 +1337,46 @@ export function svarNokkel(seksjon, felt) {
     return `${sek}-${String(nr).padStart(2, '0')}`;
 }
 
+/**
+ * Oppslag fra et lagret skjema til feltene i definisjonen.
+ *
+ * Slår opp på feltets `Id` først, og faller tilbake til posisjon. Rekkefølgen
+ * er poenget: `Nummer` tildeles etter posisjon, så det forskyves når et felt
+ * slettes eller flyttes i editoren. Et gammelt svar havner da under
+ * nabospørsmålet — og det er verre enn et tomt felt, for det ser riktig ut.
+ * `Id` står stille.
+ *
+ * Skjemaer lagret før Id-en fulgte med har bare posisjonsveien, derfor
+ * beholdes den.
+ */
+export function byggSvarOppslag(seksjoner) {
+    const svarPåId = new Map(), svarPåPos = new Map();
+    const tekstPåId = new Map(), tekstPåPos = new Map();
+
+    for (const seksjon of (seksjoner || [])) {
+        for (const felt of (seksjon.Felter || [])) {
+            const pos = svarNokkel(seksjon, felt);
+            svarPåPos.set(pos, felt.Svar || []);
+            if (Array.isArray(felt.SvarTekst)) tekstPåPos.set(pos, felt.SvarTekst);
+            if (felt.Id) {
+                svarPåId.set(felt.Id, felt.Svar || []);
+                if (Array.isArray(felt.SvarTekst)) tekstPåId.set(felt.Id, felt.SvarTekst);
+            }
+        }
+    }
+
+    return {
+        svar(seksjon, felt) {
+            if (felt?.Id && svarPåId.has(felt.Id)) return svarPåId.get(felt.Id);
+            return svarPåPos.get(svarNokkel(seksjon, felt)) || [];
+        },
+        tekst(seksjon, felt) {
+            if (felt?.Id && tekstPåId.has(felt.Id)) return tekstPåId.get(felt.Id);
+            return tekstPåPos.get(svarNokkel(seksjon, felt)) || null;
+        }
+    };
+}
+
 // ==================== SEKSJONER FRA DOM ====================
 
 /**

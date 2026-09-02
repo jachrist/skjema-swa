@@ -17,6 +17,7 @@ const { erTilgjengeligNaa } = require('../lib/periode');
 const rollerStorage = require('../lib/roller-storage');
 const hendelser = require('../lib/hendelser-storage');
 const gevinstSjekk = require('../lib/gevinst-sjekk');
+const forekomstStorage = require('../lib/skjema-forekomst-storage');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -143,6 +144,40 @@ app.http('hentSkjematypeEkstern', {
             return { jsonBody: berikaSkjema };
         } catch (e) {
             context.log('skjematyper/publikum FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * Hvor mange skjemaer finnes allerede av denne typen?
+ *
+ * Editoren spør om dette for å kunne advare før et felt slettes eller flyttes.
+ * Feltnummer tildeles etter posisjon, så en slik endring forskyver svarene i
+ * skjemaer som alt er lagret — de havner under nabospørsmålet, og det ser
+ * riktig ut. Nye skjemaer bærer feltets Id og tåler flyttingen; eldre gjør det
+ * ikke, og det er dem advarselen gjelder.
+ *
+ * Leser bare metadatakolonner, ikke JSON — kallet skal være billig nok til å
+ * gjøres hver gang editoren åpner en eksisterende skjematype.
+ */
+app.http('antallSkjemaerForType', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/{id}/antall-skjemaer',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+
+        try {
+            const id = request.params.id;
+            const rader = await forekomstStorage.hentMetadataForType(id);
+            // Mellomlagrede (status 1) teller med: også de har svar som kan
+            // forskyves, og eieren merker det først når skjemaet åpnes igjen.
+            const innsendte = rader.filter(r => Number(r.Skjema_status) !== 1).length;
+            return { jsonBody: { antall: rader.length, innsendte } };
+        } catch (e) {
+            context.log('skjematyper/antall-skjemaer FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }

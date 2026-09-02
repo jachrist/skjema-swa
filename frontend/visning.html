@@ -215,7 +215,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
-        import { byggReadonlyVisning, escapeHtml, renderTekstInline, svarNokkel } from './js/felt-render.js';
+        import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
 
         const params = new URLSearchParams(window.location.search);
@@ -278,16 +278,9 @@
             `;
 
             // Bygg lookup: skjema.Seksjoner har svar; skjematype.Seksjoner har definisjonen
-            const svarMap = new Map();
-            const tekstMap = new Map();
-            for (const seksjon of (skjema.Seksjoner || [])) {
-                for (const felt of (seksjon.Felter || [])) {
-                    const key = svarNokkel(seksjon, felt);
-                    svarMap.set(key, felt.Svar || []);
-                    // Lagret visningstekst — klassenavn og personnavn i stedet for koder
-                    if (Array.isArray(felt.SvarTekst)) tekstMap.set(key, felt.SvarTekst);
-                }
-            }
+            // Id først, posisjon som fallback. Lagret visningstekst —
+            // klassenavn og personnavn i stedet for koder — følger med.
+            const oppslag = byggSvarOppslag(skjema.Seksjoner);
 
             const innhold = document.getElementById('innhold');
             innhold.className = '';
@@ -301,7 +294,7 @@
                     Id: f.Id,
                     Nummer: f.Nummer,
                     Type: f.Type,
-                    Svar: svarMap.get(svarNokkel(sek, f)) || []
+                    Svar: oppslag.svar(sek, f)
                 }))
             }));
 
@@ -332,9 +325,8 @@
                     // Hopp over felt som ikke skal vises
                     if (felt.Vises && !evaluerVilkar(felt.Vises, seksjonerMedSvar)) continue;
                     if (felt.Type !== 'Informasjon') visningsNr++;
-                    const key = svarNokkel(seksjon, felt);
-                    const svar = svarMap.get(key) || [];
-                    div.appendChild(byggFelt(felt, visningsNr, svar, skjema.Skjematype_id, skjema.Skjema_id, tekstMap.get(key) || null));
+                    div.appendChild(byggFelt(felt, visningsNr, oppslag.svar(seksjon, felt),
+                        skjema.Skjematype_id, skjema.Skjema_id, oppslag.tekst(seksjon, felt)));
                 }
                 innhold.appendChild(div);
             }

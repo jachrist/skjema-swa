@@ -48,6 +48,11 @@ function komprimerSkjema(fulltSkjema) {
                 spm: String(felt.Nummer).padStart(2, '0'),
                 sva: felt.Svar
             };
+            // Feltets stabile Id. Nummer tildeles etter posisjon, så det endrer
+            // seg når et felt slettes eller flyttes i editoren — og da peker et
+            // gammelt svar på nabospørsmålet i stedet for sitt eget. Id-en står
+            // stille, og er derfor den eneste trygge koblingen tilbake.
+            if (felt.Id) rad.id = felt.Id;
             // Visningstekst for valglister (klassenavn, personnavn) — lagres bare
             // når den skiller seg fra verdien. Se svarTekstFor() i felt-render.js.
             if (Array.isArray(felt.SvarTekst) && felt.SvarTekst.length > 0) rad.svt = felt.SvarTekst;
@@ -74,12 +79,26 @@ function ekspanderSkjema(kompaktSvar, skjemadefinisjon) {
     if (Array.isArray(kompaktSvar.Behandling)) fullt.Behandling = kompaktSvar.Behandling;
     if (kompaktSvar.vedlegg) fullt.vedlegg = kompaktSvar.vedlegg;
 
-    const svarMap = new Map();
-    const tekstMap = new Map();
+    // To oppslag: på Id og på posisjon. Id vinner når den finnes, for posisjonen
+    // kan ha flyttet seg siden svaret ble lagret.
+    const påId = new Map();
+    const påPosisjon = new Map();
     for (const s of kompaktSvar.Svar) {
         const n = `${s.sek}-${String(s.spm).padStart(2, '0')}`;
-        svarMap.set(n, s.sva);
-        if (Array.isArray(s.svt)) tekstMap.set(n, s.svt);
+        påPosisjon.set(n, s);
+        if (s.id) påId.set(s.id, s);
+    }
+
+    // Første runde: koble på Id, og merk svaret som brukt. Uten merkingen kunne
+    // samme svar blitt tildelt to felter — én gang på Id og én gang på posisjon
+    // — og da ville et felt fått nabofeltets svar.
+    const brukt = new Set();
+    const uløst = [];
+
+    function tildel(felt, treff) {
+        felt.Svar = treff.sva;
+        if (Array.isArray(treff.svt)) felt.SvarTekst = treff.svt;
+        brukt.add(treff);
     }
 
     for (const seksjon of (fullt.Seksjoner || [])) {
@@ -87,9 +106,18 @@ function ekspanderSkjema(kompaktSvar, skjemadefinisjon) {
         for (const felt of (seksjon.Felter || [])) {
             if (felt.Type === 'Informasjon') continue;
             const nøkkel = `${sekNr}-${String(felt.Nummer).padStart(2, '0')}`;
-            felt.Svar = svarMap.has(nøkkel) ? svarMap.get(nøkkel) : [];
-            if (tekstMap.has(nøkkel)) felt.SvarTekst = tekstMap.get(nøkkel);
+            const treff = felt.Id ? påId.get(felt.Id) : undefined;
+            if (treff) tildel(felt, treff);
+            else uløst.push({ felt, nøkkel });
         }
+    }
+
+    // Andre runde: posisjon, men bare for svar som ikke alt er koblet på Id.
+    // Skjemaer lagret før Id-en kom med har bare denne veien.
+    for (const { felt, nøkkel } of uløst) {
+        const treff = påPosisjon.get(nøkkel);
+        if (treff && !brukt.has(treff)) tildel(felt, treff);
+        else felt.Svar = [];
     }
     return fullt;
 }
