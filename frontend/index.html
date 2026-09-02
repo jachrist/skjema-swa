@@ -426,7 +426,7 @@
         async function initEkstern() {
             // Anonymt: hent publikum-visning av skjematypen (fungerer bare hvis EksternTilgang=true)
             try {
-                skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}/publikum`);
+                skjematype = await api.get(`/api/publikum-skjematype/${encodeURIComponent(skjematypeId)}`);
             } catch (e) {
                 visFeil('Denne skjematypen er ikke tilgjengelig for ekstern innsender.');
                 return;

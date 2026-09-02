@@ -127,7 +127,11 @@ app.http('mineSkjematyper', {
 app.http('hentSkjematypeEkstern', {
     methods: ['GET'],
     authLevel: 'anonymous',
-    route: 'skjematyper/{id}/publikum',
+    // Ruta het «skjematyper/{id}/publikum», men SWA godtar bare jokertegn på
+    // SLUTTEN av en rute. «/api/skjematyper/*/publikum» fikk hele
+    // staticwebapp.config.json avvist under validering, og da mistet vi alle
+    // ruteregler — ikke bare denne. Derfor ligger id-en sist.
+    route: 'publikum-skjematype/{id}',
     handler: async (request, context) => {
         try {
             const id = request.params.id;
@@ -144,7 +148,7 @@ app.http('hentSkjematypeEkstern', {
             );
             return { jsonBody: berikaSkjema };
         } catch (e) {
-            context.log('skjematyper/publikum FEIL:', e.message, e.stack);
+            context.log('publikum-skjematype FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }
