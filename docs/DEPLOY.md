@@ -193,6 +193,19 @@ Referanse:
 
 ### Forutsetning
 
+- **ID-token må være slått på.** Entra ID → App registrations → appen →
+  **Authentication** → *Implicit grant and hybrid flows* → huk av
+  **«ID tokens (used for implicit and hybrid flows)»**.
+
+  SWA bruker hybrid flow (`response_type=code+id_token`). Uten dette avviser
+  Entra hver eneste innlogging med
+
+  ```
+  AADSTS700054: response_type 'id_token' is not enabled for the application
+  ```
+
+  Feilen kommer fra Entra, ikke fra SWA, så den ser ut som noe galt med
+  redirect-URI-en. Det er den ikke. Slår gjennom umiddelbart, uten deploy.
 - App-registrering i prod-tenanten med sertifikat-basert client credential
   (thumbprint registrert som Certificate på app-en i Entra ID)
 - Sertifikat-filen (PFX med private key) tilgjengelig, eller admin
@@ -266,8 +279,12 @@ samme som produksjon vil bruke, ikke en tilnærming.
 
 URL-en blir `<vertsnavn>-test.<region>.azurestaticapps.net`.
 
-**Ett steg må gjøres først:** legg preview-vertsnavnet inn som redirect-URI i
-app-registreringen, ved siden av produksjonens.
+**To ting må være på plass i app-registreringen først:**
+
+1. **ID-token slått på** — Authentication → *Implicit grant and hybrid flows*.
+   Mangler den, får du `AADSTS700054` uansett hvor redirect-URI-en peker. Se
+   «Sertifikat-oppsett for prod» nedenfor.
+2. **Preview-vertsnavnet som redirect-URI**, ved siden av produksjonens.
 
 ```
 https://<vertsnavn>-test.<region>.azurestaticapps.net/.auth/login/aad/callback
