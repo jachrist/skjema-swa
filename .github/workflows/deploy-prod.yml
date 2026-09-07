@@ -17,6 +17,20 @@ on:
         description: "Skriv 'DEPLOY-PROD' for å bekrefte deploy til produksjon"
         required: true
         type: string
+      # Et navngitt preview-miljø ligger på SAMME SWA-ressurs som produksjon og
+      # arver app settings derfra — også Key Vault-referansen til
+      # auth-sertifikatet. Det er derfor en ekte prøve på innloggingen, ikke en
+      # tilnærming, og den eneste måten å teste den uten å risikere at ingen
+      # kommer inn i produksjon.
+      #
+      # Miljøet opprettes av denne kjøringen; ingenting settes opp på forhånd.
+      # URL: <vertsnavn>-<navn>.<region>.azurestaticapps.net — det vertsnavnet
+      # må legges inn som redirect-URI i app-registreringen, ellers avviser
+      # Entra innloggingen der (og bare der).
+      preview:
+        description: "Valgfritt: navn på preview-miljø, f.eks. 'test'. Tomt = produksjon."
+        required: false
+        type: string
 
 jobs:
   valider:
@@ -27,6 +41,15 @@ jobs:
           if [ "${{ inputs.bekreft }}" != "DEPLOY-PROD" ]; then
             echo "::error::Bekreftelse må være 'DEPLOY-PROD'. Fikk: '${{ inputs.bekreft }}'"
             exit 1
+          fi
+      # Målet skrives i klartekst i kjøringens sammendrag. Bekreftelsesordet er
+      # det samme for begge, så det er her man ser hva som faktisk skjer.
+      - name: Vis mål
+        run: |
+          if [ -n "${{ inputs.preview }}" ]; then
+            echo "### Mål: preview-miljøet \`${{ inputs.preview }}\` — IKKE produksjon" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Mål: PRODUKSJON" >> $GITHUB_STEP_SUMMARY
           fi
 
   build_and_deploy_job:
@@ -67,3 +90,5 @@ jobs:
           output_location: ""
           # Ingen app_build_command: konfigurasjonen er alt bygget i steget over.
           skip_app_build: true
+          # Tom verdi = produksjonsmiljøet, som før.
+          deployment_environment: ${{ inputs.preview }}

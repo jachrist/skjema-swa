@@ -243,3 +243,68 @@ Hvis auth feiler:
 - Sjekk at Application ID URI matcher redirect URI konfigurert på
   app-registreringen: `https://<swa-url>/.auth/login/aad/callback`
 
+
+## Prøv innloggingen før produksjon
+
+Auth-oppsettet i prod har aldri vært i drift: `staticwebapp.config.json` ble
+aldri lest før 02.09.2026 (se `scripts/build-config.js`). Første prod-deploy
+etter det tar i bruk sertifikat-basert innlogging, egen rollekilde og 29
+ruteregler samtidig. Går noe galt der, kommer **ingen** inn i grensesnittet.
+
+Derfor: kjør den samme koden i et navngitt preview-miljø først.
+
+```
+Actions → Deploy prod → Run workflow
+  bekreft:  DEPLOY-PROD
+  preview:  test          ← tomt felt = produksjon
+```
+
+Miljøet opprettes av kjøringen; ingenting settes opp på forhånd. Det ligger på
+**samme SWA-ressurs** som produksjon og arver app settings derfra — også
+Key Vault-referansen til sertifikatet. Innloggingen som testes der er altså den
+samme som produksjon vil bruke, ikke en tilnærming.
+
+URL-en blir `<vertsnavn>-test.<region>.azurestaticapps.net`.
+
+**Ett steg må gjøres først:** legg preview-vertsnavnet inn som redirect-URI i
+app-registreringen, ved siden av produksjonens.
+
+```
+https://<vertsnavn>-test.<region>.azurestaticapps.net/.auth/login/aad/callback
+```
+
+Uten den avviser Entra innloggingen i preview-miljøet — og bare der. Det er en
+forventet feil, ikke et tegn på at oppsettet er galt.
+
+### Hva som skal sjekkes
+
+| | Forventet |
+|---|---|
+| Innlogging | Kontovelger fra prod-tenanten, ikke `/common/` |
+| `/admin.html` som admin | Kommer inn |
+| `/admin.html` som ikke-admin | «Ingen tilgang»-siden, ikke Microsofts 403 |
+| Forsiden | Skjemavelgeren, ikke «Mangler skjematype_id» |
+| `/api/system/info` | `MILJO` = prod, `AAD_CLIENT_SECRET` merket som utenfor miljøet |
+
+Virker alt, kjør samme workflow på nytt med tomt `preview`-felt.
+
+### Hvis produksjon likevel låser seg
+
+De fleste feilene ligger utenfor deployen — feil `AAD_CLIENT_ID`, manglende
+Key Vault-rolle på SWA-ens managed identity, uregistrert redirect-URI,
+sertifikat ikke lastet opp i Entra. Alt dette rettes i portalen uten ny
+deploy, og slår gjennom i løpet av et par minutter.
+
+Trengs likevel en tilbakerulling: SWA har ingen angreknapp, så det gjøres ved å
+deploye forrige commit. Lag taggen **før** deployen, ikke etter:
+
+```bash
+# SHA-en fra Actions → Deploy prod → siste vellykkede kjøring
+git tag prod-siste-gode <sha> && git push origin prod-siste-gode
+```
+
+Kjør så workflowen med taggen valgt som branch i stedet for `main`.
+
+Merk at cron-jobbene, ekstern innsending via OTP og PA-flytene inn mot appen
+går på anonyme ruter. De fortsetter å virke selv om ingen kommer inn i
+grensesnittet — backup stopper altså ikke.
