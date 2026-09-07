@@ -11,12 +11,15 @@
  * områder (avdelinger, emner, prosjekter, ...). En bruker kan ha samme
  * rolle på ulike omfang.
  */
-const { tabellKlient, sikreTabell, odata } = require('./storage');
+// Modulobjekt, ikke destrukturert: tester bytter ut sikreTabell for aa
+// slippe en ekte lagringskonto. En destrukturert referanse ville pekt paa
+// den opprinnelige funksjonen og gjort stubben virkningslos.
+const storage = require('./storage');
 
 const TABELL = 'Rollemedlemskap';
 
 async function tabell() {
-    const t = await sikreTabell(TABELL);
+    const t = await storage.sikreTabell(TABELL);
     return t;
 }
 
@@ -102,8 +105,8 @@ async function hentInnehavere(rolleStreng) {
 
     const innehavere = [];
     const filter = omfang
-        ? odata`PartitionKey eq ${rolle} and RowKey ge ${omfang + '|'} and RowKey lt ${omfang + '|~'}`
-        : odata`PartitionKey eq ${rolle}`;
+        ? storage.odata`PartitionKey eq ${rolle} and RowKey ge ${omfang + '|'} and RowKey lt ${omfang + '|~'}`
+        : storage.odata`PartitionKey eq ${rolle}`;
 
     for await (const e of t.listEntities({ queryOptions: { filter } })) {
         innehavere.push(radTilInnehaver(e));
@@ -228,6 +231,42 @@ async function fjernInnehaver({ Rolle, Omfang = '', UPN }) {
     }
 }
 
+/**
+ * Slett en hel rolle — alle innehaverne i ett omfang, eller i alle.
+ *
+ * Å fjerne innehaverne én for én etterlater en tom rolle som fortsatt vises i
+ * lista og fortsatt kan velges i skjemadefinisjoner. Det er den varianten som
+ * gjør at ingen tør rydde: rollen blir stående «i tilfelle».
+ *
+ * Rollen finnes bare så lenge den har rader — det er ingen egen rolletabell —
+ * så sletting er å fjerne radene. Går i batch per partisjon, av samme grunn
+ * som utforBatch: SWA kutter kallet etter 45 sekunder, og en rolle med mange
+ * innehavere ville ellers hengt stille.
+ *
+ * Uten `omfang` slettes hele rollen på tvers av omfang. Det er en større
+ * handling enn den ser ut som, så kalleren må be om den eksplisitt.
+ */
+async function slettRolle({ Rolle, Omfang = null }) {
+    const rolle = String(Rolle || '').trim();
+    if (!rolle) throw new Error('Rolle mangler');
+
+    const t = await tabell();
+    const filter = Omfang === null
+        ? storage.odata`PartitionKey eq ${rolle}`
+        : storage.odata`PartitionKey eq ${rolle} and RowKey ge ${Omfang + '|'} and RowKey lt ${Omfang + '|~'}`;
+
+    const rader = [];
+    for await (const e of t.listEntities({ queryOptions: { filter } })) {
+        rader.push({ partitionKey: e.partitionKey, rowKey: e.rowKey });
+    }
+    if (rader.length === 0) return { slettet: 0 };
+
+    for (let i = 0; i < rader.length; i += 100) {
+        await t.submitTransaction(rader.slice(i, i + 100).map(r => ['delete', r]));
+    }
+    return { slettet: rader.length };
+}
+
 module.exports = {
     hentAlleGrupper,
     hentNavnekart,
@@ -237,5 +276,6 @@ module.exports = {
     erMedlem,
     hentOmfangForBruker,
     leggTilInnehaver,
-    fjernInnehaver
+    fjernInnehaver,
+    slettRolle
 };

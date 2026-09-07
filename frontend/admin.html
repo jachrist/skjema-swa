@@ -880,7 +880,11 @@
             const g = rollerState.valgt;
             const hoyre = document.getElementById('roller-hoyre');
             const tittel = `<h2 style="margin: 0 0 6px 0; font-size: 1.2em;">${escHtml(g.Rolle)}${g.Omfang ? ` <span style="color: var(--text-secondary); font-weight: 400;">(${escHtml(g.Omfang)})</span>` : ''}</h2>`;
-            const under = `<div style="color: var(--text-secondary); font-size: 12px; margin-bottom: 14px;">${innehavere.length} innehaver${innehavere.length === 1 ? '' : 'e'}</div>`;
+            const under = `
+                <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;">
+                    <div style="color: var(--text-secondary); font-size: 12px;">${innehavere.length} innehaver${innehavere.length === 1 ? '' : 'e'}</div>
+                    <button class="knapp mini danger" onclick="rollerSlettRolle()">Slett rollen</button>
+                </div>`;
             const tabell = innehavere.length === 0
                 ? '<div class="tom-melding">Ingen innehavere ennå.</div>'
                 : `
@@ -1054,6 +1058,42 @@
                 }
             } catch (e) { alert('Feil: ' + e.message); }
         };
+        /**
+         * Slett hele rollen, ikke bare innehaverne.
+         *
+         * Å tømme en rolle etterlater den i lista og i skjemadefinisjonene.
+         * Her fjernes den for godt — derfor navnet på rollen skrives inn for
+         * hånd. En «er du sikker?» klikkes vekk; å skrive navnet krever at man
+         * ser hva man sletter.
+         */
+        window.rollerSlettRolle = async () => {
+            const g = rollerState.valgt;
+            if (!g) return;
+            const merkelapp = `${g.Rolle}${g.Omfang ? '(' + g.Omfang + ')' : ''}`;
+            const svar = prompt(
+                `Sletter rollen «${merkelapp}» og alle innehaverne.\n\n` +
+                'Rollen forsvinner fra lista og kan ikke lenger velges i skjemadefinisjoner.\n' +
+                'Skjemadefinisjoner som allerede viser til den, må rettes manuelt.\n\n' +
+                `Skriv rollenavnet for å bekrefte:\n${g.Rolle}`
+            );
+            if (svar === null) return;
+            if (svar.trim() !== g.Rolle) {
+                alert('Navnet stemmer ikke — ingenting er slettet.');
+                return;
+            }
+            try {
+                // Omfang sendes med: bare denne varianten av rollen slettes,
+                // ikke samme rollenavn i andre omfang.
+                const res = await api.post('/api/roller/slett', { Rolle: g.Rolle, Omfang: g.Omfang || '' });
+                rollerState.valgt = null;
+                await rollerLast();
+                document.getElementById('roller-hoyre').innerHTML =
+                    `<div class="tom-melding">Slettet «${escHtml(merkelapp)}» med ${res.slettet} innehaver${res.slettet === 1 ? '' : 'e'}.</div>`;
+            } catch (e) {
+                alert('Kunne ikke slette rollen: ' + e.message);
+            }
+        };
+
         window.rollerFjern = async (upn) => {
             const g = rollerState.valgt;
             if (!confirm(`Fjern ${upn} fra ${g.Rolle}${g.Omfang ? '(' + g.Omfang + ')' : ''}?`)) return;

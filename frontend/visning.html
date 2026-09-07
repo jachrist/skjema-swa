@@ -209,6 +209,7 @@
 
         <div class="knapperad" id="knapperad" style="display: none;">
             <a href="/velgskjematype.html" class="knapp sekundær">Til skjemaoversikten</a>
+            <button class="knapp sekundær" id="last-ned-pdf" type="button">📄 Last ned som PDF</button>
         </div>
     </div>
 
@@ -333,6 +334,43 @@
 
             document.getElementById('knapperad').style.display = 'flex';
         }
+
+        /**
+         * Last ned skjemaet som PDF.
+         *
+         * Serveren returnerer base64 i JSON i stedet for en binær strøm — da
+         * går kallet gjennom den vanlige api-klienten, med samme
+         * autentisering og feilhåndtering som alt annet.
+         */
+        document.getElementById('last-ned-pdf').addEventListener('click', async (e) => {
+            const knapp = e.currentTarget;
+            const opprinnelig = knapp.textContent;
+            knapp.disabled = true;
+            knapp.textContent = 'Lager PDF…';
+            try {
+                const res = await api.post(
+                    `/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/pdf`,
+                    { format: 'base64' }
+                );
+                const bin = atob(res.innhold);
+                const bytes = new Uint8Array(bin.length);
+                for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+                const url = URL.createObjectURL(new Blob([bytes], { type: res.contentType || 'application/pdf' }));
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = res.filnavn || 'skjema.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                // Nettleseren trenger objektet til nedlastingen er startet.
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+            } catch (feil) {
+                alert('Kunne ikke lage PDF: ' + feil.message);
+            } finally {
+                knapp.disabled = false;
+                knapp.textContent = opprinnelig;
+            }
+        });
 
         function byggBehandlingVisning(behandling) {
             const div = document.createElement('div');

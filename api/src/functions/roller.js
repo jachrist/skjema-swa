@@ -132,6 +132,58 @@ app.http('rollerFjern', {
 });
 
 /**
+ * POST /api/roller/slett — slett en hel rolle, ikke bare én innehaver.
+ *
+ * Body: { Rolle, Omfang }
+ *   Omfang satt      → sletter rollen for det omfanget
+ *   Omfang utelatt   → sletter rollen for ALLE omfang
+ *
+ * Å fjerne innehaverne én for én etterlater en tom rolle som fortsatt vises i
+ * lista og kan velges i skjemadefinisjoner. Da tør ingen rydde, og lista
+ * vokser med roller som ikke finnes lenger.
+ *
+ * Antallet slettede rader returneres, og logges som hendelse. Rollen finnes
+ * bare gjennom radene sine, så dette er ikke gjenopprettelig uten backup —
+ * derfor er sletting på tvers av omfang noe kalleren må be om eksplisitt.
+ */
+app.http('rollerSlett', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'roller/slett',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin-tilgang' } };
+        try {
+            const body = await request.json();
+            const rolle = String(body?.Rolle || '').trim();
+            if (!rolle) return { status: 400, jsonBody: { status: 'feil', melding: 'Rolle mangler' } };
+
+            // null betyr «alle omfang». Tom streng er et gyldig omfang i seg
+            // selv — rollen som gjelder uten avgrensning — så de to må skilles.
+            const omfang = (body.Omfang === undefined || body.Omfang === null)
+                ? null : String(body.Omfang);
+
+            const res = await rollerStorage.slettRolle({ Rolle: rolle, Omfang: omfang });
+            if (res.slettet === 0) return { status: 404, jsonBody: { status: 'feil', melding: 'Fant ingen innehavere å slette' } };
+
+            const merkelapp = omfang === null ? rolle : `${rolle}${omfang ? '(' + omfang + ')' : ''}`;
+            context.log(`roller: ${upn} slettet rollen ${merkelapp} (${res.slettet} rader)`);
+            hendelser.logg({
+                Type: 'rolle.slett', Aktor: upn,
+                ObjektType: 'rolle', ObjektId: merkelapp,
+                Melding: `Slettet rollen ${merkelapp} med ${res.slettet} innehaver${res.slettet === 1 ? '' : 'e'}`,
+                Detaljer: { rolle, omfang: omfang === null ? '(alle)' : omfang, antall: res.slettet }
+            });
+            return { jsonBody: { status: 'ok', slettet: res.slettet } };
+        } catch (e) {
+            context.log('roller/slett FEIL:', e.message);
+            return { status: 400, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
  * POST /api/roller/import — multipart med `fil` og valgfritt `bekreft=true`.
  *
  * Uten `bekreft` er kallet en tørrkjøring: fila leses og planen regnes ut, men

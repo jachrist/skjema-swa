@@ -12,14 +12,38 @@ async function les(response) {
 // ekstern-innsender-flyten). Sett via api.settHeader / fjernHeader.
 const defaultHeaders = {};
 
+function tilInnlogging() {
+    window.location.href = '/.auth/login/aad?post_login_redirect_uri=' +
+        encodeURIComponent(window.location.pathname + window.location.search);
+}
+
 async function utfør(path, options = {}, { hopperOver401 = false } = {}) {
     const headers = { ...defaultHeaders, ...(options.headers || {}) };
     const r = await fetch(path, { ...options, headers });
     if (r.status === 401 && !hopperOver401) {
-        // SWA gjør redirect via responseOverrides — dette bør sjelden trigge
-        window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
+        tilInnlogging();
         return null;
     }
+
+    // Sesjonen kan ha løpt ut midt i en økt. SWA svarer da 401 på API-kallet,
+    // men `responseOverrides` gjør om svaret til en 302 til innlogging — og
+    // fetch følger den i stillhet. Er brukeren fortsatt gyldig hos Entra,
+    // ender vi med en HTML-side og status 200 der kalleren ventet JSON.
+    //
+    // Det ser ikke ut som en autentiseringsfeil. Kalleren får en streng, og
+    // feilen dukker opp langt unna årsaken: `innehavere.map is not a function`,
+    // eller et tall som plutselig er antall tegn i en HTML-side. Derfor fanges
+    // det her, én gang, i stedet for i hvert kall.
+    const ct = r.headers.get('content-type') || '';
+    if (path.startsWith('/api/') && !ct.includes('application/json')) {
+        if (r.redirected || ct.includes('text/html')) {
+            if (!hopperOver401) { tilInnlogging(); return null; }
+            const e = new Error('Sesjonen er utløpt — logg inn på nytt');
+            e.status = 401;
+            throw e;
+        }
+    }
+
     if (!r.ok) {
         const feil = await les(r);
         const e = new Error(typeof feil === 'string' ? feil : (feil.melding || `${r.status} ${r.statusText}`));
