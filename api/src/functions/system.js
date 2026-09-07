@@ -26,6 +26,44 @@ const HEMMELIGE_ENV = [
     'UTSENDING_FLOW_URL'
 ];
 
+/**
+ * Variabler som bare hører hjemme i noen miljøer.
+ *
+ * Uten dette leses en tom verdi som en mangel uansett hvor man står, og den
+ * som forvalter løsningen bruker tid på å lete etter noe som ikke skal finnes.
+ *
+ * `AAD_CLIENT_SECRET` er tilfellet i dag: pilot autentiserer med en
+ * klienthemmelighet i en app-setting, mens prod bruker sertifikat via
+ * `clientSecretCertificateKeyVaultReference` mot Key Vault. I prod er en tom
+ * verdi altså riktig — og en satt verdi er dokumentasjonsgjeld, ikke noe som
+ * brukes.
+ */
+const KUN_I_MILJO = {
+    AAD_CLIENT_SECRET: {
+        miljoer: ['pilot', 'development', 'lokal'],
+        merknad: 'Prod bruker sertifikat fra Key Vault i stedet — tom verdi er riktig her.'
+    }
+};
+
+/** Normaliser MILJO: prod, production og Production skal regnes likt. */
+function miljonavn() {
+    return String(process.env.MILJO || '').trim().toLowerCase();
+}
+
+/**
+ * Beriker en env-rapport med hvilke miljøer variabelen gjelder for.
+ * `gjelderHer: false` sier at tom verdi er forventet, ikke en feil.
+ */
+function medForventning(navn, info) {
+    const regel = KUN_I_MILJO[navn];
+    if (!regel) return info;
+    const her = miljonavn();
+    // Ukjent miljø: vi vet ikke nok til å påstå at noe mangler.
+    const gjelderHer = her ? regel.miljoer.includes(her) : true;
+    if (gjelderHer) return info;
+    return { ...info, gjelderHer: false, merknad: regel.merknad };
+}
+
 function maskLengde(verdi) {
     if (!verdi) return { satt: false };
     const s = String(verdi);
@@ -69,7 +107,8 @@ app.http('systemInfo', {
 
         const hemmelige = {};
         for (const k of HEMMELIGE_ENV) {
-            hemmelige[k] = k.endsWith('_FLOW_URL') ? maskFlytUrl(process.env[k]) : maskLengde(process.env[k]);
+            const info = k.endsWith('_FLOW_URL') ? maskFlytUrl(process.env[k]) : maskLengde(process.env[k]);
+            hemmelige[k] = medForventning(k, info);
         }
 
         return {
@@ -95,3 +134,7 @@ app.http('systemInfo', {
         };
     }
 });
+
+// Eksporteres for test. Miljøskillet er lett å reversere ved en opprydding,
+// og feilen det gir er stille: en tom verdi leses som en mangel.
+module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO };

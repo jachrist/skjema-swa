@@ -7,8 +7,23 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 
 - **Frontend:** ren HTML/CSS/JS med ES-moduler i `frontend/`. Ingen byggsteg (bortsett fra config.js-generering).
 - **Backend:** Azure Functions v4 i `api/`, kun HTTP-triggere.
-- **Datalagring:** Azure Table Storage + Blob Storage via Managed Identity (`DefaultAzureCredential`).
-- **Hemmeligheter:** Azure Key Vault, aksessert via Managed Identity.
+- **Datalagring:** Azure Table Storage + Blob Storage via tilkoblingsstreng
+  (`STORAGE_CONNECTION_STRING`), lest i `lib/storage.js` og `lib/blob.js`.
+- **Hemmeligheter:** app settings i SWA Configuration. Verdiene hentes manuelt
+  fra Key Vault når de settes — koden slår ikke opp i Key Vault selv.
+
+> **Managed Identity er ikke tilgjengelig for koden vår.** SWA Managed
+> Functions eksponerer ingen MI-token, så `DefaultAzureCredential` får ikke
+> tak i noe. `lib/keyvault.js` er død kode og importeres ingen steder.
+>
+> Den ene MI-en som faktisk brukes, ligger på SWA-ressursen i prod og slås opp
+> av *plattformen*, ikke av oss: auth-sertifikatet hentes fra Key Vault via
+> `clientSecretCertificateKeyVaultReference` i `staticwebapp.config.prod.json`.
+> Den identiteten trenger bare **Key Vault Secrets User** og **Key Vault
+> Certificate User** på `fhs-kv-01` — ingen storage-roller.
+>
+> Pilot-SWA-en har storage-roller på sin MI. De er levninger fra det
+> opprinnelige designet og brukes ikke; ikke kopier dem til nye miljøer.
 - **Auth:** Static Web Apps innebygd Entra ID — UPN leses fra `x-ms-client-principal`-header via `api/src/lib/auth.js`.
 - **Deploy:** GitHub Actions → SWA, med Environments (`development`, `production`).
 
