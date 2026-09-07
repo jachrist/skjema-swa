@@ -19,6 +19,9 @@ const hendelser = require('../lib/hendelser-storage');
 const gevinstSjekk = require('../lib/gevinst-sjekk');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const svarReparasjon = require('../lib/svar-reparasjon');
+// Modulobjekt, ikke destrukturert: testen bytter ut begge for aa slippe en
+// ekte lagringskonto. Destrukturert ville stubben vaert virkningslos.
+const behandling = require('../lib/behandling');
 
 async function nesteSkjematypeId() {
     const alle = await skjemaStorage.hentAlleSkjematyper();
@@ -28,6 +31,28 @@ async function nesteSkjematypeId() {
         if (!isNaN(n) && n > max) max = n;
     }
     return String(max + 1);
+}
+
+/**
+ * Er brukeren behandler på et aktivt steg i dette ene skjemaet?
+ *
+ * Samme vurdering som `hentSkjema` gjør. Den ligger her fordi behandleren også
+ * må få lese skjematypens definisjon for å kunne se skjemaet hun skal behandle
+ * — men bare den definisjonen, og bare fordi hun har et konkret skjema å
+ * behandle. Uten skjemaet i hånden gir dette ingen tilgang.
+ */
+async function erBehandlerPaaSkjema(skjematypeId, skjemaId, upn) {
+    try {
+        const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+        if (!skjema) return false;
+        for (const steg of behandling.beregnAktiveSteg(skjema)) {
+            if (await behandling.brukerErBehandlerAsync(steg, upn)) return true;
+        }
+        return false;
+    } catch (_) {
+        // Et oppslag som feiler skal ikke gi tilgang.
+        return false;
+    }
 }
 
 async function harEierPåType(skjematypeId, upn) {
@@ -251,7 +276,19 @@ app.http('hentSkjematype', {
             const st = await skjemaStorage.hentSkjematype(id);
             if (!st) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
 
-            // Tilgang: admin, eier eller publikum
+            // Tilgang: admin, eier, publikum — eller behandler på et konkret skjema.
+            //
+            // Behandleren er ikke nødvendigvis publikum. En anskaffelsesansvarlig
+            // godkjenner skjemaer hun aldri fyller ut selv, og har derfor ingen
+            // grunn til å stå i Publikum. Uten denne veien fikk hun «Ingen
+            // tilgang» på behandlingssiden — som gjør to kall, ett for skjemaet
+            // (der hun slipper inn) og ett for definisjonen (der hun ikke gjorde
+            // det). Feilen så ut som om skjemaet var utilgjengelig.
+            //
+            // Adgangen er bundet til ett skjema, ikke til skjematypen: klienten
+            // må oppgi hvilket, og serveren sjekker at hun faktisk er behandler
+            // på et aktivt steg der. Definisjonen er uansett det hun trenger for
+            // å kunne lese skjemaet hun skal behandle.
             if (!erAdmin(upn)) {
                 const cache = lagTilgangsCache();
                 const [eier, publikum] = await Promise.all([
@@ -259,7 +296,10 @@ app.http('hentSkjematype', {
                     filtrerTyperPåTilgang([st], upn, 'Publikum', cache)
                 ]);
                 if (eier.length === 0 && publikum.length === 0) {
-                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+                    const forSkjema = request.query.get('skjema_id');
+                    if (!forSkjema || !(await erBehandlerPaaSkjema(id, forSkjema, upn))) {
+                        return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+                    }
                 }
             }
 
@@ -424,3 +464,7 @@ app.http('slettSkjematype', {
         }
     }
 });
+
+// Eksporteres for test. Dette er tilgangslogikk, og den skal ikke kunne
+// utvides eller fjernes uten at noe sier fra.
+module.exports = { _erBehandlerPaaSkjema: erBehandlerPaaSkjema };

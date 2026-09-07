@@ -250,7 +250,9 @@
 
             try {
                 const [skjematype, skjema] = await Promise.all([
-                    api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`),
+                    // skjema_id er med fordi behandleren ikke noedvendigvis er publikum
+                    // paa skjematypen - se erBehandlerPaaSkjema i skjematyper.js.
+                    api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}?skjema_id=${encodeURIComponent(skjemaId)}`),
                     api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`)
                 ]);
                 rendrer(skjematype, skjema);
