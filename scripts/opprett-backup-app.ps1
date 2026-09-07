@@ -60,10 +60,35 @@
     .\opprett-backup-app.ps1 -Site https://fhs.sharepoint.com/sites/Skjemasystem
 
 .NOTES
-    Krever modulen Microsoft.Graph og en pålogget bruker som kan:
-      - opprette app-registreringer      (Application Administrator eller mer)
-      - gi administrator-samtykke        (Privileged Role Administrator / Global)
-      - tildele rettighet på et område   (SharePoint Administrator / Global)
+    NØDVENDIGE ROLLER
+
+    Global Administrator dekker steg 1–3, men trengs ikke. Stegene kan deles
+    på tre personer — skriptet er idempotent og hopper over det som er gjort,
+    så det kan kjøres én gang av hver, i hvilken som helst rekkefølge:
+
+      Steg 1  App-registrering og hemmelighet
+              → Application Administrator (eller Cloud Application Administrator)
+
+      Steg 2  Samtykke til Graph-rettigheten «Sites.Selected»
+              → Privileged Role Administrator eller Global Administrator
+
+              MERK: Application Administrator er IKKE nok her. Den rollen kan
+              gi samtykke til det meste, men har et uttrykkelig unntak for
+              applikasjonsrettigheter på Microsoft Graph — som er akkurat
+              denne. Det er den vanligste grunnen til at steg 2 feiler mens
+              alt annet går igjennom.
+
+      Steg 3  Skriverett på SharePoint-området
+              → SharePoint Administrator eller Global Administrator
+              (kallet krever Graph-rettigheten Sites.FullControl.All)
+
+      Steg 5  Skriving til Key Vault — bare med -KeyVault
+              → «Key Vault Secrets Officer» på vaulten, pluss «Reader» på
+              ressursen så cmdleten finner den. Dette er Azure-roller, ikke
+              Entra-roller, og en helt annen tildeling enn de over.
+
+    Feiler et steg på manglende rettighet, sier skriptet hvilken rolle som
+    mangler og fortsetter med resten. Til slutt lister det opp hva som gjenstår.
 
     Installer én gang:  Install-Module Microsoft.Graph -Scope CurrentUser
     Kjører også i Azure Cloud Shell (PowerShell), der modulen er forhåndsinstallert.
@@ -103,6 +128,17 @@ function Ok([string]$t) { Write-Host "   $t" -ForegroundColor Green }
 function Info([string]$t) { Write-Host "   $t" }
 function Ville([string]$t) { Write-Host "   [tørrkjøring] $t" -ForegroundColor Yellow }
 
+# Hva som ikke lot seg gjøre, og hvem som kan gjøre det. Et steg som feiler på
+# manglende rettighet skal ikke stoppe de andre — stegene krever ulike roller,
+# og i et driftsmiljø sitter de sjelden hos samme person.
+$gjenstar = @()
+function Mangler([string]$hva, [string]$rolle, [string]$detalj) {
+    Write-Host "   Ikke utført: $hva" -ForegroundColor Yellow
+    Write-Host "   Krever: $rolle" -ForegroundColor Yellow
+    if ($detalj) { Write-Host "   ($detalj)" -ForegroundColor DarkGray }
+    $script:gjenstar += [pscustomobject]@{ Hva = $hva; Rolle = $rolle }
+}
+
 # ---------------------------------------------------------------- pålogging
 Steg 'Kobler til Microsoft Graph'
 $scopes = @('Application.ReadWrite.All', 'AppRoleAssignment.ReadWrite.All', 'Sites.FullControl.All')
@@ -119,10 +155,17 @@ if ($app) {
 } elseif ($Torrkjor) {
     Ville "ville opprettet app-registreringen"
 } else {
-    # Ingen redirect-URI og ingen delegerte rettigheter: appen logger aldri
-    # inn en bruker, den kjører som seg selv.
-    $app = New-MgApplication -DisplayName $Navn -SignInAudience 'AzureADMyOrg'
-    Ok "Opprettet — appId $($app.AppId)"
+    try {
+        # Ingen redirect-URI og ingen delegerte rettigheter: appen logger aldri
+        # inn en bruker, den kjører som seg selv.
+        $app = New-MgApplication -DisplayName $Navn -SignInAudience 'AzureADMyOrg'
+        Ok "Opprettet — appId $($app.AppId)"
+    } catch {
+        Mangler 'opprette app-registreringen' 'Application Administrator' $_.Exception.Message
+        # Uten appen har de neste stegene ingenting å feste seg til.
+        Write-Host "`nIngenting mer kan gjøres uten app-registreringen." -ForegroundColor Red
+        exit 1
+    }
 }
 
 # Tjenestehovedobjektet er det rettigheter faktisk henger på.
@@ -152,11 +195,16 @@ if ($sp) {
     } elseif ($Torrkjor) {
         Ville "ville tildelt $RETTIGHET"
     } else {
-        # En app-rolletildeling ER administrator-samtykket. Ingen egen
-        # «Grant admin consent»-knapp i portalen er nødvendig etterpå.
-        New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id `
-            -PrincipalId $sp.Id -ResourceId $graphSp.Id -AppRoleId $rolle.Id | Out-Null
-        Ok "Tildelt $RETTIGHET"
+        try {
+            # En app-rolletildeling ER administrator-samtykket. Ingen egen
+            # «Grant admin consent»-knapp i portalen er nødvendig etterpå.
+            New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $sp.Id `
+                -PrincipalId $sp.Id -ResourceId $graphSp.Id -AppRoleId $rolle.Id | Out-Null
+            Ok "Tildelt $RETTIGHET"
+        } catch {
+            Mangler "gi samtykke til $RETTIGHET" 'Privileged Role Administrator eller Global Administrator' `
+                'Application Administrator har et unntak for applikasjonsrettigheter på Microsoft Graph'
+        }
     }
 } else {
     Ville "ville tildelt $RETTIGHET"
@@ -169,17 +217,17 @@ $u = [Uri]$Site
 $omraadeRef = "$($u.Host):$($u.AbsolutePath.TrimEnd('/'))"
 Info "Område: $Site"
 
+$omraade = $null
 try {
     $omraade = Invoke-MgGraphRequest -Method GET -Uri "v1.0/sites/$omraadeRef"
+    Info "Område-ID: $($omraade.id)"
 } catch {
-    Write-Host "   Fant ikke området — sjekk adressen" -ForegroundColor Red
-    Write-Host "   $($_.Exception.Message)"
-    exit 1
+    Mangler 'slå opp SharePoint-området' 'SharePoint Administrator eller Global Administrator' `
+        "sjekk også at adressen stemmer: $Site"
 }
-Info "Område-ID: $($omraade.id)"
 
 $harAlt = $false
-if ($app) {
+if ($app -and $omraade) {
     try {
         $eksisterende = Invoke-MgGraphRequest -Method GET -Uri "v1.0/sites/$($omraade.id)/permissions"
         $harAlt = @($eksisterende.value | Where-Object {
@@ -188,18 +236,25 @@ if ($app) {
     } catch { $harAlt = $false }
 }
 
-if ($harAlt) {
+if (-not $omraade) {
+    # Oppslaget feilet alt — allerede rapportert over.
+} elseif ($harAlt) {
     Ok 'Skriverett på området — allerede gitt'
 } elseif ($Torrkjor -or -not $app) {
     Ville 'ville gitt appen skriverett på området'
 } else {
-    $kropp = @{
-        roles = @('write')
-        grantedToIdentities = @(@{ application = @{ id = $app.AppId; displayName = $Navn } })
-    } | ConvertTo-Json -Depth 6
-    Invoke-MgGraphRequest -Method POST -Uri "v1.0/sites/$($omraade.id)/permissions" `
-        -Body $kropp -ContentType 'application/json' | Out-Null
-    Ok 'Gitt skriverett — kun på dette området'
+    try {
+        $kropp = @{
+            roles = @('write')
+            grantedToIdentities = @(@{ application = @{ id = $app.AppId; displayName = $Navn } })
+        } | ConvertTo-Json -Depth 6
+        Invoke-MgGraphRequest -Method POST -Uri "v1.0/sites/$($omraade.id)/permissions" `
+            -Body $kropp -ContentType 'application/json' | Out-Null
+        Ok 'Gitt skriverett — kun på dette området'
+    } catch {
+        Mangler 'gi appen skriverett på området' 'SharePoint Administrator eller Global Administrator' `
+            $_.Exception.Message
+    }
 }
 
 # ------------------------------------------------------- 4. hemmelighet
@@ -211,13 +266,18 @@ if ($Torrkjor) {
 } elseif (-not $NyHemmelighet -and $app.PasswordCredentials.Count -gt 0) {
     Ok "Appen har $($app.PasswordCredentials.Count) hemmelighet(er) fra før — bruk -NyHemmelighet for å lage en ny"
 } else {
-    $utloper = (Get-Date).AddMonths($MaanederGyldig)
-    $ny = Add-MgApplicationPassword -ApplicationId $app.Id -PasswordCredential @{
-        displayName = "backup $(Get-Date -Format 'yyyy-MM-dd')"
-        endDateTime = $utloper
+    try {
+        $utloper = (Get-Date).AddMonths($MaanederGyldig)
+        $ny = Add-MgApplicationPassword -ApplicationId $app.Id -PasswordCredential @{
+            displayName = "backup $(Get-Date -Format 'yyyy-MM-dd')"
+            endDateTime = $utloper
+        }
+        $hemmelig = $ny.SecretText
+        Ok "Opprettet, utløper $($utloper.ToString('yyyy-MM-dd'))"
+    } catch {
+        $utloper = $null
+        Mangler 'lage klienthemmelighet' 'Application Administrator' $_.Exception.Message
     }
-    $hemmelig = $ny.SecretText
-    Ok "Opprettet, utløper $($utloper.ToString('yyyy-MM-dd'))"
 }
 
 # ------------------------------------------------- 5. rett i Key Vault
@@ -283,5 +343,21 @@ if ($utloper) {
     Write-Host ""
     Write-Host "  Utløper $($utloper.ToString('yyyy-MM-dd')). Registrer datoen i"
     Write-Host "  Administrasjon → Nøkkelkalender, så kommer varselet i tide."
+}
+
+if ($gjenstar.Count -gt 0) {
+    Write-Host ""
+    Write-Host ('─' * 68) -ForegroundColor Yellow
+    Write-Host " Gjenstår — krever andre rettigheter enn dine" -ForegroundColor Yellow
+    Write-Host ('─' * 68) -ForegroundColor Yellow
+    foreach ($g in $gjenstar) {
+        Write-Host ("  • {0}" -f $g.Hva) -ForegroundColor Yellow
+        Write-Host ("    {0}" -f $g.Rolle) -ForegroundColor DarkGray
+    }
+    Write-Host ""
+    Write-Host "  Skriptet er idempotent: den som har rollen kan kjøre det om" -ForegroundColor Yellow
+    Write-Host "  igjen med samme parametre. Det som alt er gjort, hoppes over." -ForegroundColor Yellow
+    Write-Host ""
+    exit 2
 }
 Write-Host ""
