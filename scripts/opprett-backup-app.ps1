@@ -37,6 +37,18 @@
 .PARAMETER MaanederGyldig
     Levetid på klienthemmeligheten. Standard 12 måneder.
 
+.PARAMETER KeyVault
+    Valgfritt. Navnet på en Key Vault hemmeligheten skal skrives rett inn i,
+    f.eks. fhs-kv-01. Oppgis den, vises hemmeligheten aldri på skjermen — du
+    får en ferdig `@Microsoft.KeyVault(...)`-referanse i stedet.
+
+    Krever modulen Az.KeyVault og skriverett i vaulten (rollen «Key Vault
+    Secrets Officer»). Er det en annen person enn den som kjører resten, la
+    parameteren stå tom: da skrives hemmeligheten ut som før.
+
+.PARAMETER HemmelighetNavn
+    Navnet hemmeligheten får i Key Vault. Standard: graph-client-secret
+
 .PARAMETER Torrkjor
     Vis hva som ville blitt gjort, uten å endre noe.
 
@@ -61,6 +73,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Site,
     [string]$Navn = 'fhs-skjema-backup',
     [int]$MaanederGyldig = 12,
+    [string]$KeyVault = '',
+    [string]$HemmelighetNavn = 'graph-client-secret',
     [switch]$Torrkjor,
     [switch]$NyHemmelighet
 )
@@ -68,6 +82,21 @@ param(
 $ErrorActionPreference = 'Stop'
 $GRAPH_APP_ID = '00000003-0000-0000-c000-000000000000'
 $RETTIGHET = 'Sites.Selected'
+
+# Key Vault-skriving sjekkes FØR noe opprettes. Oppdager vi først etterpå at
+# modulen mangler, står vi med en fersk hemmelighet vi ikke har noe sted å
+# gjøre av — og den vises bare én gang.
+if ($KeyVault -and -not $Torrkjor) {
+    if (-not (Get-Module -ListAvailable -Name Az.KeyVault)) {
+        Write-Host "Modulen Az.KeyVault mangler. Installer den med" -ForegroundColor Red
+        Write-Host "  Install-Module Az.KeyVault -Scope CurrentUser" -ForegroundColor Red
+        Write-Host "eller kjør uten -KeyVault og legg hemmeligheten inn manuelt." -ForegroundColor Red
+        exit 1
+    }
+    Import-Module Az.KeyVault -ErrorAction Stop
+    # Key Vault er ikke Graph — datalaget krever sitt eget token.
+    if (-not (Get-AzContext -ErrorAction SilentlyContinue)) { Connect-AzAccount | Out-Null }
+}
 
 function Steg([string]$t) { Write-Host "`n── $t" -ForegroundColor Cyan }
 function Ok([string]$t) { Write-Host "   $t" -ForegroundColor Green }
@@ -191,6 +220,36 @@ if ($Torrkjor) {
     Ok "Opprettet, utløper $($utloper.ToString('yyyy-MM-dd'))"
 }
 
+# ------------------------------------------------- 5. rett i Key Vault
+$kvReferanse = $null
+if ($KeyVault -and $Torrkjor) {
+    Steg '5. Key Vault'
+    Ville "ville lagret hemmeligheten som «$HemmelighetNavn» i $KeyVault"
+} elseif ($KeyVault -and $hemmelig) {
+    Steg '5. Key Vault'
+    try {
+        # Samme utløpsdato på hemmeligheten som på app-legitimasjonen, slik at
+        # vaulten selv bærer datoen og ikke bare et notat et annet sted.
+        $sikker = ConvertTo-SecureString $hemmelig -AsPlainText -Force
+        $lagret = Set-AzKeyVaultSecret -VaultName $KeyVault -Name $HemmelighetNavn `
+            -SecretValue $sikker -Expires $utloper.ToUniversalTime()
+        Ok "Lagret som «$HemmelighetNavn» i $KeyVault"
+
+        # Uten versjon i URI-en henter SWA alltid nyeste — da overlever
+        # app-settingen en rotering uten at noen må endre den.
+        $kvReferanse = "@Microsoft.KeyVault(SecretUri=$($lagret.Id -replace '/[^/]+$', '/'))"
+        # Hemmeligheten er trygt plassert; ikke la den ligge igjen i minnet
+        # eller havne i oppsummeringen nedenfor.
+        $hemmelig = $null
+    } catch {
+        Write-Host "   Kunne ikke skrive til $KeyVault — $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "   Hemmeligheten er opprettet og vises nedenfor. Legg den inn manuelt." -ForegroundColor Yellow
+    }
+} elseif ($KeyVault) {
+    Steg '5. Key Vault'
+    Info 'Ingen ny hemmelighet å lagre — bruk -NyHemmelighet hvis du vil rotere'
+}
+
 # ------------------------------------------------------------ oppsummering
 Write-Host "`n$('═' * 68)" -ForegroundColor Cyan
 Write-Host ' Verdier som skal inn i SWA Configuration' -ForegroundColor Cyan
@@ -204,14 +263,25 @@ Write-Host "  Valgfritt:"
 Write-Host "  BACKUP_SHAREPOINT_BIBLIOTEK   bibliotekets navn, f.eks. Backup"
 Write-Host "  BACKUP_SHAREPOINT_MAPPE       undermappe, f.eks. Skjemasystem/Backup"
 
-if ($hemmelig) {
+if ($kvReferanse) {
+    Write-Host ""
+    Write-Host "  GRAPH_CLIENT_SECRET       $kvReferanse" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "  Hemmeligheten ligger i Key Vault og har aldri vært på skjermen." -ForegroundColor Green
+    Write-Host "  SWA-ens managed identity må ha «Key Vault Secrets User» på" -ForegroundColor Green
+    Write-Host "  $KeyVault for at referansen skal la seg løse." -ForegroundColor Green
+} elseif ($hemmelig) {
     Write-Host ""
     Write-Host "  GRAPH_CLIENT_SECRET" -ForegroundColor Yellow
     Write-Host "  $hemmelig" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  Vises bare denne ene gangen. Legg den i Key Vault og referer" -ForegroundColor Yellow
     Write-Host "  til den fra app-settingen — ikke lim den inn som ren tekst." -ForegroundColor Yellow
-    Write-Host "  Utløpsdato $($utloper.ToString('yyyy-MM-dd')) bør registreres i" -ForegroundColor Yellow
-    Write-Host "  Administrasjon → Nøkkelkalender, så varselet kommer i tide." -ForegroundColor Yellow
+    Write-Host "  Neste gang kan -KeyVault <navn> gjøre dette steget for deg." -ForegroundColor Yellow
+}
+if ($utloper) {
+    Write-Host ""
+    Write-Host "  Utløper $($utloper.ToString('yyyy-MM-dd')). Registrer datoen i"
+    Write-Host "  Administrasjon → Nøkkelkalender, så kommer varselet i tide."
 }
 Write-Host ""

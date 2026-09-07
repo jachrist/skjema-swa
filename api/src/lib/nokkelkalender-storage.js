@@ -403,6 +403,16 @@ const STANDARD = [
         VarsleDagerFor: 30
     },
     {
+        Navn: 'GRAPH_CLIENT_SECRET',
+        Type: 'passord',
+        Hvor: 'Key Vault, som «graph-client-secret». Brukes av app-registreringen som skriver backup til SharePoint (Sites.Selected).',
+        // Backup er den slags jobb som feiler stille: den kjører om natta, og
+        // ingen sitter og venter på den. Derfor lengst varslingsfrist av alle.
+        Konsekvens: 'Backup slutter å bli lastet opp til SharePoint. Selve backupen bygges fortsatt, men kopien ut av tenanten uteblir — og det merkes først når noen trenger den.',
+        Rotasjon: 'Kjør scripts/opprett-backup-app.ps1 med -NyHemmelighet (og -KeyVault <navn> for å skrive den rett inn). Gammel hemmelighet står til den utløper, så rotering kan gjøres uten nedetid.',
+        VarsleDagerFor: 45
+    },
+    {
         Navn: 'SWA deployment token',
         Type: 'token',
         Hvor: 'GitHub → repo → Settings → Secrets (én per miljø).',
