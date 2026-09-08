@@ -140,3 +140,67 @@ Full test: send inn et skjema med behandlingssteg. Sjekk at:
 Fase 6b: HTML-editor for tilpasning av melding-maler.  
 Fase 6c: Teams-varsler (utvid `varslinger: ['epost','teams']`).  
 Fase 6d: Planner-oppgaver (utvid med Planner-payload).
+
+## Vedlegg på Planner-oppgaven
+
+Fra 08.09.2026 sender varslings-payloaden skjemaets vedlegg med i
+`planner`-objektet. Flyten må endres for å ta dem i bruk — uten endring
+ignoreres de, og oppgaven blir som før.
+
+```jsonc
+"planner": {
+  "tittel": "...", "plan": "...", "bucket": "...",
+  "sjekkliste": [...], "sjekkliste_graph": { ... },
+
+  // Lesbar form — for en flyt som vil bygge noe eget
+  "vedlegg": [
+    { "filnavn": "tilbud.pdf",
+      "url": "https://<swa>/api/vedlegg-fil/123/6/tilbud.pdf" }
+  ],
+
+  // Klar til å sendes rett inn i details-kallet
+  "vedlegg_graph": {
+    "https%3A//<swa>/api/vedlegg-fil/123/6/tilbud%2Epdf": {
+      "@odata.type": "microsoft.graph.plannerExternalReference",
+      "alias": "tilbud.pdf",
+      "type": "Pdf"
+    }
+  }
+}
+```
+
+### Slik brukes de i flyten
+
+Samme kall som sjekklista, ett felt til:
+
+```http
+PATCH https://graph.microsoft.com/v1.0/planner/tasks/{taskId}/details
+If-Match: {etag}
+
+{
+  "checklist":  <sjekkliste_graph>,
+  "references": <vedlegg_graph>
+}
+```
+
+### To ting som er lette å gjøre feil
+
+**Nøkkelen er adressen, ikke et løpenummer.** Graph krever at `%`, `:`, `.` og
+`@` er prosentkodet i den. Derfor sendes `vedlegg_graph` ferdig kodet — bygg
+den ikke om i flyten. Én feilkodet nøkkel gir 400 på hele kallet, altså ingen
+oppgavedetaljer i det hele tatt, ikke bare manglende vedlegg.
+
+**`previewPriority` settes bevisst ikke**, av samme grunn som `orderHint` på
+sjekklistepunktene: formatet er en egen sammenligningsalgoritme, og en ugyldig
+verdi gir 400. Uten den tildeler Planner sin egen rekkefølge.
+
+### Tilgang
+
+Lenkene peker på `/api/vedlegg-fil/...`, som krever innlogging og tilgang til
+skjemaet — samme regel som ellers. En behandler som klikker fra Planner blir
+sendt gjennom innlogging og får fila. Ingen ny tilgang åpnes; det eneste som
+spares er veien om skjemavisningen.
+
+Har SWA-en ingen kjent base-URL (`SWA_URL` ikke satt), sendes ingen vedlegg.
+En halv adresse i en oppgave er verre enn ingen, og flyten kan ikke se
+forskjell.

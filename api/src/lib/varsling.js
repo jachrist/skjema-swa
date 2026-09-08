@@ -161,6 +161,79 @@ function sjekklisteTilGraph(punkter) {
 }
 
 /**
+ * Skjemaets vedlegg, med nedlastingslenke.
+ *
+ * Vedleggsfelt lagrer filnavn som svar, ikke adresser. En feltreferanse i en
+ * melding gir derfor bare «tilbud.pdf» — og siden Opplasting ikke er en
+ * flervalgstype, kuttes fil nummer to og tre uten et ord. Her tas alle med, og
+ * hver får adressen sin.
+ *
+ * Endepunktet krever innlogging og tilgang til skjemaet, så lenka gir ingen
+ * ny tilgang: den sparer behandleren for å finne fram til skjemaet først.
+ */
+function vedleggFraSkjema(skjema, base) {
+    const ut = [];
+    const rot = String(base || '').replace(/\/+$/, '');
+    const st = encodeURIComponent(String(skjema?.Skjematype_id || ''));
+    const sk = encodeURIComponent(String(skjema?.Skjema_id || ''));
+
+    for (const seksjon of (skjema?.Seksjoner || [])) {
+        for (const felt of (seksjon.Felter || [])) {
+            if (felt.Type !== 'Opplasting') continue;
+            for (const filnavn of (Array.isArray(felt.Svar) ? felt.Svar : [])) {
+                const navn = String(filnavn || '').trim();
+                if (!navn) continue;
+                ut.push({
+                    filnavn: navn,
+                    url: rot ? `${rot}/api/vedlegg-fil/${st}/${sk}/${encodeURIComponent(navn)}` : ''
+                });
+            }
+        }
+    }
+    return ut;
+}
+
+/** Planners egen typeetikett, utledet av filendelsen. */
+function vedleggstype(filnavn) {
+    const e = String(filnavn || '').toLowerCase().split('.').pop();
+    if (['doc', 'docx', 'rtf', 'odt'].includes(e)) return 'Word';
+    if (['xls', 'xlsx', 'csv', 'ods'].includes(e)) return 'Excel';
+    if (['ppt', 'pptx', 'odp'].includes(e)) return 'PowerPoint';
+    if (e === 'pdf') return 'Pdf';
+    return 'Other';
+}
+
+/**
+ * Vedleggene i formen Graph vil ha dem på `PATCH /planner/tasks/{id}/details`.
+ *
+ * Som sjekklista er dette et kart, ikke en array — men her er NØKKELEN selve
+ * adressen, og Graph krever at fire tegn er prosentkodet i den: `%`, `:`, `.`
+ * og `@`. Rekkefølgen er ikke likegyldig — `%` må tas først, ellers dobbelkodes
+ * de andre.
+ *
+ * `previewPriority` settes bevisst ikke, av samme grunn som `orderHint` på
+ * sjekklistepunktene: formatet er en egen sammenligningsalgoritme, og en ugyldig
+ * verdi gir 400 på hele kallet. Uten den tildeler Planner sin egen rekkefølge.
+ */
+function vedleggTilGraph(vedlegg) {
+    const ut = {};
+    for (const v of vedlegg) {
+        if (!v.url) continue;
+        const nokkel = v.url
+            .replace(/%/g, '%25')
+            .replace(/:/g, '%3A')
+            .replace(/\./g, '%2E')
+            .replace(/@/g, '%40');
+        ut[nokkel] = {
+            '@odata.type': 'microsoft.graph.plannerExternalReference',
+            alias: v.filnavn,
+            type: vedleggstype(v.filnavn)
+        };
+    }
+    return ut;
+}
+
+/**
  * Planner-delen av varslingspayloaden.
  *
  * Er `AnsvarligRolle` satt, løses den til konkrete mottakere her — flyten skal
@@ -176,6 +249,14 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         else log(`varsling: Planner-ansvarlig "${p.AnsvarligRolle}" har ingen innehavere — bruker behandlerne`);
     }
     const sjekkliste = byggSjekkliste(p.Sjekkliste, kontekst);
+
+    // Adressen utledes av skjemalenka, som allerede er bygget av baseUrl() med
+    // samme miljøhensyn. Er den tom — SWA_URL ikke satt og request uten brukbar
+    // host — får vedleggene ingen adresse, og vi sender dem heller ikke.
+    let base = '';
+    try { base = lenke ? new URL(lenke).origin : ''; } catch (_) { base = ''; }
+    const vedlegg = base ? vedleggFraSkjema(skjema, base) : [];
+
     return {
         tittel: erstattPlassholdere(p.Tittel, kontekst) || emne,
         plan: erstattPlassholdere(p.TeamOgPlan, kontekst),
@@ -187,7 +268,13 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         // Samme punkter, men i Graph-formen — se sjekklisteTilGraph.
         sjekkliste_graph: sjekklisteTilGraph(sjekkliste),
         notat: erstattPlassholdere(p.Notater, kontekst) || `Åpne skjemaet: ${lenke}`,
-        ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' }))
+        ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' })),
+        // Skjemaets vedlegg, så behandleren når dem fra oppgaven i stedet for å
+        // måtte åpne skjemaet først. `vedlegg` er lesbar for en flyt som vil
+        // bygge sitt eget; `vedlegg_graph` er klar til å sendes rett inn i
+        // details-kallet. Begge er tomme når skjemaet ikke har vedlegg.
+        vedlegg,
+        vedlegg_graph: vedleggTilGraph(vedlegg)
     };
 }
 
@@ -545,5 +632,6 @@ module.exports = {
     // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
     somPlannerOppgave, somTeamskanal, somTeamsMelding,
     løsForfallsdato, byggSjekkliste, sjekklisteTilGraph, byggPlanner, byggTeamskanal, byggTeamsMelding,
+    vedleggFraSkjema, vedleggTilGraph, vedleggstype,
     PLANNER_STATUS, PLANNER_PRIORITET
 };
