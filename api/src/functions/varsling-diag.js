@@ -107,6 +107,43 @@ app.http('varslingDiagSkjema', {
             const alleFerdig = alleStegFerdig(skjema);
             const aktive = beregnAktiveSteg(skjema);
 
+            // 4. Behandlervarslingen — den som går ut ved innsending.
+            //
+            // sendBehandlerVarsling hopper over i stillhet på to steder: ingen
+            // aktive kanaler, eller ingen mottakere. Begge logger, men loggen
+            // er ikke der man leter når «flyten trigges ikke». Her stilles de
+            // samme spørsmålene, uten å sende noe.
+            //
+            // Mottakerkravet gjelder ALLE kanaler, også Planner alene: en
+            // oppgave uten ansvarlig er ikke noe vi lager. Det er ikke
+            // åpenbart fra grensesnittet, og er den vanligste grunnen til at
+            // en Planner-oppgave uteblir.
+            const aktiveNumre = new Set(aktive.map(s => Number(s.Steg)));
+            const behandlerSteg = [];
+            for (const s of behandling) {
+                const kanaler = varsling.aktiveKanaler(s);
+                const mottakere = await varsling.samleBehandlerMottakere(s);
+                const erAktiv = aktiveNumre.has(Number(s.Steg));
+
+                let grunn = null;
+                if (!erAktiv) grunn = 'steget er ikke aktivt — varsles først når det blir det';
+                else if (kanaler.length === 0) grunn = 'ingen kanaler er valgt på steget';
+                else if (mottakere.length === 0) grunn = 'ingen mottakere — rollene har ingen innehavere';
+
+                behandlerSteg.push({
+                    steg: s.Steg,
+                    stegnavn: s.Stegnavn || '',
+                    aktivNaa: erAktiv,
+                    kanaler,
+                    antallMottakere: mottakere.length,
+                    mottakere: mottakere.map(m => m.epost),
+                    forklaring: await varsling.forklarMottakere(
+                        { Personer: s.Personer || [], Roller: s.Roller || [] }, skjema),
+                    villeSendt: grunn === null,
+                    grunn
+                });
+            }
+
             return {
                 jsonBody: {
                     skjema: {
@@ -130,6 +167,15 @@ app.http('varslingDiagSkjema', {
                         mottakerOppsett: kopiOppsett,
                         oppløsteMottakere: kopiMottakere,
                         forklaring: kopiForklaring
+                    },
+                    behandlervarsling: {
+                        // Gjelder alle kanaler. Er denne false, kalles flyten
+                        // ikke i det hele tatt — uansett hvor riktig adressen er.
+                        flytKalles: !!process.env.VARSLING_FLOW_URL
+                            && String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() !== 'true',
+                        VARSLING_FLOW_URL_satt: !!process.env.VARSLING_FLOW_URL,
+                        VARSLING_DEAKTIVERT: process.env.VARSLING_DEAKTIVERT || null,
+                        steg: behandlerSteg
                     },
                     logg
                 }

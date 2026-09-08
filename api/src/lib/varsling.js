@@ -629,6 +629,8 @@ module.exports = {
     forklarMottakere,
     _samleBehandlerMottakere: samleBehandlerMottakere,
     _skjemaLenke: skjemaLenke,
+    // Diagnosen trenger å kunne stille de samme spørsmålene som utsendingen.
+    aktiveKanaler, samleBehandlerMottakere,
     // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
     somPlannerOppgave, somTeamskanal, somTeamsMelding,
     løsForfallsdato, byggSjekkliste, sjekklisteTilGraph, byggPlanner, byggTeamskanal, byggTeamsMelding,
