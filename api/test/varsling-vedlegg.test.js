@@ -151,6 +151,16 @@ async function planner() {
         Object.values(ut.vedlegg_graph)[0].alias, 'Lenke til skjemaet');
     sjekk('og beholder type url', Object.values(ut.vedlegg_graph)[0].type, 'url');
 
+    // ---------- det som faktisk styrer kortet ----------
+    {
+        // Rekkefølgen i JSON alene holder ikke: uten previewPriority tildeler
+        // Planner sin egen sortering, og uten previewType viser kortet
+        // beskrivelsen i stedet for referansen.
+        sjekk('lenka er pinnet først', Object.values(ut.vedlegg_graph)[0].previewPriority, ' !');
+        sjekk('vedlegg står uten hint', 'previewPriority' in Object.values(ut.vedlegg_graph)[1], false);
+        sjekk('kortet viser referansen', ut.previewType, 'reference');
+    }
+
     // ---------- skjema uten vedlegg ----------
     {
         const tomt = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
@@ -170,6 +180,8 @@ async function planner() {
     });
     sjekk('uten base-URL sendes ingen vedlegg', utenBase.vedlegg, []);
     sjekk('og tomt Graph-kart', utenBase.vedlegg_graph, {});
+    // Uten referanser ville «reference» gitt et tomt kort.
+    sjekk('og ingen previewType å be om', utenBase.previewType, null);
 
     console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);

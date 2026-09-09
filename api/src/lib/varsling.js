@@ -231,6 +231,14 @@ function vedleggTilGraph(vedlegg) {
             // fil og har ingen endelse å utlede noe av.
             type: v.type || vedleggstype(v.filnavn)
         };
+        // previewPriority settes bare der den er bedt om, og bare med en verdi
+        // Microsoft selv bruker i dokumentasjonen: « !». Formatet er en egen
+        // sammenligningsalgoritme, og en verdi vi finner på selv gir 400 på
+        // hele details-kallet — altså ingen oppgavedetaljer i det hele tatt.
+        //
+        // De øvrige referansene står uten. Da tildeler Planner sine egne, og
+        // den ene vi har pinnet blir liggende først.
+        if (v.previewPriority) ut[nokkel].previewPriority = v.previewPriority;
     }
     return ut;
 }
@@ -262,7 +270,15 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
     // hensikten er at den skal være synlig på oppgavekortet uten at noen må
     // åpne oppgaven. Vedleggene kommer etter.
     const vedlegg = [];
-    if (lenke) vedlegg.push({ filnavn: 'Lenke til skjemaet', url: lenke, type: 'url' });
+    if (lenke) {
+        vedlegg.push({
+            filnavn: 'Lenke til skjemaet', url: lenke, type: 'url',
+            // « !» er verdien Microsoft bruker i sin egen dokumentasjon for
+            // den første referansen. Pinner lenka øverst i Planners egen
+            // sortering — rekkefølgen i JSON alene holder ikke.
+            previewPriority: ' !'
+        });
+    }
     if (base) vedlegg.push(...vedleggFraSkjema(skjema, base));
 
     return {
@@ -277,12 +293,19 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         sjekkliste_graph: sjekklisteTilGraph(sjekkliste),
         notat: erstattPlassholdere(p.Notater, kontekst) || `Åpne skjemaet: ${lenke}`,
         ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' })),
-        // Skjemaets vedlegg, så behandleren når dem fra oppgaven i stedet for å
-        // måtte åpne skjemaet først. `vedlegg` er lesbar for en flyt som vil
-        // bygge sitt eget; `vedlegg_graph` er klar til å sendes rett inn i
-        // details-kallet. Begge er tomme når skjemaet ikke har vedlegg.
+        // Skjemaets vedlegg, med skjemalenka først. `vedlegg` er lesbar for en
+        // flyt som vil bygge sitt eget; `vedlegg_graph` er klar til å sendes
+        // rett inn i details-kallet.
         vedlegg,
-        vedlegg_graph: vedleggTilGraph(vedlegg)
+        vedlegg_graph: vedleggTilGraph(vedlegg),
+        // Hva oppgavekortet skal vise uten at noen åpner oppgaven. Settes på
+        // SELVE oppgaven (plannerTask), ikke i details — derfor står den for
+        // seg. Uten den viser kortet beskrivelsen eller sjekklista, og lenka
+        // blir liggende usett bak et klikk.
+        //
+        // Bare når vi faktisk har en lenke å vise. Har vi ingen referanser,
+        // ville «reference» gitt et tomt kort.
+        previewType: vedlegg.length > 0 ? 'reference' : null
     };
 }
 

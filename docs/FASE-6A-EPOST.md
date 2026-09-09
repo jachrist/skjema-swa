@@ -182,11 +182,33 @@ ignoreres de, og oppgaven blir som før.
 
 Hensikten er at behandleren skal se veien til skjemaet på oppgavekortet, uten
 å måtte åpne oppgaven. Lenka sendes derfor som en referanse på linje med
-vedleggene, og ligger først i begge formene — også i `vedlegg_graph`, der
-nøkkelrekkefølgen er innsettingsrekkefølgen.
+vedleggene, og ligger først i begge formene.
 
 Den kommer med selv om skjemaet ikke har vedlegg. Har SWA-en ingen kjent
 base-URL, kommer verken lenka eller vedleggene.
+
+**Rekkefølgen i JSON alene er ikke nok** til at Planner viser lenka på kortet.
+To ting til må settes, og de settes på hver sin ting:
+
+| Felt | Hvor | Hva den gjør |
+|---|---|---|
+| `previewPriority: " !"` | på referansen, i `details` | Pinner lenka øverst i Planners egen sortering. Vi setter den bare på lenka; vedleggene står uten, og Planner tildeler dem sine egne. |
+| `previewType: "reference"` | på **oppgaven**, ikke i `details` | Får kortet til å vise referansen i stedet for beskrivelsen. Sendes som eget felt i `planner`-objektet. |
+
+`previewType` er `null` når det ikke finnes noen referanser — «reference» ville
+da gitt et tomt kort.
+
+Verdien `" !"` er den Microsoft selv bruker i dokumentasjonen. Formatet er en
+egen sammenligningsalgoritme, så en verdi vi finner på selv gir 400 på hele
+`details`-kallet — altså ingen oppgavedetaljer i det hele tatt, ikke bare feil
+rekkefølge.
+
+Oppgaven må altså oppdateres to steder i flyten:
+
+```http
+PATCH /planner/tasks/{taskId}          →  { "previewType": "reference" }
+PATCH /planner/tasks/{taskId}/details  →  { "checklist": ..., "references": ... }
+```
 
 ### Slik brukes de i flyten
 
