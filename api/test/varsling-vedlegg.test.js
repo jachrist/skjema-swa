@@ -105,6 +105,19 @@ const skjema = (felter) => ({
     sjekk('tom liste gir tomt kart', v.vedleggTilGraph([]), {});
 }
 
+// ---------- eksplisitt type går foran filendelsen ----------
+{
+    // Skjemalenka er ikke en fil og har ingen endelse å utlede noe av. Uten
+    // dette ville den blitt «Other» — eller «Html» hvis adressen tilfeldigvis
+    // endte på noe som lignet en endelse.
+    const g = v.vedleggTilGraph([
+        { filnavn: 'Lenke til skjemaet', url: 'https://e.net/evaluering.html?a=1', type: 'url' }
+    ]);
+    const ref = Object.values(g)[0];
+    sjekk('oppgitt type brukes', ref.type, 'url');
+    sjekk('alias er teksten, ikke adressen', ref.alias, 'Lenke til skjemaet');
+}
+
 // ---------- typeetiketten ----------
 {
     sjekk('pdf', v.vedleggstype('a.pdf'), 'Pdf');
@@ -123,11 +136,34 @@ async function planner() {
         emne: 'Emne', lenke: 'https://eksempel.net/evaluering.html?a=1',
         skjema: s, behandlere: [], log: () => { }, rolleOppslag: async () => []
     });
-    sjekk('vedlegg med i payloaden', ut.vedlegg.map(x => x.filnavn), ['tilbud.pdf']);
-    sjekk('og i Graph-form', Object.keys(ut.vedlegg_graph).length, 1);
+    // Skjemalenka ligger først. Hensikten er at den skal vises på
+    // oppgavekortet uten at noen må åpne oppgaven, så rekkefølgen er ikke
+    // kosmetikk — den er hele poenget med at den er med.
+    sjekk('skjemalenka først, så vedleggene',
+        ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet', 'tilbud.pdf']);
+    sjekk('lenka peker på skjemaet', ut.vedlegg[0].url, 'https://eksempel.net/evaluering.html?a=1');
+    sjekk('og har type url', ut.vedlegg[0].type, 'url');
+    sjekk('begge i Graph-form', Object.keys(ut.vedlegg_graph).length, 2);
 
-    // Uten base-URL gir vi ingen adresse — en halv lenke i en oppgave er verre
-    // enn ingen, og flyten kan ikke se forskjell.
+    // Nøkkelrekkefølgen i objektet er innsettingsrekkefølgen — URL-er er ikke
+    // heltallslignende, så JS bevarer den. Uten det ville «først» vært tilfeldig.
+    sjekk('lenka er første nøkkel også i Graph-kartet',
+        Object.values(ut.vedlegg_graph)[0].alias, 'Lenke til skjemaet');
+    sjekk('og beholder type url', Object.values(ut.vedlegg_graph)[0].type, 'url');
+
+    // ---------- skjema uten vedlegg ----------
+    {
+        const tomt = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
+            emne: 'Emne', lenke: 'https://eksempel.net/evaluering.html?a=1',
+            skjema: skjema([{ Type: 'Tekst', Svar: ['x'] }]),
+            behandlere: [], log: () => { }, rolleOppslag: async () => []
+        });
+        sjekk('lenka står alene når det ikke finnes vedlegg',
+            tomt.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet']);
+    }
+
+    // Uten lenke har vi ingenting å peke på — verken skjemaet eller
+    // vedleggene. En halv adresse i en oppgave er verre enn ingen.
     const utenBase = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
         emne: 'Emne', lenke: '', skjema: s, behandlere: [], log: () => { },
         rolleOppslag: async () => []

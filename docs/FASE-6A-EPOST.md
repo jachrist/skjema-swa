@@ -152,14 +152,23 @@ ignoreres de, og oppgaven blir som før.
   "tittel": "...", "plan": "...", "bucket": "...",
   "sjekkliste": [...], "sjekkliste_graph": { ... },
 
-  // Lesbar form — for en flyt som vil bygge noe eget
+  // Lesbar form — for en flyt som vil bygge noe eget.
+  // Skjemalenka ligger ALLTID først; vedleggene kommer etter.
   "vedlegg": [
+    { "filnavn": "Lenke til skjemaet",
+      "url": "https://<swa>/evaluering.html?skjematype_id=123&skjema_id=6",
+      "type": "url" },
     { "filnavn": "tilbud.pdf",
       "url": "https://<swa>/api/vedlegg-fil/123/6/tilbud.pdf" }
   ],
 
-  // Klar til å sendes rett inn i details-kallet
+  // Klar til å sendes rett inn i details-kallet. Samme rekkefølge.
   "vedlegg_graph": {
+    "https%3A//<swa>/evaluering%2Ehtml?skjematype_id=123&skjema_id=6": {
+      "@odata.type": "microsoft.graph.plannerExternalReference",
+      "alias": "Lenke til skjemaet",
+      "type": "url"
+    },
     "https%3A//<swa>/api/vedlegg-fil/123/6/tilbud%2Epdf": {
       "@odata.type": "microsoft.graph.plannerExternalReference",
       "alias": "tilbud.pdf",
@@ -168,6 +177,16 @@ ignoreres de, og oppgaven blir som før.
   }
 }
 ```
+
+### Skjemalenka er første element
+
+Hensikten er at behandleren skal se veien til skjemaet på oppgavekortet, uten
+å måtte åpne oppgaven. Lenka sendes derfor som en referanse på linje med
+vedleggene, og ligger først i begge formene — også i `vedlegg_graph`, der
+nøkkelrekkefølgen er innsettingsrekkefølgen.
+
+Den kommer med selv om skjemaet ikke har vedlegg. Har SWA-en ingen kjent
+base-URL, kommer verken lenka eller vedleggene.
 
 ### Slik brukes de i flyten
 

@@ -227,7 +227,9 @@ function vedleggTilGraph(vedlegg) {
         ut[nokkel] = {
             '@odata.type': 'microsoft.graph.plannerExternalReference',
             alias: v.filnavn,
-            type: vedleggstype(v.filnavn)
+            // Eksplisitt type går foran filendelsen — skjemalenka er ikke en
+            // fil og har ingen endelse å utlede noe av.
+            type: v.type || vedleggstype(v.filnavn)
         };
     }
     return ut;
@@ -255,7 +257,13 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
     // host — får vedleggene ingen adresse, og vi sender dem heller ikke.
     let base = '';
     try { base = lenke ? new URL(lenke).origin : ''; } catch (_) { base = ''; }
-    const vedlegg = base ? vedleggFraSkjema(skjema, base) : [];
+
+    // Skjemalenka ligger først. Det er den behandleren trenger oftest, og
+    // hensikten er at den skal være synlig på oppgavekortet uten at noen må
+    // åpne oppgaven. Vedleggene kommer etter.
+    const vedlegg = [];
+    if (lenke) vedlegg.push({ filnavn: 'Lenke til skjemaet', url: lenke, type: 'url' });
+    if (base) vedlegg.push(...vedleggFraSkjema(skjema, base));
 
     return {
         tittel: erstattPlassholdere(p.Tittel, kontekst) || emne,
