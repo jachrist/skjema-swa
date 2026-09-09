@@ -187,28 +187,16 @@ vedleggene, og ligger først i begge formene.
 Den kommer med selv om skjemaet ikke har vedlegg. Har SWA-en ingen kjent
 base-URL, kommer verken lenka eller vedleggene.
 
-**Rekkefølgen i JSON alene er ikke nok** til at Planner viser lenka på kortet.
-To ting til må settes, og de settes på hver sin ting:
-
-| Felt | Hvor | Hva den gjør |
-|---|---|---|
-| `previewPriority: " !"` | på referansen, i `details` | Pinner lenka øverst i Planners egen sortering. Vi setter den bare på lenka; vedleggene står uten, og Planner tildeler dem sine egne. |
-| `previewType: "reference"` | på **oppgaven**, ikke i `details` | Får kortet til å vise referansen i stedet for beskrivelsen. Sendes som eget felt i `planner`-objektet. |
-
-`previewType` er `null` når det ikke finnes noen referanser — «reference» ville
-da gitt et tomt kort.
+**Rekkefølgen i JSON alene er ikke nok** til at Planner viser lenka på kortet,
+og kortet viste seg å være utenfor vår kontroll — se «`previewType` lar seg
+ikke sette» nedenfor. `previewPriority: " !"` sendes likevel på lenka: den er
+gyldig, koster ingenting, og pinner lenka øverst i vedleggslista der den
+faktisk vises.
 
 Verdien `" !"` er den Microsoft selv bruker i dokumentasjonen. Formatet er en
 egen sammenligningsalgoritme, så en verdi vi finner på selv gir 400 på hele
 `details`-kallet — altså ingen oppgavedetaljer i det hele tatt, ikke bare feil
-rekkefølge.
-
-Oppgaven må altså oppdateres to steder i flyten:
-
-```http
-PATCH /planner/tasks/{taskId}          →  { "previewType": "reference" }
-PATCH /planner/tasks/{taskId}/details  →  { "checklist": ..., "references": ... }
-```
+rekkefølge. Vedleggene står uten hint; Planner tildeler dem sine egne.
 
 ### `type` må være en verdi Graph kjenner
 
@@ -264,3 +252,46 @@ spares er veien om skjemavisningen.
 Har SWA-en ingen kjent base-URL (`SWA_URL` ikke satt), sendes ingen vedlegg.
 En halv adresse i en oppgave er verre enn ingen, og flyten kan ikke se
 forskjell.
+
+### `previewType` lar seg ikke sette — bruk beskrivelsen
+
+Planner-kortet kan vi **ikke** styre. `previewType` er dokumentert som en
+skrivbar egenskap på `plannerTask`, men Graph avviser den:
+
+```
+The request is invalid:
+This field cannot be modified (Parameter 'PreviewType')
+```
+
+Prøvd 09.09.2026. Står oppgaven på `automatic`, velger Planner selv, og den
+foretrekker et bilde framfor en lenke. Kortet er altså utenfor vår kontroll.
+
+Lenka legges derfor i **beskrivelsen** i stedet, som en klikkbar `<a>`.
+Payloaden har notatet i to former:
+
+| Felt | Form | Til |
+|---|---|---|
+| `notat` | ren tekst | `description` (uendret oppførsel) |
+| `notat_html` | HTML | `notes: { content, contentType: "html" }` på beta |
+
+```jsonc
+"notat": "Husk fristen",
+"notat_html": "<p>Husk fristen</p><p><a href=\"https://<swa>/evaluering.html?...\">Åpne skjemaet</a></p>"
+```
+
+Bruk `notat_html` i det kallet flyten allerede gjør:
+
+```http
+PATCH https://graph.microsoft.com/beta/planner/tasks/{taskId}/details
+{ "notes": { "content": <notat_html>, "contentType": "html" },
+  "checklist": <sjekkliste_graph>,
+  "references": <vedlegg_graph> }
+```
+
+**Lenka er alltid med i `notat_html`**, også når noen har skrevet sitt eget
+notat. Før lå den bare i fallbacken, så den forsvant i det øyeblikket
+notatfeltet ble tatt i bruk — altså akkurat når noen begynte å bruke det.
+
+Brukerens tekst escapes før den settes inn. Notatfeltet er fritekst i
+editoren, og en avbrutt tag ville ellers ødelagt resten av beskrivelsen.
+Blanke linjer blir avsnitt, enkle linjeskift blir `<br>`.

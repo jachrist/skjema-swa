@@ -161,6 +161,52 @@ function sjekklisteTilGraph(punkter) {
 }
 
 /**
+ * Tekst → HTML, trygt.
+ *
+ * Notatet kommer fra et fritekstfelt i editoren og kan inneholde <, > og &.
+ * Sendes det urørt inn i et felt med contentType html, blir det enten
+ * bortfiltrert eller tolket som markup — begge deler feil.
+ */
+function tilHtml(tekst) {
+    return String(tekst || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+/**
+ * Notatet som HTML, med en klikkbar lenke til skjemaet.
+ *
+ * Planner-oppgavens beskrivelse tar HTML på beta-endepunktet
+ * (`notes: { content, contentType: 'html' }`). En bar adresse i ren tekst blir
+ * ikke klikkbar der, så lenka må være en ekte `<a>`.
+ *
+ * Lenka kommer ALLTID med, også når noen har skrevet sitt eget notat. Før lå
+ * den bare i fallbacken, så den forsvant i det øyeblikket man skrev noe selv
+ * — altså akkurat når notatet ble tatt i bruk.
+ *
+ * Bakgrunn: Planner lar oss ikke styre hva kortet viser. `previewType` er
+ * dokumentert som skrivbar på plannerTask, men Graph svarer «This field
+ * cannot be modified» (prøvd 09.09.2026). Beskrivelsen er derfor det stedet
+ * vi faktisk kan legge lenka.
+ */
+function notatSomHtml(tekst, lenke) {
+    const deler = [];
+    const raa = String(tekst || '').trim();
+    if (raa) {
+        // Blanke linjer skiller avsnitt; enkle linjeskift blir <br>.
+        for (const avsnitt of raa.split(/\r?\n\s*\r?\n/)) {
+            const linjer = avsnitt.split(/\r?\n/).map(tilHtml).join('<br>');
+            if (linjer.trim()) deler.push(`<p>${linjer}</p>`);
+        }
+    }
+    if (lenke) deler.push(`<p><a href="${tilHtml(lenke)}">Åpne skjemaet</a></p>`);
+    return deler.join('');
+}
+
+
+/**
  * Skjemaets vedlegg, med nedlastingslenke.
  *
  * Vedleggsfelt lagrer filnavn som svar, ikke adresser. En feltreferanse i en
@@ -308,21 +354,18 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         sjekkliste: sjekkliste,
         // Samme punkter, men i Graph-formen — se sjekklisteTilGraph.
         sjekkliste_graph: sjekklisteTilGraph(sjekkliste),
+        // Ren tekst, som før — for en flyt som skriver til `description`.
         notat: erstattPlassholdere(p.Notater, kontekst) || `Åpne skjemaet: ${lenke}`,
+        // Samme notat som HTML, med lenka som en ekte <a>. Beta-endepunktets
+        // `notes: { content, contentType: 'html' }` tar denne. Lenka er alltid
+        // med, også når noen har skrevet sitt eget notat.
+        notat_html: notatSomHtml(erstattPlassholdere(p.Notater, kontekst), lenke),
         ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' })),
         // Skjemaets vedlegg, med skjemalenka først. `vedlegg` er lesbar for en
         // flyt som vil bygge sitt eget; `vedlegg_graph` er klar til å sendes
         // rett inn i details-kallet.
         vedlegg,
         vedlegg_graph: vedleggTilGraph(vedlegg),
-        // Hva oppgavekortet skal vise uten at noen åpner oppgaven. Settes på
-        // SELVE oppgaven (plannerTask), ikke i details — derfor står den for
-        // seg. Uten den viser kortet beskrivelsen eller sjekklista, og lenka
-        // blir liggende usett bak et klikk.
-        //
-        // Bare når vi faktisk har en lenke å vise. Har vi ingen referanser,
-        // ville «reference» gitt et tomt kort.
-        previewType: vedlegg.length > 0 ? 'reference' : null
     };
 }
 
@@ -682,6 +725,6 @@ module.exports = {
     // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
     somPlannerOppgave, somTeamskanal, somTeamsMelding,
     løsForfallsdato, byggSjekkliste, sjekklisteTilGraph, byggPlanner, byggTeamskanal, byggTeamsMelding,
-    vedleggFraSkjema, vedleggTilGraph, vedleggstype,
+    vedleggFraSkjema, vedleggTilGraph, vedleggstype, notatSomHtml, tilHtml,
     PLANNER_STATUS, PLANNER_PRIORITET
 };
