@@ -193,13 +193,25 @@ function vedleggFraSkjema(skjema, base) {
     return ut;
 }
 
-/** Planners egen typeetikett, utledet av filendelsen. */
+/**
+ * Planners egen typeetikett, utledet av filendelsen.
+ *
+ * Graph godtar bare et lite, lukket sett: dokumentformatene og «Other». En
+ * verdi utenfor det gir 400 på hele details-kallet — ikke bare feil ikon, men
+ * ingen oppgavedetaljer i det hele tatt, verken sjekkliste eller referanser.
+ * Vi lærte det ved at «url» på skjemalenka veltet kallet 09.09.2026.
+ *
+ * Derfor er lista bevisst kort. «Pdf» er tatt ut selv om den ser plausibel ut:
+ * gevinsten er et litt penere ikon, prisen ved å ta feil er at ingenting
+ * kommer fram. Den avveiningen er ikke i tvil.
+ */
+const PLANNER_REFERANSETYPER = new Set(['Word', 'Excel', 'PowerPoint', 'Other']);
+
 function vedleggstype(filnavn) {
     const e = String(filnavn || '').toLowerCase().split('.').pop();
     if (['doc', 'docx', 'rtf', 'odt'].includes(e)) return 'Word';
     if (['xls', 'xlsx', 'csv', 'ods'].includes(e)) return 'Excel';
     if (['ppt', 'pptx', 'odp'].includes(e)) return 'PowerPoint';
-    if (e === 'pdf') return 'Pdf';
     return 'Other';
 }
 
@@ -228,8 +240,10 @@ function vedleggTilGraph(vedlegg) {
             '@odata.type': 'microsoft.graph.plannerExternalReference',
             alias: v.filnavn,
             // Eksplisitt type går foran filendelsen — skjemalenka er ikke en
-            // fil og har ingen endelse å utlede noe av.
-            type: v.type || vedleggstype(v.filnavn)
+            // fil og har ingen endelse å utlede noe av. Men bare hvis Graph
+            // kjenner verdien: en ukjent type velter hele kallet, så her er
+            // «Other» alltid å foretrekke framfor å gjette.
+            type: PLANNER_REFERANSETYPER.has(v.type) ? v.type : vedleggstype(v.filnavn)
         };
         // previewPriority settes bare der den er bedt om, og bare med en verdi
         // Microsoft selv bruker i dokumentasjonen: « !». Formatet er en egen
@@ -272,7 +286,10 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
     const vedlegg = [];
     if (lenke) {
         vedlegg.push({
-            filnavn: 'Lenke til skjemaet', url: lenke, type: 'url',
+            // «Other» er den eneste gyldige verdien for noe som ikke er et
+            // dokument. «url» ser riktigere ut, men Graph avviser den — se
+            // PLANNER_REFERANSETYPER.
+            filnavn: 'Lenke til skjemaet', url: lenke, type: 'Other',
             // « !» er verdien Microsoft bruker i sin egen dokumentasjon for
             // den første referansen. Pinner lenka øverst i Planners egen
             // sortering — rekkefølgen i JSON alene holder ikke.

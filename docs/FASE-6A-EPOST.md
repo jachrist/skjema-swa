@@ -157,7 +157,7 @@ ignoreres de, og oppgaven blir som før.
   "vedlegg": [
     { "filnavn": "Lenke til skjemaet",
       "url": "https://<swa>/evaluering.html?skjematype_id=123&skjema_id=6",
-      "type": "url" },
+      "type": "Other" },
     { "filnavn": "tilbud.pdf",
       "url": "https://<swa>/api/vedlegg-fil/123/6/tilbud.pdf" }
   ],
@@ -167,12 +167,12 @@ ignoreres de, og oppgaven blir som før.
     "https%3A//<swa>/evaluering%2Ehtml?skjematype_id=123&skjema_id=6": {
       "@odata.type": "microsoft.graph.plannerExternalReference",
       "alias": "Lenke til skjemaet",
-      "type": "url"
+      "type": "Other"
     },
     "https%3A//<swa>/api/vedlegg-fil/123/6/tilbud%2Epdf": {
       "@odata.type": "microsoft.graph.plannerExternalReference",
       "alias": "tilbud.pdf",
-      "type": "Pdf"
+      "type": "Other"
     }
   }
 }
@@ -209,6 +209,25 @@ Oppgaven må altså oppdateres to steder i flyten:
 PATCH /planner/tasks/{taskId}          →  { "previewType": "reference" }
 PATCH /planner/tasks/{taskId}/details  →  { "checklist": ..., "references": ... }
 ```
+
+### `type` må være en verdi Graph kjenner
+
+Bare disse fire er gyldige:
+
+```
+Word   Excel   PowerPoint   Other
+```
+
+Alt annet gir **400 på hele `details`-kallet** — verken sjekkliste eller
+referanser kommer fram, ikke bare feil ikon. Vi prøvde `"url"` på skjemalenka
+09.09.2026, og flyten feilet.
+
+`"Pdf"` ser plausibel ut, men er tatt ut av samme grunn: gevinsten er et litt
+penere ikon, prisen ved å ta feil er at ingenting kommer fram. PDF-vedlegg får
+derfor `Other`.
+
+Backend håndhever dette — en ukjent verdi forkastes og erstattes med `Other`,
+så en skrivefeil i oppsettet ikke kan velte kallet.
 
 ### Slik brukes de i flyten
 

@@ -105,28 +105,49 @@ const skjema = (felter) => ({
     sjekk('tom liste gir tomt kart', v.vedleggTilGraph([]), {});
 }
 
-// ---------- eksplisitt type går foran filendelsen ----------
+// ---------- typen må være en Graph kjenner ----------
 {
-    // Skjemalenka er ikke en fil og har ingen endelse å utlede noe av. Uten
-    // dette ville den blitt «Other» — eller «Html» hvis adressen tilfeldigvis
-    // endte på noe som lignet en endelse.
+    // Graph godtar bare dokumentformatene og «Other». En verdi utenfor settet
+    // gir 400 på HELE details-kallet — verken sjekkliste eller referanser
+    // kommer fram. «url» så riktig ut og veltet flyten 09.09.2026.
     const g = v.vedleggTilGraph([
         { filnavn: 'Lenke til skjemaet', url: 'https://e.net/evaluering.html?a=1', type: 'url' }
     ]);
     const ref = Object.values(g)[0];
-    sjekk('oppgitt type brukes', ref.type, 'url');
+    sjekk('ugyldig type forkastes', ref.type, 'Other');
     sjekk('alias er teksten, ikke adressen', ref.alias, 'Lenke til skjemaet');
+}
+
+{
+    // Gyldige typer slipper gjennom som oppgitt.
+    const g = v.vedleggTilGraph([
+        { filnavn: 'notat', url: 'https://e.net/a', type: 'Word' },
+        { filnavn: 'ark', url: 'https://e.net/b', type: 'Excel' },
+        { filnavn: 'lysark', url: 'https://e.net/c', type: 'PowerPoint' },
+        { filnavn: 'annet', url: 'https://e.net/d', type: 'Other' }
+    ]);
+    sjekk('gyldige typer beholdes', Object.values(g).map(r => r.type),
+        ['Word', 'Excel', 'PowerPoint', 'Other']);
+}
+
+{
+    // Feil kasus er også ugyldig for Graph. Da faller vi til filendelsen —
+    // her ingen — og lander på «Other».
+    const g = v.vedleggTilGraph([{ filnavn: 'x', url: 'https://e.net/x', type: 'word' }]);
+    sjekk('feil kasus forkastes', Object.values(g)[0].type, 'Other');
 }
 
 // ---------- typeetiketten ----------
 {
-    sjekk('pdf', v.vedleggstype('a.pdf'), 'Pdf');
+    // Pdf ser plausibel ut, men Graph godtar den ikke - se
+    // PLANNER_REFERANSETYPER. Feil verdi velter hele details-kallet.
+    sjekk('pdf blir Other', v.vedleggstype('a.pdf'), 'Other');
     sjekk('word', v.vedleggstype('a.docx'), 'Word');
     sjekk('excel', v.vedleggstype('a.xlsx'), 'Excel');
     sjekk('powerpoint', v.vedleggstype('a.pptx'), 'PowerPoint');
     sjekk('ukjent blir Other', v.vedleggstype('a.zip'), 'Other');
     sjekk('uten endelse blir Other', v.vedleggstype('vedlegg'), 'Other');
-    sjekk('store bokstaver teller likt', v.vedleggstype('A.PDF'), 'Pdf');
+    sjekk('store bokstaver teller likt', v.vedleggstype('A.DOCX'), 'Word');
 }
 
 // ---------- byggPlanner tar dem med ----------
@@ -142,14 +163,14 @@ async function planner() {
     sjekk('skjemalenka først, så vedleggene',
         ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet', 'tilbud.pdf']);
     sjekk('lenka peker på skjemaet', ut.vedlegg[0].url, 'https://eksempel.net/evaluering.html?a=1');
-    sjekk('og har type url', ut.vedlegg[0].type, 'url');
+    sjekk('og har type Other', ut.vedlegg[0].type, 'Other');
     sjekk('begge i Graph-form', Object.keys(ut.vedlegg_graph).length, 2);
 
     // Nøkkelrekkefølgen i objektet er innsettingsrekkefølgen — URL-er er ikke
     // heltallslignende, så JS bevarer den. Uten det ville «først» vært tilfeldig.
     sjekk('lenka er første nøkkel også i Graph-kartet',
         Object.values(ut.vedlegg_graph)[0].alias, 'Lenke til skjemaet');
-    sjekk('og beholder type url', Object.values(ut.vedlegg_graph)[0].type, 'url');
+    sjekk('og beholder type Other', Object.values(ut.vedlegg_graph)[0].type, 'Other');
 
     // ---------- det som faktisk styrer kortet ----------
     {
