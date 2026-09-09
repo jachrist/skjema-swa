@@ -176,32 +176,46 @@ function tilHtml(tekst) {
 }
 
 /**
- * Notatet som HTML, med en klikkbar lenke til skjemaet.
+ * Notatet som HTML, med klikkbare adresser.
  *
  * Planner-oppgavens beskrivelse tar HTML på beta-endepunktet
  * (`notes: { content, contentType: 'html' }`). En bar adresse i ren tekst blir
- * ikke klikkbar der, så lenka må være en ekte `<a>`.
+ * ikke klikkbar der, så adresser gjøres om til ekte `<a>`.
  *
- * Lenka kommer ALLTID med, også når noen har skrevet sitt eget notat. Før lå
- * den bare i fallbacken, så den forsvant i det øyeblikket man skrev noe selv
- * — altså akkurat når notatet ble tatt i bruk.
+ * Notatfeltet er fritekst i editoren og har `$lenke` som standardinnhold, så
+ * den som setter opp steget kan skrive tekst rundt lenka og bestemme hvor den
+ * skal stå. Derfor legges det ikke på en lenke automatisk: da ville den som
+ * plasserte den selv fått den to ganger.
+ *
+ * Unntaket er et notat helt uten adresse. Da føyes skjemalenka til, så en
+ * oppgave aldri står uten vei tilbake til skjemaet.
  *
  * Bakgrunn: Planner lar oss ikke styre hva kortet viser. `previewType` er
  * dokumentert som skrivbar på plannerTask, men Graph svarer «This field
  * cannot be modified» (prøvd 09.09.2026). Beskrivelsen er derfor det stedet
  * vi faktisk kan legge lenka.
  */
+const URL_I_TEKST = /https?:\/\/[^\s<>"')]+/g;
+
+function medLenker(escapetLinje) {
+    return escapetLinje.replace(URL_I_TEKST, (u) => `<a href="${u}">${u}</a>`);
+}
+
 function notatSomHtml(tekst, lenke) {
     const deler = [];
     const raa = String(tekst || '').trim();
     if (raa) {
         // Blanke linjer skiller avsnitt; enkle linjeskift blir <br>.
         for (const avsnitt of raa.split(/\r?\n\s*\r?\n/)) {
-            const linjer = avsnitt.split(/\r?\n/).map(tilHtml).join('<br>');
+            const linjer = avsnitt.split(/\r?\n/).map(l => medLenker(tilHtml(l))).join('<br>');
             if (linjer.trim()) deler.push(`<p>${linjer}</p>`);
         }
     }
-    if (lenke) deler.push(`<p><a href="${tilHtml(lenke)}">Åpne skjemaet</a></p>`);
+    // Bare når notatet ikke selv peker noe sted.
+    if (lenke && !URL_I_TEKST.test(raa)) {
+        deler.push(`<p><a href="${tilHtml(lenke)}">Åpne skjemaet</a></p>`);
+    }
+    URL_I_TEKST.lastIndex = 0;   // /g holder på posisjon mellom kall
     return deler.join('');
 }
 
@@ -329,19 +343,21 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
     // Skjemalenka ligger først. Det er den behandleren trenger oftest, og
     // hensikten er at den skal være synlig på oppgavekortet uten at noen må
     // åpne oppgaven. Vedleggene kommer etter.
+    // Skjemalenka holdes for seg: den er den ENESTE som gaar inn i
+    // `references`, mens `vedlegg` ogsaa lister filene.
+    const skjemalenke = lenke ? {
+        // «Other» er den eneste gyldige verdien for noe som ikke er et
+        // dokument. «url» ser riktigere ut, men Graph avviser den — se
+        // PLANNER_REFERANSETYPER.
+        filnavn: 'Lenke til skjemaet', url: lenke, type: 'Other',
+        // « !» er verdien Microsoft bruker i sin egen dokumentasjon for den
+        // første referansen. Med bare én referanse betyr den lite, men den er
+        // gyldig og koster ingenting.
+        previewPriority: ' !'
+    } : null;
+
     const vedlegg = [];
-    if (lenke) {
-        vedlegg.push({
-            // «Other» er den eneste gyldige verdien for noe som ikke er et
-            // dokument. «url» ser riktigere ut, men Graph avviser den — se
-            // PLANNER_REFERANSETYPER.
-            filnavn: 'Lenke til skjemaet', url: lenke, type: 'Other',
-            // « !» er verdien Microsoft bruker i sin egen dokumentasjon for
-            // den første referansen. Pinner lenka øverst i Planners egen
-            // sortering — rekkefølgen i JSON alene holder ikke.
-            previewPriority: ' !'
-        });
-    }
+    if (skjemalenke) vedlegg.push(skjemalenke);
     if (base) vedlegg.push(...vedleggFraSkjema(skjema, base));
 
     return {
@@ -361,11 +377,20 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         // med, også når noen har skrevet sitt eget notat.
         notat_html: notatSomHtml(erstattPlassholdere(p.Notater, kontekst), lenke),
         ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' })),
-        // Skjemaets vedlegg, med skjemalenka først. `vedlegg` er lesbar for en
-        // flyt som vil bygge sitt eget; `vedlegg_graph` er klar til å sendes
-        // rett inn i details-kallet.
+        // Skjemaets vedlegg i lesbar form — for en flyt som vil bruke dem til
+        // noe. Ikke i bruk i dag; vedleggene naas gjennom skjemaet lenka peker
+        // til, som er ett klikk unna uansett.
         vedlegg,
-        vedlegg_graph: vedleggTilGraph(vedlegg),
+        // BARE skjemalenka gaar inn i `references`.
+        //
+        // Vedleggene laa her til aa begynne med, men Planner velger selv hva
+        // kortet viser og foretrekker et bilde. Et skjermbilde blant vedleggene
+        // kapret dermed kortet, og lenka - som er det behandleren faktisk
+        // trenger - ble liggende usett. previewType, som skulle styrt det, lar
+        // seg ikke sette (se notatSomHtml).
+        //
+        // Med bare lenka som referanse er det ingenting aa kapre.
+        vedlegg_graph: vedleggTilGraph(skjemalenke ? [skjemalenke] : [])
     };
 }
 

@@ -295,3 +295,32 @@ notatfeltet ble tatt i bruk — altså akkurat når noen begynte å bruke det.
 Brukerens tekst escapes før den settes inn. Notatfeltet er fritekst i
 editoren, og en avbrutt tag ville ellers ødelagt resten av beskrivelsen.
 Blanke linjer blir avsnitt, enkle linjeskift blir `<br>`.
+
+### Bare skjemalenka går inn i `references`
+
+Vedleggene lå der til å begynne med, men Planner velger selv hva kortet viser
+og foretrekker et bilde. Et skjermbilde blant vedleggene kapret dermed kortet,
+og lenka — det behandleren faktisk trenger — ble liggende usett.
+
+`vedlegg_graph` inneholder derfor **bare skjemalenka**. `vedlegg` lister
+fortsatt filene i lesbar form for en flyt som vil bruke dem til noe, men den
+brukes ikke i dag: vedleggene nås gjennom skjemaet lenka peker til, ett klikk
+unna.
+
+### Notatet har lenka som standardinnhold
+
+Notatfeltet i editoren er forhåndsutfylt med
+
+```
+Skjemaet finner du her: $lenke
+```
+
+— ikke som grå hjelpetekst, men som faktisk innhold. Den som setter opp steget
+kan skrive rundt lenka og bestemme hvor den står. Er feltet tømt med vilje,
+blir det stående tomt.
+
+`notat_html` gjør adresser om til klikkbare `<a>`, så `$lenke` holder som ren
+tekst. Det legges **ikke** på en lenke automatisk når notatet allerede peker et
+sted — da ville den som plasserte den selv fått den to ganger. Unntaket er et
+notat helt uten adresse: da føyes skjemalenka til, så en oppgave aldri står
+uten vei tilbake.

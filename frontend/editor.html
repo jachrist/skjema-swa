@@ -1681,7 +1681,18 @@
             const steg = data.Behandling[stegIdx];
             if (!steg) return;
             const naa = steg.PlannerOppgave || {};
-            const ny = await apneKonfigModal(naa, {
+            // Standardinnhold i notatet, ikke bare en grå hjelpetekst: den som
+            // setter opp steget skal kunne skrive rundt lenka og bestemme hvor
+            // den står. Backend gjør adresser om til klikkbare lenker, så
+            // $lenke holder som ren tekst.
+            //
+            // Bare når feltet aldri har vært konfigurert. Er det tømt med vilje,
+            // skal det bli stående tomt.
+            const forhaandsutfylt = {
+                ...naa,
+                Notater: naa.Notater ?? 'Skjemaet finner du her: $lenke'
+            };
+            const ny = await apneKonfigModal(forhaandsutfylt, {
                 tittel: `Planner-oppgave — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
                 hjelp: 'Tomme felter overlates til flyten, som før. Frist godtar <code>{idag}</code>, <code>{idag+7}</code> eller en dato på formen <code>2026-09-15</code>.',
                 felter: [
@@ -1700,7 +1711,7 @@
                     { navn: 'Sjekkliste', etikett: 'Sjekkliste', type: 'tekstomrade', rader: 4,
                       hjelp: '(ett punkt per linje, maks 20)', plassholder: 'Les gjennom skjemaet\nKontroller vedlegg\nFatt beslutning' },
                     { navn: 'Notater', etikett: 'Notat', type: 'tekstomrade', rader: 3,
-                      hjelp: '(tomt gir en lenke til skjemaet)' }
+                      hjelp: '(adresser blir klikkbare — tomt gir en lenke til skjemaet)' }
                 ],
                 feltreferanser: samleFeltreferanser(data)
             });

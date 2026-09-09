@@ -164,21 +164,19 @@ async function planner() {
         ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet', 'tilbud.pdf']);
     sjekk('lenka peker på skjemaet', ut.vedlegg[0].url, 'https://eksempel.net/evaluering.html?a=1');
     sjekk('og har type Other', ut.vedlegg[0].type, 'Other');
-    sjekk('begge i Graph-form', Object.keys(ut.vedlegg_graph).length, 2);
+    sjekk('bare lenka i Graph-form', Object.keys(ut.vedlegg_graph).length, 1);
 
-    // Nøkkelrekkefølgen i objektet er innsettingsrekkefølgen — URL-er er ikke
-    // heltallslignende, så JS bevarer den. Uten det ville «først» vært tilfeldig.
-    sjekk('lenka er første nøkkel også i Graph-kartet',
-        Object.values(ut.vedlegg_graph)[0].alias, 'Lenke til skjemaet');
-    sjekk('og beholder type Other', Object.values(ut.vedlegg_graph)[0].type, 'Other');
-
-    // ---------- det som styrer rekkefølgen ----------
+    // ---------- vedleggene holdes UTE av references ----------
     {
-        // Kortet lar seg ikke styre — previewType avvises av Graph, se
-        // notatSomHtml. previewPriority er fortsatt nyttig: den pinner lenka
-        // øverst i vedleggslista, der den faktisk vises.
-        sjekk('lenka er pinnet først', Object.values(ut.vedlegg_graph)[0].previewPriority, ' !');
-        sjekk('vedlegg står uten hint', 'previewPriority' in Object.values(ut.vedlegg_graph)[1], false);
+        // De laa her til aa begynne med, men Planner velger selv hva kortet
+        // viser og foretrekker et bilde. Et skjermbilde blant vedleggene
+        // kapret dermed kortet, og lenka ble liggende usett. Med bare lenka
+        // som referanse er det ingenting aa kapre.
+        const ref = Object.values(ut.vedlegg_graph);
+        sjekk('kun skjemalenka er referanse', ref.map(r => r.alias), ['Lenke til skjemaet']);
+        sjekk('men vedlegget staar fortsatt i lista',
+            ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet', 'tilbud.pdf']);
+        sjekk('lenka har previewPriority', ref[0].previewPriority, ' !');
     }
 
     // ---------- skjema uten vedlegg ----------
