@@ -52,6 +52,7 @@ const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const utsendingStorage = require('../lib/utsending-storage');
 const utsendingToken = require('../lib/utsending-token');
+const flytUtfall = require('../lib/flyt-utfall');
 const hendelser = require('../lib/hendelser-storage');
 const skjemaStorage = require('../lib/skjema-storage');
 const { hentOgSettFasteData } = require('../lib/faste-data');
@@ -178,7 +179,7 @@ const FLYT_TIMEOUT_MS = 35000;
 
 async function kallUtsendingsflyt(handling, mottakere, context, navn) {
     const url = String(process.env.VARSLING_FLOW_URL || '').trim();
-    if (!url) return { ok: false, mangler: true, feil: 'VARSLING_FLOW_URL er ikke satt' };
+    if (!url) return { ok: false, mangler: true, komFram: false, feil: 'VARSLING_FLOW_URL er ikke satt' };
 
     const start = Date.now();
     let vertsnavn = 'ugyldig-url';
@@ -196,14 +197,19 @@ async function kallUtsendingsflyt(handling, mottakere, context, navn) {
         const ms = Date.now() - start;
         if (!res.ok) {
             const tekst = await res.text().catch(() => '');
-            return { ok: false, feil: `PA-flyt (${vertsnavn}) svarte HTTP ${res.status} etter ${ms} ms: ${tekst.slice(0, 300)}` };
+            return {
+                ok: false,
+                komFram: flytUtfall.svarKomFram(res.status),
+                feil: `PA-flyt (${vertsnavn}) svarte HTTP ${res.status} etter ${ms} ms: ${tekst.slice(0, 300)}`
+            };
         }
         context.log(`${navn}: PA-flyt (${vertsnavn}) tok imot ${mottakere.length} mottakere på ${ms} ms (handling=${handling})`);
-        return { ok: true, ms };
+        return { ok: true, komFram: true, ms };
     } catch (e) {
         const ms = Date.now() - start;
         return {
             ok: false,
+            komFram: flytUtfall.feilKomFram(e),
             feil: e.name === 'AbortError'
                 ? `PA-flyt (${vertsnavn}) svarte ikke innen ${FLYT_TIMEOUT_MS / 1000} sekunder`
                 : `PA-flyt-kall mot ${vertsnavn} feilet etter ${ms} ms: ${e.message}`
@@ -585,7 +591,35 @@ app.http('utsendingPurre', {
             const feil = res.ok ? null : res.feil;
             if (feil) context.log(`utsending/purre: ${feil}`);
 
-            // Marker alle som purret (også hvis PA feilet — så vi ikke spammer neste kjøring)
+            // Kom kallet aldri fram, er ingenting sendt. Da skal ingenting
+            // markeres heller.
+            //
+            // Fram til 10.09.2026 ble alle markert uansett, «så vi ikke
+            // spammer neste kjøring», og endepunktet svarte 200. Med en død
+            // flyt-adresse betydde det at purringen ble brukt opp i stillhet:
+            // ingen e-post, cron-jobben grønn, og eneste spor en linje i
+            // loggen. Anti-spam-hensynet forutsetter at flyten kan ha rukket
+            // å sende noe — se lib/flyt-utfall.js.
+            if (!res.ok && !res.komFram) {
+                context.log(`utsending/purre: ${feil} — ingen markert som purret, prøves igjen neste kjøring`);
+                hendelser.logg({
+                    Type: 'utsending.purre', Aktor: upn || 'scheduler',
+                    ObjektType: 'utsending', ObjektId: batchFilter || '(alle)',
+                    Melding: `Purring av ${kandidater.length} utsendinger nådde ikke fram: ${feil}`,
+                    Detaljer: { antallKandidater: kandidater.length, feil, komFram: false }
+                });
+                return {
+                    status: 502,
+                    jsonBody: {
+                        status: 'feil', antallPurret: 0,
+                        antallKandidater: kandidater.length, feil
+                    }
+                };
+            }
+
+            // Kom det fram, kan flyten ha sendt til noen før den eventuelt
+            // feilet — kanskje bare halve lista, og vi vet ikke hvem. Da er én
+            // tapt purring bedre enn en dobbel til alle.
             for (const k of kandidater) {
                 try {
                     await utsendingStorage.markerPurret(k.BatchId, k.Mottaker);
@@ -602,12 +636,10 @@ app.http('utsendingPurre', {
                 Detaljer: { antallPurret, batchFilter, feil, maksDager, minDagerMellom }
             });
 
-            return {
-                jsonBody: {
-                    status: 'ok', antallPurret, antallHoppetOver: 0, feil,
-                    melding: res.mangler ? 'Ingen flyt-URL satt — dry-run (markert som purret, men ingen e-post sendt)' : undefined
-                }
-            };
+            // «Ingen flyt-URL satt» ga tidligere en dry-run-melding herfra.
+            // Den grenen er borte: mangler adressen, kom kallet ikke fram, og
+            // da svarer vi 502 over i stedet for å markere noe.
+            return { jsonBody: { status: 'ok', antallPurret, antallHoppetOver: 0, feil } };
         } catch (e) {
             context.log('utsending/purre FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
@@ -651,11 +683,13 @@ app.http('utsendingBatchStatus', {
  * eller admin. Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
  *
  * Sender ut lenker for batcher der utsendingsdatoen er passert, og markerer
- * dem som sendt. Speiler purre-jobben, med én viktig forskjell: purringen
- * markerer som purret selv om flyten feiler, for å slippe å spamme dagen
- * etter. Her ville det samme betydd at mottakeren aldri fikk lenka. Derfor
- * settes Sendt bare når flyten faktisk tok imot kallet — feiler den, prøves
- * de samme radene på nytt neste døgn.
+ * dem som sendt. Speiler purre-jobben, med én forskjell: purringen markerer
+ * som purret også når flyten kom fram og så feilet, for å slippe å spamme
+ * dagen etter. Her ville det samme betydd at mottakeren aldri fikk lenka.
+ * Derfor settes Sendt bare når flyten faktisk tok imot kallet — feiler den,
+ * prøves de samme radene på nytt neste døgn.
+ *
+ * Nådde kallet ALDRI fram, markerer ingen av dem noe. Se lib/flyt-utfall.js.
  *
  * Payload til VARSLING_FLOW_URL:
  *   { handling: 'sendUtsendinger', mottakere: [ ...samme form som purringen ] }

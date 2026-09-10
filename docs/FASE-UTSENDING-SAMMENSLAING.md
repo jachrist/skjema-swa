@@ -181,16 +181,25 @@ cron-jobbene nådde fram til flyten i det hele tatt.
 
 Trinn 2 (steg 3–5 over) fjerner den doble formen.
 
-## Uavhengig av dette: purringen markerer selv om ingenting ble sendt
+## Purringen markerer ikke lenger noe som ikke ble sendt (levert 10.09.2026)
 
-`functions/utsending.js` markerer alle kandidater som purret også når flyten
-feiler, «så vi ikke spammer neste kjøring», og svarer 200. Cron-jobben blir
-grønn. Med en død adresse betyr det at purringen brukes opp uten at noe sendes.
+`functions/utsending.js` markerte alle kandidater som purret også når flyten
+feilet, «så vi ikke spammer neste kjøring», og svarte 200. Cron-jobben ble
+grønn. Med en død adresse betydde det at purringen ble brukt opp i stillhet.
 
-Begrunnelsen forutsetter at flyten kanskje rakk å sende noe. Det gjelder et
-HTTP 500 fra en flyt som svarte — ikke en adresse som ikke finnes, en timeout
-eller en nettverksfeil. Der bør ingenting markeres, og endepunktet svare 502
-slik `send-forfalte` gjør.
+Skillet ligger nå i `lib/flyt-utfall.js`, og går på om flyten ble **utført**,
+ikke om det gikk bra:
 
-Dette bør fikses uansett hvordan sammenslåingen lander, og er en mindre
-endring enn resten av planen.
+| Utfall | Markeres? |
+|---|---|
+| 401, 403, 404, 410 — avvist før flyten kjørte | nei, 502 og ny runde neste døgn |
+| nettverksfeil, ingen adresse satt | nei, 502 |
+| 500 og annet fra en flyt som svarte | ja, som før |
+| vår egen 35-sekunders tidsavbrytelse | ja — flyten kan holde på å sende |
+
+Timeouten er det ene bevisste unntaket: `AbortController` stopper kallet på vår
+side, ikke flytens. Regnet vi det som «ikke sendt», ville en treg flyt gitt
+doble purringer hver gang.
+
+Dry-run-meldinga «Ingen flyt-URL satt» er borte fra svaret. Den grenen kan ikke
+nås lenger: mangler adressen, kom kallet ikke fram.
