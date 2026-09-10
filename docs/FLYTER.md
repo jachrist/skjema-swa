@@ -10,7 +10,7 @@ spørsmålet kom opp igjen. Denne fila er den oversikten.
 > **Repoet sier hvilke flyter som trengs, ikke hvilken versjon som er koblet
 > opp.** Adressene ligger i SWA Configuration, ikke her. Har du flere versjoner
 > av samme flyt, er `GET /api/system/info` som admin den raskeste veien til å
-> se hvilken som faktisk er i bruk i et miljø — den lister alle åtte
+> se hvilken som faktisk er i bruk i et miljø — den lister alle seks
 > flyt-adressene maskert, med vertsnavn.
 >
 > `config/env.*.json` svarer ikke på dette. Filene deklarerer 2–3 av de åtte,
@@ -22,15 +22,20 @@ spørsmålet kom opp igjen. Denne fila er den oversikten.
 
 | App setting | Kalt fra | Utløses av |
 |---|---|---|
-| `VARSLING_FLOW_URL` | `lib/flyt-kaller.js` | all varsling |
-| `UTSENDING_FLOW_URL` | `functions/utsending.js` | cron 05:00 daglig |
-| `PURRE_FLOW_URL` | `functions/utsending.js` | cron 06:00 daglig |
+| `VARSLING_FLOW_URL` | `lib/flyt-kaller.js`, `functions/utsending.js` | all varsling, og utsending/purring (cron 05:00 og 06:00) |
 | `BACKUP_FLOW_URL` | `functions/backup.js` | hver backup-kjøring |
 | `TEAM_SOK_EKSTERNT_FLOW_URL` | `functions/team.js` | admin søker etter team |
 | `TEAM_LAST_MEDLEMMER_FLOW_URL` | `functions/team.js` | admin laster teammedlemmer |
 
+Utsending og purring hadde egne adresser til 10.09.2026 —
+`UTSENDING_FLOW_URL` og `PURRE_FLOW_URL`. Ingen av dem var satt i noe miljø,
+og funksjonen var derfor ute av drift overalt uten at noen merket det.
+Tre app settings med samme verdi er verre enn én; se
+`docs/FASE-UTSENDING-SAMMENSLAING.md`.
+
 `VARSLING_DEAKTIVERT=true` skrur av utgående kall for både varsling og OTP —
-de logges i stedet. Nyttig i et testmiljø, og verdt å sjekke først når «flyten
+de logges i stedet. **Den gjelder ikke utsending og purring**: de går via
+`kallUtsendingsflyt`, som leser adressen direkte. Nyttig i et testmiljø, og verdt å sjekke først når «flyten
 trigges ikke».
 
 ### Betinget — koden leser dem, men bare hvis dataene ber om det
@@ -62,11 +67,18 @@ er én flyt — ikke fire:
 | `sendBehandlingsVarsling` | `sendBehandlerVarsling()` |
 | `sendBeslutningVarsling` | `sendBeslutningVarsling()` |
 | `sendFerdigVarsling` | `sendFerdigVarsling()` |
+| `sendUtsendinger` | `functions/utsending.js` — cron 05:00 |
+| `purreUtsendinger` | `functions/utsending.js` — cron 06:00 |
 
-**Utsending og purring kan være samme flyt.** `flytUrlFor()` i
-`functions/utsending.js` faller tilbake på den andre når bare én er satt, og de
-to skilles på `handling` (`sendUtsendinger` / `purreUtsendinger`). To app
-settings kan altså peke på samme adresse.
+> De to siste sender **ikke** samme nyttelast som de fire over: de mangler
+> `epost_og_teams`, og har mottakerfeltene i `mottakere[]` i stedet for
+> `lenker[]`. Flyten må derfor forgrene på `handling` — gjør den ikke det,
+> sender den en tom e-post til eksterne mottakere. Trinn 2 i
+> `docs/FASE-UTSENDING-SAMMENSLAING.md` samler dem til én form.
+
+**Utsending og purring ER varslingsflyten.** `kallUtsendingsflyt()` i
+`functions/utsending.js` leser `VARSLING_FLOW_URL`, og de to skilles på
+`handling` som resten.
 
 De to team-flytene sender ingen `handling` — de har hvert sitt endepunkt og
 hver sin nyttelast.

@@ -14,7 +14,7 @@
  *
  * De tre datoene styrer livsløpet til lenka:
  *
- *   Utsendingsdato  — appen sender lenka denne dagen (cron → UTSENDING_FLOW_URL)
+ *   Utsendingsdato  — appen sender lenka denne dagen (cron → VARSLING_FLOW_URL)
  *                     og setter Sendt. Er den tom, har kalleren sendt selv.
  *   Purredato       — én purring på denne dagen, i stedet for den rullerende
  *                     regelen. Er den tom, purres det etter PURRE_*-tersklene.

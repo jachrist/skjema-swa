@@ -21,9 +21,12 @@ const HEMMELIGE_ENV = [
     'HASH_SALT', 'OTP_HMAC_KEY', 'FLOW_CALLBACK_KEY', 'SCHEDULER_KEY',
     'FS_API_USER', 'FS_API_PASSWORD',
     'GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET',
-    'VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL', 'PURRE_FLOW_URL',
-    'BACKUP_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL',
-    'UTSENDING_FLOW_URL'
+    // UTSENDING_FLOW_URL og PURRE_FLOW_URL sto her til 10.09.2026. Ingen av
+    // dem var satt i noe miljø, så helsesjekken meldte en mangel hver gang
+    // uten at noen handlet på den — og en alarm ingen handler på slutter å
+    // virke. Utsending og purring går nå gjennom VARSLING_FLOW_URL.
+    'VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL',
+    'BACKUP_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL'
 ];
 
 /**

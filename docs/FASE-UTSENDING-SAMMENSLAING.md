@@ -158,10 +158,28 @@ sammenslåingen.
 5. **Bytt kallet.** `kallUtsendingsflyt()` erstattes av
    `sendVarslerViaFlyt()` med `handling: 'sendUtsendinger'` /
    `'purreUtsendinger'` og `lenker` fylt fra `byggUtsendingsposter`.
-6. **Rydd.** `flytUrlFor()` bort. `UTSENDING_FLOW_URL` og `PURRE_FLOW_URL` ut
-   av `HEMMELIGE_ENV` i `functions/system.js` — da forsvinner også den
-   stående, ubesvarte alarmen om at `UTSENDING_FLOW_URL` mangler.
+6. ~~**Rydd.**~~ Levert som trinn 1 (se under). `flytUrlFor()` er borte, og
+   begge adressene er ute av `HEMMELIGE_ENV` i `functions/system.js` — da
+   forsvant også den stående, ubesvarte alarmen om at `UTSENDING_FLOW_URL`
+   mangler.
 7. **Oppdater `docs/FLYTER.md`.** Åtte adresser blir seks.
+
+## Trinn 1: én adresse (levert 10.09.2026)
+
+`kallUtsendingsflyt()` leser `VARSLING_FLOW_URL`. `UTSENDING_FLOW_URL` og
+`PURRE_FLOW_URL` er borte fra koden og fra helsesjekken.
+
+Dette er en adresseendring, ikke en kontraktsendring. Nyttelasten er den samme
+som før, så flyten ser nå **to former på samme trigger**, skilt på `handling`.
+Utsendingspayloaden har ingen `epost_og_teams` — en flyt som ikke forgrener
+sender derfor en tom e-post til eksterne mottakere.
+
+**Rekkefølgen er derfor ikke likegyldig:** flyten må forgrene på `handling`
+før dette deployes. Vinduet var trygt da endringen ble gjort — det fantes
+ingen forfalte eller ubesvarte utsendinger i noe miljø, så ingen av
+cron-jobbene nådde fram til flyten i det hele tatt.
+
+Trinn 2 (steg 3–5 over) fjerner den doble formen.
 
 ## Uavhengig av dette: purringen markerer selv om ingenting ble sendt
 

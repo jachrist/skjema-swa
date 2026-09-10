@@ -36,10 +36,9 @@
  *   POST /api/utsending/purre
  *     Auth: x-scheduler-key eller admin. Purrer ubesvarte lenker.
  *
- *     Begge kaller samme flyt med samme payload, og skiller seg bare på
- *     `handling` ('sendUtsendinger' / 'purreUtsendinger'). Normaloppsettet er
- *     ÉN PA-flyt som forgrener på det feltet — sett UTSENDING_FLOW_URL og la
- *     PURRE_FLOW_URL stå tom. Se kallUtsendingsflyt().
+ *     Begge kaller varslingsflyten med samme payload, og skiller seg bare på
+ *     `handling` ('sendUtsendinger' / 'purreUtsendinger'). Flyten må forgrene
+ *     på det feltet. Se kallUtsendingsflyt().
  *
  *   GET /api/utsending/valider?t=TOKEN
  *     Anonymt. Verifiserer HMAC + slår opp i Utsendinger.
@@ -153,16 +152,23 @@ async function byggUtsendingsposter(kandidater, basisUrl, context, navn, { tekst
 /**
  * Kall flyten som sender ut lenker — første gang eller som purring.
  *
- * De to kjøringene sender samme payload og skiller seg bare på `handling`, så
- * normaloppsettet er ÉN flyt som forgrener på det feltet og velger ordlyd
- * deretter. Da holder det å sette én env-var; den andre kan stå tom.
+ * Adressen er VARSLING_FLOW_URL — samme flyt som all annen varsling.
  *
- *   UTSENDING_FLOW_URL — flyten for begge handlinger
- *   PURRE_FLOW_URL     — valgfri: egen flyt for purring, hvis du heller vil
- *                        holde de to adskilt
+ * Det var tre adresser her: UTSENDING_FLOW_URL, PURRE_FLOW_URL og
+ * VARSLING_FLOW_URL. De to første var ikke satt i noe miljø — den ene manglet
+ * helt, den andre pekte på en flyt som var slettet — og utsending var dermed
+ * ute av funksjon overalt. At det ikke ble oppdaget skyldes at endepunktene
+ * svarer 200 før flyten kalles når det ikke finnes noe å sende.
  *
- * Mangler den ene, brukes den andre. Flyten må uansett se på `handling`:
- * får den 'sendUtsendinger' og svarer med purretekst, er meldingen feil.
+ * Tre app settings med samme verdi er verre enn én. Utsending og purring er
+ * det samme som varslingsflyten allerede gjør: send en e-post med en tekst og
+ * en lenke til en liste mottakere.
+ *
+ * NB: nyttelasten er ikke den samme som `sendVarslerViaFlyt` sender ennå — se
+ * `docs/FASE-UTSENDING-SAMMENSLAING.md` trinn 2. Flyten ser derfor to former
+ * på samme trigger, skilt på `handling`, og MÅ forgrene på det feltet.
+ * Utsendingspayloaden har ingen `epost_og_teams`, så en flyt som ikke
+ * forgrener sender en tom e-post — til eksterne mottakere.
  *
  * Kallet har en tidsgrense godt under SWA-gatewayens ~45 sekunder. Uten den
  * ville en treg flyt kvele hele cron-kjøringen, og feilen kommet som en naken
@@ -170,15 +176,9 @@ async function byggUtsendingsposter(kandidater, basisUrl, context, navn, { tekst
  */
 const FLYT_TIMEOUT_MS = 35000;
 
-function flytUrlFor(handling) {
-    const utsending = String(process.env.UTSENDING_FLOW_URL || '').trim();
-    const purre = String(process.env.PURRE_FLOW_URL || '').trim();
-    return handling === 'purreUtsendinger' ? (purre || utsending) : (utsending || purre);
-}
-
 async function kallUtsendingsflyt(handling, mottakere, context, navn) {
-    const url = flytUrlFor(handling);
-    if (!url) return { ok: false, mangler: true, feil: 'Verken UTSENDING_FLOW_URL eller PURRE_FLOW_URL er satt' };
+    const url = String(process.env.VARSLING_FLOW_URL || '').trim();
+    if (!url) return { ok: false, mangler: true, feil: 'VARSLING_FLOW_URL er ikke satt' };
 
     const start = Date.now();
     let vertsnavn = 'ugyldig-url';
@@ -657,7 +657,7 @@ app.http('utsendingBatchStatus', {
  * settes Sendt bare når flyten faktisk tok imot kallet — feiler den, prøves
  * de samme radene på nytt neste døgn.
  *
- * Payload til UTSENDING_FLOW_URL:
+ * Payload til VARSLING_FLOW_URL:
  *   { handling: 'sendUtsendinger', mottakere: [ ...samme form som purringen ] }
  *
  * Returnerer: { antallSendt, antallKandidater, feil? }
