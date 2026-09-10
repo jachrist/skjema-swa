@@ -1690,7 +1690,7 @@
             // skal det bli stående tomt.
             const forhaandsutfylt = {
                 ...naa,
-                Notater: naa.Notater ?? 'Skjemaet finner du her: $lenke'
+                Notater: naa.Notater ?? '[Åpne skjemaet for behandling]($lenke)'
             };
             const ny = await apneKonfigModal(forhaandsutfylt, {
                 tittel: `Planner-oppgave — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
@@ -1711,7 +1711,7 @@
                     { navn: 'Sjekkliste', etikett: 'Sjekkliste', type: 'tekstomrade', rader: 4,
                       hjelp: '(ett punkt per linje, maks 20)', plassholder: 'Les gjennom skjemaet\nKontroller vedlegg\nFatt beslutning' },
                     { navn: 'Notater', etikett: 'Notat', type: 'tekstomrade', rader: 3,
-                      hjelp: '(adresser blir klikkbare — tomt gir en lenke til skjemaet)' }
+                      hjelp: '(adresser blir klikkbare — [tekst](adresse) gir lenka egen tekst. Tomt gir en lenke til skjemaet)' }
                 ],
                 feltreferanser: samleFeltreferanser(data)
             });

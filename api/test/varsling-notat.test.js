@@ -118,6 +118,43 @@ const L = 'https://e.net/evaluering.html?skjematype_id=123&skjema_id=6';
         (v.notatSomHtml(`Se ${A}`, L).match(/<a href=/g) || []).length, 1);
 }
 
+// ---------- Markdown-lenke gir egen lenketekst ----------
+{
+    const A = 'https://e.net/a?x=1&y=2';
+
+    // Uten denne formen sto valget mellom en lang, uleselig adresse midt i
+    // beskrivelsen, eller raa HTML i et felt som escaper alt. Det siste ble
+    // proevd paa dev 10.09.2026 og kom ut som synlig markup i Planner.
+    sjekk('markdown-lenke gir egen tekst',
+        v.notatSomHtml(`[Bruk denne lenka](${A})`, ''),
+        '<p><a href="https://e.net/a?x=1&amp;y=2">Bruk denne lenka</a></p>');
+
+    sjekk('midt i en setning',
+        v.notatSomHtml(`Husk fristen. [Aapne](${A}) naar du er klar.`, ''),
+        '<p>Husk fristen. <a href="https://e.net/a?x=1&amp;y=2">Aapne</a> naar du er klar.</p>');
+
+    // Lenketeksten er brukerens, og skal escapes som all annen tekst.
+    sjekk('markup i lenketeksten escapes',
+        v.notatSomHtml(`[<b>Hei</b>](${A})`, ''),
+        '<p><a href="https://e.net/a?x=1&amp;y=2">&lt;b&gt;Hei&lt;/b&gt;</a></p>');
+
+    // Bare http og https. Adressen havner i en href vi selv bygger, og et
+    // fritekstfelt skal ikke kunne faa javascript: eller data: inn dit.
+    for (const d of ['javascript:alert(1)', 'data:text/html,<script>', 'ftp://e.net/a', '/lokal/sti']) {
+        sjekk(`avvist protokoll staar som tekst: ${d}`,
+            v.notatSomHtml(`[Klikk](${d})`, '').startsWith('<p>[Klikk]('), true);
+    }
+
+    // Notatet peker allerede et sted, saa skjemalenka skal ikke foeyes til.
+    sjekk('markdown-lenke teller som en adresse',
+        (v.notatSomHtml(`[Aapne](${A})`, L).match(/<a href=/g) || []).length, 1);
+
+    // Begge formene skal kunne staa i samme notat.
+    const blandet = v.notatSomHtml(`[Aapne](${A}) eller https://e.net/b`, '');
+    sjekk('markdown og naken adresse side om side',
+        (blandet.match(/<a href=/g) || []).length, 2);
+}
+
 // ---------- i payloaden ----------
 async function planner() {
     const skjema = { Skjematype_id: '123', Skjema_id: '6', Seksjoner: [] };
