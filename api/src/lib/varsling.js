@@ -196,9 +196,43 @@ function tilHtml(tekst) {
  * vi faktisk kan legge lenka.
  */
 const URL_I_TEKST = /https?:\/\/[^\s<>"')]+/g;
+const HAR_ADRESSE = /https?:\/\//;
 
-function medLenker(escapetLinje) {
-    return escapetLinje.replace(URL_I_TEKST, (u) => `<a href="${u}">${u}</a>`);
+/**
+ * Tegnsetting som avslutter en setning hører ikke til adressen.
+ *
+ * «Se $lenke.» er en helt vanlig måte å skrive på, og uten dette havnet
+ * punktumet inni href-en. Lenka pekte da på en adresse som ikke finnes.
+ * Parenteser og apostrof er allerede utenfor URL_I_TEKST.
+ */
+const HALE = /[.,;:!?]+$/;
+
+function lagLenke(raaAdresse) {
+    const hale = (raaAdresse.match(HALE) || [''])[0];
+    const url = raaAdresse.slice(0, raaAdresse.length - hale.length);
+    if (!url) return tilHtml(raaAdresse);
+    return `<a href="${tilHtml(url)}">${tilHtml(url)}</a>${tilHtml(hale)}`;
+}
+
+/**
+ * Adressene finnes i den RÅ teksten, ikke i den escapede.
+ *
+ * Rekkefølgen var motsatt før, og det holdt bare så lenge teksten ikke hadde
+ * tegn som escapes. Sto adressen i anførselstegn — «Se "$lenke" her» — var
+ * hermetegnet blitt til `&quot;` når mønsteret kjørte, og siden det ikke
+ * inneholder noe `"` spiste adressen det og alt som fulgte.
+ *
+ * Nå deles linja på de rå treffene: teksten rundt escapes, adressen bygges
+ * med tilHtml på både href og lenketekst.
+ */
+function medLenker(raaLinje) {
+    let ut = '', sist = 0, m;
+    URL_I_TEKST.lastIndex = 0;
+    while ((m = URL_I_TEKST.exec(raaLinje)) !== null) {
+        ut += tilHtml(raaLinje.slice(sist, m.index)) + lagLenke(m[0]);
+        sist = m.index + m[0].length;
+    }
+    return ut + tilHtml(raaLinje.slice(sist));
 }
 
 function notatSomHtml(tekst, lenke) {
@@ -207,15 +241,14 @@ function notatSomHtml(tekst, lenke) {
     if (raa) {
         // Blanke linjer skiller avsnitt; enkle linjeskift blir <br>.
         for (const avsnitt of raa.split(/\r?\n\s*\r?\n/)) {
-            const linjer = avsnitt.split(/\r?\n/).map(l => medLenker(tilHtml(l))).join('<br>');
+            const linjer = avsnitt.split(/\r?\n/).map(medLenker).join('<br>');
             if (linjer.trim()) deler.push(`<p>${linjer}</p>`);
         }
     }
     // Bare når notatet ikke selv peker noe sted.
-    if (lenke && !URL_I_TEKST.test(raa)) {
+    if (lenke && !HAR_ADRESSE.test(raa)) {
         deler.push(`<p><a href="${tilHtml(lenke)}">Åpne skjemaet</a></p>`);
     }
-    URL_I_TEKST.lastIndex = 0;   // /g holder på posisjon mellom kall
     return deler.join('');
 }
 
