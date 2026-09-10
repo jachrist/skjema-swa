@@ -295,15 +295,47 @@ kapre.
 Notatfeltet i editoren er forhåndsutfylt med
 
 ```
-Skjemaet finner du her: $lenke
+[Åpne skjemaet for behandling]($lenke)
 ```
 
 — ikke som grå hjelpetekst, men som faktisk innhold. Den som setter opp steget
 kan skrive rundt lenka og bestemme hvor den står. Er feltet tømt med vilje,
 blir det stående tomt.
 
-`notat_html` gjør adresser om til klikkbare `<a>`, så `$lenke` holder som ren
-tekst. Det legges **ikke** på en lenke automatisk når notatet allerede peker et
-sted — da ville den som plasserte den selv fått den to ganger. Unntaket er et
-notat helt uten adresse: da føyes skjemalenka til, så en oppgave aldri står
-uten vei tilbake.
+Det legges **ikke** på en lenke automatisk når notatet allerede peker et sted —
+da ville den som plasserte den selv fått den to ganger. Unntaket er et notat
+helt uten adresse: da føyes skjemalenka til, så en oppgave aldri står uten vei
+tilbake.
+
+### Notatet tar to lenkeformer, men ikke HTML
+
+| Skrevet i notatet | I beskrivelsen |
+|---|---|
+| `https://…` | klikkbar, med adressen som tekst |
+| `[Åpne skjemaet]($lenke)` | klikkbar, med den teksten |
+| `<a href="…">Åpne</a>` | **synlig markup** — feltet er ren tekst |
+
+Markdown-formen tar bare `http` og `https`. Alt annet i parentesen blir
+stående som vanlig tekst, så `javascript:` og `data:` kan ikke nå href-en
+gjennom et fritekstfelt.
+
+Feltet i editoren er Markdown-editoren (`byggMdEditor`), men med **bare
+lenkeknappen** — `verktoy: ['lenke']`. Hele verktøylinja ville tilbudt fet
+skrift, overskrifter og lister som Planner ikke viser. Av samme grunn bruker
+forhåndsvisningen `notatForhandsvisning` i editor.html i stedet for
+`parseMarkdown`: den speiler `notatSomHtml`, og
+`frontend/test/planner-notat.test.js` kjører de to mot de samme tekstene og
+krever samme utfall.
+
+Rå HTML escapes med vilje: en avbrutt tag ville ellers ødelagt resten av
+beskrivelsen. Det ble prøvd på dev 10.09.2026 og kom ut som synlig markup —
+derfor finnes Markdown-formen nå.
+
+To feil ble rettet samtidig, begge synlige i ren tekst også:
+
+- Adressemønsteret kjørte på den **escapede** linja. Sto adressen i
+  anførselstegn, var hermetegnet allerede blitt `&quot;` — som ikke inneholder
+  noe `"` — så adressen spiste det og alt som fulgte. Nå deles den rå linja på
+  treffene, og teksten rundt escapes etterpå.
+- Punktum og komma etter adressen havnet inni `href`-en. `Se $lenke.` ga en
+  lenke som pekte ingen steder. Avsluttende tegnsetting faller nå utenfor.

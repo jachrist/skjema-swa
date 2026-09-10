@@ -187,6 +187,10 @@ function tilHtml(tekst) {
  * skal stå. Derfor legges det ikke på en lenke automatisk: da ville den som
  * plasserte den selv fått den to ganger.
  *
+ * Adressen kan stå bar, eller som `[egen tekst]($lenke)` — se URL_I_TEKST.
+ * Alt annet escapes: en avbrutt tag skal ikke kunne ødelegge resten av
+ * beskrivelsen.
+ *
  * Unntaket er et notat helt uten adresse. Da føyes skjemalenka til, så en
  * oppgave aldri står uten vei tilbake til skjemaet.
  *
@@ -195,10 +199,67 @@ function tilHtml(tekst) {
  * cannot be modified» (prøvd 09.09.2026). Beskrivelsen er derfor det stedet
  * vi faktisk kan legge lenka.
  */
-const URL_I_TEKST = /https?:\/\/[^\s<>"')]+/g;
+/**
+ * Adresser i notatet — enten som Markdown-lenke eller bar.
+ *
+ * `[Bruk denne lenka]($lenke)` gir lenka en egen tekst. Uten den formen sto
+ * valget mellom en lang, uleselig adresse midt i beskrivelsen, eller rå HTML
+ * i et felt som escaper alt — og det siste er nettopp det som ble prøvd, og
+ * kom ut som synlig markup i Planner.
+ *
+ * Syntaksen er ikke ny her. `md-editor.js` har en lenkeknapp som setter inn
+ * akkurat `[tekst](url)`, og `parseMarkdown` i felt-render.js tolker den på
+ * utfyllingssiden. Notatfeltet er dermed det eneste stedet den ikke virket.
+ *
+ * Bare http og https. Adressen havner i en href vi selv bygger, og `javascript:`
+ * og `data:` skal ikke kunne komme dit gjennom et fritekstfelt. Alt annet i
+ * parentesen blir stående som vanlig tekst.
+ */
+const MD_LENKE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
+const NAKEN_URL = /https?:\/\/[^\s<>"')]+/;
+const URL_I_TEKST = new RegExp(`${MD_LENKE.source}|${NAKEN_URL.source}`, 'g');
+const HAR_ADRESSE = /https?:\/\//;
 
-function medLenker(escapetLinje) {
-    return escapetLinje.replace(URL_I_TEKST, (u) => `<a href="${u}">${u}</a>`);
+/**
+ * Tegnsetting som avslutter en setning hører ikke til adressen.
+ *
+ * «Se $lenke.» er en helt vanlig måte å skrive på, og uten dette havnet
+ * punktumet inni href-en. Lenka pekte da på en adresse som ikke finnes.
+ * Parenteser og apostrof er allerede utenfor URL_I_TEKST.
+ */
+const HALE = /[.,;:!?]+$/;
+
+function lagLenke(raaAdresse) {
+    const hale = (raaAdresse.match(HALE) || [''])[0];
+    const url = raaAdresse.slice(0, raaAdresse.length - hale.length);
+    if (!url) return tilHtml(raaAdresse);
+    return `<a href="${tilHtml(url)}">${tilHtml(url)}</a>${tilHtml(hale)}`;
+}
+
+/**
+ * Adressene finnes i den RÅ teksten, ikke i den escapede.
+ *
+ * Rekkefølgen var motsatt før, og det holdt bare så lenge teksten ikke hadde
+ * tegn som escapes. Sto adressen i anførselstegn — «Se "$lenke" her» — var
+ * hermetegnet blitt til `&quot;` når mønsteret kjørte, og siden det ikke
+ * inneholder noe `"` spiste adressen det og alt som fulgte.
+ *
+ * Nå deles linja på de rå treffene: teksten rundt escapes, adressen bygges
+ * med tilHtml på både href og lenketekst.
+ */
+function medLenker(raaLinje) {
+    let ut = '', sist = 0, m;
+    URL_I_TEKST.lastIndex = 0;
+    while ((m = URL_I_TEKST.exec(raaLinje)) !== null) {
+        ut += tilHtml(raaLinje.slice(sist, m.index));
+        // m[1] er satt bare når Markdown-formen traff. Da er lenketeksten
+        // brukerens egen; ellers er adressen sin egen tekst.
+        ut += m[1] !== undefined
+            ? `<a href="${tilHtml(m[2])}">${tilHtml(m[1])}</a>`
+            : lagLenke(m[0]);
+        sist = m.index + m[0].length;
+    }
+    return ut + tilHtml(raaLinje.slice(sist));
 }
 
 function notatSomHtml(tekst, lenke) {
@@ -207,15 +268,14 @@ function notatSomHtml(tekst, lenke) {
     if (raa) {
         // Blanke linjer skiller avsnitt; enkle linjeskift blir <br>.
         for (const avsnitt of raa.split(/\r?\n\s*\r?\n/)) {
-            const linjer = avsnitt.split(/\r?\n/).map(l => medLenker(tilHtml(l))).join('<br>');
+            const linjer = avsnitt.split(/\r?\n/).map(medLenker).join('<br>');
             if (linjer.trim()) deler.push(`<p>${linjer}</p>`);
         }
     }
     // Bare når notatet ikke selv peker noe sted.
-    if (lenke && !URL_I_TEKST.test(raa)) {
+    if (lenke && !HAR_ADRESSE.test(raa)) {
         deler.push(`<p><a href="${tilHtml(lenke)}">Åpne skjemaet</a></p>`);
     }
-    URL_I_TEKST.lastIndex = 0;   // /g holder på posisjon mellom kall
     return deler.join('');
 }
 

@@ -74,6 +74,87 @@ const L = 'https://e.net/evaluering.html?skjematype_id=123&skjema_id=6';
         v.notatSomHtml('Én\n\n\n\nTo', ''), '<p>Én</p><p>To</p>');
 }
 
+// ---------- adresser blir lenker ----------
+{
+    // Feltet lover i editoren at «adresser blir klikkbare». Det er den
+    // eneste maaten aa faa en lenke inn i notatet paa, saa den maa taale at
+    // adressen staar midt i en setning.
+    const A = 'https://e.net/a?x=1&y=2';
+
+    sjekk('adressen blir en anker',
+        v.notatSomHtml(`Se ${A} her`, ''),
+        '<p>Se <a href="https://e.net/a?x=1&amp;y=2">https://e.net/a?x=1&amp;y=2</a> her</p>');
+
+    // Her laa feilen: medLenker kjoerte paa den ESCAPEDE linja, saa
+    // hermetegnet var allerede blitt &quot; — som ikke inneholder noe ", og
+    // dermed ble spist av adressemoensteret sammen med alt som fulgte.
+    sjekk('adresse i anfoerselstegn stopper ved hermetegnet',
+        v.notatSomHtml(`Se "${A}" her`, ''),
+        '<p>Se &quot;<a href="https://e.net/a?x=1&amp;y=2">https://e.net/a?x=1&amp;y=2</a>&quot; her</p>');
+
+    // Punktum som avslutter setningen hoerer ikke til adressen.
+    sjekk('punktum faller utenfor lenka',
+        v.notatSomHtml(`Se ${A}.`, ''),
+        '<p>Se <a href="https://e.net/a?x=1&amp;y=2">https://e.net/a?x=1&amp;y=2</a>.</p>');
+    sjekk('komma ogsaa',
+        v.notatSomHtml(`Se ${A}, og les`, ''),
+        '<p>Se <a href="https://e.net/a?x=1&amp;y=2">https://e.net/a?x=1&amp;y=2</a>, og les</p>');
+
+    sjekk('parentes faller utenfor lenka',
+        v.notatSomHtml(`Se (${A})`, ''),
+        '<p>Se (<a href="https://e.net/a?x=1&amp;y=2">https://e.net/a?x=1&amp;y=2</a>)</p>');
+
+    // Escapingen skal fortsatt gjelde teksten rundt.
+    sjekk('markup rundt adressen escapes fortsatt',
+        v.notatSomHtml(`<b>Se</b> ${A}`, ''),
+        '<p>&lt;b&gt;Se&lt;/b&gt; <a href="https://e.net/a?x=1&amp;y=2">https://e.net/a?x=1&amp;y=2</a></p>');
+
+    // To adresser paa samme linje skal begge bli lenker.
+    const to = v.notatSomHtml(`${A} og https://e.net/b`, '');
+    sjekk('to adresser gir to ankere', (to.match(/<a href=/g) || []).length, 2);
+
+    // Notatet peker allerede et sted, saa skjemalenka skal ikke foeyes til.
+    sjekk('eget notat med adresse faar ikke lenka i tillegg',
+        (v.notatSomHtml(`Se ${A}`, L).match(/<a href=/g) || []).length, 1);
+}
+
+// ---------- Markdown-lenke gir egen lenketekst ----------
+{
+    const A = 'https://e.net/a?x=1&y=2';
+
+    // Uten denne formen sto valget mellom en lang, uleselig adresse midt i
+    // beskrivelsen, eller raa HTML i et felt som escaper alt. Det siste ble
+    // proevd paa dev 10.09.2026 og kom ut som synlig markup i Planner.
+    sjekk('markdown-lenke gir egen tekst',
+        v.notatSomHtml(`[Bruk denne lenka](${A})`, ''),
+        '<p><a href="https://e.net/a?x=1&amp;y=2">Bruk denne lenka</a></p>');
+
+    sjekk('midt i en setning',
+        v.notatSomHtml(`Husk fristen. [Aapne](${A}) naar du er klar.`, ''),
+        '<p>Husk fristen. <a href="https://e.net/a?x=1&amp;y=2">Aapne</a> naar du er klar.</p>');
+
+    // Lenketeksten er brukerens, og skal escapes som all annen tekst.
+    sjekk('markup i lenketeksten escapes',
+        v.notatSomHtml(`[<b>Hei</b>](${A})`, ''),
+        '<p><a href="https://e.net/a?x=1&amp;y=2">&lt;b&gt;Hei&lt;/b&gt;</a></p>');
+
+    // Bare http og https. Adressen havner i en href vi selv bygger, og et
+    // fritekstfelt skal ikke kunne faa javascript: eller data: inn dit.
+    for (const d of ['javascript:alert(1)', 'data:text/html,<script>', 'ftp://e.net/a', '/lokal/sti']) {
+        sjekk(`avvist protokoll staar som tekst: ${d}`,
+            v.notatSomHtml(`[Klikk](${d})`, '').startsWith('<p>[Klikk]('), true);
+    }
+
+    // Notatet peker allerede et sted, saa skjemalenka skal ikke foeyes til.
+    sjekk('markdown-lenke teller som en adresse',
+        (v.notatSomHtml(`[Aapne](${A})`, L).match(/<a href=/g) || []).length, 1);
+
+    // Begge formene skal kunne staa i samme notat.
+    const blandet = v.notatSomHtml(`[Aapne](${A}) eller https://e.net/b`, '');
+    sjekk('markdown og naken adresse side om side',
+        (blandet.match(/<a href=/g) || []).length, 2);
+}
+
 // ---------- i payloaden ----------
 async function planner() {
     const skjema = { Skjematype_id: '123', Skjema_id: '6', Seksjoner: [] };

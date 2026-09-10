@@ -1519,6 +1519,67 @@
             el.setSelectionRange(pos, pos);
         }
 
+        /**
+         * Eksempeladresse i forhåndsvisningen av Planner-notatet.
+         *
+         * `$lenke` løses først ved utsending. Uten en stand-in her ville
+         * standardinnholdet vist seg som ren tekst i forhåndsvisningen, og
+         * lenkeformen sett ut som om den ikke virket.
+         */
+        const NOTAT_EKSEMPELLENKE = 'https://eksempel.no/evaluering.html?skjematype_id=123&skjema_id=6';
+
+        /**
+         * Forhåndsvisning av Planner-notatet.
+         *
+         * Speiler `notatSomHtml` i api/src/lib/varsling.js. Den likheten er
+         * hele poenget: Planner-beskrivelsen viser bare lenker og avsnitt, så
+         * en forhåndsvisning med fet skrift og lister ville lovet noe
+         * mottakeren ikke får. Derfor har feltet bare lenkeknappen, og derfor
+         * bruker det denne i stedet for parseMarkdown.
+         *
+         * frontend/test/planner-notat.test.js kjører de to funksjonene mot de
+         * samme tekstene og krever samme utfall. Endrer du én, ryker den.
+         */
+        function notatForhandsvisning(raaTekst) {
+            const L = NOTAT_EKSEMPELLENKE;
+            const esc = (t) => String(t || '')
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+            const MD = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
+            const NAKEN = /https?:\/\/[^\s<>"')]+/;
+            const TREFF = new RegExp(`${MD.source}|${NAKEN.source}`, 'g');
+            const HALE = /[.,;:!?]+$/;
+
+            const medLenker = (linje) => {
+                let ut = '', sist = 0, m;
+                TREFF.lastIndex = 0;
+                while ((m = TREFF.exec(linje)) !== null) {
+                    ut += esc(linje.slice(sist, m.index));
+                    if (m[1] !== undefined) {
+                        ut += `<a href="${esc(m[2])}">${esc(m[1])}</a>`;
+                    } else {
+                        const hale = (m[0].match(HALE) || [''])[0];
+                        const url = m[0].slice(0, m[0].length - hale.length);
+                        ut += url ? `<a href="${esc(url)}">${esc(url)}</a>${esc(hale)}` : esc(m[0]);
+                    }
+                    sist = m.index + m[0].length;
+                }
+                return ut + esc(linje.slice(sist));
+            };
+
+            const raa = String(raaTekst || '').split('$lenke').join(L).trim();
+            const deler = [];
+            if (raa) {
+                for (const avsnitt of raa.split(/\r?\n\s*\r?\n/)) {
+                    const linjer = avsnitt.split(/\r?\n/).map(medLenker).join('<br>');
+                    if (linjer.trim()) deler.push(`<p>${linjer}</p>`);
+                }
+            }
+            if (!/https?:\/\//.test(raa)) deler.push(`<p><a href="${esc(L)}">Åpne skjemaet</a></p>`);
+            return deler.join('');
+        }
+
         function apneKonfigModal(verdier, { tittel, hjelp = '', felter, feltreferanser = [] }) {
             return new Promise((resolve) => {
                 const bakgrunn = document.createElement('div');
@@ -1558,8 +1619,20 @@
                     const rad = document.createElement('div');
                     rad.className = 'konfig-rad';
                     const verdi = verdier[f.navn] ?? '';
-                    let kontroll;
-                    if (f.type === 'valg') {
+                    let kontroll, vert = null;
+                    if (f.type === 'markdown') {
+                        // Editoren bygger sitt eget tekstfelt. Vi tar vare på
+                        // det, for plassholder-chipsene, feltreferansene og
+                        // lagringen under leter alle etter en .value.
+                        vert = document.createElement('div');
+                        kontroll = byggMdEditor(vert, {
+                            verdi,
+                            plassholder: f.plassholder || '',
+                            verktoy: f.verktoy,
+                            forhandsvis: f.forhandsvis,
+                            minHoyde: (f.rader || 3) * 24
+                        }).element;
+                    } else if (f.type === 'valg') {
                         kontroll = document.createElement('select');
                         for (const v of f.valg) {
                             const o = document.createElement('option');
@@ -1577,10 +1650,12 @@
                         kontroll.type = 'text';
                         kontroll.value = verdi;
                     }
-                    if (f.plassholder) kontroll.placeholder = f.plassholder;
-                    kontroll.style.width = '100%';
+                    if (!vert) {
+                        if (f.plassholder) kontroll.placeholder = f.plassholder;
+                        kontroll.style.width = '100%';
+                    }
                     rad.innerHTML = `<label>${escapeHtml(f.etikett)}${f.hjelp ? ` <small>${f.hjelp}</small>` : ''}</label>`;
-                    rad.appendChild(kontroll);
+                    rad.appendChild(vert || kontroll);
                     felterEl.appendChild(rad);
                     inputs[f.navn] = kontroll;
                 }
@@ -1690,7 +1765,7 @@
             // skal det bli stående tomt.
             const forhaandsutfylt = {
                 ...naa,
-                Notater: naa.Notater ?? 'Skjemaet finner du her: $lenke'
+                Notater: naa.Notater ?? '[Åpne skjemaet for behandling]($lenke)'
             };
             const ny = await apneKonfigModal(forhaandsutfylt, {
                 tittel: `Planner-oppgave — steg ${steg.Steg}: ${steg.Stegnavn || ''}`,
@@ -1710,8 +1785,9 @@
                       valg: ['Ikke startet', 'Pågår', 'Ferdig'] },
                     { navn: 'Sjekkliste', etikett: 'Sjekkliste', type: 'tekstomrade', rader: 4,
                       hjelp: '(ett punkt per linje, maks 20)', plassholder: 'Les gjennom skjemaet\nKontroller vedlegg\nFatt beslutning' },
-                    { navn: 'Notater', etikett: 'Notat', type: 'tekstomrade', rader: 3,
-                      hjelp: '(adresser blir klikkbare — tomt gir en lenke til skjemaet)' }
+                    { navn: 'Notater', etikett: 'Notat', type: 'markdown', rader: 3,
+                      verktoy: ['lenke'], forhandsvis: notatForhandsvisning,
+                      hjelp: '(Markdown, men Planner viser bare lenker og avsnitt. Tomt gir en lenke til skjemaet)' }
                 ],
                 feltreferanser: samleFeltreferanser(data)
             });
