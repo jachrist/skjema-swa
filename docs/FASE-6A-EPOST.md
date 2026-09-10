@@ -143,9 +143,10 @@ Fase 6d: Planner-oppgaver (utvid med Planner-payload).
 
 ## Vedlegg på Planner-oppgaven
 
-Fra 08.09.2026 sender varslings-payloaden skjemaets vedlegg med i
-`planner`-objektet. Flyten må endres for å ta dem i bruk — uten endring
-ignoreres de, og oppgaven blir som før.
+Oppgaven har **ett** vedlegg: lenka til skjemaet.
+
+Fra 08.09.2026 fulgte skjemaets egne vedlegg med i `planner`-objektet.
+De ble tatt ut igjen 10.09.2026 — se «Bare lenka, ikke filene» nedenfor.
 
 ```jsonc
 "planner": {
@@ -153,39 +154,34 @@ ignoreres de, og oppgaven blir som før.
   "sjekkliste": [...], "sjekkliste_graph": { ... },
 
   // Lesbar form — for en flyt som vil bygge noe eget.
-  // Skjemalenka ligger ALLTID først; vedleggene kommer etter.
   "vedlegg": [
     { "filnavn": "Lenke til skjemaet",
       "url": "https://<swa>/evaluering.html?skjematype_id=123&skjema_id=6",
-      "type": "Other" },
-    { "filnavn": "tilbud.pdf",
-      "url": "https://<swa>/api/vedlegg-fil/123/6/tilbud.pdf" }
+      "type": "Other" }
   ],
 
-  // Klar til å sendes rett inn i details-kallet. Samme rekkefølge.
+  // Klar til å sendes rett inn i details-kallet.
   "vedlegg_graph": {
     "https%3A//<swa>/evaluering%2Ehtml?skjematype_id=123&skjema_id=6": {
       "@odata.type": "microsoft.graph.plannerExternalReference",
       "alias": "Lenke til skjemaet",
-      "type": "Other"
-    },
-    "https%3A//<swa>/api/vedlegg-fil/123/6/tilbud%2Epdf": {
-      "@odata.type": "microsoft.graph.plannerExternalReference",
-      "alias": "tilbud.pdf",
-      "type": "Other"
+      "type": "Other",
+      "previewPriority": " !"
     }
   }
 }
 ```
 
-### Skjemalenka er første element
+### Bare lenka, ikke filene
 
-Hensikten er at behandleren skal se veien til skjemaet på oppgavekortet, uten
-å måtte åpne oppgaven. Lenka sendes derfor som en referanse på linje med
-vedleggene, og ligger først i begge formene.
+Skjemaets vedlegg lå i begge listene fram til 10.09.2026. De ga behandleren
+ingenting hen ikke allerede hadde: adressene pekte på `/api/vedlegg-fil/...`,
+som krever innlogging og tilgang til skjemaet uansett, og skjemaet er ett
+klikk unna gjennom lenka. Til gjengjeld ble oppgaven lengre å lese, og et
+skjermbilde blant filene kapret oppgavekortet — se nedenfor.
 
-Den kommer med selv om skjemaet ikke har vedlegg. Har SWA-en ingen kjent
-base-URL, kommer verken lenka eller vedleggene.
+Har SWA-en ingen kjent base-URL, sendes ingen vedlegg i det hele tatt. En halv
+adresse i en oppgave er verre enn ingen, og flyten kan ikke se forskjell.
 
 **Rekkefølgen i JSON alene er ikke nok** til at Planner viser lenka på kortet,
 og kortet viste seg å være utenfor vår kontroll — se «`previewType` lar seg
@@ -196,7 +192,7 @@ faktisk vises.
 Verdien `" !"` er den Microsoft selv bruker i dokumentasjonen. Formatet er en
 egen sammenligningsalgoritme, så en verdi vi finner på selv gir 400 på hele
 `details`-kallet — altså ingen oppgavedetaljer i det hele tatt, ikke bare feil
-rekkefølge. Vedleggene står uten hint; Planner tildeler dem sine egne.
+rekkefølge.
 
 ### `type` må være en verdi Graph kjenner
 
@@ -211,8 +207,7 @@ referanser kommer fram, ikke bare feil ikon. Vi prøvde `"url"` på skjemalenka
 09.09.2026, og flyten feilet.
 
 `"Pdf"` ser plausibel ut, men er tatt ut av samme grunn: gevinsten er et litt
-penere ikon, prisen ved å ta feil er at ingenting kommer fram. PDF-vedlegg får
-derfor `Other`.
+penere ikon, prisen ved å ta feil er at ingenting kommer fram.
 
 Backend håndhever dette — en ukjent verdi forkastes og erstattes med `Other`,
 så en skrivefeil i oppsettet ikke kan velte kallet.
@@ -241,17 +236,6 @@ oppgavedetaljer i det hele tatt, ikke bare manglende vedlegg.
 **`previewPriority` settes bevisst ikke**, av samme grunn som `orderHint` på
 sjekklistepunktene: formatet er en egen sammenligningsalgoritme, og en ugyldig
 verdi gir 400. Uten den tildeler Planner sin egen rekkefølge.
-
-### Tilgang
-
-Lenkene peker på `/api/vedlegg-fil/...`, som krever innlogging og tilgang til
-skjemaet — samme regel som ellers. En behandler som klikker fra Planner blir
-sendt gjennom innlogging og får fila. Ingen ny tilgang åpnes; det eneste som
-spares er veien om skjemavisningen.
-
-Har SWA-en ingen kjent base-URL (`SWA_URL` ikke satt), sendes ingen vedlegg.
-En halv adresse i en oppgave er verre enn ingen, og flyten kan ikke se
-forskjell.
 
 ### `previewType` lar seg ikke sette — bruk beskrivelsen
 
@@ -296,16 +280,15 @@ Brukerens tekst escapes før den settes inn. Notatfeltet er fritekst i
 editoren, og en avbrutt tag ville ellers ødelagt resten av beskrivelsen.
 Blanke linjer blir avsnitt, enkle linjeskift blir `<br>`.
 
-### Bare skjemalenka går inn i `references`
+### Hvorfor kortet ikke tåler flere referanser
 
-Vedleggene lå der til å begynne med, men Planner velger selv hva kortet viser
-og foretrekker et bilde. Et skjermbilde blant vedleggene kapret dermed kortet,
-og lenka — det behandleren faktisk trenger — ble liggende usett.
+Vedleggene lå i `references` til å begynne med, men Planner velger selv hva
+kortet viser og foretrekker et bilde. Et skjermbilde blant vedleggene kapret
+dermed kortet, og lenka — det behandleren faktisk trenger — ble liggende usett.
 
-`vedlegg_graph` inneholder derfor **bare skjemalenka**. `vedlegg` lister
-fortsatt filene i lesbar form for en flyt som vil bruke dem til noe, men den
-brukes ikke i dag: vedleggene nås gjennom skjemaet lenka peker til, ett klikk
-unna.
+Det var grunnen til at filene først ble tatt ut av `references` 09.09.2026, og
+deretter ut av payloaden helt 10.09.2026. Med bare lenka er det ingenting å
+kapre.
 
 ### Notatet har lenka som standardinnhold
 
