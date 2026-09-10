@@ -69,9 +69,13 @@ async function hentAlleGrupper() {
 /**
  * UPN → { FN, EN } for alle rolleinnehavere med registrert navn.
  *
- * Teamcachen lagrer bare UPN (Power Automate sender ikke navn), så dette er
- * eneste kilde til visningsnavn for personer som ikke er studenter. Tabellen
- * er liten, og kartet bygges med én gjennomgang.
+ * SEKUNDÆR navnekilde. Teammedlemskap er den primære: teamet «Ansatte og
+ * studenter ved FHS» er dynamisk og dekker alle interne, og cachen lagrer FN,
+ * EN og Navn sammen med UPN.
+ *
+ * Denne brukes til dem teamet ikke dekker — rolleinnehavere utenfor FHS — og
+ * til rader lagret før teamcachen begynte å ta imot navn. Tabellen er liten,
+ * og kartet bygges med én gjennomgang.
  */
 async function hentNavnekart() {
     const t = await tabell();

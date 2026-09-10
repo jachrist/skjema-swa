@@ -168,10 +168,13 @@ async function _hentPersoner(filterbegrep, filterverdi, log) {
 /**
  * Gjør teammedlemmer om til dropdown-verdier.
  *
- * Navn kommer fra teamcachen når PA-flyten har sendt dem. For rader lagret før
- * flyten ble utvidet — og for team der navn mangler — faller vi tilbake på
- * Rollemedlemskap, som har navn for alle rolleinnehavere. Uten treff der vises
- * UPN alene.
+ * Teammedlemskap er den primære navnekilden — teamet «Ansatte og studenter
+ * ved FHS» er dynamisk og dekker alle interne, og cachen lagrer FN, EN og
+ * Navn sammen med UPN.
+ *
+ * Rollemedlemskap er reserven, for dem teamet ikke dekker: rolleinnehavere
+ * utenfor FHS, og rader lagret før teamcachen begynte å ta imot navn. Uten
+ * treff der vises UPN alene.
  */
 async function _personerFraTeam(medlemmer) {
     if (!medlemmer || medlemmer.length === 0) return [];
