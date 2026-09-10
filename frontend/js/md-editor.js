@@ -6,8 +6,15 @@
  *       verdi: '...',
  *       plassholder: 'Informasjonstekst…',
  *       visVerktoy: true,            // false = bare et voksende tekstfelt
+ *       verktoy: ['lenke'],          // utvalg av VERKTOY-id-er; utelatt = alle
+ *       forhandsvis: (tekst) => html,// utelatt = parseMarkdown
  *       onEndring: (tekst) => { ... }
  *   });
+ *
+ * `verktoy` og `forhandsvis` hører sammen. Et felt som bare skal ha lenker —
+ * Planner-notatet er ett — må vise en forhåndsvisning som stemmer med det
+ * mottakeren faktisk får. En knapp for fet skrift, eller en forhåndsvisning
+ * som viser den, er et løfte om noe som ikke kommer fram.
  *   ed.settVerdi('ny tekst');        // uten å utløse onEndring
  *
  * Tekstfeltet vokser med innholdet og kan i tillegg dras større manuelt.
@@ -22,13 +29,13 @@ import { parseMarkdown } from './felt-render.js';
 const MAKS_AUTOHOYDE = 520; // px — over dette får tekstfeltet egen rullefelt
 
 const VERKTOY = [
-    { navn: 'F',    tittel: 'Fet (**tekst**)',            type: 'omslutt', for: '**', etter: '**', stil: 'font-weight: 800;' },
-    { navn: 'K',    tittel: 'Kursiv (*tekst*)',           type: 'omslutt', for: '*',  etter: '*',  stil: 'font-style: italic;' },
-    { navn: 'H',    tittel: 'Overskrift (## tekst)',      type: 'linje',   prefiks: '## ' },
-    { navn: '•',    tittel: 'Punktliste (- tekst)',       type: 'linje',   prefiks: '- ' },
-    { navn: '1.',   tittel: 'Nummerert liste (1. tekst)', type: 'nummer' },
-    { navn: '🔗',   tittel: 'Lenke ([tekst](url))',       type: 'lenke' },
-    { navn: '‹›',   tittel: 'Kode (`tekst`)',             type: 'omslutt', for: '`',  etter: '`' }
+    { id: 'fet',        navn: 'F',    tittel: 'Fet (**tekst**)',            type: 'omslutt', for: '**', etter: '**', stil: 'font-weight: 800;' },
+    { id: 'kursiv',     navn: 'K',    tittel: 'Kursiv (*tekst*)',           type: 'omslutt', for: '*',  etter: '*',  stil: 'font-style: italic;' },
+    { id: 'overskrift', navn: 'H',    tittel: 'Overskrift (## tekst)',      type: 'linje',   prefiks: '## ' },
+    { id: 'punktliste', navn: '•',    tittel: 'Punktliste (- tekst)',       type: 'linje',   prefiks: '- ' },
+    { id: 'nummerliste',navn: '1.',   tittel: 'Nummerert liste (1. tekst)', type: 'nummer' },
+    { id: 'lenke',      navn: '🔗',   tittel: 'Lenke ([tekst](url))',       type: 'lenke' },
+    { id: 'kode',       navn: '‹›',   tittel: 'Kode (`tekst`)',             type: 'omslutt', for: '`',  etter: '`' }
 ];
 
 function knapp(tekst, tittel, ekstraStil = '') {
@@ -49,9 +56,18 @@ export function byggMdEditor(container, opsjoner = {}) {
         verdi = '',
         plassholder = '',
         visVerktoy = true,
+        verktoy = null,
+        forhandsvis = parseMarkdown,
         minHoyde = 90,
         onEndring = () => {}
     } = opsjoner;
+
+    // Ukjent id er en skrivefeil, ikke et ønske om tom verktøylinje.
+    const valgte = verktoy ? verktoy.map(id => {
+        const v = VERKTOY.find(x => x.id === id);
+        if (!v) throw new Error(`byggMdEditor: ukjent verktøy "${id}"`);
+        return v;
+    }) : VERKTOY;
 
     container.textContent = '';
     const rot = document.createElement('div');
@@ -109,7 +125,7 @@ export function byggMdEditor(container, opsjoner = {}) {
         const linje = document.createElement('div');
         linje.style.cssText = 'display: flex; gap: 4px; align-items: center; flex-wrap: wrap;';
 
-        for (const v of VERKTOY) {
+        for (const v of valgte) {
             const b = knapp(v.navn, v.tittel, v.stil || '');
             b.addEventListener('click', () => {
                 if (v.type === 'omslutt') omslutt(tekstfelt, v.for, v.etter);
@@ -130,7 +146,7 @@ export function byggMdEditor(container, opsjoner = {}) {
         visKnapp.addEventListener('click', () => {
             viser = !viser;
             if (viser) {
-                forhandsvisning.innerHTML = parseMarkdown(tekstfelt.value) || '<em style="opacity:.6">(tom)</em>';
+                forhandsvisning.innerHTML = forhandsvis(tekstfelt.value) || '<em style="opacity:.6">(tom)</em>';
                 forhandsvisning.style.display = '';
                 tekstfelt.style.display = 'none';
                 visKnapp.textContent = '✎ Rediger';

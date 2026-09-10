@@ -319,6 +319,14 @@ Markdown-formen tar bare `http` og `https`. Alt annet i parentesen blir
 stående som vanlig tekst, så `javascript:` og `data:` kan ikke nå href-en
 gjennom et fritekstfelt.
 
+Feltet i editoren er Markdown-editoren (`byggMdEditor`), men med **bare
+lenkeknappen** — `verktoy: ['lenke']`. Hele verktøylinja ville tilbudt fet
+skrift, overskrifter og lister som Planner ikke viser. Av samme grunn bruker
+forhåndsvisningen `notatForhandsvisning` i editor.html i stedet for
+`parseMarkdown`: den speiler `notatSomHtml`, og
+`frontend/test/planner-notat.test.js` kjører de to mot de samme tekstene og
+krever samme utfall.
+
 Rå HTML escapes med vilje: en avbrutt tag ville ellers ødelagt resten av
 beskrivelsen. Det ble prøvd på dev 10.09.2026 og kom ut som synlig markup —
 derfor finnes Markdown-formen nå.
