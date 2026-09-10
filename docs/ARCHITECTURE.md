@@ -13,12 +13,11 @@
     ├─ /.auth/*          → SWA innebygd Entra ID
     └─ /api/*            → Managed Functions (api/)
                               │
-                              │ Managed Identity (DefaultAzureCredential)
+                              │ STORAGE_CONNECTION_STRING
                               ▼
                     ┌─────────────────────────┐
                     │  Table Storage          │
                     │  Blob Storage           │
-                    │  Key Vault              │
                     └─────────────────────────┘
                               │
                               │ HTTP (utgående)
@@ -30,6 +29,13 @@
                     │     SP-liste)           │
                     └─────────────────────────┘
 ```
+
+Koden snakker ikke med Key Vault. Hemmelighetene når appen som app settings,
+der SWA-hosten har løst `@Microsoft.KeyVault(...)`-referansene ved oppstart —
+`STORAGE_CONNECTION_STRING` er en av dem. SWA Managed Functions eksponerer
+ingen MI-token til koden, så `DefaultAzureCredential` har ingenting å hente;
+`api/src/lib/keyvault.js` er død kode og importeres ingen steder. Se
+`docs/SECURITY.md` for hvilken identitet som faktisk brukes, og til hva.
 
 ## Frontend
 
@@ -44,9 +50,9 @@
 - Azure Functions v4 (programmatic model), Node 22. Kun HTTP-triggere.
 - Hver funksjon er en modul i `api/src/functions/` som kaller `app.http()` ved require.
 - `api/src/index.js` samler require-kallene.
-- Delt logikk i `api/src/lib/` — storage, blob, keyvault, auth, tilgang, vilkår, etc.
+- Delt logikk i `api/src/lib/` — storage, blob, auth, tilgang, vilkår, etc.
 - Auth: SWA leverer verifisert `x-ms-client-principal`-header. `hentInnloggetUpn()` parser og returnerer UPN.
-- Ingen connection strings — kun `STORAGE_ACCOUNT_NAME` + `KEYVAULT_NAME` i env, resten via Managed Identity.
+- Storage nås med `STORAGE_CONNECTION_STRING` fra app settings. Ikke Managed Identity — se over.
 
 ### Unngåtte rundturer mot Table Storage
 
@@ -76,7 +82,7 @@ ekspanderer mange skjemaer av samme type (se `mine-behandlinger`).
   - `{ "keyvault": "secret-navn" }` — referanse til Key Vault
 - Ikke-hemmelige `public: true`-verdier eksponeres til frontend via `config.js`.
 - Ikke-hemmelige `public: false`-verdier settes som App Settings på SWA under deploy.
-- `keyvault`-referanser leses ved behov via `hentHemmelighet('secret-navn')` (5-min cache).
+- `keyvault`-referanser settes som app settings på SWA med `@Microsoft.KeyVault(...)`-syntaks, og løses av hosten ved oppstart. Koden leser dem som vanlige env-vars, og en rotert hemmelighet får derfor effekt først ved restart.
 
 ## CI/CD
 
@@ -91,8 +97,8 @@ ekspanderer mange skjemaer av samme type (se `mine-behandlinger`).
 
 ## Sikkerhetsprinsipper
 
-- Managed Identity everywhere. Ingen langlevede tokens.
-- Key Vault som eneste hemmelighetslager. Env-JSON committes, secrets ikke.
+- Hemmeligheter bare i Key Vault, aldri i kode eller env-JSON. Koden får dem som app settings, løst av SWA-hosten.
+- Env-JSON committes, secrets ikke.
 - Branch protection på `main`: PR påkrevd, 1+ review, signerte commits, "include administrators".
 - CODEOWNERS på `.github/`, `config/`, `staticwebapp.config.json`.
 - GitHub push protection + secret scanning slått på.
