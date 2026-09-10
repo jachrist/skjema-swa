@@ -30,6 +30,9 @@
                     └─────────────────────────┘
 ```
 
+Hvilke Power Automate-flyter løsningen faktisk trenger, hva som utløser hver
+av dem, og hva som kjører på klokke: `docs/FLYTER.md`.
+
 Koden snakker ikke med Key Vault. Hemmelighetene når appen som app settings,
 der SWA-hosten har løst `@Microsoft.KeyVault(...)`-referansene ved oppstart —
 `STORAGE_CONNECTION_STRING` er en av dem. SWA Managed Functions eksponerer

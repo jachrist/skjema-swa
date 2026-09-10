@@ -97,7 +97,7 @@ async function kjor() {
 
     console.log('\nMerk: dette dekker bare det som avhenger av DATA.');
     console.log('VARSLING, UTSENDING, PURRE, BACKUP og de to TEAM-flytene');
-    console.log('avgjøres av kode og env-vars — se oversikten i samtalen.\n');
+    console.log('avgjøres av kode og app settings — se docs/FLYTER.md.\n');
 }
 
 kjor().catch(e => { console.error('Feilet:', e.message); process.exit(1); });
