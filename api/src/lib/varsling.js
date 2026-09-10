@@ -221,39 +221,6 @@ function notatSomHtml(tekst, lenke) {
 
 
 /**
- * Skjemaets vedlegg, med nedlastingslenke.
- *
- * Vedleggsfelt lagrer filnavn som svar, ikke adresser. En feltreferanse i en
- * melding gir derfor bare «tilbud.pdf» — og siden Opplasting ikke er en
- * flervalgstype, kuttes fil nummer to og tre uten et ord. Her tas alle med, og
- * hver får adressen sin.
- *
- * Endepunktet krever innlogging og tilgang til skjemaet, så lenka gir ingen
- * ny tilgang: den sparer behandleren for å finne fram til skjemaet først.
- */
-function vedleggFraSkjema(skjema, base) {
-    const ut = [];
-    const rot = String(base || '').replace(/\/+$/, '');
-    const st = encodeURIComponent(String(skjema?.Skjematype_id || ''));
-    const sk = encodeURIComponent(String(skjema?.Skjema_id || ''));
-
-    for (const seksjon of (skjema?.Seksjoner || [])) {
-        for (const felt of (seksjon.Felter || [])) {
-            if (felt.Type !== 'Opplasting') continue;
-            for (const filnavn of (Array.isArray(felt.Svar) ? felt.Svar : [])) {
-                const navn = String(filnavn || '').trim();
-                if (!navn) continue;
-                ut.push({
-                    filnavn: navn,
-                    url: rot ? `${rot}/api/vedlegg-fil/${st}/${sk}/${encodeURIComponent(navn)}` : ''
-                });
-            }
-        }
-    }
-    return ut;
-}
-
-/**
  * Planners egen typeetikett, utledet av filendelsen.
  *
  * Graph godtar bare et lite, lukket sett: dokumentformatene og «Other». En
@@ -334,17 +301,13 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
     }
     const sjekkliste = byggSjekkliste(p.Sjekkliste, kontekst);
 
-    // Adressen utledes av skjemalenka, som allerede er bygget av baseUrl() med
-    // samme miljøhensyn. Er den tom — SWA_URL ikke satt og request uten brukbar
-    // host — får vedleggene ingen adresse, og vi sender dem heller ikke.
-    let base = '';
-    try { base = lenke ? new URL(lenke).origin : ''; } catch (_) { base = ''; }
-
-    // Skjemalenka ligger først. Det er den behandleren trenger oftest, og
-    // hensikten er at den skal være synlig på oppgavekortet uten at noen må
-    // åpne oppgaven. Vedleggene kommer etter.
-    // Skjemalenka holdes for seg: den er den ENESTE som gaar inn i
-    // `references`, mens `vedlegg` ogsaa lister filene.
+    // Skjemalenka er det eneste vedlegget på oppgaven.
+    //
+    // Skjemaets egne vedlegg lå her fram til 10.09.2026. De ble tatt ut fordi
+    // de ikke tjente noen hensikt: filene nås gjennom skjemaet lenka peker
+    // til, ett klikk unna, og adressene er bare brukbare for en behandler som
+    // uansett må logge inn. En lang vedleggsliste gjorde oppgaven vanskeligere
+    // å lese uten å gi behandleren noe hen ikke allerede hadde.
     const skjemalenke = lenke ? {
         // «Other» er den eneste gyldige verdien for noe som ikke er et
         // dokument. «url» ser riktigere ut, men Graph avviser den — se
@@ -356,9 +319,7 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         previewPriority: ' !'
     } : null;
 
-    const vedlegg = [];
-    if (skjemalenke) vedlegg.push(skjemalenke);
-    if (base) vedlegg.push(...vedleggFraSkjema(skjema, base));
+    const vedlegg = skjemalenke ? [skjemalenke] : [];
 
     return {
         tittel: erstattPlassholdere(p.Tittel, kontekst) || emne,
@@ -377,20 +338,17 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         // med, også når noen har skrevet sitt eget notat.
         notat_html: notatSomHtml(erstattPlassholdere(p.Notater, kontekst), lenke),
         ansvarlige: ansvarlige.map(m => ({ epost: m.epost, navn: m.navn || '' })),
-        // Skjemaets vedlegg i lesbar form — for en flyt som vil bruke dem til
-        // noe. Ikke i bruk i dag; vedleggene naas gjennom skjemaet lenka peker
-        // til, som er ett klikk unna uansett.
+        // Lesbar form — for en flyt som vil bygge noe eget. Inneholder bare
+        // skjemalenka, som `vedlegg_graph`.
         vedlegg,
-        // BARE skjemalenka gaar inn i `references`.
+        // Samme lenke i den formen Graph vil ha den.
         //
-        // Vedleggene laa her til aa begynne med, men Planner velger selv hva
-        // kortet viser og foretrekker et bilde. Et skjermbilde blant vedleggene
-        // kapret dermed kortet, og lenka - som er det behandleren faktisk
-        // trenger - ble liggende usett. previewType, som skulle styrt det, lar
-        // seg ikke sette (se notatSomHtml).
-        //
-        // Med bare lenka som referanse er det ingenting aa kapre.
-        vedlegg_graph: vedleggTilGraph(skjemalenke ? [skjemalenke] : [])
+        // At lista er kort er ikke tilfeldig. Planner velger selv hva kortet
+        // viser og foretrekker et bilde, saa et skjermbilde blant vedleggene
+        // kapret kortet og lenka - som er det behandleren faktisk trenger -
+        // ble liggende usett. previewType, som skulle styrt det, lar seg ikke
+        // sette (se notatSomHtml). Med bare lenka er det ingenting aa kapre.
+        vedlegg_graph: vedleggTilGraph(vedlegg)
     };
 }
 
@@ -750,6 +708,6 @@ module.exports = {
     // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
     somPlannerOppgave, somTeamskanal, somTeamsMelding,
     løsForfallsdato, byggSjekkliste, sjekklisteTilGraph, byggPlanner, byggTeamskanal, byggTeamsMelding,
-    vedleggFraSkjema, vedleggTilGraph, vedleggstype, notatSomHtml, tilHtml,
+    vedleggTilGraph, vedleggstype, notatSomHtml, tilHtml,
     PLANNER_STATUS, PLANNER_PRIORITET
 };

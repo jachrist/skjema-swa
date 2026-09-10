@@ -1,12 +1,11 @@
 /**
- * Tester for vedlegg på Planner-oppgaven.
+ * Tester for vedlegget på Planner-oppgaven.
  *
- * Bakgrunn: en feltreferanse til et vedleggsfelt ga bare filnavnet — og siden
- * Opplasting ikke er en flervalgstype, ble fil nummer to og tre kuttet uten et
- * ord. Behandleren måtte innom skjemaet uansett.
- *
- * Nå sendes vedleggene med oppgaven, både i lesbar form og i den formen Graph
- * vil ha dem på `PATCH /planner/tasks/{id}/details`.
+ * Oppgaven har ett vedlegg: lenka til skjemaet. Skjemaets egne vedlegg lå her
+ * fram til 10.09.2026, men ble tatt ut — filene nås gjennom skjemaet lenka
+ * peker til, og en lang liste gjorde bare oppgaven vanskeligere å lese.
+ * Testene under holder på det: et skjema fullt av vedlegg skal ikke gi mer
+ * enn den ene lenka.
  *
  * Det følsomme her er nøkkelkodingen. Graph krever at `%`, `:`, `.` og `@` er
  * prosentkodet i selve nøkkelen, og rekkefølgen er ikke likegyldig: tas ikke
@@ -24,52 +23,10 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
-const BASE = 'https://eksempel.net';
 const skjema = (felter) => ({
     Skjematype_id: '123', Skjema_id: '6',
     Seksjoner: [{ Seksjon_nummer: 1, Felter: felter }]
 });
-
-// ---------- alle filene tas med ----------
-{
-    const s = skjema([
-        { Nummer: '01', Type: 'Tekst', Svar: ['noe'] },
-        { Nummer: '02', Type: 'Opplasting', Svar: ['tilbud.pdf', 'kontrakt.docx'] }
-    ]);
-    const ut = v.vedleggFraSkjema(s, BASE);
-    sjekk('begge filene med', ut.map(x => x.filnavn), ['tilbud.pdf', 'kontrakt.docx']);
-    sjekk('adressen peker på nedlastingsendepunktet', ut[0].url,
-        'https://eksempel.net/api/vedlegg-fil/123/6/tilbud.pdf');
-}
-
-{
-    // Flere vedleggsfelt i samme skjema skal alle med.
-    const s = {
-        Skjematype_id: '1', Skjema_id: '2',
-        Seksjoner: [
-            { Felter: [{ Type: 'Opplasting', Svar: ['a.pdf'] }] },
-            { Felter: [{ Type: 'Opplasting', Svar: ['b.pdf'] }] }
-        ]
-    };
-    sjekk('på tvers av seksjoner', v.vedleggFraSkjema(s, BASE).map(x => x.filnavn), ['a.pdf', 'b.pdf']);
-}
-
-// ---------- ingen vedlegg ----------
-{
-    sjekk('skjema uten vedleggsfelt', v.vedleggFraSkjema(skjema([{ Type: 'Tekst', Svar: ['x'] }]), BASE), []);
-    sjekk('ubesvart vedleggsfelt', v.vedleggFraSkjema(skjema([{ Type: 'Opplasting', Svar: [] }]), BASE), []);
-    sjekk('tomt filnavn hoppes over', v.vedleggFraSkjema(skjema([{ Type: 'Opplasting', Svar: ['', '  '] }]), BASE), []);
-    sjekk('tomt skjema', v.vedleggFraSkjema(null, BASE), []);
-}
-
-// ---------- filnavn med tegn som må kodes ----------
-{
-    const s = skjema([{ Type: 'Opplasting', Svar: ['Tilbud fra Ås & Co.pdf'] }]);
-    const ut = v.vedleggFraSkjema(s, BASE);
-    sjekk('filnavnet er URL-kodet i adressen',
-        ut[0].url.endsWith('/Tilbud%20fra%20%C3%85s%20%26%20Co.pdf'), true);
-    sjekk('men står ukodet i alias', ut[0].filnavn, 'Tilbud fra Ås & Co.pdf');
-}
 
 // ---------- Graph-formen ----------
 {
@@ -150,54 +107,55 @@ const skjema = (felter) => ({
     sjekk('store bokstaver teller likt', v.vedleggstype('A.DOCX'), 'Word');
 }
 
-// ---------- byggPlanner tar dem med ----------
+// ---------- byggPlanner sender bare lenka ----------
 async function planner() {
-    const s = skjema([{ Type: 'Opplasting', Svar: ['tilbud.pdf'] }]);
-    const ut = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
-        emne: 'Emne', lenke: 'https://eksempel.net/evaluering.html?a=1',
-        skjema: s, behandlere: [], log: () => { }, rolleOppslag: async () => []
-    });
-    // Skjemalenka ligger først. Hensikten er at den skal vises på
-    // oppgavekortet uten at noen må åpne oppgaven, så rekkefølgen er ikke
-    // kosmetikk — den er hele poenget med at den er med.
-    sjekk('skjemalenka først, så vedleggene',
-        ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet', 'tilbud.pdf']);
-    sjekk('lenka peker på skjemaet', ut.vedlegg[0].url, 'https://eksempel.net/evaluering.html?a=1');
-    sjekk('og har type Other', ut.vedlegg[0].type, 'Other');
-    sjekk('bare lenka i Graph-form', Object.keys(ut.vedlegg_graph).length, 1);
-
-    // ---------- vedleggene holdes UTE av references ----------
-    {
-        // De laa her til aa begynne med, men Planner velger selv hva kortet
-        // viser og foretrekker et bilde. Et skjermbilde blant vedleggene
-        // kapret dermed kortet, og lenka ble liggende usett. Med bare lenka
-        // som referanse er det ingenting aa kapre.
-        const ref = Object.values(ut.vedlegg_graph);
-        sjekk('kun skjemalenka er referanse', ref.map(r => r.alias), ['Lenke til skjemaet']);
-        sjekk('men vedlegget staar fortsatt i lista',
-            ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet', 'tilbud.pdf']);
-        sjekk('lenka har previewPriority', ref[0].previewPriority, ' !');
-    }
-
-    // ---------- skjema uten vedlegg ----------
-    {
-        const tomt = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
-            emne: 'Emne', lenke: 'https://eksempel.net/evaluering.html?a=1',
-            skjema: skjema([{ Type: 'Tekst', Svar: ['x'] }]),
-            behandlere: [], log: () => { }, rolleOppslag: async () => []
-        });
-        sjekk('lenka står alene når det ikke finnes vedlegg',
-            tomt.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet']);
-    }
-
-    // Uten lenke har vi ingenting å peke på — verken skjemaet eller
-    // vedleggene. En halv adresse i en oppgave er verre enn ingen.
-    const utenBase = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
-        emne: 'Emne', lenke: '', skjema: s, behandlere: [], log: () => { },
+    const lenke = 'https://eksempel.net/evaluering.html?a=1';
+    const bygg = (s) => v.byggPlanner({}, { skjemanavn: 'Test' }, {
+        emne: 'Emne', lenke, skjema: s, behandlere: [], log: () => { },
         rolleOppslag: async () => []
     });
-    sjekk('uten base-URL sendes ingen vedlegg', utenBase.vedlegg, []);
-    sjekk('og tomt Graph-kart', utenBase.vedlegg_graph, {});
+
+    {
+        // Et skjema med vedlegg i to felt og to seksjoner. Ingen av filene
+        // skal med — det er hele endringen fra 10.09.2026.
+        const s = {
+            Skjematype_id: '123', Skjema_id: '6',
+            Seksjoner: [
+                { Felter: [{ Type: 'Opplasting', Svar: ['tilbud.pdf', 'kontrakt.docx'] }] },
+                { Felter: [{ Type: 'Opplasting', Svar: ['skjermbilde.png'] }] }
+            ]
+        };
+        const ut = await bygg(s);
+        sjekk('bare skjemalenka i lista', ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet']);
+        sjekk('lenka peker på skjemaet', ut.vedlegg[0].url, lenke);
+        sjekk('og har type Other', ut.vedlegg[0].type, 'Other');
+
+        const ref = Object.values(ut.vedlegg_graph);
+        sjekk('kun skjemalenka er referanse', ref.map(r => r.alias), ['Lenke til skjemaet']);
+        sjekk('lenka har previewPriority', ref[0].previewPriority, ' !');
+
+        // Skjermbildet var det som kapret oppgavekortet. Ingen av adressene
+        // til vedleggsfilene skal finnes noe sted i payloaden.
+        sjekk('ingen vedlegg-fil-adresse i payloaden',
+            JSON.stringify(ut).includes('vedlegg-fil'), false);
+    }
+
+    {
+        // Skjema uten vedlegg ser likt ut — lenka står alene der også.
+        const ut = await bygg(skjema([{ Type: 'Tekst', Svar: ['x'] }]));
+        sjekk('lenka står alene uten vedlegg', ut.vedlegg.map(x => x.filnavn), ['Lenke til skjemaet']);
+    }
+
+    {
+        // Uten lenke har vi ingenting å peke på. En halv adresse i en oppgave
+        // er verre enn ingen.
+        const ut = await v.byggPlanner({}, { skjemanavn: 'Test' }, {
+            emne: 'Emne', lenke: '', skjema: skjema([{ Type: 'Opplasting', Svar: ['a.pdf'] }]),
+            behandlere: [], log: () => { }, rolleOppslag: async () => []
+        });
+        sjekk('uten lenke sendes ingen vedlegg', ut.vedlegg, []);
+        sjekk('og tomt Graph-kart', ut.vedlegg_graph, {});
+    }
 
     console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
