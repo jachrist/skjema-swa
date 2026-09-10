@@ -47,6 +47,38 @@ const PREFILLED_MAKS = 30000;
 const PURRETEKST_MAKS = 1000;
 
 /**
+ * Tillater skjematypen masseutsending?
+ *
+ * En utsending går til en identifisert person med en lenke som ikke krever
+ * Entra-pålogging. Det er samme tillit som ekstern innsender, og styres derfor
+ * av samme flagg: `EksternTilgang` på skjematypen.
+ *
+ * Sjekken hører hjemme ved OPPRETTELSEN av batchen, ikke ved utsendingen.
+ * Der er det én skjematype å ta stilling til, og svaret gjelder hele batchen —
+ * mot at utsendingen ville måttet klassifisere hver enkelt mottaker som intern
+ * eller ekstern, en oppgave uten et ærlig svar (domenet varierer mellom
+ * miljøene, og teamcachen er en cache).
+ *
+ * Konsekvensen er verdt å merke seg: finnes batchen, har skjematypen tillatt
+ * ekstern innsending. Utsendings- og purreflyten kan derfor alltid sende ut av
+ * organisasjonen uten å spørre om noe mer.
+ */
+function sjekkEksternUtsending(skjematypeJson) {
+    if (!skjematypeJson) {
+        return { ok: false, melding: 'Fant ikke skjematypen' };
+    }
+    if (skjematypeJson.EksternTilgang !== true) {
+        return {
+            ok: false,
+            melding: 'Denne skjematypen er ikke tilgjengelig for ekstern utsendelse. '
+                + 'Slå på «Tillat innsending fra eksterne via engangskode/engangstoken» '
+                + 'på skjematypen først.'
+        };
+    }
+    return { ok: true };
+}
+
+/**
  * "2026-09-01" eller full ISO-tid → ISO-streng. Ugyldig verdi gir null, så
  * kalleren kan skille «ikke satt» ('') fra «skrivefeil» (null) og avvise.
  *
@@ -288,5 +320,5 @@ function tryParseJson(s) { try { return JSON.parse(s); } catch { return null; } 
 module.exports = {
     opprett, hent, markerBesvart, markerPurret, markerSendt,
     listBatch, listUbesvarte, listForfalteUtsendinger,
-    normaliserDato, erAvsluttet
+    normaliserDato, erAvsluttet, sjekkEksternUtsending
 };

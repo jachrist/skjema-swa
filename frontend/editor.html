@@ -900,11 +900,12 @@
                         <div id="eiere-editor"></div>
                     </div>
                     <div class="rad">
-                        <label>Ekstern innsender <small>(uten Entra-pålogging — verifiseres via OTP)</small></label>
+                        <label>Ekstern innsender <small>(uten Entra-pålogging — purring på tilsendt skjema eller verifikasjon via OTP)</small></label>
                         <label class="checkbox-rad" style="margin: 4px 0;">
                             <input type="checkbox" ${data.EksternTilgang ? 'checked' : ''} onchange="setEksternTilgang(this.checked)">
-                            Tillat innsending fra eksterne via engangskode
+                            Tillat innsending fra eksterne via engangskode/engangstoken
                         </label>
+                        <small style="display: block; margin: 0 0 4px 2px;">Styrer også masseutsending: uten dette avvises nye utsendinger for skjematypen.</small>
                         <div id="ekstern-lenke-boks" style="display: ${data.EksternTilgang && eksisterendeId ? 'block' : 'none'}; margin-top: 8px; padding: 10px 12px; background: var(--accent-light); border-radius: 6px;">
                             <label style="font-size: 11px; margin-bottom: 4px;">Ekstern tilgangs-URL <small>(kopier og distribuer via e-post, SMS eller nettside)</small></label>
                             <div style="display: flex; gap: 6px;">

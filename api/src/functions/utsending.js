@@ -244,6 +244,24 @@ app.http('utsendingOpprett', {
             const opprettetAv = upn || 'flyt';
 
             if (!skjematypeId) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler skjematypeId' } };
+
+            // Skjematypen må tillate ekstern innsending. Lenka vi utsteder gir
+            // tilgang uten Entra-pålogging, og det er et valg eieren av
+            // skjematypen skal ha tatt bevisst.
+            //
+            // Sjekken ligger her og ikke ved utsendingen: her er det én
+            // skjematype å ta stilling til, og svaret gjelder hele batchen.
+            // Ved utsendingen ville hver mottaker måttet klassifiseres som
+            // intern eller ekstern — et spørsmål uten et ærlig svar.
+            //
+            // «for-meg» er ikke omfattet: der utsteder en innlogget bruker en
+            // lenke til seg selv, og har allerede tilgangen lenka gir.
+            const st = await skjemaStorage.hentSkjematype(skjematypeId);
+            const eksternOk = utsendingStorage.sjekkEksternUtsending(st?.JSON);
+            if (!eksternOk.ok) {
+                return { status: 400, jsonBody: { status: 'feil', melding: eksternOk.melding } };
+            }
+
             if (mottakere.length === 0) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler mottakere' } };
             if (mottakere.length > 500) return { status: 400, jsonBody: { status: 'feil', melding: 'Maks 500 mottakere per batch' } };
 

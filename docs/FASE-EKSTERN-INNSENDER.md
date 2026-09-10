@@ -12,6 +12,15 @@ via OTP-flyt (SMS eller e-post) i stedet for SWA-cookie.
 }
 ```
 
+> `EksternTilgang` styrer **to** ting, ikke bare OTP-flyten:
+>
+> 1. Anonym utfylling via `?ekstern=1`, verifisert med OTP — beskrevet her.
+> 2. Om skjematypen kan masseutsendes. `POST /api/utsending` avviser en batch
+>    for en skjematype uten flagget.
+>
+> Felles for begge er at de gir tilgang uten Entra-pålogging, og det er det
+> valget flagget representerer. Se `docs/FASE-UTSENDING-SAMMENSLAING.md`.
+
 **Skjema-forekomst (innsendt av ekstern):**
 ```json
 {

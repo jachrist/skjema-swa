@@ -1,7 +1,7 @@
 # Slå utsendingsflyten sammen med varslingsflyten
 
-Status: **plan, ikke påbegynt.** Ett punkt må avklares før koding — se
-«Blokkeren» nedenfor.
+Status: **påbegynt.** Kravet om `EksternTilgang` ved opprettelse er levert.
+Resten venter på ett driftsspørsmål — se «Blokkeren» nedenfor.
 
 ## Utgangspunkt
 
@@ -84,14 +84,35 @@ oppslag i teamcachen, ikke strengsammenligning på domene. Men den er en cache,
 ikke en sannhet — en fersk ansatt kan mangle til neste refresh, og da ville en
 splitt gitt vedkommende feil lenketype. Enda et argument for å la være.
 
-## Blokkeren: får varslingsflyten sende eksternt?
+## Blokkeren
 
-Purringer går til både interne og eksterne, ofte i samme batch.
-Varslingsflyten sender i dag bare til interne, oppløste mottakere.
+Purringer går til både interne og eksterne, ofte i samme batch — et
+spørreskjema til forelesere treffer gjerne begge deler.
 
-Om e-postkoblingen i den flyten faktisk får sende ut av organisasjonen, er et
-driftsspørsmål. **Svaret avgjør om denne planen holder**, og det må hentes fra
-Power Automate / tenant-oppsettet før noe kode skrives.
+### Avklart: når det er lov (levert)
+
+Skjematypen må ha `EksternTilgang`. Samme flagg som styrer OTP-flyten, fordi
+det er den samme tilliten: tilgang uten Entra-pålogging.
+
+Sjekken ligger ved **opprettelsen** av batchen — `POST /api/utsending` avviser
+en skjematype uten flagget med «Denne skjematypen er ikke tilgjengelig for
+ekstern utsendelse». Der er det én skjematype å ta stilling til, og svaret
+gjelder hele batchen. Ved utsendingen ville hver mottaker måttet klassifiseres
+som intern eller ekstern, og det spørsmålet har ikke noe ærlig svar.
+
+Konsekvensen er det som gjør sammenslåingen mulig: **finnes batchen, har
+skjematypen tillatt ekstern innsending.** Utsendings- og purreflyten kan
+derfor alltid sende ut av organisasjonen uten å spørre om noe mer, og trenger
+ingen logikk for å skille mottakere.
+
+`utsending/for-meg` er ikke omfattet — der utsteder en innlogget bruker en
+lenke til seg selv.
+
+### Gjenstår: får koblingen sende eksternt?
+
+Policyen er avklart, men ikke evnen. Om e-postkoblingen i varslingsflyten
+faktisk *kan* sende ut av organisasjonen, er et driftsspørsmål som må hentes
+fra Power Automate / tenant-oppsettet før koden legges om.
 
 Er svaret nei, faller sammenslåingen — da trengs en egen flyt med en kobling
 som får sende eksternt, og arbeidet blir å opprette den etter kontrakten i
@@ -126,19 +147,21 @@ sammenslåingen.
 
 ## Steg
 
-1. **Avklar blokkeren.** Ingenting under her er verdt å begynne på først.
-2. **Markdown→HTML i backend.** Ny `lib/markdown.js`, med en test som kjører
+1. ~~**Krav om `EksternTilgang` ved opprettelse.**~~ Levert.
+2. **Avklar om koblingen får sende eksternt.** Ingenting under her er verdt å
+   begynne på først.
+3. **Markdown→HTML i backend.** Ny `lib/markdown.js`, med en test som kjører
    den og `parseMarkdown` fra `felt-render.js` mot de samme tekstene.
-3. **Maler for utsending og purring** i `lib/varsling.js`, ved siden av de
+4. **Maler for utsending og purring** i `lib/varsling.js`, ved siden av de
    eksisterende. Emne og HTML bygges av `skjemanavn`, `skjemabeskrivelse` og
    `purretekst`, med lenka per mottaker gjennom `lenker`.
-4. **Bytt kallet.** `kallUtsendingsflyt()` erstattes av
+5. **Bytt kallet.** `kallUtsendingsflyt()` erstattes av
    `sendVarslerViaFlyt()` med `handling: 'sendUtsendinger'` /
    `'purreUtsendinger'` og `lenker` fylt fra `byggUtsendingsposter`.
-5. **Rydd.** `flytUrlFor()` bort. `UTSENDING_FLOW_URL` og `PURRE_FLOW_URL` ut
+6. **Rydd.** `flytUrlFor()` bort. `UTSENDING_FLOW_URL` og `PURRE_FLOW_URL` ut
    av `HEMMELIGE_ENV` i `functions/system.js` — da forsvinner også den
    stående, ubesvarte alarmen om at `UTSENDING_FLOW_URL` mangler.
-6. **Oppdater `docs/FLYTER.md`.** Åtte adresser blir seks.
+7. **Oppdater `docs/FLYTER.md`.** Åtte adresser blir seks.
 
 ## Uavhengig av dette: purringen markerer selv om ingenting ble sendt
 
