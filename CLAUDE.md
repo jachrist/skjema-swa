@@ -53,6 +53,10 @@ Rør ikke referanse-appen fra dette repoet.
 
 ## Gjenstående arbeid
 
-`docs/TODO.md` er den løpende lista over utestående punkter — både brukerønsker
-og teknisk gjeld. Kryss av der når et punkt leveres, og legg nye punkter nederst
-så numrene holder seg stabile.
+Lista over utestående punkter — brukerønsker og teknisk gjeld — ligger i appen
+under **Administrasjon → ✅ Oppgaver**, ikke i repoet. `docs/TODO.md` er tømt og
+peker bare dit.
+
+Den lista er ikke lesbar herfra. Trenger du den i en økt, be om en eksport fra
+*Kopier som Markdown* / *Last ned .md* i samme fane. Numrene er stabile: nye
+punkter legges nederst, og «punkt 17» betyr det samme over tid.
