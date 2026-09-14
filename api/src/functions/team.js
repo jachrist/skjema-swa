@@ -31,13 +31,42 @@ function autorisert(request) {
     return { ok: false, grunn: upn ? 'Krever admin' : 'Mangler x-flow-key, og ingen innlogget bruker' };
 }
 
+/**
+ * Team-navnene vi har i cachen.
+ *
+ * To slags kallere, med hvert sitt behov:
+ *
+ *   Skjemaeditoren   fyller nedtrekkslista for Publikum/Eiere. Enhver
+ *                    innlogget bruker som får åpne editoren skal se den —
+ *                    IKKE bare admin. En eier uten admin er helt vanlig.
+ *   Synkeflyten      spør «hvilke team kjenner dere?» før den henter
+ *                    medlemmene fra Graph og dytter dem inn på POST-en under.
+ *
+ * Derfor ikke `autorisert()`, som krever admin for innloggede: den ville
+ * lukket editoren for dem den er laget for. Her holder det med flyt-nøkkel
+ * ELLER en innlogget bruker.
+ *
+ * Merk hva lista ER: PartitionKey-ene i Teammedlemskap, altså de teamene som
+ * allerede er hentet minst én gang. Den sier hvilke team vi har, ikke hvilke
+ * som burde finnes — et team noen har skrevet inn i editoren, men aldri
+ * synket, står ikke her.
+ */
 app.http('teamNavnList', {
     methods: ['GET'],
     authLevel: 'anonymous',
     route: 'cache/teammedlemskap/team-navn',
     handler: async (request, context) => {
+        const flyt = harFlytNokkel(request);
         const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!flyt.ok && !upn) {
+            return {
+                status: 401,
+                jsonBody: {
+                    status: 'feil',
+                    melding: `Krever innlogging eller gyldig x-flow-key. Flyt-nøkkel: ${flyt.grunn}`
+                }
+            };
+        }
         try {
             return { jsonBody: await teamStorage.hentAlleTeamNavn() };
         } catch (e) {

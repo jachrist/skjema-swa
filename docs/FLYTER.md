@@ -167,13 +167,37 @@ ruteregelen da slipper å skille på metode — se kommentaren i
 
 ## Flyter som kaller inn til oss
 
-Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`:
+Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`.
 
-- `functions/skjemaer.js` — fullfører et behandlingssteg. Callbacken får bare
-  fullføre steg som faktisk har `Flyt_url`; uten den begrensningen ville
-  nøkkelen gitt tilgang til å avgjøre hvilket som helst steg.
-- `functions/backup.js` — flyten melder tilbake om fila landet i OneDrive.
-- `functions/team.js`, `functions/utsending.js` — samme nøkkel.
+| Metode | Rute | Hva flyten gjør |
+|---|---|---|
+| POST | `/api/utsending` | oppretter en masseutsending, får én engangslenke per mottaker tilbake |
+| POST | `/api/skjemaer/{skjematypeId}/{skjemaId}/beslutning` | melder at et behandlingssteg er fullført |
+| POST | `/api/cache/teammedlemskap` | erstatter teamcachen med medlemmer hentet fra Graph |
+| GET | `/api/cache/teammedlemskap/team-navn` | hvilke team er i cachen — før synking |
+| POST | `/api/backup/kvittering` | bekrefter at backupfila landet i OneDrive |
+| POST | `/api/hendelser/logg` | skriver en infomelding i loggen |
+
+`/api/utsending`, `/api/cache/teammedlemskap` og `/api/cache/teammedlemskap/team-navn`
+godtar også en innlogget bruker. De tre andre tar bare nøkkelen.
+
+**Callbacken på beslutning er begrenset.** Den får bare fullføre steg som
+faktisk har `Flyt_url` satt i skjemadefinisjonen. Uten den sperren ville
+nøkkelen gitt tilgang til å avgjøre hvilket som helst steg, også de
+menneskebehandlede. Kalles den på et vanlig steg, er svaret 403 — ikke fordi
+nøkkelen er feil, men fordi steget ikke er flytens.
+
+**`team-navn` sier hva vi HAR, ikke hva som burde finnes.** Lista er
+PartitionKey-ene i `Teammedlemskap`, altså teamene som er hentet minst én
+gang. Et team noen har skrevet inn i skjemaeditoren, men aldri synket, står
+ikke der — og er cachen tom, er lista tom.
+
+**Hvert av disse endepunktene trenger en egen ruteregel** med
+`allowedRoles: ["anonymous"]` i `staticwebapp.config.<miljø>.json` — unntatt
+beslutnings-ruta, som dekkes av den brede `/api/skjemaer/*`. Mangler regelen,
+avviser plattformen kallet før `x-flow-key` leses: flyten har ingen
+SWA-cookie, handleren ser aldri forsøket, og loggen vår er tom.
+`api/test/swa-config.test.js` sjekker at reglene finnes.
 
 ## Det som kjører regelmessig er ikke flyter
 

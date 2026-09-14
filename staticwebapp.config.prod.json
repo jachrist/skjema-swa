@@ -138,6 +138,12 @@
             ]
         },
         {
+            "route": "/api/cache/teammedlemskap/team-navn",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
             "route": "/api/nokkelkalender/sjekk",
             "allowedRoles": [
                 "anonymous"
