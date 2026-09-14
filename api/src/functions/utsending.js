@@ -53,6 +53,7 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const utsendingStorage = require('../lib/utsending-storage');
 const utsendingToken = require('../lib/utsending-token');
 const flytUtfall = require('../lib/flyt-utfall');
+const { miljo } = require('../lib/flyt-kaller');
 const hendelser = require('../lib/hendelser-storage');
 const skjemaStorage = require('../lib/skjema-storage');
 const { hentOgSettFasteData } = require('../lib/faste-data');
@@ -191,7 +192,7 @@ async function kallUtsendingsflyt(handling, mottakere, context, navn) {
         const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ handling, mottakere }),
+            body: JSON.stringify({ handling, miljø: miljo(), mottakere }),
             signal: avbryt.signal
         });
         const ms = Date.now() - start;

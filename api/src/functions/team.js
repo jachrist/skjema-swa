@@ -16,6 +16,7 @@ const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const teamStorage = require('../lib/team-storage');
 const hendelser = require('../lib/hendelser-storage');
+const { miljo } = require('../lib/flyt-kaller');
 
 function autorisert(request) {
     // Både innlogget bruker OG (PA-flyt med x-flow-key) tillates
@@ -153,7 +154,9 @@ async function kallFlyt(navn, flytUrl, payload, context) {
         const resp = await fetch(flytUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            // miljø ligger foerst, men kan overstyres av payloaden hvis
+            // et kall noen gang trenger noe annet.
+            body: JSON.stringify({ miljø: miljo(), ...payload }),
             signal: avbryt.signal
         });
         const tekst = await resp.text().catch(() => '');

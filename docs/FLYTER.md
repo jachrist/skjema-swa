@@ -94,6 +94,66 @@ det, så en treg flyt ikke kveler kjøringen og feilen kommer som en naken 502:
 | `functions/team.js` | 35 s |
 | `functions/backup.js` | 4 min — går mot en egen jobb, ikke et brukerkall |
 
+## Miljøet står i payloaden
+
+Alle utgående kall har `miljø` i kroppen — `"pilot"`, `"production"` eller
+`"ukjent"` hvis `MILJO` ikke er satt. Én flyt kan dermed forgrene på miljø i
+stedet for at det vedlikeholdes en kopi per miljø.
+
+Adressen flyten kalles på sier ingenting om avsenderen: den er den samme
+uansett hvem som kaller. `backup`-flyten har hatt feltet siden den ble laget;
+fra 14.09.2026 har resten det også, med samme feltnavn.
+
+```jsonc
+{ "handling": "sendBehandlingsVarsling", "miljø": "pilot", "mottakere": [ … ] }
+```
+
+Verdien kommer fra `MILJO`, som settes i SWA Configuration per miljø.
+
+## Flyter kan skrive i loggen
+
+`POST /api/hendelser/logg` — for en flyt som vil si fra om hva den gjorde.
+Kjørehistorikken i Power Automate viser bare flytens egen side av saken, og er
+hverken søkbar sammen med resten eller synlig for den som sitter i
+admin-panelet.
+
+```http
+POST https://<swa>/api/hendelser/logg
+x-flow-key: <FLOW_CALLBACK_KEY>
+Content-Type: application/json
+
+{ "melding": "Sendte 42 purringer via SMTP-koblingen",
+  "type": "purring",
+  "objektId": "batch-1757500000000-a1b2c3",
+  "detaljer": { "antall": 42, "kanal": "epost" } }
+```
+
+| Felt | |
+|---|---|
+| `melding` | påkrevd, kuttes ved 2000 tegn |
+| `type` | valgfri. Får alltid `flyt.`-prefiks — `"purring"` blir `flyt.purring` |
+| `objektId` | valgfri, for å knytte linja til en batch eller et skjema |
+| `detaljer` | valgfritt objekt. `miljø` legges på automatisk |
+
+Svar: `{ "status": "ok", "type": "flyt.purring", "tid": "…" }`.
+
+Prefikset kan ikke omgås. En flyt skal ikke kunne skrive seg inn som
+`utsending.send-forfalte` blant hendelsene appen selv skriver — da er
+revisjonssporet ikke lenger til å stole på. Det gjør samtidig at alt fra en
+testrunde hentes med ett filter:
+
+```
+GET /api/hendelser?type=flyt.purring     (admin)
+```
+
+Linja skrives to steder: `Hendelser`-tabellen, som er søkbar og synlig i
+admin, og funksjonsloggen, som har tidsoppløsningen når noe skal spores
+minutt for minutt.
+
+Endepunktet har egen sti i stedet for `POST` på `/api/hendelser`, fordi
+ruteregelen da slipper å skille på metode — se kommentaren i
+`functions/hendelser.js`.
+
 ## Flyter som kaller inn til oss
 
 Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`:

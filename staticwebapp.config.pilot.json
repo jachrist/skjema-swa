@@ -149,6 +149,12 @@
             ]
         },
         {
+            "route": "/api/hendelser/logg",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": [
                 "authenticated"

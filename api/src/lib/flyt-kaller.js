@@ -89,6 +89,20 @@ async function kallVarslingFlyt(payload, log = () => {}) {
  * varslinger-array kan inneholde: 'epost', 'teams', 'planner', 'teamskanal'.
  * PA-flyten switcher basert på kanal-innhold.
  */
+/**
+ * Hvilket miljø kallet kommer fra.
+ *
+ * Sendes med i payloaden til alle flytene, slik at ÉN flyt kan forgrene på
+ * miljø i stedet for at det vedlikeholdes en kopi per miljø. Adressen flyten
+ * kalles på sier ingenting — den er den samme uansett hvem som kaller.
+ *
+ * `backup`-flyten har fått feltet siden den ble laget; dette gjør det samme
+ * for resten, med samme feltnavn.
+ */
+function miljo() {
+    return String(process.env.MILJO || 'ukjent');
+}
+
 async function sendVarslerViaFlyt(args, log = () => {}) {
     const mottakere = (args.mottakere || []).filter(m => m && m.epost);
     if (mottakere.length === 0) return { status: 'hoppet-over', melding: 'Ingen mottakere' };
@@ -105,6 +119,8 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
         // payloaden. Den finnes for å kunne se i flytens kjørelogg hvilken
         // varsling et kall stammer fra, og er derfor verdt å skille på.
         handling: args.handling || 'sendBehandlingsVarsling',
+        // Lar én flyt forgrene på miljø i stedet for én kopi per miljø.
+        miljø: miljo(),
         mottakere: mottakere.map(m => ({ epost: m.epost, navn: m.navn || '' })),
         varslinger,
         skjema_id: args.skjemaId || '',
@@ -174,7 +190,7 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
         const respons = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ handling: 'sendOtp', kanal, mottaker, kode, gyldig_minutter: gyldigMinutter })
+            body: JSON.stringify({ handling: 'sendOtp', miljø: miljo(), kanal, mottaker, kode, gyldig_minutter: gyldigMinutter })
         });
         if (!respons.ok) {
             const tekst = await respons.text().catch(() => '');
@@ -194,5 +210,6 @@ module.exports = {
     sendEpostViaFlyt,
     sendVarslerViaFlyt,
     sendOtpViaFlyt,
-    baseUrl
+    baseUrl,
+    miljo
 };

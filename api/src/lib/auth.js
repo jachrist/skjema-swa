@@ -8,6 +8,8 @@
  * hentInnloggetUpn null. Kalleren avgjør om det skal 401 eller behandles anonymt.
  */
 
+const crypto = require('crypto');
+
 function hentInnloggetUpn(request) {
     if (!request?.headers?.get) return null;
     const header = request.headers.get('x-ms-client-principal');
@@ -45,4 +47,32 @@ function erAdmin(upn) {
     return liste.includes(String(upn).toLowerCase());
 }
 
-module.exports = { hentInnloggetUpn, hentBrukerRoller, erAdmin };
+/**
+ * Gyldig `x-flow-key` fra en Power Automate-flyt?
+ *
+ * Flytene har ingen Entra-identitet, så en delt nøkkel i en header er det de
+ * har. Nøkkelen hashes før sammenligningen: da er lengdene alltid like, og
+ * `timingSafeEqual` kan brukes uten å kreve at nøklene er like lange på
+ * forhånd — og svartiden røper ikke lengden på den riktige nøkkelen.
+ *
+ * Den innkommende trimmes. Power Automate legger lett på et linjeskift når
+ * verdien kommer fra en variabel eller en Compose.
+ *
+ * `grunn` er til logg og feilmelding, og sier aldri noe om den forventede
+ * verdien utover om den er satt.
+ */
+function harFlytNokkel(request) {
+    const konfigurert = String(process.env.FLOW_CALLBACK_KEY || '').trim();
+    if (!konfigurert) return { ok: false, grunn: 'FLOW_CALLBACK_KEY er ikke satt på serveren' };
+
+    const gitt = String(request?.headers?.get?.('x-flow-key') || '').trim();
+    if (!gitt) return { ok: false, grunn: 'x-flow-key-header mangler eller er tom' };
+
+    const a = crypto.createHash('sha256').update(gitt).digest();
+    const b = crypto.createHash('sha256').update(konfigurert).digest();
+    return crypto.timingSafeEqual(a, b)
+        ? { ok: true }
+        : { ok: false, grunn: 'x-flow-key matcher ikke' };
+}
+
+module.exports = { hentInnloggetUpn, hentBrukerRoller, erAdmin, harFlytNokkel };
