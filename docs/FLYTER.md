@@ -165,6 +165,25 @@ Endepunktet har egen sti i stedet for `POST` på `/api/hendelser`, fordi
 ruteregelen da slipper å skille på metode — se kommentaren i
 `functions/hendelser.js`.
 
+## Alle utgående kall bærer `x-flow-key`
+
+Signaturen i flyt-URL-en (`sig=`) var eneste sperre fram til 14.09.2026. Den
+som fikk tak i adressen kunne sende en hvilken som helst payload — og siden
+e-postteksten bygges av felter i payloaden (`skjemanavn`,
+`skjemabeskrivelse`, `epost_og_teams.html`), betyr det en melding som ser ut
+til å komme fra skjemasystemet, med en lenke til hva som helst.
+
+Derfor sender alle utgående kall nå `x-flow-key` med samme verdi flytene
+allerede sender inn til oss. Symmetrisk, og uten en ny hemmelighet å
+forvalte: den delte nøkkelen viser at det er oss, begge veier.
+
+**Flyten må selv sjekke headeren** — vi kan bare sende den. Legg det som
+første steg, og avvis kallet hvis den mangler eller ikke matcher.
+
+Er `FLOW_CALLBACK_KEY` ikke satt, sendes ingen header i det hele tatt. Da
+oppfører kallet seg som før, og en flyt som ennå ikke sjekker merker
+ingenting — rekkefølgen ved utrulling er fri.
+
 ## Flyter som kaller inn til oss
 
 Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`.

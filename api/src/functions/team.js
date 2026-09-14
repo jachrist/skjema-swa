@@ -15,7 +15,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const teamStorage = require('../lib/team-storage');
 const hendelser = require('../lib/hendelser-storage');
-const { miljo } = require('../lib/flyt-kaller');
+const { miljo, flytHeadere } = require('../lib/flyt-kaller');
 
 function autorisert(request) {
     // Både innlogget bruker OG (PA-flyt med x-flow-key) tillates. Er headeren
@@ -157,7 +157,7 @@ async function kallFlyt(navn, flytUrl, payload, context) {
     try {
         const resp = await fetch(flytUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: flytHeadere(),
             // miljø ligger foerst, men kan overstyres av payloaden hvis
             // et kall noen gang trenger noe annet.
             body: JSON.stringify({ miljø: miljo(), ...payload }),
