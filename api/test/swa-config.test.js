@@ -19,7 +19,18 @@ const fs = require('fs');
 const path = require('path');
 
 const rot = path.join(__dirname, '..', '..');
-const filer = fs.readdirSync(rot).filter(n => /^staticwebapp\.config\.[a-z]+\.json$/.test(n));
+// Rot-fila staticwebapp.config.json tas med, ikke bare miljøvariantene.
+//
+// Den er et byggeartefakt — build-config.js kopierer riktig miljøvariant over
+// den ved deploy — men den er sjekket inn, og den ble stående igjen som et
+// gammelt øyeblikksbilde: ugyldig jokertegn i en rute, feilstilt openIdIssuer,
+// ingen rolesSource og ingen 403-override.
+//
+// Normalt overskrives den. Men build-config.js har en gren som beholder den
+// eksisterende fila hvis miljøvarianten mangler — og da er det nettopp dette
+// som blir deployet. Det er billigere å holde den gyldig enn å stole på at
+// den grenen aldri treffer.
+const filer = fs.readdirSync(rot).filter(n => /^staticwebapp\.config(\.[a-z]+)?\.json$/.test(n));
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -29,6 +40,8 @@ function sjekk(navn, faktisk, forventet) {
 }
 
 sjekk('finner miljøkonfigurasjonene', filer.length >= 2, true);
+// Uten denne kunne regexen over strammes inn igjen uten at noe ble rødt.
+sjekk('rot-fila er med', filer.includes('staticwebapp.config.json'), true);
 
 for (const fil of filer) {
     const rå = fs.readFileSync(path.join(rot, fil), 'utf8');

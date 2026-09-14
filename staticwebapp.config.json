@@ -1,6 +1,10 @@
 {
     "routes": [
         {
+            "route": "/",
+            "rewrite": "/velgskjematype.html"
+        },
+        {
             "route": "/js/*",
             "headers": {
                 "Cache-Control": "no-cache"
@@ -31,7 +35,7 @@
             ]
         },
         {
-            "route": "/api/skjematyper/*/publikum",
+            "route": "/api/publikum-skjematype/*",
             "allowedRoles": [
                 "anonymous"
             ]
@@ -115,13 +119,13 @@
             ]
         },
         {
-            "route": "/api/backup/verifiser-lagret",
+            "route": "/api/backup/kvittering",
             "allowedRoles": [
                 "anonymous"
             ]
         },
         {
-            "route": "/api/backup/kvittering",
+            "route": "/api/backup/verifiser-lagret",
             "allowedRoles": [
                 "anonymous"
             ]
@@ -140,6 +144,12 @@
         },
         {
             "route": "/api/utsending/send-forfalte",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
+            "route": "/api/roller-swa",
             "allowedRoles": [
                 "anonymous"
             ]
@@ -184,7 +194,7 @@
         }
     ],
     "navigationFallback": {
-        "rewrite": "/index.html",
+        "rewrite": "/velgskjematype.html",
         "exclude": [
             "/api/*",
             "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"
@@ -194,17 +204,27 @@
         "identityProviders": {
             "azureActiveDirectory": {
                 "registration": {
-                    "openIdIssuer": "https://login.microsoftonline.com/v2.0/e4fcc393-7190-4d3d-a38d-fa6429f870f3",
-                    "clientIdSettingName": "ad0eed27-4fd3-48cf-9b78-80637eb8d2f2",
+                    "openIdIssuer": "https://login.microsoftonline.com/e4fcc393-7190-4d3d-a38d-fa6429f870f3/v2.0",
+                    "clientIdSettingName": "AAD_CLIENT_ID",
                     "clientSecretSettingName": "AAD_CLIENT_SECRET"
+                },
+                "login": {
+                    "loginParameters": [
+                        "prompt=select_account"
+                    ]
                 }
             }
-        }
+        },
+        "rolesSource": "/api/roller-swa"
     },
     "responseOverrides": {
         "401": {
             "statusCode": 302,
             "redirect": "/.auth/login/aad?post_login_redirect_uri=.referrer"
+        },
+        "403": {
+            "rewrite": "/ingen-tilgang.html",
+            "statusCode": 403
         }
     },
     "globalHeaders": {
