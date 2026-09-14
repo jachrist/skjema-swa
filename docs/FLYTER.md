@@ -49,6 +49,14 @@ trigges ikke».
 | `OTP_FLOW_URL` | skjematyper med `EksternTilgang=true` |
 | `Flyt_url` per steg | ikke en app setting — adressen ligger på behandlingssteget i skjemadefinisjonen |
 
+Per-steg-flytene er **skjemaeiers ansvar** og hører ikke hjemme i
+løsningspakka med de seks sentrale. Masseutsendingsflyten er en av dem: den
+kjøres som et behandlingssteg og er bundet til to bestemte skjematyper.
+
+De må bære `FLOW_CALLBACK_KEY` for å fullføre steget sitt — og den nøkkelen
+åpner alt annet også. Se «Teknisk gjeld: nøkkelen stegflytene bærer» i
+`docs/SECURITY.md`.
+
 ```bash
 cd scripts/migrer && npm install        # én gang per maskin
 cd ../..

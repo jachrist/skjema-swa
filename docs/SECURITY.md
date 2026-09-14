@@ -103,3 +103,47 @@ Se `docs/ARCHITECTURE.md` for komponenter. Hovedangrepsflater:
 - **Storage**: MI med bred tilgang. Mitigert av least-privilege roller på storage-konto-nivå (ikke subscription-nivå).
 - **Key Vault**: MI med Secrets User. Kan lese alle secrets. Aksepteres siden MI kun eksisterer i SWA-runtime.
 - **Ondsinnet skjemadefinisjon**: en admin kan i teorien lagre HTML som injiseres i utfyller. Mitigert av CSP-headers og escape ved rendering.
+- **`FLOW_CALLBACK_KEY` er én delt verdi for fem inngangspunkter.** Se under.
+
+## Teknisk gjeld: nøkkelen stegflytene bærer
+
+Ikke en feil i dagens design, men en enkelhet som blir trangere etter hvert som
+kretsen vokser. Skrevet ned 14.09.2026.
+
+Behandlingssteg med `Flyt_url` kalles av `lib/ekstern-flyt.js`, som sender med
+en `callbackUrl` slik at flyten kan fullføre steget. Selve nøkkelen må
+skjemaeier ha fått og lagt inn i flyten sin.
+
+Den nøkkelen er den samme for alt. En skjemaeier som bygger en stegflyt får
+dermed også en verdi som åpner:
+
+| Endepunkt | Hva den kan gjøre med nøkkelen |
+|---|---|
+| `POST /api/utsending` | opprette engangslenker for **hvilken som helst** skjematype |
+| `POST /api/cache/teammedlemskap` | erstatte teamcachen, som tilgangssjekken leser |
+| `GET /api/cache/teammedlemskap/team-navn` | lese team-navnene |
+| `POST /api/skjemaer/…/beslutning` | fullføre steg på **andre** skjemaer med `Flyt_url` |
+| `POST /api/hendelser/logg` | skrive i revisjonssporet |
+
+Utsendingsraden er den tyngste: den utsteder lenker som gir tilgang uten
+Entra-pålogging.
+
+Per-steg-flytene er skjemaeiers ansvar og ligger utenfor løsningspakka med de
+seks sentrale flytene. Kretsen som holder nøkkelen er altså større enn kretsen
+som forvalter systemet.
+
+### To veier å snevre det inn
+
+**Egen nøkkel for stegflyter.** En `STEG_CALLBACK_KEY` som bare
+`/beslutning` godtar, adskilt fra den de sentrale flytene bruker. Da kan en
+stegflyt fullføre steg, men ikke opprette utsendinger eller røre teamcachen.
+Enkleste inngrep, og dekker det meste.
+
+**Bind callbacken til steget.** `callbackUrl` inneholder allerede skjematype
+og skjema-id. Et HMAC-signert engangstoken i URL-en — samme mekanisme som
+`lib/utsending-token.js` bruker — ville gjort at en stegflyt bare kunne
+fullføre *det* steget den ble kalt for. Strammere, og fjerner behovet for at
+skjemaeier håndterer en delt hemmelighet i det hele tatt.
+
+Begge krever at eksisterende stegflyter legges om samtidig, så dette er ikke
+noe som gjøres i forbifarten.
