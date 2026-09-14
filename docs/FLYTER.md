@@ -192,6 +192,37 @@ Er `FLOW_CALLBACK_KEY` ikke satt, sendes ingen header i det hele tatt. Da
 oppfører kallet seg som før, og en flyt som ennå ikke sjekker merker
 ingenting — rekkefølgen ved utrulling er fri.
 
+## Miljøvariabler i løsningen
+
+Flytene ligger i én Power Platform-løsning, og skal kunne importeres til flere
+miljøer uten redigering. To miljøvariabler dekker det:
+
+| Variabel | Innhold | Til hva |
+|---|---|---|
+| `SwaBaseUrl` | `https://<swa>` uten skråstrek til slutt | adressen flyter som kaller **inn** bygger URL-en fra |
+| `SkjemaMiljo` | `pilot` / `production` | å skille miljøene: logging, valg av Planner-plan, mottakere i test |
+
+**Lagre adressen, ikke bare navnet.** Utleder hver flyt URL-en fra miljønavnet,
+har hver av dem sin egen `pilot → https://…`-mapping. Bytter SWA-en adresse —
+ved separering av prod, eller et egendefinert domene — må alle flytene
+redigeres. Med `SwaBaseUrl` er det ett sted, og importen spør om verdien.
+
+Navnet har fortsatt verdi, men til å *skille*, ikke til å *utlede*.
+
+De seks utgående flytene trenger ingen av delene for å vite hvor kallet kom
+fra: `miljø` står i payloaden vi sender.
+
+### Kryss-tenant
+
+Power Platform-pipelines virker bare innenfor **én** tenant. Fra dev-tenanten
+til prod-tenanten er det eksport av *managed* løsning og import, enten manuelt
+eller med `pac solution export` / `pac solution import` og en auth-profil per
+tenant.
+
+Ved import i en annen tenant må **connection references** kobles på nytt —
+connectorene mot Office 365, Graph og OneDrive finnes ikke i målmiljøet før
+noen autentiserer dem der. Det er den delen som ikke lar seg skripte bort.
+
 ## Flyter som kaller inn til oss
 
 Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`.
