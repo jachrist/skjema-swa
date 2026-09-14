@@ -1,120 +1,178 @@
 {
     "routes": [
-
         {
-
             "route": "/js/*",
-
-            "headers": { "Cache-Control": "no-cache" }
-
+            "headers": {
+                "Cache-Control": "no-cache"
+            }
         },
         {
             "route": "/api/ping",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/refresh-fs",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/power-bi",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/otp/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/skjematyper/*/publikum",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/skjemaer",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/skjemaer/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/ny-skjema-id/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/vedlegg/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/valider",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/for-meg",
-            "allowedRoles": ["authenticated"]
+            "allowedRoles": [
+                "authenticated"
+            ]
         },
         {
             "route": "/api/oppslag",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/purre",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/logo/*",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/systemlogo",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/postnumre/refresh-bring",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/backup/kjor",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/backup/verifiser-lagret",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/backup/kvittering",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/cache/teammedlemskap",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/nokkelkalender/sjekk",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/utsending/send-forfalte",
-            "allowedRoles": ["anonymous"]
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
+            "route": "/api/hendelser/logg",
+            "allowedRoles": [
+                "anonymous"
+            ]
         },
         {
             "route": "/api/*",
-            "allowedRoles": ["authenticated"]
+            "allowedRoles": [
+                "authenticated"
+            ]
         },
         {
             "route": "/admin.html",
-            "allowedRoles": ["admin"]
+            "allowedRoles": [
+                "admin"
+            ]
         },
         {
             "route": "/migrer.html",
-            "allowedRoles": ["admin"]
+            "allowedRoles": [
+                "admin"
+            ]
         },
         {
             "route": "/editor.html",
-            "allowedRoles": ["authenticated"]
+            "allowedRoles": [
+                "authenticated"
+            ]
         },
         {
             "route": "/login",
@@ -127,7 +185,10 @@
     ],
     "navigationFallback": {
         "rewrite": "/index.html",
-        "exclude": ["/api/*", "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"]
+        "exclude": [
+            "/api/*",
+            "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"
+        ]
     },
     "auth": {
         "identityProviders": {

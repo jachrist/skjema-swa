@@ -41,6 +41,24 @@ function rowKey(dato) {
  * @param {string} [h.Melding]    — kort menneskelig beskrivelse
  * @param {Object} [h.Detaljer]   — vilkårlig JSON-objekt med kontekst (lagres som streng)
  */
+/**
+ * Hendelsestype for noe som er skrevet UTENFRA — en flyt, eller en admin som
+ * logger under testing.
+ *
+ * Prefikset er ikke pynt. Uten det kunne en flyt skrive
+ * Type: 'utsending.send-forfalte' og legge seg midt blant hendelsene appen
+ * selv skriver. Da er revisjonssporet ikke lenger til å stole på, og det er
+ * hele poenget med tabellen. Prefikset gjør også at alt fra en testrunde kan
+ * hentes med ett filter.
+ *
+ * Tegn utenfor [a-z0-9._-] byttes ut, så en type aldri kan bære med seg noe
+ * som forstyrrer et filter eller en visning.
+ */
+function flytType(raa) {
+    const reng = String(raa || '').trim().toLowerCase().replace(/[^a-z0-9._-]/g, '-').slice(0, 60);
+    return `flyt.${reng || 'info'}`;
+}
+
 async function logg(h) {
     try {
         const t = await tabell();
@@ -119,4 +137,4 @@ function tryParseJson(s) {
     try { return JSON.parse(s); } catch (_) { return s; }
 }
 
-module.exports = { logg, hentSiste };
+module.exports = { logg, hentSiste, flytType };

@@ -133,6 +133,8 @@ async function bygVedleggPayload(skjema, log) {
  * Kall SP_LISTE_FLOW_URL med bygget payload. Trigges ved innsending.
  * Non-blocking — feiler stille (log) uten å avbryte innsending.
  */
+const { miljo } = require('./flyt-kaller');
+
 async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
     const url = process.env.SP_LISTE_FLOW_URL;
     if (!url) {
@@ -152,7 +154,7 @@ async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
 
     try {
         const data = byggSPListeData(skjema, skjematype);
-        const payload = { listeadresse, listenavn, data };
+        const payload = { miljø: miljo(), listeadresse, listenavn, data };
 
         if (skjematype?.SPLagreVedlegg) {
             try {
