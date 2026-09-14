@@ -162,9 +162,20 @@ Oppslag som ikke går via team (`Personer{Rolle=…}`, `{EmneLarere}`,
 
 | Endepunkt | Tilgang | Merknad |
 |---|---|---|
-| `GET /api/cache/teammedlemskap/team-navn` | innlogget | Alle kjente team-navn |
-| `GET /api/cache/teammedlemskap/{team}/medlemmer` | innlogget | Array av UPN-strenger. Formatet er uendret. |
+| `GET /api/cache/teammedlemskap/team-navn` | innlogget **eller** `x-flow-key` | Alle kjente team-navn |
 | `DELETE /api/cache/teammedlemskap/{team}` | admin | Sletter hele teamet |
+
+`GET /api/cache/teammedlemskap/{team}/medlemmer` er fjernet (14.09.2026). Den
+returnerte en array av UPN-er, og hadde ingen kaller — hverken i frontend eller
+noe annet sted. Det som brukes internt er lagringsfunksjonene
+(`hentMedlemmerDetaljert` i `lib/oppslag.js`, og `lib/tilgang.js` som leser
+tabellen direkte), ikke endepunktet.
+
+En ubrukt rute som ga enhver innlogget bruker e-postlista for et vilkårlig team
+— for «Ansatte og studenter ved FHS» hele skolen — er en eksponeringsflate uten
+formål. Trengs noe tilsvarende senere, er det bedre å bygge det for behovet som
+faktisk oppstår; for en synkeflyt holder det som regel med antall og en hash
+per team, slik at den kan se *om* noe har endret seg uten å få lista utlevert.
 
 `POST /api/team/last-medlemmer` går motsatt vei: API-et kaller
 `TEAM_LAST_MEDLEMMER_FLOW_URL` og cacher svaret. Flyten svarer med

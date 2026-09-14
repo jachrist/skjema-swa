@@ -76,22 +76,6 @@ app.http('teamNavnList', {
     }
 });
 
-app.http('teamMedlemmerHent', {
-    methods: ['GET'],
-    authLevel: 'anonymous',
-    route: 'cache/teammedlemskap/{team}/medlemmer',
-    handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-        try {
-            return { jsonBody: await teamStorage.hentMedlemmer(request.params.team) };
-        } catch (e) {
-            context.log('team/medlemmer FEIL:', e.message);
-            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
-        }
-    }
-});
-
 app.http('teamErstatt', {
     methods: ['POST'],
     authLevel: 'anonymous',
