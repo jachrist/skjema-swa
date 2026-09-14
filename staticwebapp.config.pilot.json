@@ -119,6 +119,12 @@
             ]
         },
         {
+            "route": "/api/backup/kvittering",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
             "route": "/api/backup/verifiser-lagret",
             "allowedRoles": [
                 "anonymous"
