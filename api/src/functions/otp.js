@@ -2,7 +2,7 @@
  * OTP-endepunkter.
  *
  *   POST /api/otp/be-om-kode
- *     Body: { kanal: 'epost'|'sms', mottaker: '<e-post eller mobilnr>' }
+ *     Body: { kanal: 'epost', mottaker: '<e-post>' }
  *     Anonymt (for ekstern innsender-flyt). Anti-enumerasjon: alltid
  *     status='ok' i respons (også hvis mottaker er ugyldig eller
  *     rate-limitet — logges internt).
@@ -19,17 +19,9 @@ const otp = require('../lib/otp');
 const otpToken = require('../lib/otp-token');
 const { sendOtpViaFlyt } = require('../lib/flyt-kaller');
 
-const KANALER = new Set(['epost', 'sms']);
-
-function validerKanal(k) { return KANALER.has(k); }
+// Kanalsperra ligger i lib/otp.js — se kommentaren der for hvorfor.
+const validerKanal = otp.gyldigKanal;
 function validerEpost(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim()); }
-function validerMobil(s) {
-    // Enkel norsk-mobil-validering: +47 + 8 sifre, eller 8 sifre startende med 4/9
-    const rens = String(s || '').replace(/[\s\-()]/g, '');
-    if (/^\+\d{8,15}$/.test(rens)) return true;
-    if (/^[49]\d{7}$/.test(rens)) return true;
-    return false;
-}
 
 app.http('otpBeOmKode', {
     methods: ['POST'],
@@ -48,10 +40,6 @@ app.http('otpBeOmKode', {
             }
             if (kanal === 'epost' && !validerEpost(mottaker)) {
                 context.log(`otp: ugyldig e-post "${mottaker}" (ignorert)`);
-                return { jsonBody: { status: 'ok' } };
-            }
-            if (kanal === 'sms' && !validerMobil(mottaker)) {
-                context.log(`otp: ugyldig mobilnr "${mottaker}" (ignorert)`);
                 return { jsonBody: { status: 'ok' } };
             }
 

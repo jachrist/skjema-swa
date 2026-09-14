@@ -376,7 +376,7 @@
         let skjemaId = null; // pre-generert (nytt) eller eksisterende (fortsett mellomlagret)
         let eksisterendeSkjema = null; // hvis vi henter fra fortsett
         let otpMottaker = null; // e-post eller mobilnr (for ekstern-modus)
-        let otpKanal = null; // 'epost' | 'sms'
+        let otpKanal = null; // 'epost' — SMS er ikke i bruk, se otp.js
         let utsendingModus = false;
         let previewModus = false;
         let utsendingPrefilledKeys = new Set(); // "sek-felt-padded" → låst felt
@@ -435,7 +435,7 @@
             const res = await apneOtpModal({
                 tittel: `Verifiser deg for "${skjematype.Skjema_navn || 'skjema'}"`,
                 tekst: 'Skriv inn mobilnummer eller e-post — vi sender en 6-sifret kode du bekrefter.',
-                kanaler: ['sms', 'epost']
+                kanaler: ['epost']
             });
             if (!res) {
                 visFeil('Verifisering avbrutt. Åpne lenka på nytt for å prøve igjen.');

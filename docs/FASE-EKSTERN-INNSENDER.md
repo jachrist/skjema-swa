@@ -1,7 +1,8 @@
 # Ekstern innsender (OTP-basert tilgang)
 
 Lar personer utenfor Forsvaret fylle ut skjemaer uten Entra-konto. Verifisering
-via OTP-flyt (SMS eller e-post) i stedet for SWA-cookie.
+via OTP-flyt på e-post i stedet for SWA-cookie. SMS er ikke i bruk og ikke
+planlagt — se `docs/FASE-OTP.md`.
 
 ## Datamodell
 
@@ -24,8 +25,8 @@ via OTP-flyt (SMS eller e-post) i stedet for SWA-cookie.
 **Skjema-forekomst (innsendt av ekstern):**
 ```json
 {
-  "Innsender_Epost": "ola@example.no",     // eller "mobil:+4741234567"
-  "Innsender_Kanal": "sms",                 // eller "epost"
+  "Innsender_Epost": "ola@example.no",
+  "Innsender_Kanal": "epost",               // eldre rader kan ha "sms"
   "EksternInnsender": true
 }
 ```
@@ -35,7 +36,7 @@ via OTP-flyt (SMS eller e-post) i stedet for SWA-cookie.
 1. Åpne skjematype i editor → Tilgang-panelet
 2. Kryss av **"Tillat innsending fra eksterne via engangskode"**
 3. "Ekstern tilgangs-URL"-boks dukker opp — kopier og distribuer via e-post,
-   SMS, nettside eller QR-kode
+   nettside eller QR-kode
 
 URL-format: `https://<swa>/index.html?skjematype_id=X&ekstern=1`
 
@@ -45,14 +46,14 @@ URL-format: `https://<swa>/index.html?skjematype_id=X&ekstern=1`
 2. `index.html` sjekker `?ekstern=1` og henter skjematype fra
    `GET /api/skjematyper/{id}/publikum` (anonymt endepunkt som kun returnerer
    skjematyper med `EksternTilgang=true`)
-3. OTP-widget åpnes: bruker skriver mobilnr eller e-post → får 6-sifret kode
+3. OTP-widget åpnes: bruker skriver e-post → får 6-sifret kode
    → skriver kode → widget returnerer signert verifikasjonstoken
 4. Frontend lagrer token som default `x-otp-token`-header via
    `api.settHeader()` — følger med alle senere API-kall
 5. Skjemaet vises. Bruker fyller ut, laster opp vedlegg, sender inn eller
    mellomlagrer.
 6. Ved lagring: backend validerer token, bruker mottaker som `Innsender_Epost`
-   (e-post) eller `mobil:<nr>` (SMS)
+   (e-post)
 
 ## Endepunkter (anonyme, aksepterer x-otp-token)
 
@@ -77,7 +78,7 @@ konfig nødvendig — auth-flowen velges basert på request-headers.
 = koden slettes.
 
 **Token-levetid:** 30 min. Etter utløp må ekstern åpne lenken på nytt og
-verifisere igjen. Samme mobilnr/e-post gir tilgang til samme mellomlagrede
+verifisere igjen. Samme e-post gir tilgang til samme mellomlagrede
 skjema — så det er ikke krøkkete å bli avbrutt midt i utfyllingen.
 
 **Ekstern-lenka i seg selv er ikke hemmelig:** hvem som helst med lenken kan
@@ -86,7 +87,7 @@ være åpen (nettside) eller lukket (spesifikk e-post) — det er admin sitt val
 
 ## Distribusjonsstrategier
 
-- **Målrettet e-post/SMS:** admin sender lenka til navngitte mottakere
+- **Målrettet e-post:** admin sender lenka til navngitte mottakere
 - **Offentlig nettside:** legg lenka på FHS-side, alle kan bruke
 - **QR-kode:** trykk lenka som QR på plakat/dokument
 - **Kombinasjon:** samme URL, ulike kanaler
@@ -108,6 +109,6 @@ Application Insights i stedet for å sendes.
 - Ekstern kan ikke laste ned PDF av eget skjema (kunne legges til)
 - Ingen "gjenåpne innsendt skjema"-mulighet for ekstern (kunne legges til
   med samme mekanisme som mellomlagret)
-- Innsender-varsling (kvittering) må ha e-post-mottaker — SMS-basert
-  innsender får ingen kvittering per nå (kunne bruke Innsender_Kanal for
-  å velge kanal)
+- Innsender-varsling (kvittering) forutsetter e-post-mottaker. Det er ikke
+  lenger en begrensning i praksis: OTP går bare på e-post, så en verifisert
+  ekstern innsender har alltid en adresse.

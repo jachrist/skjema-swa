@@ -28,6 +28,29 @@ async function tabell() {
     return t;
 }
 
+/**
+ * Kanaler en engangskode kan sendes på.
+ *
+ * Bare e-post. SMS lå her fra starten og var tilbudt i grensesnittet, men
+ * tjenesten ble aldri innført, og kanalen regnes som usikker for
+ * engangskoder.
+ *
+ * Sperra hører hjemme i koden, ikke bare i grensesnittet: `/api/otp/be-om-kode`
+ * er anonymt. Og utfallet av å slippe gjennom en kanal vi ikke kan levere på
+ * er stille — endepunktet svarer alltid `status: "ok"` for å hindre
+ * enumerasjon, så den som ba om koden får kvittering, venter forgjeves, og
+ * treffer rate-begrensningen ved neste forsøk.
+ *
+ * `kanal` blir værende som felt. Det er generelt — RowKey er
+ * `hash(kanal + ':' + mottaker)` — og eldre rader kan ha andre verdier, som
+ * fortsatt må kunne slås opp ved verifisering.
+ */
+const KANALER = new Set(['epost']);
+
+function gyldigKanal(kanal) {
+    return KANALER.has(String(kanal || '').toLowerCase());
+}
+
 function normaliserMottaker(kanal, mottaker) {
     const s = String(mottaker || '').trim();
     if (kanal === 'epost') return s.toLowerCase();
@@ -151,5 +174,6 @@ module.exports = {
     normaliserMottaker,
     TTL_MIN,
     MAKS_FORSOK,
-    RATE_LIMIT_SEK
+    RATE_LIMIT_SEK,
+    gyldigKanal, KANALER
 };
