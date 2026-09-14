@@ -95,6 +95,33 @@ for (const fil of filer) {
         sjekk(`${fil}: cron-endepunkter er anonyme`, kreves.filter(r => !anonyme.has(r)), []);
     }
 
+    // ---------- endepunktene PA-flytene kaller må være anonyme ----------
+    {
+        // Samme mekanisme som over, og samme stille utfall: en flyt har ingen
+        // SWA-cookie, så mangler ruteregelen avviser plattformen kallet før
+        // x-flow-key i det hele tatt leses. Handleren ser aldri forsøket, og
+        // loggen vår er tom.
+        //
+        // Det var nettopp dette som var galt med /api/backup/kvittering i
+        // pilot: regelen fantes i prod, men ikke der. Backup-kvitteringen —
+        // det ENESTE som bekrefter at fila landet i OneDrive — kom aldri fram,
+        // og ingenting sa fra.
+        //
+        // /api/skjemaer/.../beslutning står ikke her: den dekkes av den brede
+        // /api/skjemaer/*-regelen.
+        const anonyme = new Set((j.routes || [])
+            .filter(r => (r.allowedRoles || []).includes('anonymous'))
+            .map(r => r.route));
+        const kreves = [
+            '/api/utsending',
+            '/api/cache/teammedlemskap',
+            '/api/cache/teammedlemskap/team-navn',
+            '/api/backup/kvittering',
+            '/api/hendelser/logg'
+        ];
+        sjekk(`${fil}: flyt-endepunkter er anonyme`, kreves.filter(r => !anonyme.has(r)), []);
+    }
+
     // ---------- landingssiden ----------
     {
         // index.html er utfyllingssiden og krever en skjematype_id i URL-en.
