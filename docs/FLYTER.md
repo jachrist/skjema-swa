@@ -190,24 +190,22 @@ Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`.
 
 | Metode | Rute | Hva flyten gjør |
 |---|---|---|
+| POST | `/api/utsending` | oppretter en masseutsending, får én engangslenke per mottaker tilbake |
+
 | POST | `/api/skjemaer/{skjematypeId}/{skjemaId}/beslutning` | melder at et behandlingssteg er fullført |
 | POST | `/api/cache/teammedlemskap` | erstatter teamcachen med medlemmer hentet fra Graph |
 | GET | `/api/cache/teammedlemskap/team-navn` | hvilke team er i cachen — før synking |
 | POST | `/api/backup/kvittering` | bekrefter at backupfila landet i OneDrive |
 | POST | `/api/hendelser/logg` | skriver en infomelding i loggen |
 
-`/api/cache/teammedlemskap` og `/api/cache/teammedlemskap/team-navn` godtar
-også en innlogget bruker. De tre andre tar bare nøkkelen.
+`/api/utsending`, `/api/cache/teammedlemskap` og `/api/cache/teammedlemskap/team-navn`
+godtar også en innlogget bruker. De tre andre tar bare nøkkelen.
 
-**`POST /api/utsending` er ikke lenger et flyt-endepunkt.** Den godtok
-`x-flow-key` fram til 14.09.2026, men ingen flyt kalte den, og frontend har
-aldri hatt en kaller. Nå kreves admin. Det som sto på spill var ikke
-lesetilgang: endepunktet *utsteder* engangslenker, så den som kom inn kunne
-lage gyldige lenker til et hvilket som helst skjema, for hvilke mottakere som
-helst, og få dem sendt ut i neste cron-runde.
-
-Batchene må derfor opprettes av en admin — eller av en cron-jobb, hvis det
-skal automatiseres.
+**`/api/utsending` er i bruk av en flyt.** Gevinst-batchene
+(`gevinst-…-<skjematypeId>`) opprettes den veien. Endepunktet ble stengt for
+flyt-nøkkel 14.09.2026 og reversert samme dag — frontend har ingen kaller, så
+det så ubrukt ut, men `OpprettetAv` på radene i `Utsendinger` er `flyt`.
+Sjekk `GET /api/hendelser?type=utsending.opprett` før noen stenger den igjen.
 
 **Callbacken på beslutning er begrenset.** Den får bare fullføre steg som
 faktisk har `Flyt_url` satt i skjemadefinisjonen. Uten den sperren ville
