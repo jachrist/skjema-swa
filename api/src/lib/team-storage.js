@@ -35,20 +35,6 @@ async function erMedlem(team, upn) {
 }
 
 /**
- * List UPN-er for gitt team.
- */
-async function hentMedlemmer(team) {
-    if (!team) return [];
-    const t = await tabell();
-    const ut = [];
-    const filter = odata`PartitionKey eq ${String(team)}`;
-    for await (const e of t.listEntities({ queryOptions: { filter } })) {
-        ut.push(e.rowKey);
-    }
-    return ut;
-}
-
-/**
  * Hent alle kjente team-navn (distinkte PartitionKeys).
  */
 async function hentAlleTeamNavn() {
@@ -312,7 +298,6 @@ async function slettTeam(teamNavn) {
 
 module.exports = {
     erMedlem,
-    hentMedlemmer,
     hentMedlemmerDetaljert,
     hentAlleMedlemmer,
     hentAlleTeamNavn,

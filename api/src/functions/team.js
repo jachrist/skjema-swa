@@ -15,7 +15,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const teamStorage = require('../lib/team-storage');
 const hendelser = require('../lib/hendelser-storage');
-const { miljo } = require('../lib/flyt-kaller');
+const { miljo, flytHeadere } = require('../lib/flyt-kaller');
 
 function autorisert(request) {
     // Både innlogget bruker OG (PA-flyt med x-flow-key) tillates. Er headeren
@@ -71,22 +71,6 @@ app.http('teamNavnList', {
             return { jsonBody: await teamStorage.hentAlleTeamNavn() };
         } catch (e) {
             context.log('team/navn FEIL:', e.message);
-            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
-        }
-    }
-});
-
-app.http('teamMedlemmerHent', {
-    methods: ['GET'],
-    authLevel: 'anonymous',
-    route: 'cache/teammedlemskap/{team}/medlemmer',
-    handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
-        try {
-            return { jsonBody: await teamStorage.hentMedlemmer(request.params.team) };
-        } catch (e) {
-            context.log('team/medlemmer FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }
@@ -173,7 +157,7 @@ async function kallFlyt(navn, flytUrl, payload, context) {
     try {
         const resp = await fetch(flytUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: flytHeadere(),
             // miljø ligger foerst, men kan overstyres av payloaden hvis
             // et kall noen gang trenger noe annet.
             body: JSON.stringify({ miljø: miljo(), ...payload }),

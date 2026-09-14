@@ -133,7 +133,7 @@ async function bygVedleggPayload(skjema, log) {
  * Kall SP_LISTE_FLOW_URL med bygget payload. Trigges ved innsending.
  * Non-blocking — feiler stille (log) uten å avbryte innsending.
  */
-const { miljo } = require('./flyt-kaller');
+const { miljo, flytHeadere } = require('./flyt-kaller');
 
 async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
     const url = process.env.SP_LISTE_FLOW_URL;
@@ -167,7 +167,7 @@ async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
 
         const respons = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: flytHeadere(),
             body: JSON.stringify(payload)
         });
         if (!respons.ok) {

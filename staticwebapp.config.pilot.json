@@ -65,12 +65,6 @@
             ]
         },
         {
-            "route": "/api/utsending",
-            "allowedRoles": [
-                "anonymous"
-            ]
-        },
-        {
             "route": "/api/utsending/valider",
             "allowedRoles": [
                 "anonymous"

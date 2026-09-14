@@ -42,6 +42,7 @@
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
+const { flytHeadere } = require('../lib/flyt-kaller');
 const backup = require('../lib/backup');
 const graphOpplast = require('../lib/graph-opplast');
 const restore = require('../lib/restore');
@@ -251,7 +252,7 @@ async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
     try {
         const respons = await fetch(flytUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: flytHeadere(),
             body: JSON.stringify({
                 handling: 'lagreBackup',
                 filnavn: res.filnavn,

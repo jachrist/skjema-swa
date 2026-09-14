@@ -165,21 +165,49 @@ Endepunktet har egen sti i stedet for `POST` på `/api/hendelser`, fordi
 ruteregelen da slipper å skille på metode — se kommentaren i
 `functions/hendelser.js`.
 
+## Alle utgående kall bærer `x-flow-key`
+
+Signaturen i flyt-URL-en (`sig=`) var eneste sperre fram til 14.09.2026. Den
+som fikk tak i adressen kunne sende en hvilken som helst payload — og siden
+e-postteksten bygges av felter i payloaden (`skjemanavn`,
+`skjemabeskrivelse`, `epost_og_teams.html`), betyr det en melding som ser ut
+til å komme fra skjemasystemet, med en lenke til hva som helst.
+
+Derfor sender alle utgående kall nå `x-flow-key` med samme verdi flytene
+allerede sender inn til oss. Symmetrisk, og uten en ny hemmelighet å
+forvalte: den delte nøkkelen viser at det er oss, begge veier.
+
+**Flyten må selv sjekke headeren** — vi kan bare sende den. Legg det som
+første steg, og avvis kallet hvis den mangler eller ikke matcher.
+
+Er `FLOW_CALLBACK_KEY` ikke satt, sendes ingen header i det hele tatt. Da
+oppfører kallet seg som før, og en flyt som ennå ikke sjekker merker
+ingenting — rekkefølgen ved utrulling er fri.
+
 ## Flyter som kaller inn til oss
 
 Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`.
 
 | Metode | Rute | Hva flyten gjør |
 |---|---|---|
-| POST | `/api/utsending` | oppretter en masseutsending, får én engangslenke per mottaker tilbake |
 | POST | `/api/skjemaer/{skjematypeId}/{skjemaId}/beslutning` | melder at et behandlingssteg er fullført |
 | POST | `/api/cache/teammedlemskap` | erstatter teamcachen med medlemmer hentet fra Graph |
 | GET | `/api/cache/teammedlemskap/team-navn` | hvilke team er i cachen — før synking |
 | POST | `/api/backup/kvittering` | bekrefter at backupfila landet i OneDrive |
 | POST | `/api/hendelser/logg` | skriver en infomelding i loggen |
 
-`/api/utsending`, `/api/cache/teammedlemskap` og `/api/cache/teammedlemskap/team-navn`
-godtar også en innlogget bruker. De tre andre tar bare nøkkelen.
+`/api/cache/teammedlemskap` og `/api/cache/teammedlemskap/team-navn` godtar
+også en innlogget bruker. De tre andre tar bare nøkkelen.
+
+**`POST /api/utsending` er ikke lenger et flyt-endepunkt.** Den godtok
+`x-flow-key` fram til 14.09.2026, men ingen flyt kalte den, og frontend har
+aldri hatt en kaller. Nå kreves admin. Det som sto på spill var ikke
+lesetilgang: endepunktet *utsteder* engangslenker, så den som kom inn kunne
+lage gyldige lenker til et hvilket som helst skjema, for hvilke mottakere som
+helst, og få dem sendt ut i neste cron-runde.
+
+Batchene må derfor opprettes av en admin — eller av en cron-jobb, hvis det
+skal automatiseres.
 
 **Callbacken på beslutning er begrenset.** Den får bare fullføre steg som
 faktisk har `Flyt_url` satt i skjemadefinisjonen. Uten den sperren ville

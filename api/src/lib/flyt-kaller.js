@@ -53,7 +53,7 @@ async function kallVarslingFlyt(payload, log = () => {}) {
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: flytHeadere(),
             body: JSON.stringify(payload)
         });
         if (!respons.ok) {
@@ -99,6 +99,31 @@ async function kallVarslingFlyt(payload, log = () => {}) {
  * `backup`-flyten har fått feltet siden den ble laget; dette gjør det samme
  * for resten, med samme feltnavn.
  */
+/**
+ * Headere for et utgående flyt-kall.
+ *
+ * Signaturen i flyt-URL-en (`sig=`) var eneste sperre fram til 14.09.2026.
+ * Den som fikk tak i adressen kunne sende en hvilken som helst payload — og
+ * siden teksten i e-posten bygges av felter i payloaden, betyr det en melding
+ * som ser ut til å komme fra skjemasystemet, med en lenke til hva som helst.
+ * At mottakeren ikke får opp et ekte skjema hjelper lite; verdien for en
+ * angriper ligger i avsenderinntrykket.
+ *
+ * `x-flow-key` er samme nøkkel flytene allerede sender INN til oss. Symmetrisk
+ * og uten en ny hemmelighet å forvalte: den delte nøkkelen viser at det er oss,
+ * begge veier.
+ *
+ * Er den ikke satt, sendes ingen header. Da oppfører kallet seg som før, og en
+ * flyt som ennå ikke sjekker headeren merker ingenting — rekkefølgen ved
+ * utrulling er derfor fri.
+ */
+function flytHeadere() {
+    const nokkel = String(process.env.FLOW_CALLBACK_KEY || '').trim();
+    return nokkel
+        ? { 'Content-Type': 'application/json', 'x-flow-key': nokkel }
+        : { 'Content-Type': 'application/json' };
+}
+
 function miljo() {
     return String(process.env.MILJO || 'ukjent');
 }
@@ -189,7 +214,7 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: flytHeadere(),
             body: JSON.stringify({ handling: 'sendOtp', miljø: miljo(), kanal, mottaker, kode, gyldig_minutter: gyldigMinutter })
         });
         if (!respons.ok) {
@@ -211,5 +236,6 @@ module.exports = {
     sendVarslerViaFlyt,
     sendOtpViaFlyt,
     baseUrl,
-    miljo
+    miljo,
+    flytHeadere
 };

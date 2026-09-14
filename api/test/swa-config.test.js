@@ -112,8 +112,10 @@ for (const fil of filer) {
         const anonyme = new Set((j.routes || [])
             .filter(r => (r.allowedRoles || []).includes('anonymous'))
             .map(r => r.route));
+        // /api/utsending sto her til 14.09.2026. Den utsteder engangslenker,
+        // og godtok x-flow-key uten at noen flyt kalte den — nå admin alene,
+        // og dermed dekket av /api/*.
         const kreves = [
-            '/api/utsending',
             '/api/cache/teammedlemskap',
             '/api/cache/teammedlemskap/team-navn',
             '/api/backup/kvittering',
