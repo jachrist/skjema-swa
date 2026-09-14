@@ -16,10 +16,22 @@
  * skriver ingen adresser i sin helhet — bare vertsnavn, så utskriften kan
  * limes inn i en sak.
  *
+ * Avhengighetene ligger i package.json i DENNE mappa, ikke i api/. Node leter
+ * oppover fra skriptets egen mappe, så `npm ci` i api/ hjelper ikke — da
+ * feiler skriptet med «Cannot find module '@azure/data-tables'». Mappa har
+ * ingen package-lock.json, så det må være `npm install`, ikke `npm ci`.
+ *
  * Bruk:
- *   node flyt-bruk.js --conn "<connection string>"
+ *   cd scripts/migrer && npm install        (én gang per maskin)
+ *   node scripts/migrer/flyt-bruk.js --conn "<connection string>"
+ *
+ * Tilkoblingsstrengen kan i stedet stå i STORAGE_CONN. Foretrekk det: en
+ * kontonøkkel på kommandolinja havner i historikken, og den gir full lese- og
+ * skrivetilgang til alle dataene.
  */
-const { TableClient } = require('@azure/data-tables');
+// Lastes lat, etter at --hjelp er håndtert. Ellers kan man ikke lese
+// bruksanvisningen uten først å ha installert det bruksanvisningen forklarer
+// hvordan man installerer. Samme grep som api/src/lib/storage.js bruker.
 
 function parseArgs(argv) {
     const a = { conn: process.env.STORAGE_CONN || '' };
@@ -37,10 +49,13 @@ function vertsnavn(url) {
 async function kjor() {
     const args = parseArgs(process.argv);
     if (args.hjelp || !args.conn) {
-        console.log('\nBruk: node flyt-bruk.js --conn "<connection string>"\n');
+        console.log('\nBruk:  node scripts/migrer/flyt-bruk.js --conn "<connection string>"');
+        console.log('       (eller sett STORAGE_CONN i miljøet — da havner ikke nøkkelen i historikken)');
+        console.log('\nFørste gang: cd scripts/migrer && npm install\n');
         process.exit(args.hjelp ? 0 : 1);
     }
 
+    const { TableClient } = require('@azure/data-tables');
     const t = TableClient.fromConnectionString(args.conn, 'Skjemadefinisjoner');
     const spListe = [];
     const eksternTilgang = [];
