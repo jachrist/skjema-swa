@@ -49,7 +49,7 @@
  */
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
-const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
+const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const utsendingStorage = require('../lib/utsending-storage');
 const utsendingToken = require('../lib/utsending-token');
 const flytUtfall = require('../lib/flyt-utfall');
@@ -207,23 +207,24 @@ app.http('utsendingOpprett', {
     authLevel: 'anonymous',
     route: 'utsending',
     handler: async (request, context) => {
-        // Auth: enten flyt-nøkkel eller admin
+        // Bare admin. x-flow-key ble godtatt fram til 14.09.2026, men ingen
+        // flyt kalte endepunktet — kjøreloggen viste bare cron-jobben, og
+        // frontend har aldri hatt en kaller. En åpen dør ingen går gjennom er
+        // verdt å lukke mens man vet at den er ubrukt.
+        //
+        // Det som står på spill her er ikke lesetilgang: endepunktet UTSTEDER
+        // engangslenker. Den som kommer inn kan lage gyldige lenker til et
+        // hvilket som helst skjema, for hvilke mottakere hen vil, og få dem
+        // sendt ut i neste cron-runde.
         const upn = hentInnloggetUpn(request);
-        const flyt = harFlytNokkel(request);
-        if (!flyt.ok && !(upn && erAdmin(upn))) {
-            // Manglende nøkkel på serveren er en driftsfeil, ikke et avvist
-            // kall — den må være synlig i loggen. Resten av årsakene gjelder
-            // kalleren og går bare i svaret.
-            if (!String(process.env.FLOW_CALLBACK_KEY || '').trim()) {
-                context.log('utsending: FLOW_CALLBACK_KEY env-var er ikke satt');
-            }
+        if (!(upn && erAdmin(upn))) {
             return {
                 status: 401,
                 jsonBody: {
                     status: 'feil',
                     melding: upn
-                        ? `Krever admin eller gyldig x-flow-key. Innlogget som ${upn} (ikke admin). Flyt-nøkkel: ${flyt.grunn}`
-                        : `Krever gyldig x-flow-key eller admin-innlogging. Flyt-nøkkel: ${flyt.grunn}`
+                        ? `Krever admin. Innlogget som ${upn}.`
+                        : 'Krever admin-innlogging.'
                 }
             };
         }
@@ -236,7 +237,7 @@ app.http('utsendingOpprett', {
             const kanalHint = String(body.kanalHint || 'epost').trim();
             const purretekst = String(body.purretekst || '').trim();
             const mottakere = Array.isArray(body.mottakere) ? body.mottakere : [];
-            const opprettetAv = upn || 'flyt';
+            const opprettetAv = upn;
 
             if (!skjematypeId) return { status: 400, jsonBody: { status: 'feil', melding: 'Mangler skjematypeId' } };
 
