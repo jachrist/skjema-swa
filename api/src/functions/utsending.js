@@ -49,7 +49,7 @@
  */
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
-const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const utsendingStorage = require('../lib/utsending-storage');
 const utsendingToken = require('../lib/utsending-token');
 const flytUtfall = require('../lib/flyt-utfall');
@@ -59,24 +59,6 @@ const skjemaStorage = require('../lib/skjema-storage');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
 const prefill = require('../lib/utsending-prefill');
-
-function harFlytNokkel(request, context) {
-    const forventet = String(process.env.FLOW_CALLBACK_KEY || '').trim();
-    if (!forventet) {
-        context?.log('utsending: FLOW_CALLBACK_KEY env-var er ikke satt');
-        return { ok: false, årsak: 'FLOW_CALLBACK_KEY env-var er ikke satt i backend' };
-    }
-    const gitt = String(request.headers.get('x-flow-key') || '').trim();
-    if (!gitt) return { ok: false, årsak: 'x-flow-key-header mangler eller er tom' };
-    if (gitt.length !== forventet.length) {
-        context?.log(`utsending: x-flow-key lengdemismatch (gitt=${gitt.length}, forventet=${forventet.length})`);
-        return { ok: false, årsak: `x-flow-key har feil lengde (${gitt.length} vs forventet ${forventet.length})` };
-    }
-    try {
-        const match = crypto.timingSafeEqual(Buffer.from(gitt), Buffer.from(forventet));
-        return match ? { ok: true } : { ok: false, årsak: 'x-flow-key matcher ikke' };
-    } catch (e) { return { ok: false, årsak: 'x-flow-key sammenligning feilet: ' + e.message }; }
-}
 
 // Skjemaforklaringen er skrevet for skjemasida og kan være lang. I en purring
 // trengs bare nok til å kjenne igjen skjemaet, og teksten sendes per mottaker.
@@ -227,15 +209,21 @@ app.http('utsendingOpprett', {
     handler: async (request, context) => {
         // Auth: enten flyt-nøkkel eller admin
         const upn = hentInnloggetUpn(request);
-        const flyt = harFlytNokkel(request, context);
+        const flyt = harFlytNokkel(request);
         if (!flyt.ok && !(upn && erAdmin(upn))) {
+            // Manglende nøkkel på serveren er en driftsfeil, ikke et avvist
+            // kall — den må være synlig i loggen. Resten av årsakene gjelder
+            // kalleren og går bare i svaret.
+            if (!String(process.env.FLOW_CALLBACK_KEY || '').trim()) {
+                context.log('utsending: FLOW_CALLBACK_KEY env-var er ikke satt');
+            }
             return {
                 status: 401,
                 jsonBody: {
                     status: 'feil',
                     melding: upn
-                        ? `Krever admin eller gyldig x-flow-key. Innlogget som ${upn} (ikke admin). Flyt-nøkkel: ${flyt.årsak}`
-                        : `Krever gyldig x-flow-key eller admin-innlogging. Flyt-nøkkel: ${flyt.årsak}`
+                        ? `Krever admin eller gyldig x-flow-key. Innlogget som ${upn} (ikke admin). Flyt-nøkkel: ${flyt.grunn}`
+                        : `Krever gyldig x-flow-key eller admin-innlogging. Flyt-nøkkel: ${flyt.grunn}`
                 }
             };
         }

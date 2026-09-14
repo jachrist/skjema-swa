@@ -12,27 +12,18 @@
  *                                                   cacher resultatet i Teammedlemskap
  */
 const { app } = require('@azure/functions');
-const crypto = require('crypto');
-const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const teamStorage = require('../lib/team-storage');
 const hendelser = require('../lib/hendelser-storage');
 const { miljo } = require('../lib/flyt-kaller');
 
 function autorisert(request) {
-    // Både innlogget bruker OG (PA-flyt med x-flow-key) tillates
-    const konfigurert = String(process.env.FLOW_CALLBACK_KEY || '').trim();
-    // Trim også den innkommende — PA legger lett på linjeskift når verdien
-    // kommer fra en variabel eller Compose.
-    const gitt = String(request.headers.get('x-flow-key') || '').trim();
-
-    if (gitt) {
-        if (!konfigurert) return { ok: false, grunn: 'FLOW_CALLBACK_KEY er ikke satt på serveren' };
-        // Hash før sammenligning: da er lengdene alltid like, og timingSafeEqual
-        // kan brukes uten å kreve at nøklene er like lange på forhånd.
-        const a = crypto.createHash('sha256').update(gitt).digest();
-        const b = crypto.createHash('sha256').update(konfigurert).digest();
-        if (crypto.timingSafeEqual(a, b)) return { ok: true, kilde: 'flyt' };
-        return { ok: false, grunn: 'x-flow-key stemmer ikke med FLOW_CALLBACK_KEY' };
+    // Både innlogget bruker OG (PA-flyt med x-flow-key) tillates. Er headeren
+    // satt, er kallet ment å være et flyt-kall — da avgjør nøkkelen alene, og
+    // vi faller ikke tilbake til admin-sjekken.
+    if (String(request.headers.get('x-flow-key') || '').trim()) {
+        const flyt = harFlytNokkel(request);
+        return flyt.ok ? { ok: true, kilde: 'flyt' } : { ok: false, grunn: flyt.grunn };
     }
 
     const upn = hentInnloggetUpn(request);

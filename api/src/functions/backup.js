@@ -41,7 +41,7 @@
  */
 const { app } = require('@azure/functions');
 const crypto = require('crypto');
-const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const backup = require('../lib/backup');
 const graphOpplast = require('../lib/graph-opplast');
 const restore = require('../lib/restore');
@@ -502,9 +502,8 @@ app.http('backupKvittering', {
     authLevel: 'anonymous',
     route: 'backup/kvittering',
     handler: async (request, context) => {
-        const flowKey = request.headers.get('x-flow-key');
-        const konfigurert = String(process.env.FLOW_CALLBACK_KEY || '').trim();
-        if (!konfigurert || flowKey !== konfigurert) {
+        const flyt = harFlytNokkel(request);
+        if (!flyt.ok) {
             return { status: 401, jsonBody: { status: 'feil', melding: 'Ugyldig x-flow-key' } };
         }
 
