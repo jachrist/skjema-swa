@@ -8,7 +8,7 @@
   - Blokker force-push og sletting
   - "Include administrators"
   - Påkrevde CI-checks: `test`
-- **CODEOWNERS** på `.github/`, `config/`, `staticwebapp.config.json`, `api/local.settings.example.json`.
+- **CODEOWNERS** på `.github/`, `config/`, `staticwebapp.config.*.json`, `api/local.settings.example.json`.
 - **Secret scanning** + **push protection**: aktiver i GitHub repo-innstillinger.
 - **Dependabot**: ukentlige oppdateringer for `npm` og `github-actions`.
 

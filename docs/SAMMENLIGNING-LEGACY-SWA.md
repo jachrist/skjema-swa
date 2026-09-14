@@ -66,7 +66,7 @@ Punktvis oppsummering av vesentlige forskjeller mellom legacy-implementeringen
 **Ekstern innsender-flyt**
 - **Legacy:** Ikke støttet direkte — krevde token utstedt av admin.
 - **SWA:** Én URL delbar via hvilken som helst kanal. Ekstern verifiserer
-  seg med SMS eller e-post, kan mellomlagre og komme tilbake senere.
+  seg med e-post, kan mellomlagre og komme tilbake senere.
 
 **Feiltoleranse**
 - Auto-dekryptering ved lesing i stedet for manuell nøkkel-input.
@@ -138,7 +138,7 @@ Punktvis oppsummering av vesentlige forskjeller mellom legacy-implementeringen
 | Kjerne (CRUD) | `index.js` (5000+ linjer) | Delt i `api/src/functions/*.js` |
 | Kryptering | `src/kryptering.js` | `api/src/lib/kryptering.js` (portert) |
 | Varsling | PA-flyter | PA-flyter (samme kontrakt) |
-| OTP | `sendEngangskode` (kun epost) | Modul-basert (SMS + epost) |
+| OTP | `sendEngangskode` (kun epost) | Modul-basert, `sendOtp` (kun epost) |
 | PDF | `src/pdf-generator.js` | `api/src/lib/pdf-generator.js` (portert) |
 | Datauttrekk | HTML-serverside | Egen SPA-side |
 | FS-integrasjon | PA-flyt daglig | GitHub Actions cron → API |

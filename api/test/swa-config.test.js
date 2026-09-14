@@ -19,7 +19,14 @@ const fs = require('fs');
 const path = require('path');
 
 const rot = path.join(__dirname, '..', '..');
-const filer = fs.readdirSync(rot).filter(n => /^staticwebapp\.config\.[a-z]+\.json$/.test(n));
+// Mønsteret tar også rot-fila staticwebapp.config.json, som build-config.js
+// skriver lokalt. Den er ikke i repoet — den lå sjekket inn til 14.09.2026 og
+// hadde da stått igjen som et gammelt øyeblikksbilde med sju feil, deriblant
+// et ugyldig jokertegn som ville forkastet hele configen.
+//
+// Derfor: valideres HVIS den finnes, kreves ikke. Den som har bygget lokalt
+// får den sjekket; en frisk klone har den ikke, og skal ikke ha den.
+const filer = fs.readdirSync(rot).filter(n => /^staticwebapp\.config(\.[a-z]+)?\.json$/.test(n));
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -28,7 +35,11 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
-sjekk('finner miljøkonfigurasjonene', filer.length >= 2, true);
+// Begge miljøvariantene er kilder og MÅ finnes. Forsvinner én, deployes det
+// ingenting til det miljøet — og det skal ikke oppdages først da.
+for (const n of ['staticwebapp.config.pilot.json', 'staticwebapp.config.prod.json']) {
+    sjekk(`${n} finnes`, filer.includes(n), true);
+}
 
 for (const fil of filer) {
     const rå = fs.readFileSync(path.join(rot, fil), 'utf8');

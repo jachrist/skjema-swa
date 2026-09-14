@@ -103,6 +103,6 @@ ekspanderer mange skjemaer av samme type (se `mine-behandlinger`).
 - Hemmeligheter bare i Key Vault, aldri i kode eller env-JSON. Koden får dem som app settings, løst av SWA-hosten.
 - Env-JSON committes, secrets ikke.
 - Branch protection på `main`: PR påkrevd, 1+ review, signerte commits, "include administrators".
-- CODEOWNERS på `.github/`, `config/`, `staticwebapp.config.json`.
+- CODEOWNERS på `.github/`, `config/`, `staticwebapp.config.*.json`.
 - GitHub push protection + secret scanning slått på.
 - Deploy-identitet minst-privilegert: kun deploy til én SWA.

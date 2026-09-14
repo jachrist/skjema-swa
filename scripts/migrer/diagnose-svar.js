@@ -18,9 +18,12 @@
  * en legacy-konto og en SWA-konto uten at man trenger å vite hvilken man har.
  * Definisjonene heter «Skjemadefinisjoner» begge steder.
  *
+ * Krever avhengighetene i denne mappa: `cd scripts/migrer && npm install`.
+ * `npm ci` i api/ hjelper ikke — Node leter oppover fra skriptets egen mappe.
+ *
  * Bruk:
- *   node diagnose-svar.js --conn "<connection string>" --type 113
- *   node diagnose-svar.js --conn "<...>" --type 113 --skjema 42
+ *   node scripts/migrer/diagnose-svar.js --conn "<connection string>" --type 113
+ *   node scripts/migrer/diagnose-svar.js --conn "<...>" --type 113 --skjema 42
  *   node diagnose-svar.js --conn "<...>" --alle          # alle typer, sammendrag
  *   node diagnose-svar.js --conn "<...>" --alle --tabell Skjemaresultater
  *

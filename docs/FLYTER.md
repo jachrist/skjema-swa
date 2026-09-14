@@ -49,9 +49,20 @@ trigges ikke».
 | `OTP_FLOW_URL` | skjematyper med `EksternTilgang=true` |
 | `Flyt_url` per steg | ikke en app setting — adressen ligger på behandlingssteget i skjemadefinisjonen |
 
+```bash
+cd scripts/migrer && npm install        # én gang per maskin
+cd ../..
+STORAGE_CONN="<connection string>" node scripts/migrer/flyt-bruk.js
 ```
-node scripts/migrer/flyt-bruk.js --conn "<connection string>"
-```
+
+Avhengighetene ligger i `scripts/migrer/package.json`, ikke i `api/`. Node
+leter oppover fra skriptets egen mappe, så `npm ci` i `api/` gir
+«Cannot find module '@azure/data-tables'». Mappa har ingen lockfil, så det må
+være `npm install`.
+
+Tilkoblingsstrengen kan også gis som `--conn`, men `STORAGE_CONN` er å
+foretrekke: en kontonøkkel på kommandolinja havner i historikken, og den gir
+full tilgang til alle dataene.
 
 Skriptet endrer ingenting og skriver bare vertsnavn, ikke hele adresser med
 signatur, så utskriften kan limes inn i en sak.

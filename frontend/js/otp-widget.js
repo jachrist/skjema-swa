@@ -5,7 +5,9 @@
  *   const resultat = await apneOtpModal({
  *       tittel: 'Verifiser mobilnummer',
  *       tekst: 'Vi sender en 6-sifret kode til...',
- *       kanaler: ['sms', 'epost']    // eller ['sms']
+ *       kanaler: ['epost']           // standard. SMS er ikke i bruk —
+ *                                    // tjenesten finnes ikke, og kanalen
+ *                                    // regnes som usikker for engangskoder.
  *   });
  *   // resultat = { verifikasjonstoken, kanal, mottaker } eller null hvis avbrutt
  *
@@ -16,7 +18,7 @@ export function apneOtpModal(options = {}) {
     return new Promise(resolve => {
         const tittel = options.tittel || 'Verifiser med engangskode';
         const tekst = options.tekst || 'Vi sender en kode du må skrive inn for å bekrefte at du eier denne kontakten.';
-        const kanaler = (options.kanaler && options.kanaler.length) ? options.kanaler : ['sms', 'epost'];
+        const kanaler = (options.kanaler && options.kanaler.length) ? options.kanaler : ['epost'];
 
         const bakgrunn = document.createElement('div');
         bakgrunn.className = 'otp-modal-bakgrunn';
