@@ -61,7 +61,8 @@ Etter opprettelse (og oppgradering til Standard):
   - Kopier `Application (client) ID` → sett som `AAD_CLIENT_ID` i SWA Environment variables
   - Under **Certificates & secrets** → New client secret → kopier verdien → sett som `AAD_CLIENT_SECRET` i SWA Environment variables (kun synlig én gang!)
   - Under **Authentication**: slå på `ID tokens` under Implicit grant
-- Oppdater `staticwebapp.config.json`: legg tilbake `auth`-blokken med:
+- Oppdater `staticwebapp.config.<miljø>.json` (pilot eller prod — rot-fila er
+  generert og ikke i repoet): legg tilbake `auth`-blokken med:
   ```json
   "auth": {
       "identityProviders": {
@@ -179,8 +180,9 @@ Når prod-tenanten er oppe og bruker-/aksepansetestet:
 - `development` / `lokal` — for lokal utvikling
 
 Ved hvert bygg kopieres også `staticwebapp.config.<miljø>.json` →
-`staticwebapp.config.json` slik at riktig auth-konfig følger med i
-deploy. Pilot bruker ClientSecret, prod bruker sertifikat-referanse.
+`frontend/staticwebapp.config.json`, som er den SWA faktisk leser, og til en
+kopi i roten til lokal referanse. Begge kopiene er gitignorert; kildene er
+miljøvariantene. Pilot bruker ClientSecret, prod bruker sertifikat-referanse.
 
 ## Sertifikat-oppsett for prod
 

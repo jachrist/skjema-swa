@@ -16,3 +16,10 @@ obj/
 
 # Genereres av scripts/build-config.js ved deploy — SWA leser den herfra.
 frontend/staticwebapp.config.json
+
+# Samme skript skriver også en kopi i roten, til lokal referanse. Den lå
+# sjekket inn og ble stående igjen som et gammelt øyeblikksbilde: ugyldig
+# jokertegn i en rute, feilstilt openIdIssuer, ingen rolesSource. Sannheten
+# ligger i staticwebapp.config.<miljø>.json — en fil som må være identisk med
+# en annen fil er duplisering, ikke dokumentasjon.
+/staticwebapp.config.json

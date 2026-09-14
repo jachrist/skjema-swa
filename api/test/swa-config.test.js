@@ -19,17 +19,13 @@ const fs = require('fs');
 const path = require('path');
 
 const rot = path.join(__dirname, '..', '..');
-// Rot-fila staticwebapp.config.json tas med, ikke bare miljøvariantene.
+// Mønsteret tar også rot-fila staticwebapp.config.json, som build-config.js
+// skriver lokalt. Den er ikke i repoet — den lå sjekket inn til 14.09.2026 og
+// hadde da stått igjen som et gammelt øyeblikksbilde med sju feil, deriblant
+// et ugyldig jokertegn som ville forkastet hele configen.
 //
-// Den er et byggeartefakt — build-config.js kopierer riktig miljøvariant over
-// den ved deploy — men den er sjekket inn, og den ble stående igjen som et
-// gammelt øyeblikksbilde: ugyldig jokertegn i en rute, feilstilt openIdIssuer,
-// ingen rolesSource og ingen 403-override.
-//
-// Normalt overskrives den. Men build-config.js har en gren som beholder den
-// eksisterende fila hvis miljøvarianten mangler — og da er det nettopp dette
-// som blir deployet. Det er billigere å holde den gyldig enn å stole på at
-// den grenen aldri treffer.
+// Derfor: valideres HVIS den finnes, kreves ikke. Den som har bygget lokalt
+// får den sjekket; en frisk klone har den ikke, og skal ikke ha den.
 const filer = fs.readdirSync(rot).filter(n => /^staticwebapp\.config(\.[a-z]+)?\.json$/.test(n));
 
 let ok = 0, feil = 0;
@@ -39,9 +35,11 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
-sjekk('finner miljøkonfigurasjonene', filer.length >= 2, true);
-// Uten denne kunne regexen over strammes inn igjen uten at noe ble rødt.
-sjekk('rot-fila er med', filer.includes('staticwebapp.config.json'), true);
+// Begge miljøvariantene er kilder og MÅ finnes. Forsvinner én, deployes det
+// ingenting til det miljøet — og det skal ikke oppdages først da.
+for (const n of ['staticwebapp.config.pilot.json', 'staticwebapp.config.prod.json']) {
+    sjekk(`${n} finnes`, filer.includes(n), true);
+}
 
 for (const fil of filer) {
     const rå = fs.readFileSync(path.join(rot, fil), 'utf8');
