@@ -42,11 +42,20 @@ app.http('rollerSwa', {
         try {
             const bruker = await request.json();
             const roller = rollerFor(bruker);
-            // Logges uten å være støyende: én linje per innlogging, og bare
-            // når noen faktisk får en rolle.
-            if (roller.length > 0) {
-                context.log(`roller-swa: ${bruker?.userDetails} → ${roller.join(', ')}`);
-            }
+            // Én linje per kall, også når svaret er tomt.
+            //
+            // Til 15.09.2026 ble bare treff logget. Da sto det ingenting i
+            // loggen når noen ikke fikk rollen — og «ingen linje» kunne bety
+            // både at kallet aldri kom fram og at det kom fram uten treff. Det
+            // er to helt ulike feil: den ene ligger i konfigurasjonen, den
+            // andre i ADMIN_UPNS.
+            //
+            // Kostnaden er én linje per innlogging. Den dagen rollen mangler,
+            // er det denne linjen som sier hvilken av de to det er.
+            context.log(
+                `roller-swa: ${bruker?.userDetails || '(ingen userDetails)'}`
+                + ` → ${roller.length > 0 ? roller.join(', ') : 'ingen roller'}`
+            );
             return { jsonBody: { roles: roller } };
         } catch (e) {
             // Feiler dette, logger SWA brukeren inn uten ekstra roller. Det er
