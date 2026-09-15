@@ -238,6 +238,42 @@ Gamle FHS-testbrukere kan ikke logge inn på pilot etter omleggingen med
 mindre de inviteres som gjester i `jccodevel` — og gjester tar ikke med seg
 lisensene sine, så de får fortsatt ikke postboks eller teammedlemskap.
 
+### Første innlogging etter en endring i Configuration
+
+`admin`-rollen settes **én gang, ved innlogging**: SWA kaller `/api/roller-swa`
+med kort tidsfrist og legger svaret inn i sesjonen. Rekker ikke kallet fram,
+logges brukeren inn uten ekstra roller — uten feilmelding noe sted.
+
+Å endre en app setting restarter Functions-appen. Den første innloggingen etter
+en restart treffer derfor en kald app, og kaldstarten er ofte tregere enn
+fristen. Utslaget er at `/admin.html` er stengt selv om `ADMIN_UPNS` er helt
+riktig; `/api/whoami` svarer samtidig `erAdmin: true`, fordi den leser samme
+env-var uten å gå via rollekallet.
+
+Så etter hver endring i Configuration:
+
+1. Kall `/api/ping` til den svarer med én gang — da er appen varm.
+2. `/.auth/logout` (ikke bare lukk fanen — auth-cookien bærer de gamle rollene).
+3. Logg inn på nytt.
+
+Diagnosen, hvis rollen fortsatt mangler — `erAdmin: true` fra `/api/whoami`
+mot `userRoles` i `/.auth/me` skiller verdien fra rollekallet, og i
+Application Insights viser
+
+```kusto
+requests
+| where url contains "roller-swa"
+| project timestamp, resultCode, duration, success
+| order by timestamp desc
+```
+
+om kallet i det hele tatt kom fram. Ingen rader betyr at `rolesSource` ikke er
+i kraft; høy `duration` eller feilkode betyr kaldstart.
+
+Merk at et eksternt kall mot `/api/roller-swa` svarer **404**. Plattformen
+skjermer ruter som er satt opp som `rolesSource`, så 404 der betyr at ruten
+er gjenkjent — ikke at funksjonen mangler.
+
 ### Lisensgrense
 
 Utviklingstenanten har **23 ledige lisenser**. Antall testbrukere må derfor
