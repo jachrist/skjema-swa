@@ -6,7 +6,7 @@
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
-const { baseUrl } = require('../lib/flyt-kaller');
+const { baseUrl, varslingAv } = require('../lib/flyt-kaller');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const varsling = require('../lib/varsling');
@@ -32,6 +32,11 @@ app.http('varslingDiag', {
                 host: request.headers.get('host') || null,
                 VARSLING_FLOW_URL_satt: !!process.env.VARSLING_FLOW_URL,
                 VARSLING_DEAKTIVERT: process.env.VARSLING_DEAKTIVERT || null,
+                // Den avgjorte sannheten, ikke raaverdien: banneret i admin
+                // skal ikke tolke strengen paa nytt og risikere aa svare noe
+                // annet enn kallene gjoer.
+                varsling_av: varslingAv(),
+                sender_ikke: varslingAv() || !process.env.VARSLING_FLOW_URL,
                 eksempel_lenke: base ? `${base}/evaluering.html?skjematype_id=108&skjema_id=1` : '(base_url tom!)'
             }
         };

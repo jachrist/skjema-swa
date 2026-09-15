@@ -286,6 +286,7 @@
 </head>
 <body>
     <div class="container">
+        <div id="varselbanner"></div>
         <div class="topprad">
             <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
             <div class="brukerinfo"><span id="upn">…</span></div>
@@ -340,8 +341,56 @@
                 document.getElementById('innhold').innerHTML = '<div class="banner feil">Krever admin-rolle. Kontakt en administrator.</div>';
                 return;
             }
+            visVarselbanner();
             window.addEventListener('hashchange', rutHash);
             rutHash();
+        }
+
+        /**
+         * Banner når miljøet ikke sender varslinger.
+         *
+         * `VARSLING_DEAKTIVERT=true` er en tørrkjøringsbryter: koden bygger
+         * hele payloaden, logger mottakere og emne, og returnerer «deaktivert»
+         * uten å kalle flyten. I grensesnittet ser det ut NØYAKTIG som en
+         * vellykket sending. 15.09.2026 kostet det en feilsøkingsrunde på en
+         * Planner-oppgave som aldri ble opprettet — bryteren sto igjen fra en
+         * tidligere test, og ingenting sa fra.
+         *
+         * Manglende VARSLING_FLOW_URL gir samme utfall av en annen grunn, og
+         * regnes derfor likt: ingenting sendes.
+         *
+         * Svaret kommer ferdig avgjort fra /api/varsling/diag. Banneret tolker
+         * ikke env-verdien selv — da kunne det sagt «sender» mens koden
+         * tørrkjørte.
+         *
+         * Feiler kallet, tegnes ingenting. Her vet vi ikke, og da påstår vi
+         * ikke noe — et banner som lyver om at alt er i orden er verre enn
+         * intet banner.
+         */
+        function bannerTekst(diag) {
+            if (!diag) return null;
+            if (diag.varsling_av) {
+                return 'Varslinger sendes ikke i dette miljøet. VARSLING_DEAKTIVERT er på, '
+                    + 'så e-post, Planner-oppgaver og Teams-meldinger bygges og logges, men sendes aldri.';
+            }
+            if (diag.sender_ikke) {
+                return 'Varslinger sendes ikke i dette miljøet. VARSLING_FLOW_URL mangler, '
+                    + 'så kallene hoppes over.';
+            }
+            return null;
+        }
+
+        async function visVarselbanner() {
+            const plass = document.getElementById('varselbanner');
+            if (!plass) return;
+            let diag = null;
+            try { diag = await api.get('/api/varsling/diag'); } catch (_) { return; }
+            const tekst = bannerTekst(diag);
+            if (!tekst) return;
+            const d = document.createElement('div');
+            d.className = 'banner advarsel';
+            d.textContent = tekst;
+            plass.appendChild(d);
         }
 
         function rutHash() {
