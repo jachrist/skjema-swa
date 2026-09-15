@@ -184,6 +184,76 @@ Ved hvert bygg kopieres også `staticwebapp.config.<miljø>.json` →
 kopi i roten til lokal referanse. Begge kopiene er gitignorert; kildene er
 miljøvariantene. Pilot bruker ClientSecret, prod bruker sertifikat-referanse.
 
+## Pålogging på pilot fra utviklingstenanten
+
+Pilot/dev logget opprinnelig inn mot pilot-tenanten
+(`e4fcc393-7190-4d3d-a38d-fa6429f870f3`). Testbrukerne der er syntetiske og
+**uten lisenser**, så de har hverken postboks, Teams-medlemskap eller noe
+annet som krever lisens — epostutsending, teamoppslag og varsling kunne
+derfor ikke testes ende-til-ende.
+
+Pilot bruker derfor nå utviklingstenanten `jccodevel.onmicrosoft.com`
+(`02ff6bc3-07c5-4ed5-835e-5c68c26ab8eb`) som identitetsleverandør. SWA-en
+ligger fortsatt i pilot-tenanten — en Static Web App trenger ikke å være i
+samme tenant som app-registreringen den logger inn mot. **Prod er urørt**;
+den leser `staticwebapp.config.prod.json` med sin egen issuer.
+
+### Engangsoppsett
+
+1. **App-registrering i utviklingstenanten** (krever bare Entra ID, ingen
+   Azure-subscription):
+   - Navn: `swa-fhsskjema-pilot-auth`
+   - Supported account types: **single tenant**
+   - Redirect URI (Web): `https://<swa-navn>.<random>.azurestaticapps.net/.auth/login/aad/callback`
+   - **Authentication** → slå på `ID tokens` under Implicit grant
+   - **Certificates & secrets** → New client secret (verdien vises kun én gang)
+2. **Sett nøklene i pilot-SWA-ens Configuration** (i pilot-tenanten):
+   - `AAD_CLIENT_ID` = Application (client) ID fra den nye registreringen
+   - `AAD_CLIENT_SECRET` = hemmeligheten fra steg 1
+   - Restart SWA-en etterpå.
+3. `openIdIssuer` i `staticwebapp.config.pilot.json` peker allerede på
+   utviklingstenanten. Den trer i kraft ved neste deploy til pilot.
+
+> Issuer-en skal **aldri** settes til `/common/` eller `/organizations/` —
+> da er innlogging åpen for alle tenanter. `api/test/swa-config.test.js`
+> feiler hvis det skjer.
+
+### UPN-omlegging
+
+Alle innlogginger får nye UPN-er (`@jccodevel.onmicrosoft.com`), og UPN er
+nøkkelen overalt i løsningen. Rekkefølgen er viktig — **`ADMIN_UPNS` først**,
+ellers står du uten admin-tilgang på pilot:
+
+1. `ADMIN_UPNS` i pilot-SWA Configuration — legg inn de nye admin-UPN-ene
+   *ved siden av* de gamle i overgangsperioden, og fjern de gamle først når
+   innlogging med ny tenant er verifisert.
+2. `Rollemedlemskap`-tabellen — roller per UPN.
+3. Publikum og Eiere på skjematypene (settes i editoren).
+4. `Teammedlemskap`-cachen — flyten som fyller den må hente fra
+   utviklingstenanten for dev (se `docs/FLYTER.md`).
+5. `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` hvis
+   Graph-oppslag (SharePoint-backup) skal kjøre mot samme tenant.
+
+Gamle FHS-testbrukere kan ikke logge inn på pilot etter omleggingen med
+mindre de inviteres som gjester i `jccodevel` — og gjester tar ikke med seg
+lisensene sine, så de får fortsatt ikke postboks eller teammedlemskap.
+
+### Lisensgrense
+
+Utviklingstenanten har **23 ledige lisenser**. Antall testbrukere må derfor
+holdes under det taket — de syntetiske brukerne fra pilot-tenanten skal
+*ikke* kopieres over én-til-én. Velg et minimumsutvalg som dekker rollene
+som faktisk testes:
+
+- 1–2 administratorer (`ADMIN_UPNS`)
+- 1 skjemaeier per skjematype som testes
+- 2–3 behandlere, fordelt på de teamene som brukes i teammedlemskap-testen
+- 2–3 ordinære innsendere
+- 1 bruker uten roller (negativ test på tilgang)
+
+Eksterne innsendere trenger ingen lisens — de går via engangskode/OTP og
+skal testes med en adresse utenfor tenanten.
+
 ## Sertifikat-oppsett for prod
 
 Prod-tenanten bruker **sertifikat-basert AAD-auth** i stedet for
