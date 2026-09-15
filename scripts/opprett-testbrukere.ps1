@@ -49,8 +49,9 @@
     du må bytte ved første pålogging er ikke felles særlig lenge, og da er
     poenget borte.
 
-    Prisen er reell: kontoene er lisensierte og kan sende e-post fra
-    tenanten. Bruk det bare på testkontoer i en utviklingstenant.
+    Kontoene er lisensierte og kan sende e-post fra tenanten, så et svakt
+    førstefaktor-passord er ikke gratis. Sett MFA på kontoene — da bærer ikke
+    passordet sikkerheten alene — og hold dem i utviklingstenanten.
 
 .PARAMETER TilbakestillPassord
     Setter passordet også på brukerne som finnes fra før — de i tabellen
@@ -319,7 +320,7 @@ foreach ($b in $aaLage) {
 Linje
 if ($Passord) {
     Write-Host 'Alle brukerne har passordet du oppga. Ingen tvungen endring.' -ForegroundColor Yellow
-    Write-Host 'Kontoene er lisensierte og kan sende e-post — hold dem i utviklingstenanten.' -ForegroundColor Yellow
+    Write-Host 'Kontoene er lisensierte og kan sende e-post. Sett MFA på dem.' -ForegroundColor Yellow
     Linje
     $resultat | Format-Table Upn, Rolle -AutoSize
 } else {
