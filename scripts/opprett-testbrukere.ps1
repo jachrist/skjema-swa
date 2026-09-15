@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Oppretter lisensierte testbrukere i utviklingstenanten.
 

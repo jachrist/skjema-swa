@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Setter opp app-registreringen som skriver backup til SharePoint.
 
