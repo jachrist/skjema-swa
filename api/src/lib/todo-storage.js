@@ -61,7 +61,9 @@ async function medTabell(fn) {
                     `Tabellen ${TABELL} finnes ikke på ${konto}, og kunne ikke opprettes: ` +
                     `${opprett.message}. Enten må SAS-en i TODO_STORAGE_CONNECTION_STRING ` +
                     `tillate ressurstypen Container (srt) og rettigheten Create, eller så må ` +
-                    `tabellen opprettes én gang manuelt på lagringskontoen.`
+                    `tabellen opprettes én gang manuelt på lagringskontoen. Merk at Create ` +
+                    `bare dekker selve tabellen — rader krever i tillegg Add og Update, og ` +
+                    `mangler de, kommer feilen som AuthorizationPermissionMismatch.`
                 );
             }
         }
@@ -353,9 +355,9 @@ async function vedleggContainer() {
             (feilTjeneste
                 ? `SAS-en i TODO_STORAGE_CONNECTION_STRING gjelder ikke for Blob. Utsted den på nytt ` +
                   `med «Allowed services» = Blob (i tillegg til Table), «Allowed resource types» = ` +
-                  `Container + Object, og rettighetene Read/Write/List/Create/Delete.`
+                  `Container + Object, og rettighetene Read, Write, Delete, List, Add, Create og Update.`
                 : `SAS-en i TODO_STORAGE_CONNECTION_STRING må ha «Allowed resource types» = ` +
-                  `Container + Object og rettighetene Read/Write/List/Create/Delete, eller så må ` +
+                  `Container + Object og rettighetene Read, Write, Delete, List, Add, Create og Update, eller så må ` +
                   `containeren opprettes én gang manuelt.`));
     }
     return c;
