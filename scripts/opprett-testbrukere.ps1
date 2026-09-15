@@ -42,6 +42,25 @@
     usageLocation på brukerne. Standard NO. Må settes FØR lisens kan
     tildeles — Graph avviser assignLicense uten den.
 
+.PARAMETER Passord
+    Felles passord for alle brukerne, i stedet for et tilfeldig per bruker.
+
+    Da settes også forceChangePasswordNextSignIn til FALSE — et felles passord
+    du må bytte ved første pålogging er ikke felles særlig lenge, og da er
+    poenget borte.
+
+    Kontoene er lisensierte og kan sende e-post fra tenanten, så et svakt
+    førstefaktor-passord er ikke gratis. Sett MFA på kontoene — da bærer ikke
+    passordet sikkerheten alene — og hold dem i utviklingstenanten.
+
+.PARAMETER TilbakestillPassord
+    Setter passordet også på brukerne som finnes fra før — de i tabellen
+    under, ingen andre. Krever -Passord.
+
+    Finnes fordi brukerne kan være opprettet med tilfeldige passord i en
+    tidligere kjøring. Uten denne hoppes de over, og du sitter igjen med
+    halve utvalget på ett passord og halve på noe du ikke har.
+
 .PARAMETER TorrKjor
     Viser hva som ville blitt gjort, og oppretter ingenting.
 
@@ -62,6 +81,8 @@ param(
     [Parameter(Mandatory = $true)][string]$Domene,
     [string]$Lisens = 'DEVELOPERPACK_E5',
     [string]$Bruksland = 'NO',
+    [string]$Passord,
+    [switch]$TilbakestillPassord,
     [switch]$TorrKjor,
     [switch]$VisLisenser,
     [switch]$UtenLisens
@@ -156,6 +177,10 @@ function Linje { Write-Host ('-' * 72) -ForegroundColor DarkGray }
 # Det viktigste steget i skriptet. En az-innlogging mot feil tenant ville
 # ellers opprettet ti brukere i produksjonskatalogen.
 # ---------------------------------------------------------------------------
+if ($TilbakestillPassord -and -not $Passord) {
+    throw '-TilbakestillPassord krever -Passord. Skriptet setter aldri et tilfeldig passord på en bruker som finnes fra før — da ville du mistet det du hadde.'
+}
+
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
     throw 'Azure CLI (az) finnes ikke i PATH. Installer den, eller kjør fra Cloud Shell.'
 }
@@ -203,19 +228,39 @@ if (-not $UtenLisens) {
 # 3. Hvem finnes fra før?
 # ---------------------------------------------------------------------------
 $aaLage = @()
+$finnesAlt = @()
 foreach ($b in $BRUKERE) {
     $upn = "$($b.Konto)@$Domene"
     $finnes = $null
     try { $finnes = Graf -Sti "/users/$upn" } catch { $finnes = $null }
     if ($finnes) {
         Write-Host "  finnes   $upn" -ForegroundColor DarkGray
+        $finnesAlt += [pscustomobject]@{ Upn = $upn; Id = $finnes.id; Rolle = $b.Rolle }
     } else {
         $aaLage += $b
     }
 }
 
+# Passordet på dem som finnes fra før. Bare kontoene i tabellen over —
+# skriptet rører ingen andre brukere i tenanten.
+if ($TilbakestillPassord -and $finnesAlt.Count -gt 0) {
+    if ($TorrKjor) {
+        Write-Host "`nVille satt nytt passord på $($finnesAlt.Count) eksisterende bruker(e)." -ForegroundColor Yellow
+    } else {
+        foreach ($f in $finnesAlt) {
+            Graf -Metode PATCH -Sti "/users/$($f.Id)" -Kropp @{
+                passwordProfile = @{
+                    forceChangePasswordNextSignIn = $false
+                    password                      = $Passord
+                }
+            } | Out-Null
+            Write-Host "  passord   $($f.Upn)" -ForegroundColor Green
+        }
+    }
+}
+
 if ($aaLage.Count -eq 0) {
-    Write-Host "`nAlle brukerne finnes allerede. Ingenting å gjøre." -ForegroundColor Green
+    Write-Host "`nAlle brukerne finnes allerede. Ingenting mer å gjøre." -ForegroundColor Green
     return
 }
 
@@ -239,7 +284,10 @@ if ($TorrKjor) {
 $resultat = @()
 foreach ($b in $aaLage) {
     $upn = "$($b.Konto)@$Domene"
-    $pw = NyttPassord
+    # Et felles passord som må byttes ved første pålogging er ikke felles
+    # særlig lenge. Derfor henger de to sammen: oppgitt passord → ingen tvungen
+    # endring, tilfeldig passord → tvungen endring.
+    $pw = if ($Passord) { $Passord } else { NyttPassord }
 
     $ny = Graf -Metode POST -Sti '/users' -Kropp @{
         accountEnabled    = $true
@@ -248,7 +296,7 @@ foreach ($b in $aaLage) {
         userPrincipalName = $upn
         usageLocation     = $Bruksland
         passwordProfile   = @{
-            forceChangePasswordNextSignIn = $true
+            forceChangePasswordNextSignIn = (-not $Passord)
             password                      = $pw
         }
     }
@@ -270,10 +318,17 @@ foreach ($b in $aaLage) {
 # 5. Det du trenger videre
 # ---------------------------------------------------------------------------
 Linje
-Write-Host 'ENGANGSPASSORD — vises bare nå, og lagres ikke noe sted.' -ForegroundColor Yellow
-Write-Host 'Alle må byttes ved første pålogging.' -ForegroundColor Yellow
-Linje
-$resultat | Format-Table Upn, Rolle, Passord -AutoSize
+if ($Passord) {
+    Write-Host 'Alle brukerne har passordet du oppga. Ingen tvungen endring.' -ForegroundColor Yellow
+    Write-Host 'Kontoene er lisensierte og kan sende e-post. Sett MFA på dem.' -ForegroundColor Yellow
+    Linje
+    $resultat | Format-Table Upn, Rolle -AutoSize
+} else {
+    Write-Host 'ENGANGSPASSORD — vises bare nå, og lagres ikke noe sted.' -ForegroundColor Yellow
+    Write-Host 'Alle må byttes ved første pålogging.' -ForegroundColor Yellow
+    Linje
+    $resultat | Format-Table Upn, Rolle, Passord -AutoSize
+}
 
 $adminer = ($BRUKERE | Where-Object { $_.Rolle -eq 'admin' } | ForEach-Object { "$($_.Konto)@$Domene" }) -join ','
 Linje
