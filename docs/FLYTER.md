@@ -223,6 +223,9 @@ Ved import i en annen tenant må **connection references** kobles på nytt —
 connectorene mot Office 365, Graph og OneDrive finnes ikke i målmiljøet før
 noen autentiserer dem der. Det er den delen som ikke lar seg skripte bort.
 
+Hele framgangsmåten — de fire stegene, reglene som holder miljøene rene, og
+feilmeldingene som er lette å gå på — står i `docs/FLYT-DEPLOY.md`.
+
 ## Flyter som kaller inn til oss
 
 Autentiseres med `x-flow-key`, som må matche `FLOW_CALLBACK_KEY`.
