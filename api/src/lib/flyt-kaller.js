@@ -39,13 +39,32 @@ function baseUrl(request) {
     return '';
 }
 
+/**
+ * Er varslingskall skrudd av?
+ *
+ * Regelen er én linje, men den fantes i fire kopier — i denne fila to ganger,
+ * i ekstern-flyt.js og i sp-liste.js. Fire kopier av en av/på-bryter er fire
+ * sjanser til at de svarer forskjellig, og utslaget hadde vært det verste
+ * slaget: noen kanaler sender, andre ikke.
+ *
+ * Den er eksportert fordi /api/varsling/diag skal svare på det SAMME
+ * spørsmålet som kallene stiller. Leste diagnosen env-varen på egen hånd,
+ * kunne banneret i admin si «sender» mens koden tørrkjørte.
+ *
+ * Bare strengen 'true' (uansett kasus, med mellomrom rundt) slår av. Alt
+ * annet - 'false', '1', tom verdi, usatt - betyr at det sendes.
+ */
+function varslingAv() {
+    return String(process.env.VARSLING_DEAKTIVERT || '').trim().toLowerCase() === 'true';
+}
+
 async function kallVarslingFlyt(payload, log = () => {}) {
     const url = process.env.VARSLING_FLOW_URL;
     if (!url) {
         log('flyt: VARSLING_FLOW_URL ikke satt — hopper over');
         return { status: 'hoppet-over', melding: 'VARSLING_FLOW_URL ikke satt' };
     }
-    if (String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() === 'true') {
+    if (varslingAv()) {
         const mottakerListe = (payload.mottakere || []).map(m => m.epost).join(',');
         log(`flyt DRY-RUN: mottakere=${mottakerListe} varslinger=${(payload.varslinger || []).join(',')} emne="${payload.epost_og_teams?.emne || ''}"`);
         return { status: 'deaktivert', mottakere: payload.mottakere || [] };
@@ -206,7 +225,7 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
         log('otp-flyt: OTP_FLOW_URL ikke satt — hopper over (kode logges NOT for sikkerhet)');
         return { status: 'hoppet-over', melding: 'OTP_FLOW_URL ikke satt' };
     }
-    if (String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() === 'true') {
+    if (varslingAv()) {
         // I dry-run logger vi KODE for enkel test — akseptert i pilot.
         log(`otp-flyt DRY-RUN: kanal=${kanal} mottaker=${mottaker} kode=${kode}`);
         return { status: 'deaktivert' };
@@ -232,6 +251,7 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
 
 module.exports = {
     kallVarslingFlyt,
+    varslingAv,
     sendEpostViaFlyt,
     sendVarslerViaFlyt,
     sendOtpViaFlyt,

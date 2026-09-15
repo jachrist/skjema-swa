@@ -133,7 +133,7 @@ async function bygVedleggPayload(skjema, log) {
  * Kall SP_LISTE_FLOW_URL med bygget payload. Trigges ved innsending.
  * Non-blocking — feiler stille (log) uten å avbryte innsending.
  */
-const { miljo, flytHeadere } = require('./flyt-kaller');
+const { miljo, flytHeadere, varslingAv } = require('./flyt-kaller');
 
 async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
     const url = process.env.SP_LISTE_FLOW_URL;
@@ -147,7 +147,7 @@ async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
         return { status: 'hoppet-over', melding: 'SPListeadresse/SPListenavn ikke satt på skjematype' };
     }
 
-    if (String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() === 'true') {
+    if (varslingAv()) {
         log(`sp-liste DRY-RUN: listeadresse=${listeadresse} listenavn=${listenavn}`);
         return { status: 'deaktivert' };
     }

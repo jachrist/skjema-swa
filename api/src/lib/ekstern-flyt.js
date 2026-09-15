@@ -19,6 +19,10 @@
  * beslutning-endpoint returnerer 409 hvis steget allerede er fullført.
  */
 
+// varslingAv deles med flyt-kaller: samme bryter, ett sted. flyt-kaller har
+// ingen toppnivaa-require selv, saa fila kan fortsatt lastes uten node_modules.
+const { varslingAv } = require('./flyt-kaller');
+
 function utledSwaBaseUrl() {
     const fra = String(process.env.SWA_URL || '').trim();
     if (fra) return fra.replace(/\/$/, '');
@@ -27,7 +31,7 @@ function utledSwaBaseUrl() {
 
 async function kallEksternFlyt(url, skjema, steg, log = () => {}) {
     if (!url) return { status: 'hoppet-over', melding: 'Ingen URL' };
-    if (String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() === 'true') {
+    if (varslingAv()) {
         log(`ekstern-flyt DRY-RUN: url=${url} skjema_id=${skjema?.Skjema_id} steg=${steg?.Steg}`);
         return { status: 'deaktivert' };
     }
