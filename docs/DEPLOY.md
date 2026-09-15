@@ -290,6 +290,19 @@ som faktisk testes:
 Eksterne innsendere trenger ingen lisens — de går via engangskode/OTP og
 skal testes med en adresse utenfor tenanten.
 
+`scripts/opprett-testbrukere.ps1` oppretter nøyaktig dette utvalget. Det
+verifiserer først at du er logget inn i riktig tenant (domenet må være
+verifisert der), teller ledige seter før det oppretter noe, og er idempotent
+— en bruker som finnes fra før hoppes over. Engangspassordene skrives ut én
+gang og lagres ikke.
+
+```powershell
+az login --tenant 02ff6bc3-07c5-4ed5-835e-5c68c26ab8eb --allow-no-subscriptions
+.\scripts\opprett-testbrukere.ps1 -Domene jccodevel.onmicrosoft.com -VisLisenser
+.\scripts\opprett-testbrukere.ps1 -Domene jccodevel.onmicrosoft.com -TorrKjor
+.\scripts\opprett-testbrukere.ps1 -Domene jccodevel.onmicrosoft.com
+```
+
 ## Sertifikat-oppsett for prod
 
 Prod-tenanten bruker **sertifikat-basert AAD-auth** i stedet for
