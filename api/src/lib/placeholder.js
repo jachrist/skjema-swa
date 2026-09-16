@@ -4,7 +4,7 @@
  * Støttede plassholdere (samme som legacy):
  *   $lenke              — URL til skjema/kvittering (kontekst.lenke)
  *   $innsender          — e-post
- *   $innsender_navn     — navn
+ *   $innsender_navn     — navn (e-postadressen hvis navnet ikke er kjent)
  *   $skjemanavn         — Skjema_navn / Overskrift
  *   $skjema_id          — Skjema_id
  *   $beslutning         — beslutning-tekst
@@ -129,6 +129,12 @@ function erstattPlassholdere(streng, kontekst = {}) {
  * Bygg kontekst-objekt fra skjema + skjematype + evt. steg/beslutning.
  * Feltnavnene på skjema.Innsender_Epost/Innsender_Navn kan variere mellom fullt
  * og kompakt format — samleres begge her.
+ *
+ * $innsender_navn faller tilbake til e-postadressen. Det er ikke pynt:
+ * skjemaer lagret før 16.09.2026 har ingen Innsender_Navn i det hele tatt, og
+ * eksterne innsendere får aldri et navn — vi kjenner bare adressen deres. Uten
+ * fallbacken står det et tomrom midt i en setning i e-posten, og mottakeren har
+ * ingen måte å se hvem den gjelder. Adressen er mindre pen og alltid sann.
  */
 function byggKontekst({ skjema = {}, skjematype = {}, steg = null, beslutningTekst = null, kommentar = null, lenke = undefined }) {
     const seksjoner = skjema.Seksjoner || [];
@@ -136,7 +142,8 @@ function byggKontekst({ skjema = {}, skjematype = {}, steg = null, beslutningTek
         skjemanavn: skjematype.Skjema_navn || skjema.Skjema_navn || skjema.Overskrift || '',
         skjemaId: skjema.Skjema_id || '',
         innsender: skjema.Innsender_Epost || skjema.Innsender_epost || skjema.Innsender || '',
-        innsenderNavn: skjema.Innsender_Navn || skjema.Innsender || '',
+        innsenderNavn: skjema.Innsender_Navn || skjema.Innsender
+            || skjema.Innsender_Epost || skjema.Innsender_epost || '',
         stegnavn: steg?.Stegnavn || '',
         rolle: steg?.Rolle || (Array.isArray(steg?.Roller) ? steg.Roller.join(', ') : ''),
         beslutning: beslutningTekst || '',

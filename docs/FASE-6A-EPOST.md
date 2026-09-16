@@ -95,7 +95,7 @@ Alle støttede plassholdere:
 |-------------|-------|
 | `$lenke` | Lenke til skjemaet (SWA_URL + evaluering.html) |
 | `$innsender` | Innsender-e-post |
-| `$innsender_navn` | Innsender-navn |
+| `$innsender_navn` | Innsender-navn — e-postadressen hvis navnet ikke er kjent |
 | `$skjemanavn` | Skjematype-navn |
 | `$skjema_id` | Skjema-ID |
 | `$beslutning` | Beslutning-tekst (kun i FraBehandler) |
