@@ -107,7 +107,19 @@ async function kjor() {
             res.manifest.tabeller.some(t => t.navn === 'Postnumre'), false);
         sjekk('dynamiske tabeller er fortsatt med i sin helhet',
             res.manifest.tabeller.some(t => t.navn === 'Skjemaer'), true);
-        sjekk('delte tabeller utelates fra delta', res.manifest.delteTabeller, []);
+        // Snudd 16.09.2026. De var utelatt fra delta fordi de «endrer seg
+        // sjelden» — men oppgavelista brukes daglig fra prod, og da den
+        // forsvant 15.09 var nærmeste kopi fra forrige søndag. Tabellene er
+        // titalls rader; daglig kopi koster nærmest ingenting, og alternativet
+        // koster opptil en uke med arbeid.
+        sjekk('delte tabeller er med i delta',
+            res.manifest.delteTabeller.map(t => t.navn), ['TodoPunkter', 'Nokkelkalender']);
+
+        // Bakveien inn til den samme feilen: havner en delt tabell i
+        // TABELLER_KUN_FULL, faller den ut av deltaene igjen.
+        for (const navn of backup.DELTE_TABELLER) {
+            sjekk(`${navn} står ikke som kun-full`, backup.TABELLER_KUN_FULL.includes(navn), false);
+        }
 
         sjekk('bare nye blobber er med', res.manifest.containers[0].antall, 2);
         sjekk('og de gamle telles som hoppet over', res.manifest.containers[0].hoppetOver, 3);

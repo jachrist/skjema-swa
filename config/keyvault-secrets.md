@@ -33,9 +33,20 @@ I portalen (Storage account → Shared access signature):
 
 | Felt | Verdi |
 |---|---|
-| Allowed services | **Table** (bare den) |
+| Allowed services | **Table** og **Blob** |
 | Allowed resource types | **Container** og **Object** |
 | Allowed permissions | Read, Write, Delete, List, Add, Create, Update, Process |
+
+**Blob er ikke valgfritt hvis TODO-punktene skal ha vedlegg.** De lagres som
+blobber på samme konto. En SAS med bare Table gir en oppgaveliste som virker
+helt til noen laster opp en fil, og da kommer feilen som «not authorized …
+using this service» — en annen dialogboks i portalen enn den man leter i.
+
+**Add og Update er heller ikke valgfrie.** Read og Write dekker ikke skriving
+av rader i Table Storage: innsetting krever Add, oppdatering krever Update, og
+en upsert krever begge. Mangler de, kommer feilen som
+`AuthorizationPermissionMismatch` — som leses som «feil nøkkel», men betyr
+«riktig nøkkel, for få rettigheter».
 
 **Container-typen er ikke valgfri.** «Table» som ressurs er en *container* i SAS-
 terminologien, mens radene er *objects*. Med bare Object får appen lest og

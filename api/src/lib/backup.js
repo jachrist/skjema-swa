@@ -343,9 +343,17 @@ async function byggZip(log, fremdrift, {
     // Delte tabeller: egen connection string, egen manifestnøkkel. Feiler
     // oppslaget — typisk en SAS som ikke dekker Table — skal ikke hele
     // backupen ryke for det. Miljøets egne data er viktigere.
-    // Delte tabeller er små og tas i sin helhet, men bare i fulle kjøringer —
-    // de endrer seg sjelden nok til at daglig kopi er sløsing.
-    const deltCs = erDelta ? '' : (k.deltCs || '');
+    //
+    // De ble tatt KUN i fulle kjøringer fram til 16.09.2026, med begrunnelsen
+    // at de endrer seg sjelden nok til at daglig kopi er sløsing. Det stemte
+    // da oppgavelista var en notatblokk for én person.
+    //
+    // Nå jobber brukerne i den fra prod, og 15.09.2026 forsvant den i en
+    // opprydding. Da var nærmeste kopi fra forrige søndag — og et uhell på en
+    // onsdag ville kostet seks dagers arbeid. Tabellene er små (titalls rader),
+    // så daglig kopi koster nærmest ingenting. Prisen for å ta feil er ikke
+    // symmetrisk: litt sløsing hver natt mot en uke tapt arbeid.
+    const deltCs = k.deltCs || '';
     if (deltCs) {
         for (const navn of DELTE_TABELLER) {
             fremdrift(`leser delt tabell ${navn}`);

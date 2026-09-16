@@ -72,7 +72,8 @@ async function medTabell(fn) {
                 throw new Error(
                     `Tabellen ${TABELL} finnes ikke på ${konto}, og kunne ikke opprettes: ` +
                     `${opprett.message}. Enten må SAS-en i TODO_STORAGE_CONNECTION_STRING ` +
-                    `tillate ressurstypen Container (srt) og rettigheten Create, eller så må ` +
+                    `tillate ressurstypen Container (srt) og rettighetene Create, Add og ` +
+                    `Update — Create alene oppretter tabellen, men skriver ingen rader — eller så må ` +
                     `tabellen opprettes én gang manuelt på lagringskontoen.`
                 );
             }
