@@ -11,7 +11,7 @@
  * Skjema_id genereres serverside for nye skjemaer.
  */
 const { app } = require('@azure/functions');
-const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, hentInnloggetNavn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const vedleggStorage = require('../lib/vedlegg-storage');
@@ -778,6 +778,31 @@ app.http('lagreSkjema', {
                 Innsender_Epost: eksisterende?.Innsender_Epost || innsenderId,
                 Skjema_status: body.Skjema_status || eksisterende?.Skjema_status || 2
             };
+
+            // Innsenderens navn, én gang, ved lagring.
+            //
+            // Til 16.09.2026 ble feltet aldri skrevet noe sted. Alle leserne
+            // fantes — $innsender_navn, SP-kolonnen, PDF-en, mottakernavnet i
+            // varslingen — men ingen skriver. Plassholderen ble derfor byttet
+            // ut med tom streng hver gang, og det så ut som en feil i
+            // substitusjonen fordi $innsender ved siden av virket.
+            //
+            // Kilden er claims i principal-headeren, ikke noe klienten sender:
+            // navnet står i e-poster til behandlere, og skal ikke kunne settes
+            // av den som fyller ut skjemaet.
+            //
+            // Eksterne innsendere (OTP/utsending) har ingen principal og får
+            // ingenting her. Det er riktig — vi kjenner bare e-posten eller
+            // mobilnummeret deres. byggKontekst faller da tilbake til den.
+            const navnFraPrincipal = eksternAuth || utsendingAuth ? null : hentInnloggetNavn(request);
+            // Settes ubetinget: `...body` over har allerede lagt inn det klienten
+            // eventuelt sendte, og den verdien skal ikke overleve.
+            skjemaData.Innsender_Navn = eksisterende?.Innsender_Navn || navnFraPrincipal || '';
+            if (!skjemaData.Innsender_Navn && !eksternAuth && !utsendingAuth) {
+                // Innlogget, men uten navn i claims. Da står det på oppsettet,
+                // ikke på brukeren, og det skal være mulig å se i loggen.
+                context.log(`skjemaer: ingen navn-claim for ${innsenderId} — Innsender_Navn blir stående tom`);
+            }
             if (eksternAuth) {
                 skjemaData.EksternInnsender = true;
                 skjemaData.Innsender_Kanal = eksternAuth.kanal;

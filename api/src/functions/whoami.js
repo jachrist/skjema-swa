@@ -1,9 +1,13 @@
 /**
  * GET /api/whoami — returnerer basic info om innlogget bruker + admin-status.
  * Bruker kan lese denne uten å måtte kalle .auth/me OG sjekke admin separat.
+ *
+ * `navn` er med for å kunne se ETT sted om SWA sender claims videre til API-et.
+ * Er den null, får heller ikke lagringen tak i et navn, og $innsender_navn blir
+ * stående tom — uten at noe annet sier fra.
  */
 const { app } = require('@azure/functions');
-const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, hentInnloggetNavn, erAdmin } = require('../lib/auth');
 const rollerStorage = require('../lib/roller-storage');
 
 app.http('whoami', {
@@ -23,6 +27,7 @@ app.http('whoami', {
         return {
             jsonBody: {
                 upn,
+                navn: hentInnloggetNavn(request),
                 erAdmin: admin,
                 kanOppretteSkjematype
             }

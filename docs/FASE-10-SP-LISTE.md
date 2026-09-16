@@ -30,6 +30,27 @@ Kun felter med `SPListefelt` sendes.
 akkurat de navnene (hardkodet — samme som legacy). Admin kan i tillegg
 mappe `$innsender` / `$innsender_navn` til andre kolonner via SPMetadata.
 
+### Hvor navnet kommer fra
+
+`Innsender_Navn` settes én gang, ved lagring, fra `name`-claimen i
+`x-ms-client-principal` (`hentInnloggetNavn` i `lib/auth.js`). Klienten kan
+ikke sette det — navnet står i e-poster til behandlere.
+
+To tilfeller gir ingen verdi, og det er meningen:
+
+- **Eksterne innsendere** (OTP eller utsendingslenke) har ingen principal. Vi
+  kjenner bare e-postadressen eller mobilnummeret deres.
+- **Skjemaer lagret før 16.09.2026.** Feltet ble aldri skrevet den gang, så
+  det finnes ikke i eldre skjemaer.
+
+I *meldingstekst* faller `$innsender_navn` da tilbake til e-postadressen — et
+tomrom midt i en setning er verre enn en adresse. I *SP-kolonnen* gjør den det
+ikke: der er en tom celle ærligere enn en adresse i en navnekolonne.
+
+Står navnet tomt for en innlogget bruker, logger `skjemaer`-handleren én linje
+om det (`ingen navn-claim for ...`), og `GET /api/whoami` viser `navn: null`.
+Da er det claims fra SWA som mangler, ikke brukeren.
+
 ## Støttede plassholdere
 
 Kun submit-tid-verdier gir mening her (samme regel som legacy):
@@ -39,7 +60,7 @@ Kun submit-tid-verdier gir mening her (samme regel som legacy):
 | `$skjema_id` | Skjema-ID |
 | `$skjemanavn` | Skjematype-navn |
 | `$innsender` | Innsender e-post |
-| `$innsender_navn` | Innsender-navn |
+| `$innsender_navn` | Innsender-navn — tom hvis navnet ikke er kjent (se under) |
 | `$tidspunkt` / `$tidspunkt_innsendt` | ISO-tidsstempel |
 
 Steg-spesifikke plassholdere (`$beslutning`, `$stegnavn`, ...) returnerer
