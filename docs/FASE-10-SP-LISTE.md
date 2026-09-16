@@ -32,9 +32,25 @@ mappe `$innsender` / `$innsender_navn` til andre kolonner via SPMetadata.
 
 ### Hvor navnet kommer fra
 
-`Innsender_Navn` settes én gang, ved lagring, fra `name`-claimen i
-`x-ms-client-principal` (`hentInnloggetNavn` i `lib/auth.js`). Klienten kan
-ikke sette det — navnet står i e-poster til behandlere.
+`Innsender_Navn` settes én gang, ved lagring. Klienten kan ikke sette det —
+navnet står i e-poster til behandlere.
+
+Veien dit er lengre enn den burde vært, og det er plattformens skyld:
+
+**SWA sender claims til rollekilden, men ikke videre til API-et.** Payloaden
+til `POST /api/roller-swa` har `claims: [{ typ, val }]`; headeren
+`x-ms-client-principal` som resten av API-et får, har bare `userDetails`,
+`userId` og `userRoles`. Verifisert på dev 16.09.2026: `/api/whoami` svarte
+`"navn": null` med claims-lesingen på plass.
+
+Derfor fanges navnet ved **innlogging** (`roller-swa` skriver til
+`Brukernavn`-tabellen) og slås opp igjen ved **lagring**. Begge veier bruker
+`navnFraClaims` i `lib/auth.js`, så regelen finnes ett sted.
+
+`Brukernavn` er en cache og er med vilje utenfor backup: den fylles på nytt
+neste gang folk logger inn. Skrivingen er best-effort — en feilende tabell
+skal ikke kunne stenge noen ute av administrasjonssidene, siden det er
+rollesvaret den henger på.
 
 To tilfeller gir ingen verdi, og det er meningen:
 
@@ -47,9 +63,16 @@ I *meldingstekst* faller `$innsender_navn` da tilbake til e-postadressen — et
 tomrom midt i en setning er verre enn en adresse. I *SP-kolonnen* gjør den det
 ikke: der er en tom celle ærligere enn en adresse i en navnekolonne.
 
-Står navnet tomt for en innlogget bruker, logger `skjemaer`-handleren én linje
-om det (`ingen navn-claim for ...`), og `GET /api/whoami` viser `navn: null`.
-Da er det claims fra SWA som mangler, ikke brukeren.
+`GET /api/whoami` viser hvor navnet kom fra:
+
+| `navnKilde` | Betyr |
+|---|---|
+| `claims` | SWA sender claims videre til API-et |
+| `lagret` | fra `Brukernavn`, fylt ved innlogging |
+| `null` | ikke funnet noe sted — `$innsender_navn` blir e-postadressen |
+
+Er den `null` for en bruker som burde vært kjent, er den vanligste grunnen at
+hen ikke har logget inn siden tabellen kom. Én ny innlogging fyller den.
 
 ## Støttede plassholdere
 

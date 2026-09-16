@@ -58,7 +58,9 @@ const TABELLER = [
 ];
 
 // Bevisst utelatt: 'Teammedlemskap' er en cache som bygges opp igjen av
-// team-flytene, og er stor. 'HelloTest' er testrester.
+// team-flytene, og er stor. 'Brukernavn' er også en cache — den fylles på nytt
+// ved innlogging, og et tapt navn blir bare e-postadressen til folk har logget
+// inn igjen. 'HelloTest' er testrester.
 
 /**
  * Tabeller som bor på den delte dev-kontoen, ikke i miljøets eget lager.

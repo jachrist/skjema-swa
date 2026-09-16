@@ -2,12 +2,16 @@
  * GET /api/whoami — returnerer basic info om innlogget bruker + admin-status.
  * Bruker kan lese denne uten å måtte kalle .auth/me OG sjekke admin separat.
  *
- * `navn` er med for å kunne se ETT sted om SWA sender claims videre til API-et.
- * Er den null, får heller ikke lagringen tak i et navn, og $innsender_navn blir
- * stående tom — uten at noe annet sier fra.
+ * `navn` og `navnKilde` er med for å kunne se ETT sted hvor navnet kommer fra:
+ *   'claims'  — SWA sender claims videre til API-et
+ *   'lagret'  — fra Brukernavn-tabellen, fylt ved innlogging
+ *   null      — ikke funnet noe sted, og da blir $innsender_navn
+ *               e-postadressen. Logg inn på nytt hvis dette er uventet:
+ *               tabellen fylles først ved neste innlogging.
  */
 const { app } = require('@azure/functions');
-const { hentInnloggetUpn, hentInnloggetNavn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const brukernavn = require('../lib/brukernavn-storage');
 const rollerStorage = require('../lib/roller-storage');
 
 app.http('whoami', {
@@ -18,6 +22,9 @@ app.http('whoami', {
         const upn = hentInnloggetUpn(request);
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
         const admin = erAdmin(upn);
+        let navnFunn = { navn: '', kilde: null };
+        try { navnFunn = await brukernavn.losNavn(request, upn); }
+        catch (_) { /* best-effort */ }
         // Skjemaskaper: admin, eller medlem av rollen (uansett omfang)
         let kanOppretteSkjematype = admin;
         if (!kanOppretteSkjematype) {
@@ -27,7 +34,8 @@ app.http('whoami', {
         return {
             jsonBody: {
                 upn,
-                navn: hentInnloggetNavn(request),
+                navn: navnFunn.navn || null,
+                navnKilde: navnFunn.kilde,
                 erAdmin: admin,
                 kanOppretteSkjematype
             }

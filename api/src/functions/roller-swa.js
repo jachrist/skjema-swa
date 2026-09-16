@@ -18,9 +18,26 @@
  * Kalles server-til-server av SWA-plattformen, ikke fra nettleseren, og må
  * derfor være anonym i ruteoppsettet. Payloaden er formet av plattformen:
  *   { identityProvider, userId, userDetails, claims: [{ typ, val }] }
+ *
+ * `claims` er grunnen til at endepunktet gjør én ting til enn å svare med
+ * roller: det er det ENESTE stedet navnet på brukeren er tilgjengelig.
+ * Client principal-headeren resten av API-et får, inneholder ikke claims
+ * (verifisert på dev 16.09.2026). Se `lib/brukernavn-storage.js`.
  */
 const { app } = require('@azure/functions');
-const { erAdmin } = require('../lib/auth');
+const { erAdmin, navnFraClaims } = require('../lib/auth');
+const brukernavn = require('../lib/brukernavn-storage');
+
+/**
+ * Navnet i payloaden fra SWA.
+ *
+ * Samme regel som `hentInnloggetNavn` i lib/auth.js — bokstavelig talt: begge
+ * går gjennom `navnFraClaims`. Kilden er den eneste forskjellen. Her er det
+ * JSON-kroppen av rollekallet, der er det principal-headeren.
+ */
+function navnFor(bruker) {
+    return navnFraClaims(bruker?.claims) || '';
+}
 
 /**
  * Rollene en bruker skal ha, ut fra det SWA forteller om identiteten.
@@ -52,6 +69,21 @@ app.http('rollerSwa', {
             //
             // Kostnaden er én linje per innlogging. Den dagen rollen mangler,
             // er det denne linjen som sier hvilken av de to det er.
+            // Fang navnet mens vi har claims. Dette er eneste anledning —
+            // resten av API-et får aldri se dem.
+            //
+            // Etter loggingen og rett før svaret, med vilje: rollene er
+            // avgjort uansett hva som skjer her. En feilende tabellskriving
+            // skal ikke kunne stenge noen ute av administrasjonssidene, og
+            // settNavn kaster derfor ikke — den returnerer false.
+            const navn = navnFor(bruker);
+            if (navn) {
+                const lagret = await brukernavn.settNavn(bruker?.userDetails, navn);
+                if (!lagret) context.log(`roller-swa: kunne ikke lagre navn for ${bruker?.userDetails}`);
+            } else {
+                context.log(`roller-swa: ingen navn-claim for ${bruker?.userDetails || '(ukjent)'}`);
+            }
+
             context.log(
                 `roller-swa: ${bruker?.userDetails || '(ingen userDetails)'}`
                 + ` → ${roller.length > 0 ? roller.join(', ') : 'ingen roller'}`
@@ -66,4 +98,4 @@ app.http('rollerSwa', {
     }
 });
 
-module.exports = { _rollerFor: rollerFor };
+module.exports = { _rollerFor: rollerFor, _navnFor: navnFor };
