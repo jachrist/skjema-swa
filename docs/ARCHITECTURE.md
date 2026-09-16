@@ -93,6 +93,16 @@ ekspanderer mange skjemaer av samme type (se `mine-behandlinger`).
 - **Deploy (`deploy.yml`)**: kjører på push til `main`. Environment `production` → required reviewer.
 - **Refresh-FS (`refresh-fs.yml`)**: schedule cron daglig 04:00 UTC → HTTP-kall mot `/api/refresh-fs`.
 
+## Logging
+
+Alt går til Application Insights. **SWA Managed Functions har ingen Log
+stream** — det bladet finnes bare på en ordinær Function App, og at det mangler
+leses lett som at ingenting logges.
+
+Live metrics er det nærmeste en strøm; `Logs` er presist i etterkant. Sampling
+er på for `traces`, ikke for `requests`. Se `docs/LOGGING.md`, som også lister
+linjene det er verdt å kjenne igjen.
+
 ## Miljøer
 
 - **development**: SWA-slot for utvikling og test. Ikke bak review, deployes automatisk fra feature-branches (planlagt utvidelse).
