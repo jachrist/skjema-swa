@@ -68,12 +68,18 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 10px;
+            /* Uten wrap kan ikke raden brytes, og en lang UPN presser seg ut
+               av containeren i stedet for ned på egen linje. */
+            flex-wrap: wrap;
         }
         .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
         .tilbake-lenke:hover { text-decoration: underline; }
         .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.5em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
-        .brukerinfo { font-size: 13px; color: var(--text-secondary); }
+        .brukerinfo {
+            /* min-width: 0 — et flex-element krymper ellers aldri under
+               innholdsbredden, og en UPN er ett langt ord. */
+            min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text-secondary); }
         .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
         .meta { display: flex; gap: 20px; flex-wrap: wrap; color: var(--text-secondary); font-size: 13px; margin: 8px 0 20px; }
         .meta strong { color: var(--text-primary); }
@@ -138,6 +144,9 @@
         .md-lenke:hover { opacity: 0.8; }
 
         .informasjon {
+            /* Arves av h1-h3 inni. En overskrift uten mellomrom brøt
+               ellers ut av boksen i mobilbredde. */
+            overflow-wrap: anywhere;
             padding: 10px 14px;
             background: var(--accent-light);
             border-left: 3px solid var(--accent);

@@ -76,13 +76,19 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 10px;
+            /* Uten wrap kan ikke raden brytes, og en lang UPN presser seg ut
+               av containeren i stedet for ned på egen linje. */
+            flex-wrap: wrap;
         }
         .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
         .tilbake-lenke:hover { text-decoration: underline; }
         .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.7em; margin: 0; flex: 1; font-weight: 700; }
         h2 { font-size: 1.1em; margin: 0 0 12px; color: var(--text-heading); }
-        .brukerinfo { display: flex; gap: 12px; font-size: 13px; color: var(--text-secondary); align-items: center; }
+        .brukerinfo {
+            /* min-width: 0 — et flex-element krymper ellers aldri under
+               innholdsbredden, og en UPN er ett langt ord. */
+            min-width: 0; overflow-wrap: anywhere; display: flex; gap: 12px; font-size: 13px; color: var(--text-secondary); align-items: center; }
         .link-knapp { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 13px; padding: 4px 8px; border-radius: 6px; }
         .link-knapp:hover { background: var(--accent-light); }
 
