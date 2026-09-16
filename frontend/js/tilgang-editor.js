@@ -42,6 +42,49 @@ export async function hentTeamNavn(api) {
     return _teamNavnCache;
 }
 
+/**
+ * Innehaverne i en rolle — for visning i editoren.
+ *
+ * Egen cache per rollestreng, fordi en skjematype kan ha mange
+ * tilgang-editorer (Publikum, Eiere og én per behandlingssteg) som peker på de
+ * samme rollene. Uten den ble det ett kall per editor per rolle.
+ *
+ * `null` betyr «vet ikke» — ingen api-klient, eller oppslaget feilet. Det er
+ * ikke det samme som en tom liste, og skal ikke vises som «ingen innehavere».
+ */
+const _innehaverCache = new Map();
+
+export async function hentInnehavere(api, rolleStreng) {
+    if (!api || !rolleStreng) return null;
+    if (_innehaverCache.has(rolleStreng)) return _innehaverCache.get(rolleStreng);
+    let svar = null;
+    try {
+        svar = await api.get(`/api/roller/innehavere?rolle=${encodeURIComponent(rolleStreng)}`);
+        if (!Array.isArray(svar)) svar = null;
+    } catch (_) {
+        svar = null;
+    }
+    _innehaverCache.set(rolleStreng, svar);
+    return svar;
+}
+
+/**
+ * En dynamisk rolle får omfanget sitt fra et svar i skjemaet —
+ * «Klassesjef({2-01})». Hvem som havner der avgjøres først ved innsending, så
+ * et oppslag nå ville enten gitt tomt eller — verre — feil navn.
+ */
+export function erDynamiskRolle(rolleStreng) {
+    return /\{[^}]+\}/.test(String(rolleStreng || ''));
+}
+
+/** Navn å vise for en innehaver. Faller tilbake til e-posten. */
+export function innehaverNavn(i) {
+    const navn = [i?.EN, i?.FN].filter(Boolean).join(', ') || (i?.Navn || '');
+    return navn || String(i?.EP || i?.UPN || '').trim();
+}
+
+export function invaliderInnehaverCache() { _innehaverCache.clear(); }
+
 export function invaliderRolleCache() { _rolleGrupperCache = null; }
 export function invaliderTeamCache() { _teamNavnCache = null; }
 
@@ -172,7 +215,52 @@ export function byggTilgangEditor(container, verdi, options = {}) {
         sek.appendChild(byggChipListe('Roller', state.Roller, () => false, null, {
             visning: rolleTilVisning
         }));
+        for (const rolle of state.Roller) sek.appendChild(byggInnehavere(rolle));
         return sek;
+    }
+
+    /**
+     * Én linje under rollechipen med hvem som faktisk sitter i rollen.
+     *
+     * Grunnen er ikke bekvemmelighet. En rolle uten innehavere ser helt riktig
+     * ut i editoren, og feilen viser seg først som en varsling som aldri kom —
+     * `samleBehandlerMottakere` hopper stille over når lista er tom. Med
+     * antallet synlig her oppdages det mens skjematypen settes opp.
+     *
+     * Hentes latt: raden tegnes med en gang og fylles når svaret kommer. En
+     * treg rolleoppslag skal ikke holde igjen resten av editoren.
+     */
+    function byggInnehavere(rolle) {
+        const rad = document.createElement('div');
+        rad.style.cssText = `font-size: ${kompakt ? '10px' : '11px'}; color: var(--text-secondary); margin: 2px 0 0 10px;`;
+
+        if (erDynamiskRolle(rolle)) {
+            rad.textContent = `${rolleTilVisning(rolle)}: omfanget hentes fra skjemaet — innehaverne avgjøres ved innsending`;
+            return rad;
+        }
+
+        rad.textContent = `${rolleTilVisning(rolle)}: …`;
+        hentInnehavere(api, rolle).then(innehavere => {
+            if (innehavere === null) {
+                // Vet ikke. Å skrive «ingen innehavere» her ville vært en
+                // påstand vi ikke har dekning for, og nettopp den påstanden
+                // er den som får noen til å legge inn en person for sikkerhets
+                // skyld.
+                rad.textContent = '';
+                return;
+            }
+            if (innehavere.length === 0) {
+                rad.textContent = `${rolleTilVisning(rolle)}: ingen innehavere — ingen vil bli varslet`;
+                rad.style.color = 'var(--warning, #ff9500)';
+                return;
+            }
+            const navn = innehavere.map(innehaverNavn);
+            const vis = navn.slice(0, 5).join(', ');
+            rad.textContent = `${rolleTilVisning(rolle)}: ${vis}${navn.length > 5 ? ` … (${navn.length} i alt)` : ''}`;
+            // Hele lista i tooltip når den er kuttet.
+            if (navn.length > 5) rad.title = navn.join('\n');
+        });
+        return rad;
     }
 
     // ==================== Dynamisk rolle ====================

@@ -74,6 +74,9 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 10px;
+            /* Uten wrap kan ikke raden brytes, og en lang UPN presser seg ut
+               av containeren i stedet for ned på egen linje. */
+            flex-wrap: wrap;
         }
         .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
         .tilbake-lenke:hover { text-decoration: underline; }
@@ -153,6 +156,9 @@
         .md-lenke:hover { opacity: 0.8; }
 
         .informasjon {
+            /* Arves av h1-h3 inni. En overskrift uten mellomrom brøt
+               ellers ut av boksen i mobilbredde. */
+            overflow-wrap: anywhere;
             padding: 10px 14px;
             background: var(--accent-light);
             border-left: 3px solid var(--accent);

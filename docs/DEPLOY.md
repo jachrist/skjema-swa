@@ -270,6 +270,9 @@ requests
 om kallet i det hele tatt kom fram. Ingen rader betyr at `rolesSource` ikke er
 i kraft; høy `duration` eller feilkode betyr kaldstart.
 
+Hvor du finner Application Insights, hva Live metrics er, og hvorfor en
+manglende `traces`-linje ikke beviser noe: `docs/LOGGING.md`.
+
 Merk at et eksternt kall mot `/api/roller-swa` svarer **404**. Plattformen
 skjermer ruter som er satt opp som `rolesSource`, så 404 der betyr at ruten
 er gjenkjent — ikke at funksjonen mangler.

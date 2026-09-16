@@ -85,7 +85,18 @@ export function byggDNFEditor(container, initial, options) {
 
     function render() {
         container.innerHTML = '';
-        container.className = 'dnf-editor';
+        // classList.add, ikke className =.
+        //
+        // Med tilordning forsvant kallerens egne klasser, og `.dnf-slot` var
+        // en av dem. Editoren i skjematypen skjuler vilkårspanelene med
+        // `.felt.kollapset > .dnf-slot`, og den regelen sluttet å treffe i det
+        // øyeblikket panelet ble bygget — så et sammenslått felt viste
+        // fortsatt «Felt vises kun hvis», «Obligatorisk hvis» og
+        // datakilde-panelet.
+        //
+        // Render kjøres på nytt ved hver endring, så klassen legges til mange
+        // ganger. classList er et sett; det er uproblematisk.
+        container.classList.add('dnf-editor');
 
         const wrap = document.createElement('div');
         wrap.style.cssText = 'border: 1px solid var(--border-color, #d0d7de); border-radius: 8px; padding: 10px 12px; background: rgba(0,0,0,0.02); margin-top: 6px;';

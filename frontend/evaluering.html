@@ -68,12 +68,18 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 10px;
+            /* Uten wrap kan ikke raden brytes, og en lang UPN presser seg ut
+               av containeren i stedet for ned på egen linje. */
+            flex-wrap: wrap;
         }
         .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
         .tilbake-lenke:hover { text-decoration: underline; }
         .tittelrad { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
         h1 { font-size: 1.5em; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
-        .brukerinfo { font-size: 13px; color: var(--text-secondary); }
+        .brukerinfo {
+            /* min-width: 0 — et flex-element krymper ellers aldri under
+               innholdsbredden, og en UPN er ett langt ord. */
+            min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text-secondary); }
         .brukerinfo .upn { font-weight: 500; color: var(--text-primary); }
         .meta { display: flex; gap: 20px; flex-wrap: wrap; color: var(--text-secondary); font-size: 13px; margin: 8px 0 20px; }
         .meta strong { color: var(--text-primary); }
@@ -138,6 +144,9 @@
         .md-lenke:hover { opacity: 0.8; }
 
         .informasjon {
+            /* Arves av h1-h3 inni. En overskrift uten mellomrom brøt
+               ellers ut av boksen i mobilbredde. */
+            overflow-wrap: anywhere;
             padding: 10px 14px;
             background: var(--accent-light);
             border-left: 3px solid var(--accent);
@@ -253,6 +262,16 @@
         @keyframes modalPop { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .modal-tittel { margin: 0 0 12px 0; font-size: 17px; font-weight: 600; }
         .modal-tekst { margin: 0 0 20px 0; color: var(--text-secondary); line-height: 1.5; }
+        .modal-kommentar { margin: 0 0 18px 0; text-align: left; }
+        .modal-kommentar-etikett { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+        .modal-kommentar-felt {
+            width: 100%; box-sizing: border-box; resize: vertical;
+            padding: 8px 10px; font: inherit; font-size: 13px; line-height: 1.5;
+            color: var(--text-primary); background: var(--bg-input);
+            border: 1px solid var(--input-border); border-radius: var(--radius-sm);
+        }
+        .modal-kommentar-felt:focus { outline: none; border-color: var(--accent); }
+        .modal-kommentar-hjelp { font-size: 11px; color: var(--text-secondary); margin-top: 5px; }
         .modal-knapper { display: flex; gap: 10px; justify-content: flex-end; }
         .modal-knapp {
             padding: 8px 20px;
@@ -532,12 +551,12 @@
             const tilUpn = document.getElementById('vs-upn').value.trim();
             const notat = document.getElementById('vs-notat').value.trim();
             if (!tilUpn) { alert('Skriv en e-postadresse'); return; }
-            const ok = await bekreftModal({
+            const svar = await bekreftModal({
                 tittel: 'Videresend steg',
                 tekst: `Videresend steg ${steg} til ${tilUpn}? Du beholdes fortsatt som behandler.`,
                 bekreftTekst: 'Videresend'
             });
-            if (!ok) return;
+            if (!svar.bekreftet) return;
             try {
                 await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/videresend`, { steg, tilUpn, notat });
                 skjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
@@ -675,7 +694,17 @@
             }
         };
 
-        function bekreftModal({ tittel, tekst, bekreftTekst = 'Bekreft', bekreftStil = 'primær' }) {
+        /**
+         * Bekreftelsesdialog. Svarer alltid `{ bekreftet, kommentar }`.
+         *
+         * Formen er den samme med og uten kommentarfelt — med to returformer
+         * ville det vært et tidsspørsmål før et kallsted leste feil, og en
+         * `if (svar)` på et objekt er alltid sann.
+         *
+         * `kommentarEtikett` slår på feltet. Kommentaren er frivillig: en
+         * beslutning skal ikke kunne stoppe på at noen ikke hadde noe å si.
+         */
+        function bekreftModal({ tittel, tekst, bekreftTekst = 'Bekreft', bekreftStil = 'primær', kommentarEtikett = '', kommentarHjelp = '' }) {
             return new Promise(resolve => {
                 const bakgrunn = document.createElement('div');
                 bakgrunn.className = 'modal-bakgrunn';
@@ -684,6 +713,11 @@
                 boks.innerHTML = `
                     <h3 class="modal-tittel"></h3>
                     <p class="modal-tekst"></p>
+                    <div class="modal-kommentar" hidden>
+                        <label class="modal-kommentar-etikett" for="modal-kommentar-felt"></label>
+                        <textarea id="modal-kommentar-felt" class="modal-kommentar-felt" rows="4"></textarea>
+                        <div class="modal-kommentar-hjelp"></div>
+                    </div>
                     <div class="modal-knapper">
                         <button class="modal-knapp" data-svar="avbryt">Avbryt</button>
                         <button class="modal-knapp ${bekreftStil}" data-svar="bekreft"></button>
@@ -691,34 +725,54 @@
                 boks.querySelector('.modal-tittel').textContent = tittel;
                 boks.querySelector('.modal-tekst').textContent = tekst;
                 boks.querySelector('[data-svar="bekreft"]').textContent = bekreftTekst;
+
+                const felt = boks.querySelector('.modal-kommentar-felt');
+                if (kommentarEtikett) {
+                    boks.querySelector('.modal-kommentar').hidden = false;
+                    boks.querySelector('.modal-kommentar-etikett').textContent = kommentarEtikett;
+                    boks.querySelector('.modal-kommentar-hjelp').textContent = kommentarHjelp;
+                }
+
                 bakgrunn.appendChild(boks);
                 document.body.appendChild(bakgrunn);
 
-                const lukk = (svar) => { document.body.removeChild(bakgrunn); resolve(svar === 'bekreft'); };
+                const lukk = (svar) => {
+                    const kommentar = svar === 'bekreft' ? felt.value.trim() : '';
+                    document.body.removeChild(bakgrunn);
+                    resolve({ bekreftet: svar === 'bekreft', kommentar });
+                };
                 boks.querySelectorAll('button[data-svar]').forEach(b => {
                     b.addEventListener('click', () => lukk(b.dataset.svar));
                 });
                 bakgrunn.addEventListener('click', (e) => { if (e.target === bakgrunn) lukk('avbryt'); });
                 document.addEventListener('keydown', function esc(e) {
                     if (e.key === 'Escape') { lukk('avbryt'); document.removeEventListener('keydown', esc); }
-                    if (e.key === 'Enter') { lukk('bekreft'); document.removeEventListener('keydown', esc); }
+                    // Enter bekrefter — men ikke mens man skriver i kommentaren.
+                    // Der er linjeskift det opplagte, og en beslutning som
+                    // sendes midt i en setning er ikke til å rette opp.
+                    if (e.key === 'Enter' && document.activeElement !== felt) {
+                        lukk('bekreft');
+                        document.removeEventListener('keydown', esc);
+                    }
                 });
-                setTimeout(() => boks.querySelector('[data-svar="bekreft"]').focus(), 50);
+                setTimeout(() => (kommentarEtikett ? felt : boks.querySelector('[data-svar="bekreft"]')).focus(), 50);
             });
         }
 
         async function taBeslutning(stegNr, beslutningNr, tekst) {
-            const ok = await bekreftModal({
+            const svar = await bekreftModal({
                 tittel: 'Bekreft beslutning',
                 tekst: `Registrer "${tekst}" på steg ${stegNr}?`,
-                bekreftTekst: tekst
+                bekreftTekst: tekst,
+                kommentarEtikett: 'Kommentar (frivillig)',
+                kommentarHjelp: 'Følger beslutningen i saken og kommer med i PDF-utskriften.'
             });
-            if (!ok) return;
+            if (!svar.bekreftet) return;
             // Disable alle knapper for å hindre dobbelt-klikk
             document.querySelectorAll('.beslutning-knapp').forEach(k => k.disabled = true);
             try {
                 await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/beslutning`,
-                    { steg: stegNr, beslutning: beslutningNr });
+                    { steg: stegNr, beslutning: beslutningNr, kommentar: svar.kommentar });
                 // Refresh
                 skjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
                 rendrer();
@@ -726,6 +780,26 @@
                 alert('Kunne ikke lagre beslutning: ' + e.message);
                 document.querySelectorAll('.beslutning-knapp').forEach(k => k.disabled = false);
             }
+        }
+
+        /**
+         * Kommentarene som ble gitt med beslutningene på et steg.
+         *
+         * API-et har lagret Kommentar siden beslutnings-endepunktet ble
+         * skrevet, og PDF-en har vist den — men grensesnittet hadde hverken
+         * felt for å skrive den eller plass til å vise den. Den som ga en
+         * kommentar i PDF-en kunne altså ikke se den igjen i saken.
+         *
+         * Aktøren tas med fordi et steg kan ha flere beslutninger: i
+         * «alle må avgjøre» skriver hver behandler sin egen.
+         */
+        function kommentarerFor(steg) {
+            const med = (steg.Beslutninger || []).filter(b => (b.Kommentar || '').trim());
+            if (med.length === 0) return '';
+            return med.map(b => `
+                <div style="width: 100%; font-size: 11px; color: var(--text-secondary); border-left: 2px solid var(--border-color); padding-left: 8px; margin-top: 4px;">
+                    <em>${escapeHtml(b.Aktor || '')}:</em> ${escapeHtml(b.Kommentar)}
+                </div>`).join('');
         }
 
         function byggStegOversikt() {
@@ -745,6 +819,7 @@
                     <span style="font-weight: 600; flex: 1;">${escapeHtml(steg.Stegnavn || `Steg ${steg.Steg}`)}</span>
                     <span style="color: ${status.farge}; font-weight: 600;">${escapeHtml(status.tekst)}</span>
                     ${steg.BehandletAv ? `<div style="width: 100%; font-size: 11px; color: var(--text-secondary);">Behandlet av ${escapeHtml(steg.BehandletAv)} ${escapeHtml(formaterDato(steg.BehandletDato))}</div>` : ''}
+                    ${kommentarerFor(steg)}
                 `;
                 div.appendChild(rad);
             }

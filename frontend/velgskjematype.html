@@ -116,6 +116,9 @@
             justify-content: space-between;
             gap: 12px;
             margin-bottom: 10px;
+            /* Uten wrap kan ikke raden brytes, og en lang UPN presser seg ut
+               av containeren i stedet for ned på egen linje. */
+            flex-wrap: wrap;
         }
         .tilbake-lenke { color: var(--accent); text-decoration: none; font-size: 13px; }
         .tilbake-lenke:hover { text-decoration: underline; }
@@ -131,6 +134,9 @@
         }
 
         .brukerinfo {
+            /* min-width: 0 — et flex-element krymper ellers aldri under
+               innholdsbredden, og en UPN er ett langt ord. */
+            min-width: 0; overflow-wrap: anywhere;
             display: flex;
             align-items: center;
             gap: 12px;
