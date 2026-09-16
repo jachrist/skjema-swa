@@ -11,7 +11,7 @@
  * Skjema_id genereres serverside for nye skjemaer.
  */
 const { app } = require('@azure/functions');
-const { hentInnloggetUpn, hentInnloggetNavn, erAdmin } = require('../lib/auth');
+const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const vedleggStorage = require('../lib/vedlegg-storage');
@@ -29,6 +29,7 @@ const otpToken = require('../lib/otp-token');
 const hendelser = require('../lib/hendelser-storage');
 const utsendingToken = require('../lib/utsending-token');
 const utsendingStorage = require('../lib/utsending-storage');
+const brukernavn = require('../lib/brukernavn-storage');
 const prefill = require('../lib/utsending-prefill');
 
 /**
@@ -787,21 +788,29 @@ app.http('lagreSkjema', {
             // ut med tom streng hver gang, og det så ut som en feil i
             // substitusjonen fordi $innsender ved siden av virket.
             //
-            // Kilden er claims i principal-headeren, ikke noe klienten sender:
-            // navnet står i e-poster til behandlere, og skal ikke kunne settes
-            // av den som fyller ut skjemaet.
+            // Kilden er serversiden, ikke noe klienten sender: navnet står i
+            // e-poster til behandlere, og skal ikke kunne settes av den som
+            // fyller ut skjemaet.
             //
-            // Eksterne innsendere (OTP/utsending) har ingen principal og får
+            // `losNavn` prøver claims først og faller tilbake på Brukernavn-
+            // tabellen, som fylles ved innlogging. SWA sender nemlig ikke
+            // claims videre til API-et — se lib/brukernavn-storage.js.
+            //
+            // Eksterne innsendere (OTP/utsending) er ikke innlogget og får
             // ingenting her. Det er riktig — vi kjenner bare e-posten eller
             // mobilnummeret deres. byggKontekst faller da tilbake til den.
-            const navnFraPrincipal = eksternAuth || utsendingAuth ? null : hentInnloggetNavn(request);
+            let navnFunn = { navn: '', kilde: null };
+            if (!eksternAuth && !utsendingAuth) {
+                try { navnFunn = await brukernavn.losNavn(request, innsenderId); }
+                catch (_) { /* best-effort — et manglende navn skal ikke stoppe lagring */ }
+            }
             // Settes ubetinget: `...body` over har allerede lagt inn det klienten
             // eventuelt sendte, og den verdien skal ikke overleve.
-            skjemaData.Innsender_Navn = eksisterende?.Innsender_Navn || navnFraPrincipal || '';
+            skjemaData.Innsender_Navn = eksisterende?.Innsender_Navn || navnFunn.navn || '';
             if (!skjemaData.Innsender_Navn && !eksternAuth && !utsendingAuth) {
-                // Innlogget, men uten navn i claims. Da står det på oppsettet,
+                // Innlogget, men uten navn noe sted. Da står det på oppsettet,
                 // ikke på brukeren, og det skal være mulig å se i loggen.
-                context.log(`skjemaer: ingen navn-claim for ${innsenderId} — Innsender_Navn blir stående tom`);
+                context.log(`skjemaer: fant ikke navn for ${innsenderId} — Innsender_Navn blir stående tom`);
             }
             if (eksternAuth) {
                 skjemaData.EksternInnsender = true;

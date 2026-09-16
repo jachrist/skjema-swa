@@ -33,6 +33,8 @@ function sjekk(navn, faktisk, forventet) {
 const { erstattPlassholdere, byggKontekst } = require('../src/lib/placeholder');
 const { hentInnloggetNavn, hentInnloggetUpn } = require('../src/lib/auth');
 
+async function kjor() {
+
 /** Etterligner SWAs principal-header. */
 function req(principal) {
     const headers = new Map();
@@ -131,5 +133,95 @@ function req(principal) {
         'Kari Nordmann');
 }
 
+// ---------- navnet fra rollekildens payload ----------
+{
+    // SWA sender claims til /api/roller-swa, men IKKE videre i
+    // principal-headeren API-et får. Verifisert på dev 16.09.2026: whoami
+    // svarte `"navn": null` med claims-lesingen på plass. Navnet fanges derfor
+    // der claims faktisk finnes — og begge veiene bruker SAMME funksjon, slik
+    // at en bruker ikke kan få ett navn ved innlogging og et annet ved
+    // lagring. Testen holder på den regelen.
+    const { navnFraClaims } = require('../src/lib/auth');
+
+    sjekk('name-claim i payload',
+        navnFraClaims([{ typ: 'name', val: 'Kari Nordmann' }]), 'Kari Nordmann');
+    sjekk('given + family i payload',
+        navnFraClaims([{ typ: 'given_name', val: 'Kari' }, { typ: 'family_name', val: 'Nordmann' }]),
+        'Kari Nordmann');
+    sjekk('e-post i payload godtas ikke',
+        navnFraClaims([{ typ: 'name', val: 'kari@fhs.no' }]), null);
+    sjekk('ingen claims i payload', navnFraClaims(undefined), null);
+    sjekk('tom claims-liste', navnFraClaims([]), null);
+
+    // Samme claims inn gir samme navn ut, uansett vei.
+    const claims = [{ typ: 'given_name', val: 'Ola' }, { typ: 'family_name', val: 'Hansen' }];
+    sjekk('header og payload gir samme navn',
+        navnFraClaims(claims), hentInnloggetNavn(req({ claims })));
+}
+
+// ---------- lagring og oppslag ----------
+{
+    const storage = require('../src/lib/storage');
+    const brukernavn = require('../src/lib/brukernavn-storage');
+    const opprinnelig = storage.sikreTabell;
+
+    // Minimal tabell-stubb. Ingen ekte lagringskonto — testene skal kunne
+    // kjøre uten node_modules.
+    function stubb({ feilerSkriv = false, feilerLes = false } = {}) {
+        const rader = new Map();
+        storage.sikreTabell = async () => ({
+            upsertEntity: async (e) => {
+                if (feilerSkriv) throw new Error('403 fra tabellen');
+                rader.set(e.rowKey, e);
+            },
+            getEntity: async (pk, rk) => {
+                if (feilerLes) throw new Error('nede');
+                const e = rader.get(rk);
+                if (!e) { const err = new Error('ikke funnet'); err.statusCode = 404; throw err; }
+                return e;
+            }
+        });
+        return rader;
+    }
+
+    try {
+        const rader = stubb();
+
+        sjekk('lagret', await brukernavn.settNavn('Kari@FHS.no', 'Kari Nordmann'), true);
+        // UPN normaliseres — ellers blir samme person to rader.
+        sjekk('nøkkelen er små bokstaver', [...rader.keys()], ['kari@fhs.no']);
+        sjekk('slås opp uansett skrivemåte', await brukernavn.hentNavn('KARI@fhs.no'), 'Kari Nordmann');
+
+        sjekk('ukjent bruker gir tom streng', await brukernavn.hentNavn('ola@fhs.no'), '');
+        sjekk('tom upn', await brukernavn.hentNavn(''), '');
+        sjekk('tomt navn lagres ikke', await brukernavn.settNavn('per@fhs.no', '   '), false);
+
+        // losNavn: claims foran tabellen, og kilden skal kunne ses.
+        sjekk('claims går foran',
+            await brukernavn.losNavn(req({ claims: [{ typ: 'name', val: 'Fra claims' }] }), 'kari@fhs.no'),
+            { navn: 'Fra claims', kilde: 'claims' });
+        sjekk('uten claims brukes tabellen',
+            await brukernavn.losNavn(req({ userDetails: 'kari@fhs.no' }), 'kari@fhs.no'),
+            { navn: 'Kari Nordmann', kilde: 'lagret' });
+        sjekk('ukjent overalt',
+            await brukernavn.losNavn(req({ userDetails: 'ola@fhs.no' }), 'ola@fhs.no'),
+            { navn: '', kilde: null });
+
+        // En tabell som er nede skal gi «vi vet ikke», ikke en exception midt
+        // i en innsending.
+        stubb({ feilerSkriv: true, feilerLes: true });
+        sjekk('feilende skriv kaster ikke', await brukernavn.settNavn('kari@fhs.no', 'Kari'), false);
+        sjekk('feilende lesing kaster ikke', await brukernavn.hentNavn('kari@fhs.no'), '');
+        sjekk('losNavn overlever en tabell som er nede',
+            await brukernavn.losNavn(req({ userDetails: 'kari@fhs.no' }), 'kari@fhs.no'),
+            { navn: '', kilde: null });
+    } finally {
+        storage.sikreTabell = opprinnelig;
+    }
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
-process.exit(feil ? 1 : 0);
+    process.exit(feil ? 1 : 0);
+}
+
+kjor().catch(e => { console.error(e); process.exit(1); });

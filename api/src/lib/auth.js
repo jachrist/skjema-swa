@@ -34,6 +34,12 @@ function hentBrukerRoller(request) {
 /**
  * Navnet på den innloggede, fra claims i x-ms-client-principal.
  *
+ * MERK: SWA sender ikke claims videre til managed functions — verifisert på
+ * dev 16.09.2026. Denne returnerer derfor null i praksis, og navnet hentes
+ * fra Brukernavn-tabellen i stedet. Se lib/brukernavn-storage.js. Den blir
+ * stående: begynner plattformen å sende claims, er dette den ferskeste
+ * kilden, og da virker den uten at noe må endres.
+ *
  * Returnerer null når navnet ikke finnes — ikke UPN-en. «Vi vet ikke» og
  * «navnet er e-postadressen» er to ulike ting, og bare kalleren vet hvilken
  * av dem som skal lagres eller vises.
@@ -69,22 +75,32 @@ function erEpostlignende(s) {
     return /\S+@\S+/.test(s);
 }
 
-function hentInnloggetNavn(request) {
-    const p = lesPrincipal(request);
-    const claims = Array.isArray(p?.claims) ? p.claims : [];
-    if (claims.length === 0) return null;
+/**
+ * Navnet ut av en claims-liste.
+ *
+ * Egen funksjon fordi claims når oss to veier: i principal-headeren (her) og
+ * i JSON-kroppen SWA sender til rollekilden. Med to kopier av regelen ville en
+ * bruker kunne få ett navn ved innlogging og et annet ved lagring.
+ */
+function navnFraClaims(claims) {
+    const liste = Array.isArray(claims) ? claims : [];
+    if (liste.length === 0) return null;
 
-    const navn = claimVerdi(claims, NAVN_CLAIMS);
+    const navn = claimVerdi(liste, NAVN_CLAIMS);
     if (navn && !erEpostlignende(navn)) return navn;
 
-    const fornavn = claimVerdi(claims, FORNAVN_CLAIMS);
-    const etternavn = claimVerdi(claims, ETTERNAVN_CLAIMS);
+    const fornavn = claimVerdi(liste, FORNAVN_CLAIMS);
+    const etternavn = claimVerdi(liste, ETTERNAVN_CLAIMS);
     if (fornavn || etternavn) return [fornavn, etternavn].filter(Boolean).join(' ');
 
-    const usikkert = claimVerdi(claims, NAVN_CLAIMS_USIKRE);
+    const usikkert = claimVerdi(liste, NAVN_CLAIMS_USIKRE);
     if (usikkert && !erEpostlignende(usikkert)) return usikkert;
 
     return null;
+}
+
+function hentInnloggetNavn(request) {
+    return navnFraClaims(lesPrincipal(request)?.claims);
 }
 
 /**
@@ -128,4 +144,4 @@ function harFlytNokkel(request) {
         : { ok: false, grunn: 'x-flow-key matcher ikke' };
 }
 
-module.exports = { hentInnloggetUpn, hentInnloggetNavn, hentBrukerRoller, erAdmin, harFlytNokkel };
+module.exports = { hentInnloggetUpn, hentInnloggetNavn, navnFraClaims, hentBrukerRoller, erAdmin, harFlytNokkel };
