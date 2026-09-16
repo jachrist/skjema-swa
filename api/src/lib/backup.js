@@ -301,6 +301,24 @@ function kildeFra(connectionString, varNavn = 'ekstern connection string') {
     };
 }
 
+/**
+ * Skal de delte tabellene tas med i denne kjøringen?
+ *
+ * Svaret avhenger BARE av om vi har en connection string til den delte
+ * kontoen — ikke av om kjøringen er full eller delta. `erDelta` står i
+ * signaturen for å si nettopp det: den er lest, vurdert og funnet
+ * irrelevant, slik at ingen legger den inn igjen som vilkår uten å måtte
+ * endre en test som sier hvorfor.
+ *
+ * Fram til 16.09.2026 var delte tabeller kun med i fulle kjøringer.
+ * Begrunnelsen var at de endrer seg sjelden. Det holdt ikke: oppgavelista
+ * brukes daglig fra prod, og da den forsvant 15.09 var nærmeste kopi fra
+ * forrige søndag.
+ */
+function delteTabellerMed(erDelta, deltCs) {
+    return !!deltCs;
+}
+
 async function byggZip(log, fremdrift, {
     modus = 'full', basertPa = null, blobberSiden = null,
     kilde = null, miljo = null
@@ -343,10 +361,18 @@ async function byggZip(log, fremdrift, {
     // Delte tabeller: egen connection string, egen manifestnøkkel. Feiler
     // oppslaget — typisk en SAS som ikke dekker Table — skal ikke hele
     // backupen ryke for det. Miljøets egne data er viktigere.
-    // Delte tabeller er små og tas i sin helhet, men bare i fulle kjøringer —
-    // de endrer seg sjelden nok til at daglig kopi er sløsing.
-    const deltCs = erDelta ? '' : (k.deltCs || '');
-    if (deltCs) {
+    //
+    // De ble tatt KUN i fulle kjøringer fram til 16.09.2026, med begrunnelsen
+    // at de endrer seg sjelden nok til at daglig kopi er sløsing. Det stemte
+    // da oppgavelista var en notatblokk for én person.
+    //
+    // Nå jobber brukerne i den fra prod, og 15.09.2026 forsvant den i en
+    // opprydding. Da var nærmeste kopi fra forrige søndag — og et uhell på en
+    // onsdag ville kostet seks dagers arbeid. Tabellene er små (titalls rader),
+    // så daglig kopi koster nærmest ingenting. Prisen for å ta feil er ikke
+    // symmetrisk: litt sløsing hver natt mot en uke tapt arbeid.
+    const deltCs = k.deltCs || '';
+    if (delteTabellerMed(erDelta, deltCs)) {
         for (const navn of DELTE_TABELLER) {
             fremdrift(`leser delt tabell ${navn}`);
             try {
@@ -524,7 +550,7 @@ async function byggOgKrypterTilBuffer(log, fremdrift) {
 
 module.exports = {
     byggOgKrypterTilBlob, byggOgKrypterTilBuffer,
-    byggZip, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
+    byggZip, delteTabellerMed, skrivKryptertStrom, blokkSink, bufferSink, byggDeler,
     verifiserKryptertStrom, standardKilde, kildeFra,
     TABELLER, DELTE_TABELLER, TABELLER_KUN_FULL, BLOB_CONTAINERE, BLOKK_STORRELSE, DEL_MAKS_BYTES
 };
