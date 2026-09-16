@@ -12,9 +12,97 @@
  * akseptert for framtidig kompatibilitet men brukes ikke.
  */
 
-const XLSX = require('xlsx');
+// xlsx lastes først når et Excel-uttrekk faktisk skal bygges. Samme grep som
+// Azure-SDK-ene i storage.js og blob.js: da kan de rene logikktestene kjøre
+// uten node_modules, slik CLAUDE.md forutsetter — og deploy-steget kjører
+// testene i nettopp den tilstanden.
+let _XLSX = null;
+function xlsx() {
+    if (!_XLSX) _XLSX = require('xlsx');
+    return _XLSX;
+}
 
-const META_KOLONNER = ['SkjemaNr', 'Innsender_Navn', 'Innsender_Epost', 'OpprettetDato', 'FerdigbehandletDato'];
+/**
+ * Metadata-kolonnene, i den rekkefølgen de står i uttrekket.
+ *
+ * Behandlingsdataene kom til 16.09.2026 (TODO 5). Uttrekket hadde svarene, men
+ * ingenting om hva som skjedde med skjemaet etterpå — utfallet måtte slås opp
+ * i appen, ett skjema av gangen.
+ *
+ * `Utfall*` beskriver den SISTE beslutningen som faktisk ble tatt, ikke siste
+ * steg i definisjonen: et steg kan hoppes over på vilkår, og et skjema kan
+ * ligge midt i behandlingen. Er ingen beslutning tatt, står feltene tomme —
+ * tomt er ærligere enn en gjetning.
+ */
+const META_KOLONNER = [
+    'SkjemaNr', 'Innsender_Navn', 'Innsender_Epost', 'OpprettetDato', 'FerdigbehandletDato',
+    'Status', 'Utfall', 'UtfallSteg', 'UtfallDato', 'UtfallAv', 'UtfallKommentar', 'BehandlingstidDager'
+];
+
+/** Skjema_status som tekst. Tallene er de samme som evaluering.html viser. */
+function statusTekst(status) {
+    switch (Number(status || 0)) {
+        case 1: return 'Mellomlagret';
+        case 2: return 'Under behandling';
+        case 3: return 'Til revidering';
+        case 5: return 'Avsluttet';
+        case 0: return '';
+        default: return `Status ${Number(status)}`;
+    }
+}
+
+/**
+ * Den siste beslutningen som er tatt på skjemaet.
+ *
+ * Høyeste stegnummer med en beslutning — ikke siste steg i definisjonen.
+ * Steg kan hoppes over på vilkår, og et skjema kan stå midt i behandlingen.
+ *
+ * I «alle må avgjøre»-modus står `BehandletAv` som `alle-behandlere`. Det er
+ * riktig internt, men ubrukelig i et uttrekk, så aktørene hentes fra
+ * `Beslutninger[]` i stedet. Kommentarene deres er også per aktør, og alle tas
+ * med — en uenighet er ofte hele poenget med å lese kolonnen.
+ */
+function sisteBeslutning(skjema) {
+    const steg = (Array.isArray(skjema?.Behandling) ? skjema.Behandling : [])
+        .filter(s => Number(s?.Beslutning || 0) > 0)
+        .sort((a, b) => Number(a.Steg || 0) - Number(b.Steg || 0));
+    const siste = steg[steg.length - 1];
+    if (!siste) return null;
+
+    const valg = (siste.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(siste.Beslutning));
+    const delbeslutninger = Array.isArray(siste.Beslutninger) ? siste.Beslutninger : [];
+    const alleModus = String(siste.BehandletAv || '') === 'alle-behandlere';
+
+    const av = alleModus && delbeslutninger.length > 0
+        ? delbeslutninger.map(b => b.Aktor).filter(Boolean).join('; ')
+        : (siste.BehandletAv || '');
+
+    const kommentarer = delbeslutninger
+        .filter(b => (b.Kommentar || '').trim())
+        .map(b => delbeslutninger.length > 1 ? `${b.Aktor}: ${b.Kommentar}` : b.Kommentar);
+
+    return {
+        tekst: valg?.Tekst || String(siste.Beslutning),
+        steg: siste.Stegnavn || `Steg ${siste.Steg}`,
+        dato: siste.BehandletDato || '',
+        av,
+        kommentar: kommentarer.join(' | ')
+    };
+}
+
+/**
+ * Behandlingstid i dager, fra innsending til ferdig.
+ *
+ * Bare for ferdigbehandlede skjemaer. Å telle dager på noe som fortsatt er
+ * under behandling ville gitt et tall som vokser hver gang uttrekket kjøres,
+ * og det ser ut som data.
+ */
+function behandlingstidDager(opprettet, ferdig) {
+    if (!opprettet || !ferdig) return '';
+    const fra = new Date(opprettet), til = new Date(ferdig);
+    if (isNaN(fra) || isNaN(til)) return '';
+    return Math.max(0, Math.round((til - fra) / 86400000));
+}
 
 /**
  * Bygg svarMap fra ett skjema (både fullt og kompakt format støttet).
@@ -28,6 +116,17 @@ function trekkUtSvar(skjema, definisjon) {
         OpprettetDato: skjema?.Opprettet_dato || skjema?.Opprettet || skjema?.Innsendt_dato || '',
         FerdigbehandletDato: alleBehandletDato(skjema) || ''
     };
+
+    const opprettet = rad.OpprettetDato;
+    const ferdig = rad.FerdigbehandletDato;
+    const utfall = sisteBeslutning(skjema);
+    rad.Status = statusTekst(skjema?.Skjema_status);
+    rad.Utfall = utfall?.tekst || '';
+    rad.UtfallSteg = utfall?.steg || '';
+    rad.UtfallDato = utfall?.dato || '';
+    rad.UtfallAv = utfall?.av || '';
+    rad.UtfallKommentar = utfall?.kommentar || '';
+    rad.BehandlingstidDager = behandlingstidDager(opprettet, ferdig);
 
     const spmTekster = {}; // "sek-felt" (padded) → tekst
     for (const s of (definisjon?.Seksjoner || [])) {
@@ -140,6 +239,7 @@ function byggSvarMap(skjema) {
 // ==================== Generatorer ====================
 
 function genererExcel(rader, skjemaNavn) {
+    const XLSX = xlsx();
     const wb = XLSX.utils.book_new();
     const ws = rader.length > 0
         ? XLSX.utils.json_to_sheet(rader)
@@ -229,6 +329,9 @@ function bygg(skjemaer, definisjon, filtre, type) {
 module.exports = {
     bygg,
     trekkUtSvar,
+    statusTekst,
+    sisteBeslutning,
+    behandlingstidDager,
     matcherFiltre,
     // eksponert for test:
     genererExcel,
