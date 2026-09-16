@@ -15,6 +15,7 @@ const crypto = require('crypto');
 const { sendEpostViaFlyt, sendVarslerViaFlyt, baseUrl } = require('./flyt-kaller');
 const { erstattPlassholdere, byggKontekst } = require('./placeholder');
 const rollerStorage = require('./roller-storage');
+const teamStorage = require('./team-storage');
 const dynamiskRolle = require('./dynamisk-rolle');
 
 function standardKvittering() {
@@ -463,26 +464,52 @@ function aktiveKanaler(steg) {
     return v.filter(k => ['epost', 'teams', 'planner', 'teamskanal'].includes(k));
 }
 
+/**
+ * Mottakerne for et behandlingssteg: Personer, Roller OG Team.
+ *
+ * Alle tre er kilder til hvem som kan behandle steget — se
+ * `behandling.js:105`, som teller dem likt både for tilgang og for «alle må
+ * avgjøre». Varslingen kjente bare de to første fram til 16.09.2026, og et
+ * steg som pekte på et team ga derfor null mottakere. Utslaget var ikke en
+ * feil, men taushet: `sendBehandlerVarsling` hopper over når lista er tom,
+ * og behandlerne fikk hverken e-post eller Planner-oppgave.
+ *
+ * Det som gjorde den vanskelig å se, var at en konkret person i samme felt
+ * virket helt fint.
+ *
+ * Feil i ett oppslag skal ikke ta de andre mottakerne med seg — en rolle
+ * eller et team som ikke finnes, er ikke grunn til å la resten stå uten
+ * varsel. Derfor `catch` per oppføring, som før.
+ */
 async function samleBehandlerMottakere(steg) {
     // Returnerer array av { epost, navn }
     const seen = new Set();
     const out = [];
-    for (const p of (steg?.Personer || [])) {
-        const s = String(p || '').trim().toLowerCase();
-        if (s && !seen.has(s)) { seen.add(s); out.push({ epost: s, navn: '' }); }
-    }
+    const leggTil = (ep, navn) => {
+        const e = String(ep || '').trim().toLowerCase();
+        if (!e || seen.has(e)) return;
+        seen.add(e);
+        out.push({ epost: e, navn: navn || '' });
+    };
+
+    for (const p of (steg?.Personer || [])) leggTil(p, '');
+
     for (const r of (steg?.Roller || [])) {
         try {
-            const innehavere = await rollerStorage.hentInnehavere(r);
-            for (const i of innehavere) {
-                const ep = String(i.EP || i.UPN || '').trim().toLowerCase();
-                if (!ep || seen.has(ep)) continue;
-                seen.add(ep);
-                const navn = [i.EN, i.FN].filter(Boolean).join(', ');
-                out.push({ epost: ep, navn });
+            for (const i of await rollerStorage.hentInnehavere(r)) {
+                leggTil(i.EP || i.UPN, [i.EN, i.FN].filter(Boolean).join(', '));
             }
         } catch (_) { /* prøv neste */ }
     }
+
+    for (const t of (steg?.Team || [])) {
+        try {
+            for (const m of await teamStorage.hentMedlemmerDetaljert(t)) {
+                leggTil(m.EP, m.Navn || [m.EN, m.FN].filter(Boolean).join(', '));
+            }
+        } catch (_) { /* prøv neste */ }
+    }
+
     return out;
 }
 
