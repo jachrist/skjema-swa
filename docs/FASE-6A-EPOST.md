@@ -101,13 +101,24 @@ Alle støttede plassholdere:
 | `$beslutning` | Beslutning-tekst (kun i FraBehandler) |
 | `$kommentar` | Behandler-kommentar |
 | `$stegnavn` | Steg-navn |
-| `$rolle` | Rolle-streng |
+| `$rolle` | Rolle-streng (tom når behandleren er en navngitt person) |
 | `$tidspunkt` | Nåværende dato/tid (Europe/Oslo) |
-| `$navn` | Mottaker-navn (per-mottaker) |
 | `$frist` | Frist-dato (hvis satt) |
 | `$dagerTilFrist` | Antall dager |
 | `{N-NN}` | Svar på felt (seksjon-felt), f.eks. `{1-02}` |
 | `{UUID}` | Svar på felt via stabil Id |
+
+`$navn` («mottaker-navn») sto i denne tabellen til 16.09.2026 og virket aldri:
+ingenting satte den, så den ble alltid tom streng.
+
+Den kan heller ikke fikses ved å sette en verdi. `erstattPlassholdere` kjører
+én gang og lager én tekst, som går til alle mottakerne i det samme flyt-kallet
+— en plassholder som skal være ulik per mottaker har ingen plass å bli ulik.
+Skal den tilbake, må meldingen bygges per mottaker, med ett kall per mottaker.
+
+Erstatningen står fortsatt i `placeholder.js`, slik at maler som allerede
+inneholder `$navn` gir tomt i stedet for et rått `$navn` i en e-post. Den er
+fjernet fra plassholderlista i melding-editoren, så nye maler får den ikke.
 
 ## Kall-flyt
 

@@ -12,7 +12,7 @@
  *   $stegnavn           — steg.Stegnavn
  *   $rolle              — rolle-streng (f.eks. "Emneansvarlig(CBU2501)")
  *   $tidspunkt          — dato/tid (ISO eller lokalisert)
- *   $navn               — mottakerens navn (per mottaker)
+ *   $navn               — UTGÅTT, se kommentaren ved erstatningen under
  *   $frist              — frist-dato hvis satt
  *   $dagerTilFrist      — antall dager
  *
@@ -109,6 +109,14 @@ function erstattPlassholdere(streng, kontekst = {}) {
         .replace(/\$innsender/g, kontekst.innsender || '')
         .replace(/\$dagerTilFrist/g, kontekst.dagerTilFrist == null ? '' : String(kontekst.dagerTilFrist))
         .replace(/\$frist/g, kontekst.frist || '')
+        // $navn er utgått. Ingenting har noensinne satt `kontekst.navn`, så
+        // den har alltid blitt tom — og den kan ikke fikses her: teksten
+        // bygges én gang og går til alle mottakerne i samme flyt-kall.
+        //
+        // Erstatningen blir likevel stående. Maler skrevet mens den sto i
+        // plassholderlista finnes fortsatt, og der er en tom streng bedre enn
+        // et rått «$navn» midt i en e-post til en behandler. Den er fjernet
+        // fra lista i melding-editoren, så ingen nye maler får den.
         .replace(/\$navn/g, kontekst.navn || '');
 
     // Feltreferanser — krever kontekst.seksjoner

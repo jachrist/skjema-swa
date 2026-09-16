@@ -17,7 +17,23 @@
  *   // returnerer { Emne, Tekst, Format } eller null hvis avbrutt
  */
 
-const STANDARD_PLASSHOLDERE = [
+/**
+ * Plassholderne som tilbys i meldings-editoren.
+ *
+ * Lista er et løfte: alt som står her skal `erstattPlassholdere` kunne bytte ut
+ * med en faktisk verdi. `$navn` («mottaker-navn») sto her til 16.09.2026 uten
+ * at noe noensinne satte den — den ble alltid til tom streng, og så ut som et
+ * alternativ for den som satte opp en mal.
+ *
+ * Den lot seg ikke fikse ved å sette en verdi heller: `erstattPlassholdere`
+ * kjører én gang og lager én tekst som går til alle mottakerne i samme
+ * flyt-kall. En plassholder som skal være ulik per mottaker har ingen plass å
+ * bli ulik. Skal den tilbake, må meldingen bygges per mottaker.
+ *
+ * Eksportert for test: `frontend/test/plassholderliste.test.js` sjekker at hver
+ * eneste av dem faktisk gir en verdi.
+ */
+export const STANDARD_PLASSHOLDERE = [
     { navn: '$lenke',           tekst: 'Lenke til skjemaet' },
     { navn: '$skjemanavn',      tekst: 'Skjematype-navn' },
     { navn: '$skjema_id',       tekst: 'Skjema-ID' },
@@ -27,7 +43,6 @@ const STANDARD_PLASSHOLDERE = [
     { navn: '$rolle',           tekst: 'Rolle(r) på steget' },
     { navn: '$beslutning',      tekst: 'Beslutning (i FraBehandler)' },
     { navn: '$kommentar',       tekst: 'Behandler-kommentar' },
-    { navn: '$navn',            tekst: 'Mottaker-navn' },
     { navn: '$tidspunkt',       tekst: 'Dato/tid' },
     { navn: '$frist',           tekst: 'Frist-dato' },
     { navn: '$dagerTilFrist',   tekst: 'Dager til frist' }
