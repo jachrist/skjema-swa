@@ -793,7 +793,7 @@
 
             innhold.innerHTML = knappeLinje + kollapsVerktoy + `
                 <div class="panel" data-panel-id="grunnleggende">
-                    <h2 onclick="togglePanel('grunnleggende')"><span class="kollaps-pil">▼</span>Grunnleggende</h2>
+                    <h2 onclick="togglePanel('grunnleggende')"><span class="kollaps-pil">▼</span>Grunnleggende <small style="font-weight: 400; text-transform: none;">— navn, fase og forklaringen utfylleren møter</small></h2>
                     <div class="rad">
                         <label>Skjema-navn <small>(vises i portalen)</small></label>
                         <input type="text" id="f-navn" value="${escapeAttr(data.Skjema_navn || '')}" oninput="setNavn(this.value)">
@@ -896,7 +896,7 @@
                 </div>
 
                 <div class="panel" data-panel-id="tilgang">
-                    <h2 onclick="togglePanel('tilgang')"><span class="kollaps-pil">▼</span>Tilgang</h2>
+                    <h2 onclick="togglePanel('tilgang')"><span class="kollaps-pil">▼</span>Tilgang <small style="font-weight: 400; text-transform: none;">— hvem som kan fylle ut, hvem som eier skjematypen</small></h2>
                     <div class="rad">
                         <label>Publikum <small>(kan fylle ut skjemaet)</small></label>
                         <div id="publikum-editor"></div>
@@ -962,7 +962,7 @@
                 </div>
 
                 <div class="panel" data-panel-id="seksjoner">
-                    <h2 onclick="togglePanel('seksjoner')"><span class="kollaps-pil">▼</span>Seksjoner og felter</h2>
+                    <h2 onclick="togglePanel('seksjoner')"><span class="kollaps-pil">▼</span>Seksjoner og felter <small style="font-weight: 400; text-transform: none;">— spørsmålene i skjemaet, gruppert i seksjoner</small></h2>
                     <div class="kollaps-verktoy" style="margin-top: -4px;">
                         <button class="knapp mini sekundær" onclick="ekspanderAlleSeksjoner()" title="Vis alle seksjoner">▸ Vis alle seksjoner</button>
                         <button class="knapp mini sekundær" onclick="kollapsAlleSeksjoner()" title="Skjul alle seksjoner">▾ Skjul alle seksjoner</button>
