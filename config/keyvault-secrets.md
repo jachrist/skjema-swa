@@ -1,20 +1,61 @@
 # Key Vault-secrets
 
-Oversikt over hemmeligheter som må ligge i Key Vault (`kv-fhsskjema-pilot` for dev,
-`kv-fhsskjema-pilot-prod` for prod). Referanser i `env.*.json` peker på disse.
+Hemmeligheter som hører hjemme i Key Vault (`kv-fhsskjema-pilot-prod` for pilot,
+prod-tenantens vault for prod). `config/env.*.json` viser hvilken secret hver
+app-setting henter verdien sin fra.
 
-| Secret-navn | Beskrivelse | Rotasjon |
-|---|---|---|
-| `fs-api-url` | Base-URL for FS-integrasjonen | Sjelden |
-| `fs-api-user` | Bruker for FS-API | Ved bytte |
-| `fs-api-password` | Passord for FS-API | Månedlig anbefales |
-| `fs-eier-org-kode` | FHS sin eier-org-kode i FS | Sjelden |
-| `epost-flow-url` | Power Automate: e-post-utsendelse | Ved regenerering av flyt |
-| `varsling-flow-url` | Power Automate: varsling | Ved regenerering av flyt |
-| `sp-liste-flow-url` | Power Automate: SP-liste-oppdatering | Ved regenerering av flyt |
-| `device-token-secret` | HMAC-nøkkel for device-token | Sjelden — invaliderer alle tokens ved rotasjon |
-| `scheduler-key` | Header-verdi som cron-workflow sender til `/api/refresh-fs` | Ved lekkasje |
-| `todo-storage-connection-string` | Connection string til dev-tenantens lagringskonto, for den delte oppgavelista | Ved lekkasje — se under |
+> **Key Vault er kilden og rotasjonspunktet — ikke en referanse appen følger.**
+> Verdien må limes inn som klartekst i SWA Configuration. Se «Rotasjon» nederst;
+> dette er det punktet som oftest misforstås.
+
+## Hemmeligheter
+
+| Secret-navn | App-setting | Beskrivelse | Rotasjon |
+|---|---|---|---|
+| `storage-connection-string` | `STORAGE_CONNECTION_STRING` | Full tilgang til miljøets lagringskonto | Ved lekkasje |
+| `todo-storage-connection-string` | `TODO_STORAGE_CONNECTION_STRING` | Dev-tenantens konto, for den delte oppgavelista | Ved lekkasje — se under |
+| `fs-api-url` | `FS_API_URL` | Base-URL for FS-integrasjonen | Sjelden |
+| `fs-api-user` | `FS_API_USER` | Bruker for FS-API | Ved bytte |
+| `fs-api-password` | `FS_API_PASSWORD` | Passord for FS-API | Månedlig anbefales |
+| `fs-eier-org-kode` | `FS_EIER_ORG_KODE` | FHS sin eier-org-kode i FS | Sjelden |
+| `hash-salt` | `HASH_SALT` | Salt for pseudonymisering — lekker det, kan hashene reverseres | Aldri uten migrering |
+| `otp-hmac-key` | `OTP_HMAC_KEY` | Signerer engangskoder til eksterne innsendere | Ved lekkasje — invaliderer aktive koder |
+| `flow-callback-key` | `FLOW_CALLBACK_KEY` | Eneste sperre foran de skrivende flyt-endepunktene | Ved lekkasje — husk å oppdatere flytene samtidig |
+| `scheduler-key` | `SCHEDULER_KEY` | Eneste sperre foran cron-endepunktene | Ved lekkasje — husk repo-secreten `SCHEDULER_KEY(_PROD)` samtidig |
+| `backup-passphrase` | `BACKUP_PASSPHRASE` | Dekrypterer backupene | **Aldri** uten å ta vare på den gamle — eldre backuper blir ulesbare |
+| `anthropic-api-key` | `ANTHROPIC_API_KEY` | Fakturerbar API-nøkkel for AI-import | Ved lekkasje |
+| `aad-client-secret` | `AAD_CLIENT_SECRET` | Kun pilot. Prod bruker sertifikat, se under | Ved utløp |
+| `graph-client-secret` | `GRAPH_CLIENT_SECRET` | Graph-app for direkte SharePoint-opplasting av backup | Ved utløp |
+
+### Flyt-URLer er også hemmeligheter
+
+Signaturen ligger i query-strengen, så URL-en **er** legitimasjonen: hvem som
+helst med den kan kalle flyten. Derfor hører de hjemme her, ikke som klartekst
+i en app-setting noen deler i en skjermdump.
+
+| Secret-navn | App-setting |
+|---|---|
+| `varsling-flow-url` | `VARSLING_FLOW_URL` |
+| `otp-flow-url` | `OTP_FLOW_URL` |
+| `sp-liste-flow-url` | `SP_LISTE_FLOW_URL` |
+| `backup-flow-url` | `BACKUP_FLOW_URL` |
+| `team-last-medlemmer-flow-url` | `TEAM_LAST_MEDLEMMER_FLOW_URL` |
+| `team-sok-eksternt-flow-url` | `TEAM_SOK_EKSTERNT_FLOW_URL` |
+
+`/api/system/info` viser bare vertsnavnet og stien for disse, aldri
+query-strengen (`maskFlytUrl` i `api/src/functions/system.js`).
+
+### Ikke hemmeligheter
+
+Disse settes som vanlige app settings, uten Key Vault: `MILJO`, `APP_TITTEL`,
+`STORAGE_ACCOUNT_NAME`, `KEYVAULT_NAME`, `SWA_URL`, `ADMIN_UPNS`,
+`AAD_CLIENT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_TENANT_ID`, `ANTHROPIC_MODELL`,
+`BACKUP_SHAREPOINT_SITE`, `BACKUP_SHAREPOINT_BIBLIOTEK`,
+`BACKUP_SHAREPOINT_MAPPE`, `BACKUP_DEL_MAKS_MB`, `PURRE_MAKS_DAGER`,
+`PURRE_MIN_DAGER_MELLOM`, `VARSLING_DEAKTIVERT`.
+
+Client-ID og tenant-ID er identifikatorer, ikke hemmeligheter. `system.js`
+maskerer dem likevel i diagnostikken, av forsiktighet.
 
 ## Delt oppgaveliste på tvers av tenanter
 
@@ -67,11 +108,37 @@ prod-SWAens utgående IP-er slippes inn.
 
 ## Aksesstilgang
 
-Appens system-assigned managed identity må ha rollen **Key Vault Secrets User**
-på Key Vault-ressursen. Bruker som administrerer secrets (deg) trenger
-**Key Vault Secrets Officer**.
+**Appens kode slår ikke opp i Key Vault.** SWA Managed Functions eksponerer
+ingen MI-token, så `DefaultAzureCredential` får ikke tak i noe —
+`api/src/lib/keyvault.js` er død kode og importeres ingen steder. En
+`@Microsoft.KeyVault(SecretUri=…)` i en app-setting blir derfor stående uløst,
+og koden får referansestrengen som verdi. `maskLengde()` i
+`api/src/functions/system.js` kjenner igjen det tilfellet og sier fra.
+
+Den ene managed identityen som faktisk brukes ligger på SWA-ressursen i prod og
+slås opp av **plattformen**: auth-sertifikatet hentes via
+`clientSecretCertificateKeyVaultReference` i `staticwebapp.config.prod.json`.
+Den identiteten trenger **Key Vault Secrets User** og **Key Vault Certificate
+User** på `fhs-kv-01` — ingen storage-roller.
+
+Du som forvalter secretsene trenger **Key Vault Secrets Officer**.
 
 ## Rotasjon
 
-Etter oppdatering i Key Vault vil appen automatisk plukke opp ny verdi
-innen 5 minutter (cache-TTL). For umiddelbar effekt: restart function-appen.
+**En ny verdi i Key Vault slår ikke gjennom av seg selv.** Det finnes ingen
+cache som utløper og ingen referanse som følges — verdien i SWA Configuration
+er en kopi, tatt for hånd.
+
+Rotasjon er derfor to steg:
+
+1. Ny versjon av secreten i Key Vault.
+2. Kopier verdien inn i app-settingen i SWA Configuration, i **hvert** miljø
+   som bruker den, og la deployen eller en restart plukke den opp.
+
+Hopper du over steg 2, kjører appen videre på den gamle verdien — og oppdager
+det først når den gamle deaktiveres. `/api/system/info` viser hvilke som er
+satt, men ikke om de er *ferske*; det må følges i nøkkelkalenderen
+(`/api/nokkelkalender`), som varsler `ADMIN_UPNS` før utløp.
+
+Unntaket er auth-sertifikatet i prod, som plattformen henter direkte fra Key
+Vault. Der er én rotasjon nok.

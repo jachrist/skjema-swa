@@ -96,13 +96,26 @@ function somTeamsMelding(v) {
     return { Tittel: String(o.Tittel || ''), Innhold: String(o.Innhold || '') };
 }
 
+/** ÅÅÅÅ-MM-DD, men bare hvis datoen finnes. Ellers tom streng. */
+function gyldigISO(aar, maaned, dag) {
+    const iso = `${aar}-${maaned}-${dag}`;
+    const d = new Date(`${iso}T00:00:00.000Z`);
+    // Fanger 2026-02-31, som Date ellers ruller videre til 3. mars.
+    return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : '';
+}
+
 /**
  * Frist for en Planner-oppgave.
  *
- * Godtar `{idag}`, `{idag+N}` og `ÅÅÅÅ-MM-DD`. Alt annet gir tom streng — vi
- * lar heller flyten stå uten frist enn å sende en dato vi har gjettet oss til.
- * `new Date('1. september')` gir 2001-09-01 i V8 uten å klage, og en frist 25
- * år tilbake ville vært verre enn ingen frist.
+ * Godtar `{idag}`, `{idag+N}`, `ÅÅÅÅ-MM-DD` og `DD.MM.ÅÅÅÅ`. Alt annet gir tom
+ * streng — vi lar heller flyten stå uten frist enn å sende en dato vi har
+ * gjettet oss til. `new Date('1. september')` gir 2001-09-01 i V8 uten å klage,
+ * og en frist 25 år tilbake ville vært verre enn ingen frist.
+ *
+ * Den norske formen er ikke bekvemmelighet. Kaller løser plassholderne før
+ * dette kallet, og `erstattPlassholdere` skriver Dato-felter som `17.09.2026`.
+ * Uten denne grenen ville en feltreferanse i fristfeltet blitt lest som noe
+ * ugyldig og gitt tom frist — altså nøyaktig feilen den skulle løse.
  */
 function løsForfallsdato(verdi, na = new Date()) {
     const s = String(verdi || '').trim();
@@ -115,11 +128,12 @@ function løsForfallsdato(verdi, na = new Date()) {
         d.setUTCDate(d.getUTCDate() + dager);
         return d.toISOString().slice(0, 10);
     }
-    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-        const d = new Date(`${s}T00:00:00.000Z`);
-        // Fanger 2026-02-31, som Date ellers ruller videre til 3. mars.
-        if (!isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s) return s;
-    }
+    const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (iso) return gyldigISO(iso[1], iso[2], iso[3]);
+
+    const norsk = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(s);
+    if (norsk) return gyldigISO(norsk[3], norsk[2], norsk[1]);
+
     return '';
 }
 
@@ -388,7 +402,12 @@ async function byggPlanner(steg, kontekst, { emne, lenke, skjema, behandlere, lo
         bucket: erstattPlassholdere(p.Bucket, kontekst),
         status: p.Status,
         prioritet: p.Prioritet,
-        forfallsdato: løsForfallsdato(p.Forfallsdato),
+        // Plassholderne løses FØR datoen tolkes. Uten det fikk løsForfallsdato
+        // «{1-02}» ubehandlet, avviste den som ugyldig, og oppgaven gikk ut
+        // uten frist — mens den samme referansen kom riktig ut i notatet, som
+        // gikk gjennom erstattPlassholdere. Dette var det ene Planner-feltet
+        // som ikke gjorde det.
+        forfallsdato: løsForfallsdato(erstattPlassholdere(p.Forfallsdato, kontekst)),
         sjekkliste: sjekkliste,
         // Samme punkter, men i Graph-formen — se sjekklisteTilGraph.
         sjekkliste_graph: sjekklisteTilGraph(sjekkliste),
