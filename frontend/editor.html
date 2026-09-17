@@ -601,6 +601,7 @@
         import { byggDNFEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn, invaliderRolleCache } from './js/tilgang-editor.js';
         import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
+        import { migrerFeltreferanser } from './js/feltref-migrering.js';
         import { byggMdEditor } from './js/md-editor.js';
 
         let rolleGrupper = []; // populeres i init()
@@ -734,6 +735,7 @@
                 }
                 sikreFeltIder();
                 rendrer();
+                visFeltrefAdvarsel();
                 startUtkastvakt();
             } catch (e) {
                 visFeil('Kunne ikke laste: ' + e.message);
@@ -751,6 +753,10 @@
             };
         }
 
+        // Feltreferanser som ikke peker på noe felt. Fylles av sikreFeltIder()
+        // og vises som banner etter første render.
+        let ulosteFeltreferanser = [];
+
         function sikreFeltIder() {
             // Ved lasting: gi Id til felter som mangler den (for stabile referanser)
             for (const seksjon of (data.Seksjoner || [])) {
@@ -760,6 +766,53 @@
                     }
                 }
             }
+            // Og fest referansene i malene til de id-ene. Å gi feltene en stabil
+            // id hjelper ikke så lenge meldingene fortsatt peker på posisjonen:
+            // `renummererFelter` flytter numrene under et innsatt eller slettet
+            // felt, og en {1-02} i en e-post følger ikke med. Svarene gjør det
+            // (skjema-kompakt.js kobler på id, svar-reparasjon.js flytter dem
+            // ved lagring) — referansene var den ene halvdelen som manglet.
+            //
+            // Må skje her, før første omnummerering i økta. Etterpå finnes ikke
+            // koblingen fra den gamle posisjonen til feltet lenger.
+            //
+            // Endringen lagres ikke av seg selv: den er med i nullpunktet
+            // startUtkastvakt() setter rett etter, og følger med neste lagring.
+            // Å åpne et skjema skal ikke skrive til lageret.
+            const { uloste } = migrerFeltreferanser(data);
+            ulosteFeltreferanser = uloste;
+        }
+
+        /**
+         * Banner for referanser som ikke peker på noe felt.
+         *
+         * Uten det er symptomet et tomt innslag midt i en e-post — mottakeren
+         * ser et hull, og eieren av skjematypen får aldri vite om det. De kan
+         * ikke rettes automatisk: feltet referansen gjaldt er borte, og bare
+         * den som skrev meldingen vet hva som skulle stått der.
+         */
+        function visFeltrefAdvarsel() {
+            document.getElementById('feltref-advarsel')?.remove();
+            if (ulosteFeltreferanser.length === 0) return;
+
+            const linjer = ulosteFeltreferanser
+                .map(u => `${escapeHtml(u.ref)} i ${escapeHtml(u.sti)}`)
+                .join('<br>');
+            const el = document.createElement('div');
+            el.id = 'feltref-advarsel';
+            el.className = 'nullpunkt-advarsel';
+            el.innerHTML = `
+                <div>
+                    <strong>Feltreferanser uten felt</strong><br>
+                    <span>Disse peker på et felt som ikke finnes, og blir stående tomme ved utsending.
+                    Sett dem inn på nytt fra feltreferanse-lista i meldingen det gjelder.</span><br>
+                    <span>${linjer}</span>
+                </div>
+                <button class="knapp mini sekundær" title="Lukk">✕</button>
+            `;
+            el.querySelector('button').addEventListener('click', () => el.remove());
+            const innhold = document.getElementById('innhold');
+            innhold.insertBefore(el, innhold.firstChild);
         }
 
         function visFeil(tekst) {

@@ -20,6 +20,10 @@
  *   {N-NN}   posisjonell (seksjon-felt)
  *   {UUID}   stabil Id
  *
+ * Feltreferanser settes inn som visningsverdi, ikke som lagret verdi. For
+ * Dato-felter er de to ikke like: `<input type="date">` lagrer YYYY-MM-DD, som
+ * er et maskinformat ingen skriver på norsk. Se `visningsverdi()` under.
+ *
  * VIKTIG: $lenke beholdes uendret hvis kontekst.lenke ikke er eksplisitt satt
  * (undefined). Da kan kaller f.eks. bake per-mottaker-URL senere. Sett null
  * for å fjerne den.
@@ -73,6 +77,37 @@ function alleSvarIFelt(felt) {
     return FLERVALGSTYPER.has(String(felt.Type || '')) ? verdier : verdier.slice(0, 1);
 }
 
+/**
+ * YYYY-MM-DD → DD.MM.YYYY.
+ *
+ * Holdt identisk med `_formatterDato` i frontend/js/felt-render.js, inkludert
+ * prefiks-matchingen: en verdi som bærer klokkeslett bak datoen skal gi samme
+ * dato begge steder. Står datoen i et annet format, sendes den uendret videre
+ * — en halvtolket dato er verre enn den rå verdien.
+ */
+function formaterDato(verdi) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(verdi);
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : verdi;
+}
+
+/**
+ * Verdien slik den skal LESES — for e-post, Teams-meldinger og Planner-oppgaver.
+ *
+ * Skilt fra forsteSvar()/alleSvarIFelt() med vilje. De to brukes også av
+ * dynamisk-rolle.js til å slå opp mottakere og av gevinst-sjekk.js til å
+ * sammenligne verdier; der må verdien være rå, ellers slutter oppslagene å
+ * treffe. Formatering hører bare hjemme der teksten skal leses av et menneske.
+ *
+ * Bare Dato er dekket. De andre felttypene som pyntes i visningen (Valuta,
+ * Fodselsnummer, Kontonummer) lagrer verdier som er lesbare som de er, og
+ * ingen har bedt om dem her.
+ */
+function visningsverdi(felt, verdi) {
+    if (verdi == null) return verdi;
+    const s = String(verdi);
+    return String(felt?.Type || '') === 'Dato' ? formaterDato(s) : s;
+}
+
 function finnSvarForFeltRef(seksjoner, seksjonNummer, feltNummer) {
     return forsteSvar(finnFeltViaRef(seksjoner, seksjonNummer, feltNummer));
 }
@@ -122,12 +157,14 @@ function erstattPlassholdere(streng, kontekst = {}) {
     // Feltreferanser — krever kontekst.seksjoner
     if (Array.isArray(kontekst.seksjoner) && kontekst.seksjoner.length > 0) {
         s = s.replace(/\{(\d+)-(\d+)\}/g, (_m, sek, felt) => {
-            const svar = finnSvarForFeltRef(kontekst.seksjoner, sek, felt);
-            return svar == null ? '' : String(svar);
+            const f = finnFeltViaRef(kontekst.seksjoner, sek, felt);
+            const svar = forsteSvar(f);
+            return svar == null ? '' : visningsverdi(f, svar);
         });
         s = s.replace(/\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}/gi, (_m, id) => {
-            const svar = finnSvarForFeltViaId(kontekst.seksjoner, id);
-            return svar == null ? '' : String(svar);
+            const f = finnFeltViaId(kontekst.seksjoner, id);
+            const svar = forsteSvar(f);
+            return svar == null ? '' : visningsverdi(f, svar);
         });
     }
     return s;

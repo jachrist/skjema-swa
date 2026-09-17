@@ -108,6 +108,15 @@ Alle støttede plassholdere:
 | `{N-NN}` | Svar på felt (seksjon-felt), f.eks. `{1-02}` |
 | `{UUID}` | Svar på felt via stabil Id |
 
+Feltreferanser settes inn som visningsverdi. For `Dato`-felter er det ikke det
+samme som den lagrede verdien: datovelgeren lagrer `2026-09-17`, og i en e-post
+skrives det `17.09.2026` — samme form som skjemavisningen bruker.
+
+Det gjelder bare selve teksten. Feltverdier som brukes til oppslag beholder den
+rå formen: dynamiske roller (`dynamisk-rolle.js`) bygger rollestrenger av dem,
+og punktum i stedet for bindestrek ville fått oppslagene til å bomme uten at
+noe feilet.
+
 `$navn` («mottaker-navn») sto i denne tabellen til 16.09.2026 og virket aldri:
 ingenting satte den, så den ble alltid tom streng.
 
