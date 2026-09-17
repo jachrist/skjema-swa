@@ -32,7 +32,8 @@ const skjema = {
         Seksjon_nummer: 1,
         Felter: [
             { Id: FELT_ID, Nummer: '01', Type: 'Tekst', Svar: ['Oslo'] },
-            { Nummer: '02', Type: 'Tekst', Svar: ['15. september'] }
+            { Nummer: '02', Type: 'Tekst', Svar: ['15. september'] },
+            { Nummer: '03', Type: 'Dato', Svar: ['2026-12-24'] }
         ]
     }]
 };
@@ -94,6 +95,54 @@ async function planner() {
     {
         const ut4 = v.byggTeamsMelding({}, kontekst, { emne: 'E-postemne', html: '<p>E-post</p>' });
         sjekk('faller tilbake til e-postmalen', [ut4.tittel, ut4.innhold], ['E-postemne', '<p>E-post</p>']);
+    }
+
+    // ---------- samme referanse i notat OG frist ----------
+    {
+        // Feilen dette fanger: alle Planner-feltene gikk gjennom
+        // erstattPlassholdere unntatt Forfallsdato, som fikk raa verdi. En
+        // {1-03} kom derfor riktig ut i notatet og blankt i fristen — samme
+        // referanse, samme oppgave, to utfall.
+        //
+        // Og den maa gaa hele veien: erstattPlassholdere skriver Dato-felter
+        // paa norsk form, saa loesForfallsdato maa godta den for at kjeden
+        // skal henge sammen. Testes her, ikke bare paa hver halvdel.
+        const steg = {
+            PlannerOppgave: {
+                Tittel: 'Frist',
+                Notater: 'Reisen er {1-03}',
+                Forfallsdato: '{1-03}'
+            }
+        };
+        const ut = await v.byggPlanner(steg, kontekst, {
+            emne: 'fallback', lenke: 'https://eksempel.net/x', skjema, behandlere: [], log: () => { },
+            rolleOppslag: async () => []
+        });
+        sjekk('notatet viser datoen paa norsk form', ut.notat, 'Reisen er 24.12.2026');
+        sjekk('fristen blir ISO, ikke blank', ut.forfallsdato, '2026-12-24');
+    }
+
+    // ---------- {idag+N} overlever plassholderrunden ----------
+    {
+        // erstattPlassholdere roerer ikke {idag+7}: moensteret er verken
+        // seksjon-felt eller uuid. Verdt aa feste, siden fristfeltet naa gaar
+        // gjennom den runden foer datoen tolkes.
+        const steg = { PlannerOppgave: { Tittel: 'x', Forfallsdato: '{idag+7}' } };
+        const ut = await v.byggPlanner(steg, kontekst, {
+            emne: '', lenke: '', skjema, behandlere: [], log: () => { },
+            rolleOppslag: async () => []
+        });
+        sjekk('relativ frist virker fortsatt', /^\d{4}-\d{2}-\d{2}$/.test(ut.forfallsdato), true);
+    }
+
+    // ---------- ubesvart datofelt gir ingen frist ----------
+    {
+        const steg = { PlannerOppgave: { Tittel: 'x', Forfallsdato: '{1-09}' } };
+        const ut = await v.byggPlanner(steg, kontekst, {
+            emne: '', lenke: '', skjema, behandlere: [], log: () => { },
+            rolleOppslag: async () => []
+        });
+        sjekk('ukjent felt gir tom frist, ikke gjettet dato', ut.forfallsdato, '');
     }
 
     console.log(`\n${ok} OK, ${feil} feil`);

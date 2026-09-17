@@ -63,12 +63,27 @@ async function kjor() {
         sjekk('fast dato beholdes', v.løsForfallsdato('2026-12-24', na), '2026-12-24');
         sjekk('tom verdi gir tom', v.løsForfallsdato('', na), '');
 
-        // Her ligger fella: V8 tolker begge disse velvillig og gir en dato
-        // langt unna det noen mente. Da er ingen frist det riktige svaret.
+        // DD.MM.ÅÅÅÅ ble AVVIST til 17.09.2026, som en del av «ikke gjett».
+        // Den beslutningen er snudd, og ikke for bekvemmelighetens skyld:
+        // kaller løser nå plassholderne før datoen tolkes, og
+        // erstattPlassholdere skriver Dato-felter som «17.09.2026». Ble den
+        // formen avvist her, kunne en feltreferanse i fristfeltet aldri virke.
+        //
+        // Dette er heller ingen gjetning. Mønsteret er eksplisitt
+        // dag.måned.år, og datoen valideres ved å bygges opp igjen — i
+        // motsetning til new Date('24.12.2026'), som var det opprinnelige
+        // problemet. En norsk bruker som skriver fristen for hånd treffer
+        // dessuten denne formen først.
+        sjekk('norsk form godtas', v.løsForfallsdato('24.12.2026', na), '2026-12-24');
+        sjekk('norsk form fra et datofelt', v.løsForfallsdato('17.09.2026', na), '2026-09-17');
+
+        // Her ligger fella: V8 tolker disse velvillig og gir en dato langt
+        // unna det noen mente. Da er ingen frist det riktige svaret.
         sjekk('«1. september» avvises', v.løsForfallsdato('1. september', na), '');
         sjekk('«om en uke» avvises', v.løsForfallsdato('om en uke', na), '');
         sjekk('31. februar avvises', v.løsForfallsdato('2026-02-31', na), '');
-        sjekk('24.12.2026 avvises', v.løsForfallsdato('24.12.2026', na), '');
+        sjekk('31. februar avvises også på norsk form', v.løsForfallsdato('31.02.2026', na), '');
+        sjekk('halv norsk form avvises', v.løsForfallsdato('24.12.26', na), '');
     }
 
     // ---------- sjekkliste ----------
