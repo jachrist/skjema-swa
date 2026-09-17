@@ -48,9 +48,40 @@ const KUN_I_MILJO = {
     }
 };
 
-/** Normaliser MILJO: prod, production og Production skal regnes likt. */
+/**
+ * Normaliser MILJO til ett navn per miljø.
+ *
+ * `production` er det GAMLE navnet på pilot — ikke et annet ord for prod.
+ * `config/env.pilot.json` setter `MILJO=production` den dag i dag, og
+ * `scripts/build-config.js` gjør den samme oversettelsen ved bygg
+ * («alias production → pilot»). Prod setter `MILJO=prod`.
+ *
+ * Skillet er ikke kosmetisk. Leses `production` som prod, arver pilot prodens
+ * unntak — og en manglende `AAD_CLIENT_SECRET`, som tar ned innloggingen helt,
+ * meldes da som «forventet tom her» i det ene miljøet som faktisk trenger den.
+ * Det er nøyaktig feilen KUN_I_MILJO er laget for å unngå, speilvendt.
+ *
+ * Et ukjent navn sendes uendret videre, og medForventning() behandler det som
+ * «vet ikke» — se KJENTE_MILJOER der.
+ */
+const MILJO_ALIAS = { production: 'pilot' };
+
+/**
+ * Miljøene vi kjenner. Et navn utenfor denne mengden er «vet ikke», ikke
+ * «gjelder ikke».
+ *
+ * `KUN_I_MILJO.miljoer` er en positivliste: står miljøet ikke der, blir en tom
+ * verdi friskmeldt. Det er riktig for prod, som vi vet ikke trenger
+ * `AAD_CLIENT_SECRET` — men det var også grunnen til at `production` arvet
+ * prodens unntak, og det ville gjort det samme for et hvilket som helst nytt
+ * miljønavn. En hemmelighet som mangler i et miljø vi ikke kjenner skal meldes,
+ * ikke ties i hjel.
+ */
+const KJENTE_MILJOER = new Set(['pilot', 'prod', 'development', 'lokal']);
+
 function miljonavn() {
-    return String(process.env.MILJO || '').trim().toLowerCase();
+    const raatt = String(process.env.MILJO || '').trim().toLowerCase();
+    return MILJO_ALIAS[raatt] || raatt;
 }
 
 /**
@@ -61,8 +92,9 @@ function medForventning(navn, info) {
     const regel = KUN_I_MILJO[navn];
     if (!regel) return info;
     const her = miljonavn();
-    // Ukjent miljø: vi vet ikke nok til å påstå at noe mangler.
-    const gjelderHer = her ? regel.miljoer.includes(her) : true;
+    // Ukjent miljø — tomt ELLER et navn vi ikke kjenner: vi vet ikke nok til å
+    // påstå at en tom verdi er riktig, og lar den stå som en mangel.
+    const gjelderHer = KJENTE_MILJOER.has(her) ? regel.miljoer.includes(her) : true;
     if (gjelderHer) return info;
     return { ...info, gjelderHer: false, merknad: regel.merknad };
 }
@@ -119,6 +151,9 @@ app.http('systemInfo', {
                 aktør: { upn, erAdmin: true },
                 miljø: {
                     MILJO: process.env.MILJO || 'ukjent',
+                    // Hvilket miljø helsesjekken under REGNER dette som.
+                    // «production» er pilot; se miljonavn().
+                    normalisert: miljonavn() || 'ukjent',
                     node: process.version,
                     plattform: `${os.type()} ${os.release()}`,
                     prosessorer: os.cpus().length,
@@ -140,4 +175,4 @@ app.http('systemInfo', {
 
 // Eksporteres for test. Miljøskillet er lett å reversere ved en opprydding,
 // og feilen det gir er stille: en tom verdi leses som en mangel.
-module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO };
+module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO, _miljonavn: miljonavn };
