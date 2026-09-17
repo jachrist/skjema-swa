@@ -24,9 +24,14 @@ on:
       # kommer inn i produksjon.
       #
       # Miljøet opprettes av denne kjøringen; ingenting settes opp på forhånd.
-      # URL: <vertsnavn>-<navn>.<region>.azurestaticapps.net — det vertsnavnet
-      # må legges inn som redirect-URI i app-registreringen, ellers avviser
-      # Entra innloggingen der (og bare der).
+      # URL: <navn>-<hash>-<miljø>.<region>.<slice>.azurestaticapps.net — «-test»
+      # limes på FØRSTE ledd, ikke etter slice-tallet. Kjøringen skriver den
+      # ferdige URL-en i sammendraget; gjett aldri på den. Et gjettet vertsnavn
+      # finnes ikke i det hele tatt, og feilen du får er sertifikatavvisning
+      # (ERR_CERT_COMMON_NAME_INVALID), ikke en 404.
+      #
+      # Det vertsnavnet må legges inn som redirect-URI i app-registreringen,
+      # ellers avviser Entra innloggingen der (og bare der).
       preview:
         description: "Valgfritt: navn på preview-miljø, f.eks. 'test'. Tomt = produksjon."
         required: false
@@ -92,3 +97,17 @@ jobs:
           skip_app_build: true
           # Tom verdi = produksjonsmiljøet, som før.
           deployment_environment: ${{ inputs.preview }}
+
+      # Preview-vertsnavnet lar seg ikke utlede pålitelig fra produksjonens —
+      # region- og slice-ledd kommer til, og «-test» havner på første ledd.
+      # Uten dette steget måtte URL-en letes fram i loggen fra steget over,
+      # og et gjett gir sertifikatfeil i nettleseren i stedet for en 404.
+      - name: Vis URL
+        if: inputs.preview != ''
+        run: |
+          URL="${{ steps.builddeploy.outputs.static_web_app_url }}"
+          if [ -n "$URL" ]; then
+            echo "### Preview-miljø: $URL" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Preview-URL: se «Visit your site at:» i loggen for «Build And Deploy»" >> $GITHUB_STEP_SUMMARY
+          fi

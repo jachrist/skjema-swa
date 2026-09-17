@@ -401,7 +401,26 @@ Miljøet opprettes av kjøringen; ingenting settes opp på forhånd. Det ligger 
 Key Vault-referansen til sertifikatet. Innloggingen som testes der er altså den
 samme som produksjon vil bruke, ikke en tilnærming.
 
-URL-en blir `<vertsnavn>-test.<region>.azurestaticapps.net`.
+URL-en blir `<navn>-<hash>-test.<region>.<slice>.azurestaticapps.net` — altså
+produksjonens vertsnavn med `-test` limt på **det første leddet**, og med
+region- og slice-ledd etterpå:
+
+```
+prod:     https://gentle-dune-00a313603.7.azurestaticapps.net
+preview:  https://gentle-dune-00a313603-test.westeurope.7.azurestaticapps.net
+```
+
+Ikke gjett på den. Deploy-kjøringen skriver den ferdige URL-en både i
+sammendraget og i loggen fra «Build And Deploy» (`Visit your site at:`) —
+bruk den.
+
+> **`ERR_CERT_COMMON_NAME_INVALID` betyr at du er på feil URL, ikke at
+> deployen feilet.** Setter du `-test` etter slice-leddet i stedet
+> (`gentle-dune-00a313603.7-test.azurestaticapps.net`), finnes ikke navnet.
+> Det treffer da et vilkårlig SWA-endepunkt via jokeroppslaget i DNS, og
+> sertifikatet der (`*.azurestaticapps.net`) dekker bare ett ledd — ikke to.
+> Nettleseren stopper på sertifikatet før den rekker å si «finnes ikke».
+
 
 **To ting må være på plass i app-registreringen først:**
 
@@ -411,7 +430,7 @@ URL-en blir `<vertsnavn>-test.<region>.azurestaticapps.net`.
 2. **Preview-vertsnavnet som redirect-URI**, ved siden av produksjonens.
 
 ```
-https://<vertsnavn>-test.<region>.azurestaticapps.net/.auth/login/aad/callback
+https://<navn>-<hash>-test.<region>.<slice>.azurestaticapps.net/.auth/login/aad/callback
 ```
 
 Uten den avviser Entra innloggingen i preview-miljøet — og bare der. Det er en
