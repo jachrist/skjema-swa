@@ -197,6 +197,11 @@
             border: 1px solid var(--accent);
         }
         .knapp.sekundær:hover { background: var(--accent-light); }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver
+           author-regel med `display` slår den. Uten denne linja er et skjult
+           element ett `display: flex` unna å stå framme — og det ser riktig ut
+           både i markupen og i koden som skjuler det. */
+        [hidden] { display: none !important; }
         /* ---- Samtale (gruppechat) ---- */
         .samtale {
             background: var(--bg-kort);

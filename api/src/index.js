@@ -36,6 +36,7 @@ require('./functions/rapport-kjor');
 require('./functions/todo');
 require('./functions/nokkelkalender');
 require('./functions/gevinst');
+require('./functions/samtale');
 
 // Etter hvert:
 // require('./functions/skjema');
