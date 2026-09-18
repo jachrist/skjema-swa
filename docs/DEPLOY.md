@@ -1,5 +1,98 @@
 # Deploy og engangsoppsett
 
+## Gangen i en endring
+
+Fra en endring er skrevet til den står på pilot. Dette er den daglige
+arbeidsflyten; alt under «Første oppsett» er engangsarbeid.
+
+**1. Endringen skrives** på en egen gren (`claude/...`).
+
+**2. Testene kjøres lokalt:** `node scripts/kjor-tester.js --uten-pakker`.
+Nye tester kjøres også i FEIL retning — koden brytes med vilje for å se at
+testen faktisk slår ut. En test som ikke er prøvd i begge retninger, er ikke
+prøvd.
+
+**3. Commit og push til grenen. Ingenting skjer i GitHub her.** Verken CI
+eller deploy lytter på push til en annen gren enn `main`.
+
+**4. Pull request opprettes.** Nå starter **CI**, og bare CI:
+
+- `npm ci` i `api/`, så `npm test`
+- `node scripts/kjor-tester.js --uten-pakker` — samme betingelse som
+  deploy-steget, for å fange en test som drar inn en npm-pakke
+- `node scripts/build-config.js development`
+
+**5. PR-en leses og merges.** Dette er porten. Ingen deploy skjer før noen
+har bestemt seg.
+
+**6. Merge = push til `main`.** To arbeidsflyter starter:
+
+- **CI** igjen, på merge-commiten. Overlapper nesten helt med runde 4, men
+  fanger tilfellet der `main` har flyttet seg siden PR-en ble bygget.
+- **Deploy pilot**, som er den som betyr noe.
+
+**7. Deploy pilot kjører**, i denne rekkefølgen:
+
+- henter koden, setter opp Node 22
+- `node scripts/kjor-tester.js` — **uten** `npm ci`, så testene kjører uten
+  `node_modules`. Røde tester her stopper utrullingen
+- `node scripts/build-config.js pilot` — bygger `frontend/js/config.js` og
+  `staticwebapp.config.json` for pilot
+- laster opp til SWA
+
+**8. Endringene er deployet til pilot.**
+
+### Ingen preview-miljøer per PR
+
+SWA-actionen kan lage et preview-miljø ved hver `pull_request`-hendelse og
+rive det ned ved `closed`. Fram til 18.09.2026 gjorde den det, og ingen åpnet
+dem: arbeidsflyten er å merge og teste på pilot, så hver PR bygget et miljø
+som ble revet ned minutter senere.
+
+Triggeren er fjernet fra `deploy-pilot.yml`. Azures egen genererte workflow
+HAR den, så regenererer noen fila, kommer den tilbake av seg selv —
+`api/test/arbeidsflyter.test.js` slår ned på det.
+
+Dette gjelder **bare** preview per PR på pilot. Det navngitte preview-miljøet
+i `deploy-prod.yml` er noe helt annet, og er verdifullt nettopp fordi det har
+sitt eget sett app settings: en ny funksjon eller en endret flyt kan prøves
+mot ekte brukere, team og SharePoint-områder i produksjonstenanten uten å
+røre produksjon.
+
+### Når deployen ikke kjører, eller ryker
+
+`paths-ignore` hopper over deploy for rene `.md`- og `docs/`-endringer.
+Berører en commit både kode og dokumentasjon, kjører deployen som normalt.
+
+Ryker deployen, ligger commiten fortsatt i `main`, men pilot har gammel kode.
+Da må en ny commit — eller **Run workflow** fra Actions-fanen — til for å
+rette det. Den knappen er også den du bruker når en innstilling er endret i
+Azure og deployen skal kjøres om igjen uten en ny commit.
+
+Prod er utenfor dette løpet: `deploy-prod.yml` startes bare manuelt, med
+bekreftelsestekst.
+
+### Skal grenen slettes etter merge?
+
+**Ja — når PR-en er merget og ingenting er pushet til grenen etterpå.**
+
+En gren som blir liggende, blir liggende BAK `main`. Neste endring må da
+rebases først, og glipper det, kan commits som ikke er merget bli skrevet
+over. Slettes grenen, starter neste arbeid fra `main` av seg selv, og hele
+den fella forsvinner.
+
+Unntaket er verdt å kjenne: det hender at en commit pushes til grenen ETTER
+at PR-en ble opprettet, og da er den ikke med i mergen. Skjedde 18.09.2026 —
+PR #35 ble merget på én commit mens den neste allerede lå på grenen. Slettes
+grenen der, er den commiten foreldreløs.
+
+To måter å være trygg på:
+
+- PR-siden sier hvilken commit som ble merget. Er den ikke den øverste på
+  grenen, ligger det noe der som ikke er med.
+- GitHub tilbyr **Restore branch** på den mergede PR-en i lang tid etterpå,
+  så en for tidlig sletting er ikke endelig.
+
 ## Første oppsett i Azure
 
 ### 1. Ressursgruppe
