@@ -1165,8 +1165,13 @@ app.http('hentSkjema', {
             // Samme funksjon som PDF-endepunktet bruker — regelen skal finnes
             // ett sted, ellers får de to stiene ulik oppfatning av hva
             // innsender får se. Det var nettopp det som hadde skjedd.
-            dialogTilgang.skjulInterneInnlegg(
-                skjema, await dialogTilgang.tilgangsRolle(skjema, skjematypeId, upn));
+            const minRolle = await dialogTilgang.tilgangsRolle(skjema, skjematypeId, upn);
+            dialogTilgang.skjulInterneInnlegg(skjema, minRolle);
+            // Rollen sendes med så grensesnittet slipper å gjette. Uten den
+            // tilbød evaluering.html «Intern (til andre behandlere)» også til
+            // innsenderen — som standardvalg — og API-et avviste innlegget med
+            // 403 etter at hen hadde skrevet det ferdig.
+            skjema._minRolle = minRolle;
 
             skjema._mineStegNumre = mineStegNumre;
             return { jsonBody: skjema };

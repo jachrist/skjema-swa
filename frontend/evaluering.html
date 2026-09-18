@@ -428,10 +428,45 @@
                     api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}?skjema_id=${encodeURIComponent(skjemaId)}`),
                     api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`)
                 ]);
+                if (skalTilVisning(skjema)) {
+                    // replace, ikke assign: tilbakeknappen skal ikke sende
+                    // brukeren inn igjen på en side hen nettopp ble ledet bort
+                    // fra.
+                    window.location.replace(
+                        `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}`
+                        + `&skjema_id=${encodeURIComponent(skjemaId)}${window.location.hash}`);
+                    return;
+                }
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke hente skjemaet: ' + e.message);
             }
+        }
+
+        /**
+         * Skal denne brukeren sendes til visningssiden i stedet?
+         *
+         * Innsenderen har tilgang til sin egen sak — det er tilsiktet — og
+         * havnet derfor på en side som heter «Behandle:», med behandlernes
+         * grensesnitt. `visning.html` er laget for dette, og har nå både
+         * samtalen, behandlingshistorikken og kommentarene.
+         *
+         * To forbehold, og det første er hele grunnen til at regelen ikke bare
+         * er «er innsender»:
+         *
+         *   Er du BÅDE innsender og behandler på samme sak, skal du ikke
+         *   sendes bort fra din egen oppgave. `tilgangsRolle` svarer
+         *   «innsender» for deg — den sjekken kommer først, med vilje, så du
+         *   ser MINDRE av den interne dialogen. Den kan derfor ikke brukes
+         *   alene til å bestemme hvor du skal.
+         *
+         *   Mangler `_minRolle` (eldre API), omdirigeres ingen. Å sende en
+         *   behandler bort fra behandlingssiden er verre enn å la en innsender
+         *   se en side hen ikke trenger.
+         */
+        function skalTilVisning(skjema) {
+            if (skjema?._minRolle !== 'innsender') return false;
+            return (skjema?._mineStegNumre || []).length === 0;
         }
 
         function visFeil(t) {
@@ -613,11 +648,20 @@
             // Skjemakontroll for nytt innlegg
             const input = document.createElement('div');
             input.className = 'dialog-input';
+            // Innsenderen kan ikke skrive interne innlegg — API-et avviser dem
+            // med 403. Uten denne sjekken sto «Intern (til andre behandlere)»
+            // som STANDARDVALG også for innsenderen, og feilen kom først etter
+            // at hen hadde skrevet ferdig.
+            //
+            // Mangler `_minRolle` (eldre API), beholdes begge valgene: API-et
+            // er den virkelige porten, og å ta bort muligheten fra en behandler
+            // er verre enn å la innsenderen møte avvisningen.
+            const kanIntern = skjema._minRolle ? skjema._minRolle !== 'innsender' : true;
             input.innerHTML = `
                 <textarea placeholder="Skriv et innlegg…" id="dialog-tekst"></textarea>
                 <div class="knapper">
-                    <select id="dialog-type">
-                        <option value="intern">Intern (til andre behandlere)</option>
+                    <select id="dialog-type"${kanIntern ? '' : ' hidden'}>
+                        ${kanIntern ? '<option value="intern">Intern (til andre behandlere)</option>' : ''}
                         <option value="ekstern">Til innsender</option>
                     </select>
                     <button class="knapp primær" onclick="sendDialog()">Legg til innlegg</button>
