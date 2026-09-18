@@ -295,17 +295,21 @@
         <div id="innhold" class="laster">Henter skjema…</div>
 
         <div class="knapperad" id="knapperad" style="display: none;">
-            <a href="/velgskjematype.html" class="knapp sekundær">Til skjemaoversikten</a>
+            <a href="/velgskjematype.html" class="knapp sekundær" data-oversiktslenke>Til skjemaoversikten</a>
             <button class="knapp sekundær" id="last-ned-pdf" type="button">📄 Last ned som PDF</button>
         </div>
     </div>
 
     <script type="module">
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');

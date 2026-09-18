@@ -183,6 +183,11 @@
             .gruppe-header { background: #f4f4f4 !important; }
             @page { size: A4 landscape; margin: 12mm; }
         }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
+           med `display` slår den. `.knapp` setter `display: inline-block`, så
+           uten denne linja ville et skjult element stått framme — og både
+           markupen og koden som skjuler det ville sett riktig ut. */
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>

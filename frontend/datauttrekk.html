@@ -165,12 +165,17 @@
         .status-melding.info { background: var(--accent-light); color: var(--accent); }
         .status-melding.suksess { background: var(--success-light); color: var(--success); }
         .status-melding.feil { background: rgba(255, 59, 48, 0.12); color: var(--danger); }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
+           med `display` slår den. `.knapp` setter `display: inline-block`, så
+           uten denne linja ville et skjult element stått framme — og både
+           markupen og koden som skjuler det ville sett riktig ut. */
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="topprad">
-            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
+            <a href="/velgskjematype.html" class="tilbake-lenke" data-oversiktslenke>← Til skjemaoversikten</a>
             <div style="font-size: 13px; color: var(--text-secondary);">
                 <div id="upn"></div>
             </div>
@@ -236,7 +241,11 @@
     <script type="module">
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         let bruker = null;
         let valgtSkjematypeId = null;

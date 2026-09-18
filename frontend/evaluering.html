@@ -371,7 +371,7 @@
 <body>
     <div class="container">
         <div class="topprad">
-            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
+            <a href="/velgskjematype.html" class="tilbake-lenke" data-oversiktslenke>← Til skjemaoversikten</a>
             <div class="brukerinfo">
                 <button id="kopier-lenke-knapp" class="modal-knapp" style="margin-right: 12px;"
                     onclick="kopierSkjemaLenke()"
@@ -390,10 +390,14 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
