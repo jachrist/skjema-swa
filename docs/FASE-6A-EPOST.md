@@ -99,7 +99,7 @@ Alle støttede plassholdere:
 | `$skjemanavn` | Skjematype-navn |
 | `$skjema_id` | Skjema-ID |
 | `$beslutning` | Beslutning-tekst (kun i FraBehandler) |
-| `$kommentar` | Behandler-kommentar |
+| `$kommentar` | Behandler-kommentar (lagres også på steget, se under) |
 | `$stegnavn` | Steg-navn |
 | `$rolle` | Rolle-streng (tom når behandleren er en navngitt person) |
 | `$tidspunkt` | Nåværende dato/tid (Europe/Oslo) |
@@ -116,6 +116,25 @@ Det gjelder bare selve teksten. Feltverdier som brukes til oppslag beholder den
 rå formen: dynamiske roller (`dynamisk-rolle.js`) bygger rollestrenger av dem,
 og punktum i stedet for bindestrek ville fått oppslagene til å bomme uten at
 noe feilet.
+
+## Behandlerens kommentar
+
+`$kommentar` er den eneste plassholderen som viser noe brukeren har skrevet
+under behandlingen, og fram til 19.09.2026 var e-posten det ENESTE stedet den
+fantes — i standardmodus ble den aldri lagret. En behandler som skrev en
+begrunnelse for et avslag kunne ikke finne den igjen i saken, i PDF-en eller i
+uttrekket.
+
+Den lagres nå i begge moduser, og leses ett sted
+(`lib/behandling-kommentar.js`):
+
+| Modus | Lagres som |
+|---|---|
+| Standard — første behandler avgjør | `steg.Kommentar` |
+| «Alle må avgjøre» | `steg.Beslutninger[].Kommentar`, én per aktør |
+
+Den vises i behandlersiden, i innsenderens visning, i registeret, i PDF-en og
+som kolonnen `UtfallKommentar` i datauttrekket.
 
 `$navn` («mottaker-navn») sto i denne tabellen til 16.09.2026 og virket aldri:
 ingenting satte den, så den ble alltid tom streng.

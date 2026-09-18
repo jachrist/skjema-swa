@@ -394,6 +394,7 @@
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
+        import { kommentarerFor as kommentarer } from './js/behandling-kommentar.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -926,20 +927,17 @@
         /**
          * Kommentarene som ble gitt med beslutningene på et steg.
          *
-         * API-et har lagret Kommentar siden beslutnings-endepunktet ble
-         * skrevet, og PDF-en har vist den — men grensesnittet hadde hverken
-         * felt for å skrive den eller plass til å vise den. Den som ga en
-         * kommentar i PDF-en kunne altså ikke se den igjen i saken.
-         *
-         * Aktøren tas med fordi et steg kan ha flere beslutninger: i
-         * «alle må avgjøre» skriver hver behandler sin egen.
+         * Regelen ligger i js/behandling-kommentar.js, ikke her: kommentaren
+         * lagres i steg.Kommentar i standardmodus og i Beslutninger[] når
+         * alle må avgjøre, og denne funksjonen kjente bare den siste. En
+         * kommentar fra en vanlig behandling var derfor usynlig her.
          */
         function kommentarerFor(steg) {
-            const med = (steg.Beslutninger || []).filter(b => (b.Kommentar || '').trim());
-            if (med.length === 0) return '';
-            return med.map(b => `
+            const k = kommentarer(steg);
+            if (k.length === 0) return '';
+            return k.map(x => `
                 <div style="width: 100%; font-size: 11px; color: var(--text-secondary); border-left: 2px solid var(--border-color); padding-left: 8px; margin-top: 4px;">
-                    <em>${escapeHtml(b.Aktor || '')}:</em> ${escapeHtml(b.Kommentar)}
+                    ${x.aktor ? `<em>${escapeHtml(x.aktor)}:</em> ` : ''}${escapeHtml(x.kommentar)}
                 </div>`).join('');
         }
 

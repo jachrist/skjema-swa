@@ -12,6 +12,8 @@
  * akseptert for framtidig kompatibilitet men brukes ikke.
  */
 
+const { kommentarLinje } = require('./behandling-kommentar');
+
 // xlsx lastes først når et Excel-uttrekk faktisk skal bygges. Samme grep som
 // Azure-SDK-ene i storage.js og blob.js: da kan de rene logikktestene kjøre
 // uten node_modules, slik CLAUDE.md forutsetter — og deploy-steget kjører
@@ -77,16 +79,16 @@ function sisteBeslutning(skjema) {
         ? delbeslutninger.map(b => b.Aktor).filter(Boolean).join('; ')
         : (siste.BehandletAv || '');
 
-    const kommentarer = delbeslutninger
-        .filter(b => (b.Kommentar || '').trim())
-        .map(b => delbeslutninger.length > 1 ? `${b.Aktor}: ${b.Kommentar}` : b.Kommentar);
+    // Leste bare Beslutninger[], så kolonnen var tom for alle skjemaer
+    // behandlet i standardmodus — altså de fleste.
+    const kommentar = kommentarLinje(siste);
 
     return {
         tekst: valg?.Tekst || String(siste.Beslutning),
         steg: siste.Stegnavn || `Steg ${siste.Steg}`,
         dato: siste.BehandletDato || '',
         av,
-        kommentar: kommentarer.join(' | ')
+        kommentar
     };
 }
 

@@ -35,9 +35,15 @@ const eStart = felt.indexOf('export function escapeHtml(');
 const eSlutt = felt.indexOf('\n}', eStart) + 2;
 const escapeKilde = felt.slice(eStart, eSlutt).replace('export function', 'function');
 
+// `kommentarerFor` i evaluering.html tegner HTML-en, men regelen for HVILKE
+// kommentarer som finnes ligger i js/behandling-kommentar.js. Den injiseres
+// her under navnet siden importerer den som.
+const { kommentarerFor: kommentarer } = require('../js/behandling-kommentar.js');
+
 const kommentarerFor = new Function(
-    `${escapeKilde}\n${kilde.slice(start, slutt)}\nreturn kommentarerFor;`
-)();
+    'escapeHtml', 'kommentarer',
+    `${kilde.slice(start, slutt)}\nreturn kommentarerFor;`
+)(new Function(`${escapeKilde}\nreturn escapeHtml;`)(), kommentarer);
 
 // ---------- ingenting å vise ----------
 {

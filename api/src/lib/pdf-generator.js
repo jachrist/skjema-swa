@@ -12,6 +12,7 @@
  */
 
 const { PDFDocument, StandardFonts, rgb, PageSizes } = require('pdf-lib');
+const { kommentarerFor } = require('./behandling-kommentar');
 
 const BLAA = rgb(0, 0.47, 0.83);
 const TEKST = rgb(0.2, 0.2, 0.2);
@@ -195,9 +196,15 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
                 7, font, TEKST
             );
             nyLinje(10);
-            if (b.Kommentar) {
-                const komLinjer = wrapTekst('Kommentar: ' + b.Kommentar, 7, font, contentW - 10);
-                for (const l of komLinjer) {
+            // Kommentaren ligger i steg.Kommentar i standardmodus og i
+            // Beslutninger[] når alle må avgjøre. PDF-en leste bare den
+            // første, så en kommentar fra en kollegial behandling sto ikke
+            // i arkivet i det hele tatt.
+            for (const k of kommentarerFor(b)) {
+                const merket = kommentarerFor(b).length > 1 && k.aktor
+                    ? `Kommentar (${k.aktor}): ${k.kommentar}`
+                    : `Kommentar: ${k.kommentar}`;
+                for (const l of wrapTekst(merket, 7, font, contentW - 10)) {
                     skrivTekst(l, 7, font, MUTED, margin + 10);
                     nyLinje(9);
                 }
