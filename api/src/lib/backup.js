@@ -54,6 +54,11 @@ const TABELLER = [
     // OTP-er og Power BI-tokens (365 dagers levetid). Uten dem slutter alle
     // PB-rapporter å virke til noen utsteder tokens på nytt.
     'Tilgangskontroll',
+    // Samtalen mellom innsender og behandlere. Den er en del av behandlingen
+    // og kan ikke gjenskapes fra noe annet — i motsetning til Teammedlemskap
+    // og Brukernavn, som begge bygges opp igjen.
+    'Samtale',
+    'SamtaleDemping',
     { navn: 'Hendelser', maksAlderDager: 90 }
 ];
 
