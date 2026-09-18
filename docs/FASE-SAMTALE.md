@@ -11,7 +11,9 @@ Tilgjengelig for både interne og eksterne når skjematypen tillater det — alt
 både ordinære lenker og OTP. I tillegg: behandler skal kunne gi en kommentar
 når endelig beslutning fattes.
 
-Dette dokumentet er vurderingen, ikke en ferdig spesifikasjon.
+Vurderingen ble skrevet 16.09.2026. Beslutningene ble tatt 18.09 og står under
+«Besluttet» — det er de som gjelder. Delene over dem er bakgrunnen som førte
+dit, og er beholdt fordi begrunnelsene fortsatt er gyldige.
 
 ## Hva som allerede finnes
 
@@ -73,59 +75,160 @@ revisjonssporet svare på hvordan noen kom inn.
 | Kommentar ved endelig beslutning | **Ferdig** — levert 16.09.2026 |
 | `Samtale`-tabell + les/skriv-endepunkter | **Moderat** — her ligger tyngden |
 | Chat-grensesnitt | **Moderat** — se «Sanntid» under |
-| Ekstern skrivetilgang | **Moderat** — mønsteret finnes, arbeidet er identitet og avgrensning |
+| Ekstern skrivetilgang | **Moderat** — mønsteret finnes, arbeidet er identitet |
 | Varsling ved nytt innlegg | **Lite til moderat**, avhengig av per melding eller sammendrag |
 | Åpen/lukket mot behandlingsstatus | **Lite** — `alleStegFerdig()` finnes |
 | Migrere eksisterende `Dialog[]` | **Lite**, men må gjøres — ellers ligger historikken to steder |
+| Demping per sak | **Lite** — egen tabell, én rad per bruker per sak |
 
 Samlet: **en fase, ikke en ettermiddag.** Sammenlignbart med OTP-arbeidet.
 
-## Tre forhold som må avklares før koding
+## Besluttet 18.09.2026
+
+Modellen er en **gruppechat**, slik folk kjenner den fra Teams og Slack.
+Deltakerne er innsenderen og behandlerne. Den er aktiv så lenge skjemaet er
+åpent, og følger saken som dokumentasjon når den lukkes.
+
+| # | Spørsmål | Valgt |
+|---|---|---|
+| 1 | Trådmodell | Én tråd per skjema |
+| 2 | Sanntid | Polling, 10–15 s |
+| 3 | Kryptering | **Ingen.** Informasjonstekst ved oppstart av samtalen |
+| 4 | Synlighet | **Alt synlig for alle deltakere.** Ingen interne innlegg |
+| 5 | Redigering | Nei — en retting er et nytt innlegg |
+| 6 | Vedlegg | Ikke i første versjon |
+| 7 | Varsling | Per innlegg. Behandlere kan dempe **per sak** |
+| 8 | Ved lukking | Lenken deaktiveres. Samtalen følger saken i PDF-en |
+| 9 | Datauttrekk | Bare antall innlegg og dato for siste |
+
+### Hvorfor punkt 3 og 4 henger sammen
+
+De ble avgjort hver for seg og endte likevel i samme svar, fordi de er det
+samme spørsmålet sett fra to sider.
+
+En kanal der innsenderen er til stede og ser alt, er noe folk allerede vet
+hvordan de skal oppføre seg i. «Ikke skriv noe sensitivt i en chat» er en
+innarbeidet norm, og den holder når alle i rommet er synlige. Den holder
+dårligere for en intern kanal om noen — der er hele poenget å drøfte personen
+saken gjelder.
+
+Derfor: **ingen interne innlegg i samtalen.** Intern drøfting blir værende i
+dagens `Dialog` og i kommentaren ved beslutning, som er bygget for nettopp
+det, og som er dekket av skjematypens kryptering.
+
+Uten interne innlegg er den farligste feilmodusen borte helt — den der noen
+skriver i den tro at motparten ikke leser. Det er ikke en teoretisk risiko:
+akkurat den lekkasjen lå i PDF-en til 18.09.2026, og ble funnet mens denne
+modellen ble tegnet.
+
+### Det dette koster
+
+En ukryptert `Samtale`-tabell er en **svekkelse for skjematyper med omfang
+`Alt`**, der dagens `Dialog` krypteres sammen med resten av skjemaet.
+
+Det er akseptabelt fordi samtalen er en delt kanal med innsenderen til stede,
+og fordi brukeren blir fortalt det ved oppstart. Men det er et bevisst valg,
+ikke en nøytral forenkling, og det bør stå her.
+
+### Deltakere
+
+Samtalen bruker **samme tilgangsregel som saken selv** — `tilgangsRolle` i
+`lib/dialog-tilgang.js`. Har du tilgang til skjemaet, er du deltaker.
+
+Det inkluderer behandlere fra tidligere steg. En tråd per skjema betyr at noen
+som avgjorde steg 1 fortsatt kan lese og skrive på steg 3. Alternativet — å
+kaste folk ut av en samtale de har deltatt i — er verre, og PDF-tilgangen
+fungerer allerede slik.
+
+### Datamodell
+
+```
+Tabell:  Samtale
+PK:      {skjematypeId}:{skjemaId}
+RK:      {ISO-tid}-{kort tilfeldig}   ← sortering og unikhet i samme nøkkel
+Felter:  Avsender, AvsenderNavn, Tekst, Dato, Kilde
+
+Tabell:  SamtaleDemping
+PK:      {skjematypeId}:{skjemaId}
+RK:      {upn}
+Felter:  Dempet, SistEndret
+```
+
+`Kilde` skiller innlogget fra token-basert avsender. Uten den kan ikke
+revisjonssporet svare på hvordan noen kom inn.
+
+`Type`-feltet fra det opprinnelige utkastet er borte. Det var intern/ekstern,
+og etter punkt 4 finnes ikke det skillet. Et felt som bare kan ha én verdi er
+en invitasjon til å gi det to igjen senere.
+
+## Forhold som fortsatt gjelder
 
 ### Sanntid finnes ikke
 
 SWA Managed Functions har hverken WebSockets eller SignalR. En «chat» blir
 polling — realistisk hvert 10.–15. sekund mens siden er åpen.
 
-Det oppleves som en chat, men er det ikke. Oppdragsgiver bør vite det før de ser
-en demo, ikke etter.
+Det oppleves som en chat, men er det ikke. Oppdragsgiver bør vite det før de
+ser en demo, ikke etter.
 
-### Kryptering arves ikke lenger
+### Lenken dør, PDF-en blir igjen
 
-Er skjematypen satt til omfang `Alt`, krypteres hele JSON-en, og dagens
-`Dialog[]` er dekket automatisk (`kryptering.js:129`). Med andre omfang ligger
-den i klartekst allerede i dag.
+Deaktiveres lenken ved lukking, er PDF-en innsenderens eneste kopi av
+samtalen. To ting følger av det:
 
-Flyttes meldingene til egen tabell, må dette avgjøres eksplisitt. Samtalen
-inneholder etter all sannsynlighet mer personopplysninger enn skjemaet selv.
+- Samtalen **må** inn i PDF-en, i seksjonen innsender får se.
+- Kvitteringen må sendes **før** lenken deaktiveres. Ellers mister innsenderen
+  en samtale om sin egen sak uten å ha fått sjansen til å ta vare på den.
 
-### Hva en ekstern skal se
+### Migrere eksisterende `Dialog[]`
 
-I dag er `intern` sperret for innsender ved **skriving**. I en samtaletråd må
-det også være sperret ved **lesing**, og det må være synlig for behandleren
-hvilke innlegg motparten kan se.
+Dagens eksterne innlegg hører hjemme i samtalen; de interne blir værende i
+`Dialog`. Gjøres ikke dette, ligger historikken to steder, og det er ikke
+åpenbart for noen hvilken av dem som er den fullstendige.
 
-Uten det skriver noen noe internt i den tro at det er skjult. Det er den
-feilen som koster mest her, og den eneste som ikke kan rettes i ettertid.
+## Hvem kan starte (besluttet 18.09.2026)
 
-## Anbefaling
+Bryteren ligger på skjematypen som `Skjematype.Samtale`:
 
-**Kommentaren ved beslutning er tatt** (16.09.2026). Den dekket halve
-forespørselen og er prøvd i opplæring.
+| Verdi | Betyr |
+|---|---|
+| `Av` | ingen samtale. **Standard.** |
+| `Behandlere` | bare behandlere kan skrive det første innlegget; innsender kan svare |
+| `Alle` | innsender kan starte selv, via kvitteringen |
 
-**Samtalen bør gjøres som egen fase med egen tabell fra dag én.** Å bygge den
-oppå dagens `Dialog[]` vil virke i test og feile i produksjon — på den måten som
-er vanskeligst å rydde opp i: midt i en pågående sak, når noen nettopp har
-skrevet noe viktig.
+`Av` er standard fordi skjematypene som allerede ligger i produksjon ikke skal
+få en samtaleflate fordi funksjonen ble rullet ut. Eieren slår den på.
+
+Uten behandlingssteg er svaret `Av` uansett hva som står lagret, og valget er
+låst i editoren. En samtale mellom innsender og behandlere krever at det finnes
+en behandler.
+
+I en gruppechat finnes det ikke noe eget startpunkt — det første innlegget ER
+starten. Regelen er derfor ikke «hvem kan opprette en tråd», men «hvem kan
+skrive når tråden er tom» (`kanSkrive` i `lib/samtale-tilgang.js`), og den
+håndheves på serveren. Et skjult skrivefelt er ingen tilgangskontroll.
+
+En innsender som verken kan skrive eller har noe å lese, ser ingen samtale i
+det hele tatt. En låst boks hen lurer på hva er, er verre enn ingen boks.
+
+## Kjent begrensning: eksterne mister tilgangen ved navigasjon
+
+OTP-tokenet ligger i minnet på siden (`api.settHeader`), ikke i
+`sessionStorage`. Det overlever derfor ikke en navigasjon.
+
+Følgen er at en ekstern innsender ikke kan åpne `visning.html` eller bruke
+samtalen etter at kvitteringen er vist — kallet svarer 401. **Dette gjelder
+allerede i dag**, uavhengig av samtalen: «Se skjemaet»-lenken på kvitteringen
+har samme problem.
+
+Samtalen er derfor i praksis bare tilgjengelig for innloggede innsendere
+inntil dette er løst. Det krever en beslutning som ikke er tatt: å legge
+tokenet i `sessionStorage` er den nærliggende løsningen, men det er et
+bærer-token, og hvor det lagres er et sikkerhetsvalg.
 
 ## Åpne punkter
 
-- Skal et innlegg kunne redigeres eller slettes? Arkivering taler for nei, og
-  for at en retting er et nytt innlegg.
-- Vedlegg i samtalen? Blob-mønsteret finnes fra før (`vedlegg`-containeren),
-  men det utvider både tilgangskontroll og arkivering.
-- Varslingsfrekvens. Ett varsel per innlegg blir støy i en aktiv samtale.
-- Hva skjer med samtalen når behandlingen lukkes — lesbar for begge parter,
-  eller bare i arkivet?
-- `Dialog` i datauttrekk og rapporter: den er **ikke** med i dag. Skal samtalen
-  være det?
+- Hvor skal OTP-tokenet lagres, slik at eksterne beholder tilgangen gjennom en
+  navigasjon? Se «Kjent begrensning» over.
+- Informasjonsteksten ved oppstart: utkast i `docs/SAMTALE-INFOTEKST.md`, til
+  godkjenning hos oppdragsgiver. Den bærer hele begrunnelsen for punkt 3.

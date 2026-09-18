@@ -799,7 +799,114 @@ async function sendFerdigVarsling(skjema, skjematype, opts = {}) {
     }, log);
 }
 
+/**
+ * Varsle om et nytt innlegg i samtalen.
+ *
+ * Mottakerne er de andre deltakerne: innsenderen og behandlerne på aktive
+ * steg. Avsenderen selv får ikke varsel om sitt eget innlegg — det er den
+ * enkleste og mest irriterende feilen i en chat.
+ *
+ * Behandlere som har dempet saken hoppes over. Innsenderen kan ikke dempe (se
+ * `lib/samtale-tilgang.js`): hen har én sak å forholde seg til og må være
+ * mulig å nå.
+ *
+ * Teksten i innlegget er IKKE med i varselet. To grunner, og den andre er den
+ * viktigste:
+ *
+ *   E-post er ikke stedet samtalen skal leses. Er teksten med, svarer folk på
+ *   e-posten, og da er vi tilbake til trådstrengene dette skulle erstatte.
+ *
+ *   Samtalen er ukryptert i vår lagring fordi den er en delt kanal med
+ *   innsenderen til stede. Et varsel går ut av den kanalen, til en innboks vi
+ *   ikke vet noe om. Da skal ikke innholdet følge med.
+ */
+async function sendSamtaleVarsling(skjema, skjematype, innlegg, opts = {}) {
+    const log = opts.log || (() => {});
+    const samtaleStorage = require('./samtale-storage');
+
+    const avsender = String(innlegg?.Avsender || '').trim().toLowerCase();
+    const skjematypeId = skjema?.Skjematype_id;
+    const skjemaId = skjema?.Skjema_id;
+
+    // Innsenderen. Kan ikke dempe, men skal ikke varsles om sitt eget innlegg.
+    const innsender = String(skjema?.Innsender_Epost || skjema?.Innsender_epost || '').trim().toLowerCase();
+    const mottakere = [];
+    if (innsender && innsender !== avsender) {
+        mottakere.push({ epost: innsender, navn: skjema?.Innsender_Navn || '' });
+    }
+
+    // Behandlerne på aktive steg.
+    const { beregnAktiveSteg } = require('./behandling');
+    for (const steg of beregnAktiveSteg(skjema)) {
+        for (const m of await samleBehandlerMottakere(steg)) {
+            if (m.epost === avsender) continue;
+            if (mottakere.some(x => x.epost === m.epost)) continue;
+            mottakere.push(m);
+        }
+    }
+
+    if (mottakere.length === 0) {
+        log('samtale-varsling: ingen andre deltakere — hopper over');
+        return { status: 'hoppet-over' };
+    }
+
+    // Demping er per sak og per bruker. Innsenderen filtreres ikke bort her:
+    // hen kan ikke dempe, og et oppslag som feilet ville ellers kunnet stanse
+    // varselet til den ene som må nås.
+    const aktuelle = [];
+    for (const m of mottakere) {
+        if (m.epost === innsender) { aktuelle.push(m); continue; }
+        if (await samtaleStorage.erDempet(skjematypeId, skjemaId, m.epost)) continue;
+        aktuelle.push(m);
+    }
+    if (aktuelle.length === 0) {
+        log('samtale-varsling: alle mottakere har dempet saken — hopper over');
+        return { status: 'hoppet-over' };
+    }
+
+    // Innsenderen leser samtalen i visning.html, behandlerne i evaluering.html.
+    // Én felles lenke ville sendt den ene parten til en side hen ikke har
+    // tilgang til — og da ser det ut som at samtalen er borte.
+    //
+    // Derfor to kall, ett per gruppe, med hver sin ferdig oppløste $lenke.
+    // Payloaden har riktignok et `lenker`-felt for URL per mottaker, men INGEN
+    // kaller har noensinne satt det — flytens håndtering av det er uprøvd, og
+    // en varsling er ikke stedet å prøve den ut. To kall bruker bare mekanikk
+    // som allerede går i produksjon hver dag.
+    const kontekst = byggKontekst({ skjema, skjematype, lenke: undefined });
+    const navn = innlegg?.AvsenderNavn || innlegg?.Avsender || 'En deltaker';
+    const emne = `Nytt innlegg i samtalen: "${kontekst.skjemanavn}" (${skjemaId})`;
+
+    // Teksten i innlegget er bevisst ikke med — se kommentaren over funksjonen.
+    const brødtekst = `<p>${navn} har skrevet et nytt innlegg i samtalen om skjemaet `
+        + `"${kontekst.skjemanavn}" (${skjemaId}).</p>`
+        + `<p><a href="$lenke">Åpne samtalen</a></p>`;
+
+    const grupper = [
+        { side: 'visning.html', mottakere: aktuelle.filter(m => m.epost === innsender) },
+        { side: 'evaluering.html', mottakere: aktuelle.filter(m => m.epost !== innsender) }
+    ];
+
+    const resultater = [];
+    for (const g of grupper) {
+        if (g.mottakere.length === 0) continue;
+        const lenke = skjemaLenke(skjematypeId, skjemaId, opts.request, g.side) + '#samtale';
+        resultater.push(await sendEpostViaFlyt({
+            handling: 'sendSamtaleVarsling',
+            mottakere: g.mottakere,
+            emne,
+            html: erstattPlassholdere(brødtekst, { ...kontekst, lenke }),
+            lenke,
+            skjemaId, skjematypeId,
+            skjemaNavn: kontekst.skjemanavn
+        }, log));
+    }
+    log(`samtale-varsling: ${aktuelle.length} mottaker(e) i ${resultater.length} kall`);
+    return { status: 'ok', resultater };
+}
+
 module.exports = {
+    sendSamtaleVarsling,
     sendInnsenderKvittering,
     sendBehandlerVarsling,
     sendVarslingAktiveSteg,

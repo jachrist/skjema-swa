@@ -197,6 +197,68 @@
             border: 1px solid var(--accent);
         }
         .knapp.sekundær:hover { background: var(--accent-light); }
+        /* ---- Samtale (gruppechat) ---- */
+        .samtale {
+            background: var(--bg-kort);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 16px 20px;
+            margin-top: 14px;
+        }
+        .samtale-topp { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
+        .samtale-tittel { font-size: 16px; font-weight: 700; color: var(--accent); margin: 0 0 4px 0; }
+        .samtale-demp { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+        .samtale-lukket { font-size: 12px; color: var(--text-secondary); margin: 4px 0 10px 0; }
+        .samtale-liste {
+            max-height: 420px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .samtale-tom { font-size: 13px; color: var(--text-secondary); margin: 6px 0; }
+        .samtale-innlegg {
+            background: var(--bg-sekundaer, rgba(120,120,128,0.08));
+            border-radius: var(--radius-md, 8px);
+            padding: 8px 12px;
+            /* En lang UPN eller en URL uten mellomrom skal ikke presse boksen
+               ut av containeren — samme feil som i .brukerinfo. */
+            overflow-wrap: anywhere;
+        }
+        .samtale-innlegg.meg { background: var(--accent-light, rgba(0,122,255,0.10)); }
+        .samtale-hode { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
+        .samtale-avsender { font-weight: 600; }
+        .samtale-tekst { font-size: 13px; white-space: pre-wrap; }
+        .samtale-info { font-size: 11px; color: var(--text-secondary); margin: 8px 0 6px 0; }
+        .samtale-felt {
+            width: 100%;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 13px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md, 8px);
+            background: var(--bg-input, transparent);
+            color: inherit;
+            resize: vertical;
+        }
+        .samtale-knapperad { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+        .samtale-status { font-size: 12px; color: var(--text-secondary); margin-right: auto; }
+        .samtale-status.feil { color: var(--danger); }
+        .samtale-send {
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            border: 2px solid var(--accent);
+            border-radius: var(--radius-md, 8px);
+            background: var(--accent);
+            color: white;
+            cursor: pointer;
+        }
+        .samtale-send:disabled { opacity: 0.5; cursor: not-allowed; }
+
     </style>
 </head>
 <body>
@@ -224,6 +286,7 @@
         import { hentInnloggetBruker } from './js/auth.js';
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
+        import { byggSamtale } from './js/samtale.js';
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
@@ -231,8 +294,12 @@
 
         const STATUS_TEKST = { 0: '–', 1: 'Utkast', 2: 'Innsendt', 3: 'Avvist' };
 
+        // Modulnivå: samtalepanelet trenger den som `megId` for å merke egne
+        // innlegg, og det bygges etter at init er ferdig.
+        let bruker = null;
+
         async function init() {
-            const bruker = await hentInnloggetBruker();
+            bruker = await hentInnloggetBruker();
             if (!bruker) {
                 window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
                 return;
@@ -311,6 +378,11 @@
             if (Array.isArray(skjema.Behandling) && skjema.Behandling.length > 0) {
                 innhold.appendChild(byggBehandlingVisning(skjema.Behandling));
             }
+
+            // Samtalen. Widgeten avgjør selv om den skal vises — den spør
+            // API-et, som svarer ut fra skjematypens innstilling, rollen og
+            // hvor mange innlegg som finnes.
+            innhold.appendChild(byggSamtalePanel(skjema));
 
             // Vis dialog (backend filtrerer bort interne innlegg for innsender)
             if (Array.isArray(skjema.Dialog) && skjema.Dialog.length > 0) {
@@ -420,6 +492,34 @@
             }
             return div;
         }
+
+        /**
+         * Samtalepanelet.
+         *
+         * `rendrer()` kalles én gang her, men pollingen stoppes likevel ved
+         * hver oppbygging og på `pagehide`. En timer som overlever siden
+         * fortsetter å hente ut hele økten.
+         */
+        let samtaleWidget = null;
+
+        function byggSamtalePanel(skjema) {
+            if (samtaleWidget) { samtaleWidget.stopp(); samtaleWidget = null; }
+            const div = document.createElement('div');
+            // Kvitteringen lenker hit med #samtale.
+            div.id = 'samtale';
+            samtaleWidget = byggSamtale(div, {
+                api,
+                skjematypeId: skjema.Skjematype_id || skjematypeId,
+                skjemaId: skjema.Skjema_id || skjemaId,
+                megId: bruker?.userDetails || skjema.Innsender_Epost || '',
+                infotekst: 'Alle som behandler saken ser det du skriver her. Samtalen arkiveres '
+                    + 'sammen med saken. Ikke skriv sensitive personopplysninger.'
+            });
+            samtaleWidget.start();
+            return div;
+        }
+
+        window.addEventListener('pagehide', () => { if (samtaleWidget) samtaleWidget.stopp(); });
 
         function byggDialogVisning(dialog) {
             const div = document.createElement('div');

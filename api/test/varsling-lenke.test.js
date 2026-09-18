@@ -45,7 +45,10 @@ process.env.SWA_URL = 'https://eksempel.net';
     const path = require('path');
     const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'varsling.js'), 'utf8');
     const verdier = [...kilde.matchAll(/^\s*handling: '([^']+)'/gm)].map(m => m[1]);
-    sjekk('fire varslinger, fire verdier', verdier.length, 4);
+    // Antallet står ikke fast — nye varslinger kommer til. Det som må holde,
+    // er at hver av dem har sin EGEN verdi: to varslinger med samme handling
+    // gjør kjøreloggen ubrukelig til akkurat det den finnes for.
+    sjekk('det finnes varslinger å skille', verdier.length >= 4, true);
     sjekk('alle er unike', new Set(verdier).size, verdier.length);
     sjekk('behandlervarslingen beholder sin gamle verdi',
         verdier.includes('sendBehandlingsVarsling'), true);

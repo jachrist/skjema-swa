@@ -13,10 +13,14 @@
  * tilfeldigvis ligger i samme nettleser. Tokenet gir mindre tilgang enn en
  * innlogget sesjon, så prioriteringen utvider ingen rettigheter.
  *
+ * Reglene lå i `functions/skjemaer.js` til 18.09.2026, og testen måtte laste
+ * hele funksjonsfila for å nå dem. Uten `@azure/functions` hoppet den over seg
+ * selv og meldte «0 OK, 0 feil» — altså grønt, uten å ha testet noe. Nå ligger
+ * reglene i `lib/ekstern-auth.js` og testes uten pakker.
+ *
  * Kjøres med:  node api/test/ekstern-auth.test.js
  */
-let modul = null;
-try { modul = require('../src/functions/skjemaer'); } catch (_) { /* hoppes over uten @azure/functions */ }
+const modul = require('../src/lib/ekstern-auth');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -31,12 +35,7 @@ function req(headers = {}) {
     return { headers: { get: (n) => h.get(String(n).toLowerCase()) ?? null } };
 }
 
-if (!modul?._harOtpToken) {
-    console.log('(hopper over — @azure/functions ikke installert)');
-    console.log('\n0 OK, 0 feil, 1 hoppet over');
-    process.exit(0);
-}
-const { _harOtpToken: harOtpToken, _velgAuthvei: velgAuthvei } = modul;
+const { harOtpToken, velgAuthvei } = modul;
 
 // ---------- selve deteksjonen ----------
 {
