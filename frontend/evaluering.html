@@ -428,10 +428,45 @@
                     api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}?skjema_id=${encodeURIComponent(skjemaId)}`),
                     api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`)
                 ]);
+                if (skalTilVisning(skjema)) {
+                    // replace, ikke assign: tilbakeknappen skal ikke sende
+                    // brukeren inn igjen på en side hen nettopp ble ledet bort
+                    // fra.
+                    window.location.replace(
+                        `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}`
+                        + `&skjema_id=${encodeURIComponent(skjemaId)}${window.location.hash}`);
+                    return;
+                }
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke hente skjemaet: ' + e.message);
             }
+        }
+
+        /**
+         * Skal denne brukeren sendes til visningssiden i stedet?
+         *
+         * Innsenderen har tilgang til sin egen sak — det er tilsiktet — og
+         * havnet derfor på en side som heter «Behandle:», med behandlernes
+         * grensesnitt. `visning.html` er laget for dette, og har nå både
+         * samtalen, behandlingshistorikken og kommentarene.
+         *
+         * To forbehold, og det første er hele grunnen til at regelen ikke bare
+         * er «er innsender»:
+         *
+         *   Er du BÅDE innsender og behandler på samme sak, skal du ikke
+         *   sendes bort fra din egen oppgave. `tilgangsRolle` svarer
+         *   «innsender» for deg — den sjekken kommer først, med vilje, så du
+         *   ser MINDRE av den interne dialogen. Den kan derfor ikke brukes
+         *   alene til å bestemme hvor du skal.
+         *
+         *   Mangler `_minRolle` (eldre API), omdirigeres ingen. Å sende en
+         *   behandler bort fra behandlingssiden er verre enn å la en innsender
+         *   se en side hen ikke trenger.
+         */
+        function skalTilVisning(skjema) {
+            if (skjema?._minRolle !== 'innsender') return false;
+            return (skjema?._mineStegNumre || []).length === 0;
         }
 
         function visFeil(t) {
