@@ -619,8 +619,7 @@
                 const knapp = document.createElement('button');
                 knapp.type = 'button';
                 knapp.className = 'beslutning-knapp';
-                const t = (valg.Tekst || '').toLowerCase();
-                if (t.includes('avslå') || t.includes('avvis')) knapp.classList.add('avvis');
+                if (erAvvisning(valg.Tekst)) knapp.classList.add('avvis');
                 knapp.textContent = valg.Tekst || `Valg ${valg.Nummer}`;
                 knapp.addEventListener('click', () => taBeslutning(steg.Steg, valg.Nummer, valg.Tekst));
                 knapper.appendChild(knapp);
@@ -759,11 +758,38 @@
             });
         }
 
+        /**
+         * Er dette et beslutningsvalg som avslutter saken negativt?
+         *
+         * Brukes to steder — fargen på beslutningsknappen og på
+         * bekreft-knappen i dialogen — og de to skal aldri si ulike ting om
+         * samme valg.
+         *
+         * Heuristikk på teksten, fordi skjematypene selv bestemmer hva valgene
+         * heter. Treffer den ikke, blir knappen nøytral. Det er riktig vei å
+         * bomme på: en rød knapp på et godkjenningsvalg er verre enn en
+         * nøytral knapp på et avslag.
+         */
+        function erAvvisning(tekst) {
+            const t = String(tekst || '').toLowerCase();
+            return t.includes('avslå') || t.includes('avvis');
+        }
+
         async function taBeslutning(stegNr, beslutningNr, tekst) {
             const svar = await bekreftModal({
                 tittel: 'Bekreft beslutning',
                 tekst: `Registrer "${tekst}" på steg ${stegNr}?`,
-                bekreftTekst: tekst,
+                // Knappen speiler beslutningen, men med verbet foran.
+                //
+                // Den sto med bare valgets navn til 18.09.2026. Da leste den
+                // som «godta kommentaren» for den som nettopp hadde skrevet i
+                // feltet rett over — og et valg som heter «Godkjenn» over et
+                // kommentarfelt er en uheldig kombinasjon når kommentaren
+                // gjelder et avslag.
+                bekreftTekst: `Registrer «${tekst}»`,
+                // Rødt på et avslag. Fargen leses før teksten, og dette er
+                // siste stopp før beslutningen er registrert.
+                bekreftStil: erAvvisning(tekst) ? 'danger' : 'primær',
                 kommentarEtikett: 'Kommentar (frivillig)',
                 kommentarHjelp: 'Følger beslutningen i saken og kommer med i PDF-utskriften.'
             });
