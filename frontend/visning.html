@@ -335,15 +335,26 @@
             }
 
             // Sett smart tilbake-lenke: hvis vi kom fra register, gå dit; ellers til oversikt
+            //
+            // Lenken får href-en sin HER, etter at modulen kjørte. Den ble
+            // derfor ikke merket av `data-oversiktslenke` i markupen, og sto
+            // igjen som «Til skjemaoversikten» for innsendere som ikke skal se
+            // den — mens knappen nederst på siden var riktig skjult.
+            //
+            // Merkingen settes nå i den grenen som faktisk peker dit, og
+            // regelen kjøres på nytt etterpå.
             const ref = document.referrer;
             const tilbakeEl = document.getElementById('tilbake');
             if (ref && ref.includes('/register.html')) {
                 tilbakeEl.href = `/register.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
                 tilbakeEl.textContent = '← Til register';
+                tilbakeEl.removeAttribute('data-oversiktslenke');
             } else {
                 tilbakeEl.href = '/velgskjematype.html';
                 tilbakeEl.textContent = '← Til skjemaoversikten';
+                tilbakeEl.setAttribute('data-oversiktslenke', '');
             }
+            styrOversiktslenker(api);
 
             try {
                 const [skjematype, skjema] = await Promise.all([

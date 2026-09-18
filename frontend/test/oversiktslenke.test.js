@@ -51,7 +51,35 @@ for (const fil of sider) {
     const kilde = fs.readFileSync(path.join(mappe, fil), 'utf8');
 
     const lenker = [...kilde.matchAll(/<a\b[^>]*href="\/velgskjematype\.html"[^>]*>/g)].map(m => m[0]);
-    if (lenker.length === 0) continue;
+
+    // Lenker som får href-en sin fra JS.
+    //
+    // Dette leddet manglet først, og feilen slapp gjennom: `visning.html` har
+    // en «← Tilbake» som peker til oversikten eller til registeret avhengig av
+    // hvor du kom fra, og href-en settes ved kjøring. Testen så bare i
+    // markupen, fant ingen href der, og meldte grønt — mens lenken sto framme
+    // for innsendere. Hullet i testen hadde nøyaktig samme form som feilen.
+    //
+    // `location.href = ...` er en NAVIGERING, ikke en lenke som står og venter
+    // på å bli klikket. Den skal ikke merkes, og den filtreres bort her.
+    const dynamiske = [...kilde.matchAll(/(\w+)\.href\s*=\s*['"`]\/velgskjematype\.html['"`]/g)]
+        .filter(m => !/^location$/.test(m[1]) && !/window\.location\.href\s*=$/.test(
+            kilde.slice(Math.max(0, m.index - 10), m.index + m[1].length + 6)));
+    for (const d of dynamiske) {
+        const el = d[1];
+        // Elementet må merkes i den grenen som peker dit ...
+        sjekk(`${fil}: ${el} merkes når den peker på oversikten`,
+            new RegExp(`${el}\\.setAttribute\\('data-oversiktslenke'`).test(kilde), true);
+        // ... og umerkes i grenen som peker et annet sted, ellers blir den
+        // stående skjult når den er en helt vanlig tilbake-lenke.
+        sjekk(`${fil}: ${el} umerkes når den peker et annet sted`,
+            new RegExp(`${el}\\.removeAttribute\\('data-oversiktslenke'`).test(kilde), true);
+        // Regelen må kjøres PÅ NYTT etterpå: modulen kjørte før href-en fantes.
+        sjekk(`${fil}: regelen kjøres etter at href er satt`,
+            kilde.lastIndexOf('styrOversiktslenker(') > d.index, true);
+    }
+
+    if (lenker.length === 0 && dynamiske.length === 0) continue;
 
     const merket = lenker.filter(l => l.includes('data-oversiktslenke'));
     const umerket = lenker.length - merket.length;
