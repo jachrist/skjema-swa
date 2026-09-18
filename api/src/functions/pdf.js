@@ -21,6 +21,7 @@ const { beregnAktiveSteg, brukerErBehandlerAsync } = require('../lib/behandling'
 const { genererOppsummeringPdf } = require('../lib/pdf-generator');
 const kryptering = require('../lib/kryptering');
 const dialogTilgang = require('../lib/dialog-tilgang');
+const samtaleStorage = require('../lib/samtale-storage');
 const nokkelStorage = require('../lib/nokkel-storage');
 
 async function harTilgang(skjema, skjematypeId, upn) {
@@ -121,6 +122,18 @@ app.http('genererPdf', {
             // lesestien bruker — én regel, to kallsteder.
             const rolle = await dialogTilgang.tilgangsRolle(skjema, skjematypeId, upn);
             dialogTilgang.skjulInterneInnlegg(skjema, rolle);
+
+            // Samtalen ligger i egen tabell, ikke i skjemaet. Uten dette
+            // oppslaget ville PDF-en vært tom der samtalen skulle stått — og
+            // den er innsenderens eneste kopi etter at saken lukkes.
+            //
+            // Best-effort: en PDF uten samtale er bedre enn ingen PDF, men det
+            // skal stå i loggen at den mangler.
+            try {
+                skjema.Samtale = await samtaleStorage.hentInnlegg(skjematypeId, skjemaId);
+            } catch (e) {
+                context.log(`pdf: kunne ikke hente samtalen — ${e.message}`);
+            }
 
             const log = (m) => context.log(m);
             const vedlegg = await hentAlleVedlegg(skjematypeId, skjemaId, log);

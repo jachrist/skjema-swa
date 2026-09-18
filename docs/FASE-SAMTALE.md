@@ -186,9 +186,49 @@ Dagens eksterne innlegg hører hjemme i samtalen; de interne blir værende i
 `Dialog`. Gjøres ikke dette, ligger historikken to steder, og det er ikke
 åpenbart for noen hvilken av dem som er den fullstendige.
 
+## Hvem kan starte (besluttet 18.09.2026)
+
+Bryteren ligger på skjematypen som `Skjematype.Samtale`:
+
+| Verdi | Betyr |
+|---|---|
+| `Av` | ingen samtale. **Standard.** |
+| `Behandlere` | bare behandlere kan skrive det første innlegget; innsender kan svare |
+| `Alle` | innsender kan starte selv, via kvitteringen |
+
+`Av` er standard fordi skjematypene som allerede ligger i produksjon ikke skal
+få en samtaleflate fordi funksjonen ble rullet ut. Eieren slår den på.
+
+Uten behandlingssteg er svaret `Av` uansett hva som står lagret, og valget er
+låst i editoren. En samtale mellom innsender og behandlere krever at det finnes
+en behandler.
+
+I en gruppechat finnes det ikke noe eget startpunkt — det første innlegget ER
+starten. Regelen er derfor ikke «hvem kan opprette en tråd», men «hvem kan
+skrive når tråden er tom» (`kanSkrive` i `lib/samtale-tilgang.js`), og den
+håndheves på serveren. Et skjult skrivefelt er ingen tilgangskontroll.
+
+En innsender som verken kan skrive eller har noe å lese, ser ingen samtale i
+det hele tatt. En låst boks hen lurer på hva er, er verre enn ingen boks.
+
+## Kjent begrensning: eksterne mister tilgangen ved navigasjon
+
+OTP-tokenet ligger i minnet på siden (`api.settHeader`), ikke i
+`sessionStorage`. Det overlever derfor ikke en navigasjon.
+
+Følgen er at en ekstern innsender ikke kan åpne `visning.html` eller bruke
+samtalen etter at kvitteringen er vist — kallet svarer 401. **Dette gjelder
+allerede i dag**, uavhengig av samtalen: «Se skjemaet»-lenken på kvitteringen
+har samme problem.
+
+Samtalen er derfor i praksis bare tilgjengelig for innloggede innsendere
+inntil dette er løst. Det krever en beslutning som ikke er tatt: å legge
+tokenet i `sessionStorage` er den nærliggende løsningen, men det er et
+bærer-token, og hvor det lagres er et sikkerhetsvalg.
+
 ## Åpne punkter
 
-- Skal innsenderen kunne dempe varsling, eller bare behandlere? Slik det står
-  nå er det bare behandlere — innsenderen må være mulig å nå.
+- Hvor skal OTP-tokenet lagres, slik at eksterne beholder tilgangen gjennom en
+  navigasjon? Se «Kjent begrensning» over.
 - Informasjonsteksten ved oppstart: utkast i `docs/SAMTALE-INFOTEKST.md`, til
   godkjenning hos oppdragsgiver. Den bærer hele begrunnelsen for punkt 3.

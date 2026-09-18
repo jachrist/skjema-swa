@@ -129,6 +129,13 @@
             <a class="knapp sekundær" href="#" id="se-skjemaet">Se skjemaet</a>
             <a class="knapp sekundær" href="#" id="nytt-lignende">Fyll ut nytt</a>
         </div>
+        <div class="knapperad" id="samtale-rad" hidden style="margin-top: 0;">
+            <a class="knapp sekundær" href="#" id="start-samtale">Still et spørsmål om saken</a>
+        </div>
+        <p id="samtale-hjelp" hidden style="font-size: 12px; color: var(--text-secondary); margin: 10px 0 0 0;">
+            Du kan sende meldinger til dem som behandler saken. Alle som behandler den ser
+            det du skriver.
+        </p>
     </div>
 
     <script type="module">
@@ -139,8 +146,39 @@
         document.getElementById('skjematype-id').textContent = skjematypeId;
         document.getElementById('nytt-lignende').href =
             `/index.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
-        document.getElementById('se-skjemaet').href =
+        const visningsUrl =
             `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
+        document.getElementById('se-skjemaet').href = visningsUrl;
+
+        /**
+         * Tilbud om å starte en samtale.
+         *
+         * Knappen vises bare når SERVEREN sier at denne innsenderen kan skrive
+         * det første innlegget — altså når skjematypen står på «Alle». Vi
+         * gjentar ikke regelen her: den bor i `lib/samtale-tilgang.js`, og en
+         * kopi ville før eller siden sagt noe annet enn originalen.
+         *
+         * Feiler kallet, eller er samtalen av, vises ingenting. En kvittering
+         * som blinker med en knapp som ikke virker er verre enn en kvittering
+         * uten knapp.
+         */
+        (async () => {
+            if (skjemaId === '(mangler)' || skjematypeId === '(mangler)') return;
+            try {
+                const { api } = await import('./js/api-client.js');
+                const svar = await api.get(
+                    `/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/samtale`,
+                    { hopperOver401: true });
+                if (!svar?.synlig || !svar?.kanSkrive) return;
+                document.getElementById('start-samtale').href = visningsUrl + '#samtale';
+                document.getElementById('samtale-rad').hidden = false;
+                document.getElementById('samtale-hjelp').hidden = false;
+            } catch (_) {
+                // Samtalen er av (404), brukeren er ekstern uten token (401),
+                // eller API-et er nede. Ingen av delene er noe kvitteringen
+                // skal si fra om.
+            }
+        })();
     </script>
     <script type="module" src="/js/systemtopp.js"></script>
 </body>

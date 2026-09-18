@@ -258,6 +258,32 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
         }
     }
 
+    // === SAMTALE ===
+    //
+    // Deaktiveres lenken når saken lukkes, er denne PDF-en innsenderens eneste
+    // kopi av samtalen. Da må den være her.
+    //
+    // Ingen filtrering: samtalen har ingen interne innlegg. Alt som står der,
+    // har alle deltakerne allerede sett. Det er nettopp derfor den er trygg å
+    // skrive ut i sin helhet — i motsetning til Dialog under, som må filtreres
+    // av kalleren før den kommer hit.
+    const samtale = Array.isArray(skjema.Samtale) ? skjema.Samtale : [];
+    if (samtale.length > 0) {
+        nyLinje(15);
+        skrivTekst('Samtale', 10, fontBold, BLAA);
+        nyLinje(14);
+        for (const i of samtale) {
+            const dato = formatKortDato(i.Dato);
+            skrivTekst(`${i.AvsenderNavn || i.Avsender || '-'} - ${dato}`, 6, font, MUTED);
+            nyLinje(9);
+            for (const l of wrapTekst(i.Tekst || '', 7, font, contentW - 10)) {
+                skrivTekst(l, 7, font, TEKST, margin + 5);
+                nyLinje(9);
+            }
+            nyLinje(3);
+        }
+    }
+
     // === DIALOG ===
     const dialog = Array.isArray(skjema.Dialog) ? skjema.Dialog : [];
     if (dialog.length > 0) {
