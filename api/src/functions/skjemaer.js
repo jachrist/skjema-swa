@@ -30,6 +30,7 @@ const hendelser = require('../lib/hendelser-storage');
 const utsendingToken = require('../lib/utsending-token');
 const utsendingStorage = require('../lib/utsending-storage');
 const brukernavn = require('../lib/brukernavn-storage');
+const dialogTilgang = require('../lib/dialog-tilgang');
 const prefill = require('../lib/utsending-prefill');
 
 /**
@@ -408,29 +409,6 @@ app.http('lagreBeslutning', {
  * Foreløpig full scan av Skjemaer med Skjemastatus=2. Optimeres senere.
  */
 /**
- * Hjelper for dialog: sjekker om bruker har tilgang til skjemaet.
- * Returnerer { rolle: 'innsender' | 'behandler' | 'eier' | 'admin' | null }
- */
-async function tilgangsRolle(skjema, skjematypeId, upn) {
-    if (erAdmin(upn)) return 'admin';
-    const upnLower = upn.toLowerCase();
-    if ((skjema.Innsender_Epost || '').toLowerCase() === upnLower) return 'innsender';
-
-    const st = await skjemaStorage.hentSkjematype(skjematypeId);
-    if (!st) return null;
-    const eier = await filtrerTyperPåTilgang([st], upn, 'Eiere');
-    if (eier.length > 0) return 'eier';
-
-    // Behandler-sjekk: er upn i noe steg.Personer eller i steg.Roller
-    if (Array.isArray(skjema.Behandling)) {
-        for (const steg of skjema.Behandling) {
-            if (await brukerErBehandlerAsync(steg, upn)) return 'behandler';
-        }
-    }
-    return null;
-}
-
-/**
  * POST /api/skjemaer/:type/:id/dialog — legg til dialog-innlegg
  * Body: { type: 'intern' | 'ekstern', tekst: '...' }
  *
@@ -461,7 +439,7 @@ app.http('leggTilDialog', {
             const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
 
-            const rolle = await tilgangsRolle(skjema, skjematypeId, upn);
+            const rolle = await dialogTilgang.tilgangsRolle(skjema, skjematypeId, upn);
             if (!rolle) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
             if (type === 'intern' && rolle === 'innsender') {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Innsender kan ikke skrive interne innlegg' } };
@@ -1223,13 +1201,12 @@ app.http('hentSkjema', {
             // Dekrypter for autorisert bruker (admin/eier/innsender/behandler)
             skjema = await dekrypterHvisKryptert(skjema, skjematypeId, context);
 
-            // Filtrer interne dialog-innlegg for innsender (uten annen rolle)
-            if (Array.isArray(skjema.Dialog) && skjema.Dialog.length > 0) {
-                const rolle = await tilgangsRolle(skjema, skjematypeId, upn);
-                if (rolle === 'innsender') {
-                    skjema.Dialog = skjema.Dialog.filter(d => d.Type !== 'intern');
-                }
-            }
+            // Filtrer interne dialog-innlegg for innsender (uten annen rolle).
+            // Samme funksjon som PDF-endepunktet bruker — regelen skal finnes
+            // ett sted, ellers får de to stiene ulik oppfatning av hva
+            // innsender får se. Det var nettopp det som hadde skjedd.
+            dialogTilgang.skjulInterneInnlegg(
+                skjema, await dialogTilgang.tilgangsRolle(skjema, skjematypeId, upn));
 
             skjema._mineStegNumre = mineStegNumre;
             return { jsonBody: skjema };

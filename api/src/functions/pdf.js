@@ -5,6 +5,11 @@
  *
  * Tilgang: samme regel som hentSkjema (admin, eier, innsender eller behandler).
  * Vedlegg hentes fra Blob og embeddes i PDF.
+ *
+ * MERK at tilgang til PDF-en ikke er det samme som tilgang til ALT i den.
+ * `pdf-generator.js` skriver en egen «Intern dialog»-seksjon, og innsender
+ * skal ikke se den. Til 18.09.2026 gjorde hen det: lesestien filtrerte,
+ * denne gjorde ikke. Begge kaller nå `skjulInterneInnlegg`.
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
@@ -15,6 +20,7 @@ const { filtrerTyperPåTilgang } = require('../lib/tilgang');
 const { beregnAktiveSteg, brukerErBehandlerAsync } = require('../lib/behandling');
 const { genererOppsummeringPdf } = require('../lib/pdf-generator');
 const kryptering = require('../lib/kryptering');
+const dialogTilgang = require('../lib/dialog-tilgang');
 const nokkelStorage = require('../lib/nokkel-storage');
 
 async function harTilgang(skjema, skjematypeId, upn) {
@@ -70,7 +76,15 @@ app.http('genererPdf', {
         if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
         try {
             const { skjematypeId, skjemaId } = request.params;
-            const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
+            // `let`, ikke `const`: dekrypteringen under bytter ut hele objektet.
+            //
+            // Den sto som `const` til 18.09.2026. Tilordningen kastet
+            // «Assignment to constant variable», og catch-en rett under
+            // svelget feilen og logget den som en dekrypteringsfeil. PDF-en
+            // ble laget likevel — med [Kryptert] i hvert eneste felt. Altså en
+            // ubrukelig PDF, levert med status 200, for hver kryptert
+            // skjematype.
+            let skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
 
             if (!(await harTilgang(skjema, skjematypeId, upn))) {
@@ -101,6 +115,12 @@ app.http('genererPdf', {
                     context.log(`pdf: dekryptering feilet — ${e.message}`);
                 }
             }
+
+            // Etter dekrypteringen, før generatoren: interne innlegg skal ikke
+            // ut til innsender. Rollen avgjøres av den samme funksjonen som
+            // lesestien bruker — én regel, to kallsteder.
+            const rolle = await dialogTilgang.tilgangsRolle(skjema, skjematypeId, upn);
+            dialogTilgang.skjulInterneInnlegg(skjema, rolle);
 
             const log = (m) => context.log(m);
             const vedlegg = await hentAlleVedlegg(skjematypeId, skjemaId, log);
