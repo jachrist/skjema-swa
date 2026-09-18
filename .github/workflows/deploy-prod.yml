@@ -17,11 +17,26 @@ on:
         description: "Skriv 'DEPLOY-PROD' for å bekrefte deploy til produksjon"
         required: true
         type: string
-      # Et navngitt preview-miljø ligger på SAMME SWA-ressurs som produksjon og
-      # arver app settings derfra — også Key Vault-referansen til
-      # auth-sertifikatet. Det er derfor en ekte prøve på innloggingen, ikke en
-      # tilnærming, og den eneste måten å teste den uten å risikere at ingen
-      # kommer inn i produksjon.
+      # Et navngitt preview-miljø ligger på SAMME SWA-ressurs som produksjon, og
+      # har derfor den samme Key Vault-referansen til auth-sertifikatet
+      # tilgjengelig. Det er en ekte prøve på innloggingen, ikke en tilnærming,
+      # og den eneste måten å teste den uten å risikere at ingen kommer inn i
+      # produksjon.
+      #
+      # MERK: preview-miljøet har SITT EGET sett app settings. Det får en KOPI
+      # av produksjonens verdier idet miljøet opprettes, og etter det lever de
+      # hver for seg. En endring i produksjon når ikke preview, og omvendt.
+      #
+      # Her sto det tidligere at preview «arver» app settings fra produksjon.
+      # Det er feil, og feilen er dyr: den forklarer ikke hvorfor et
+      # preview-miljø plutselig kaller gamle flyter eller peker på feil
+      # ressurser — den får det til å se ut som noe annet er galt.
+      #
+      # Nettopp fordi settingene er separate, er dette verdifullt: en ny
+      # funksjon eller en endret flyt kan prøves mot ekte brukere, team og
+      # SharePoint-områder i produksjonstenanten, uten å røre produksjon. Det
+      # har også vært brukt som et faktisk preview for reelle brukere, med
+      # tilbakemeldinger derfra.
       #
       # Miljøet opprettes av denne kjøringen; ingenting settes opp på forhånd.
       # URL: <navn>-<hash>-<miljø>.<region>.<slice>.azurestaticapps.net — «-test»

@@ -564,12 +564,17 @@
         }
         .utkast-banner > div:first-child { flex: 1; min-width: 240px; }
         .utkast-knapper { display: flex; gap: 8px; }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
+           med `display` slår den. `.knapp` setter `display: inline-block`, så
+           uten denne linja ville et skjult element stått framme — og både
+           markupen og koden som skjuler det ville sett riktig ut. */
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="topprad">
-            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
+            <a href="/velgskjematype.html" class="tilbake-lenke" data-oversiktslenke>← Til skjemaoversikten</a>
             <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
         </div>
         <div class="topplinje">
@@ -596,13 +601,17 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { FELTTYPER, renderTekst } from './js/felt-render.js';
         import { byggDNFEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn, invaliderRolleCache } from './js/tilgang-editor.js';
         import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
         import { migrerFeltreferanser } from './js/feltref-migrering.js';
         import { byggMdEditor } from './js/md-editor.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         let rolleGrupper = []; // populeres i init()
         let teamNavn = [];     // populeres i init()
@@ -1031,7 +1040,7 @@
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
                         Ingen steg = skjemaet trenger ingen behandling etter innsending.
                     </div>
-                    <div class="samtale-valg" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+                    <div class="samtale-valg" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border-color);">
                         <label for="samtale-innstilling" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Samtale</label>
                         <select id="samtale-innstilling" onchange="settSamtale(this.value)">
                             <option value="Av">Av — ingen samtale på denne skjematypen</option>

@@ -183,7 +183,7 @@
         }
         /* Rød stjerne på seksjonen når den inneholder obligatoriske felt, så
            lukket tilstand ikke skjuler at det er noe som må fylles ut. */
-        .seksjon-oblig { color: var(--danger); font-weight: 700; }
+        .seksjon-oblig { color: var(--oblig); font-weight: 700; }
 
         .felt {
             margin-bottom: 18px;
@@ -348,6 +348,11 @@
             padding: 40px;
             color: var(--text-secondary);
         }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
+           med `display` slår den. `.knapp` setter `display: inline-block`, så
+           uten denne linja ville et skjult element stått framme — og både
+           markupen og koden som skjuler det ville sett riktig ut. */
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
@@ -356,7 +361,7 @@
              Tilbake-lenka vises bare for innloggede interne brukere — eksterne
              respondenter og forhåndsvisning har ingen skjemaoversikt å gå til. -->
         <div class="topprad">
-            <a id="tilbake-lenke" class="tilbake-lenke" href="/velgskjematype.html" style="display: none;">← Til skjemaoversikten</a>
+            <a id="tilbake-lenke" class="tilbake-lenke" href="/velgskjematype.html" style="display: none;" data-oversiktslenke>← Til skjemaoversikten</a>
             <span></span>
             <div class="brukerinfo"><span class="upn" id="upn">…</span></div>
         </div>
@@ -376,10 +381,14 @@
     <script type="module">
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         let skjematype = null;
         let skjemaId = null; // pre-generert (nytt) eller eksisterende (fortsett mellomlagret)

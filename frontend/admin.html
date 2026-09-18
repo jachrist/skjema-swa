@@ -288,13 +288,18 @@
             .nk-rad { grid-template-columns: 1fr; }
             .nk-to-kol { grid-template-columns: 1fr; }
         }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
+           med `display` slår den. `.knapp` setter `display: inline-block`, så
+           uten denne linja ville et skjult element stått framme — og både
+           markupen og koden som skjuler det ville sett riktig ut. */
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
     <div class="container">
         <div id="varselbanner"></div>
         <div class="topprad">
-            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
+            <a href="/velgskjematype.html" class="tilbake-lenke" data-oversiktslenke>← Til skjemaoversikten</a>
             <div class="brukerinfo"><span id="upn">…</span></div>
         </div>
         <div class="topplinje">
@@ -327,7 +332,11 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         let bruker = null;
         let erAdmin = false;

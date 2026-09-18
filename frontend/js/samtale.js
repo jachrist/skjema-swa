@@ -12,13 +12,25 @@
  *
  * SANNTID FINNES IKKE. SWA Managed Functions har hverken WebSockets eller
  * SignalR, så dette er polling. `etter`-parameteren gjør at vi bare henter det
- * som har kommet siden sist, ikke hele tråden hvert intervall.
+ * som har kommet siden sist.
+ *
+ * TEGNINGEN ER INKREMENTELL, og det er ikke en optimalisering.
+ *
+ * Første utgave satte `container.innerHTML` på nytt hver runde. Tekstfeltet ble
+ * da ødelagt og bygget på nytt hvert 12. sekund, og brukeren mistet fokus midt
+ * i en setning. Teksten ble tatt vare på, så det så ut som et tilfeldig
+ * rykk — ikke som at feltet var byttet ut.
+ *
+ * Derfor: rammen bygges ÉN gang, skrivefeltet røres aldri etterpå, og nye
+ * innlegg legges til i lista. Ingenting under `container` erstattes.
+ *
+ * Alt innhold settes med `textContent`, ikke `innerHTML`. Et innlegg er
+ * fritekst fra en behandler eller en ekstern innsender, og escaping man må
+ * huske på er escaping man glemmer.
  */
-import { escapeHtml } from './felt-render.js';
-
 const INTERVALL_MS = 12000;
 
-/** Hvor lenge vi venter ekstra etter en feil, og hvor lenge vi gir opp å øke. */
+/** Hvor lenge vi maksimalt venter etter gjentatte feil. */
 const FEIL_MAKS_MS = 120000;
 
 function tid(iso) {
@@ -31,8 +43,11 @@ function tid(iso) {
         : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 }
 
-function avsenderNavn(i) {
-    return i.AvsenderNavn || i.Avsender || '–';
+function el(tag, klasse, tekst) {
+    const n = document.createElement(tag);
+    if (klasse) n.className = klasse;
+    if (tekst !== undefined) n.textContent = tekst;
+    return n;
 }
 
 export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst = '', megId = '' } = {}) {
@@ -46,95 +61,122 @@ export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst 
     let sender = false;
     let stoppet = false;
 
+    /** Nodene vi trenger igjen. Bygges én gang. */
+    const n = {};
+
     container.classList.add('samtale');
-    container.innerHTML = '';
+    container.hidden = true;
 
-    // ---------- tegning ----------
+    // ---------- rammen, én gang ----------
 
-    function tegn() {
-        if (!tilstand.synlig) { container.hidden = true; container.innerHTML = ''; return; }
-        container.hidden = false;
+    function byggRamme() {
+        if (n.rot) return;
 
-        const utkast = container.querySelector('.samtale-felt')?.value || '';
+        const topp = el('div', 'samtale-topp');
+        topp.appendChild(el('h3', 'samtale-tittel', 'Samtale'));
+
+        n.dempEtikett = el('label', 'samtale-demp');
+        n.dempBoks = document.createElement('input');
+        n.dempBoks.type = 'checkbox';
+        n.dempBoks.className = 'samtale-demp-boks';
+        n.dempEtikett.appendChild(n.dempBoks);
+        n.dempEtikett.appendChild(document.createTextNode(' Demp varsling for denne saken'));
+        n.dempEtikett.hidden = true;
+        topp.appendChild(n.dempEtikett);
+        container.appendChild(topp);
+
+        n.lukket = el('p', 'samtale-lukket',
+            'Saken er ferdigbehandlet, og samtalen er lukket for nye innlegg. Den følger saken i PDF-en.');
+        n.lukket.hidden = true;
+        container.appendChild(n.lukket);
+
+        n.liste = el('div', 'samtale-liste');
+        n.liste.setAttribute('role', 'log');
+        n.liste.setAttribute('aria-live', 'polite');
+        n.tom = el('p', 'samtale-tom', 'Ingen innlegg ennå.');
+        n.liste.appendChild(n.tom);
+        container.appendChild(n.liste);
+
+        n.skriv = el('div', 'samtale-skriv');
+        if (infotekst) n.skriv.appendChild(el('p', 'samtale-info', infotekst));
+
+        n.felt = document.createElement('textarea');
+        n.felt.className = 'samtale-felt';
+        n.felt.rows = 3;
+        n.felt.placeholder = 'Skriv et innlegg…';
+        n.felt.setAttribute('aria-label', 'Nytt innlegg');
+        // Ctrl/Cmd+Enter sender. Enter alene gir linjeskift: et innlegg kan
+        // ikke redigeres etterpå, så det skal koste et bevisst trykk.
+        n.felt.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
+        });
+        n.skriv.appendChild(n.felt);
+
+        const rad = el('div', 'samtale-knapperad');
+        n.status = el('span', 'samtale-status', '');
+        n.status.setAttribute('role', 'status');
+        rad.appendChild(n.status);
+        n.send = el('button', 'samtale-send', 'Send');
+        n.send.type = 'button';
+        n.send.addEventListener('click', send);
+        rad.appendChild(n.send);
+        n.skriv.appendChild(rad);
+
+        n.skriv.hidden = true;
+        container.appendChild(n.skriv);
+
+        n.dempBoks.addEventListener('change', () => settDemping(n.dempBoks.checked));
+        n.rot = true;
+    }
+
+    /**
+     * Oppdater det som kan endre seg. Rører ALDRI skrivefeltet eller lista —
+     * bare synlighet og haker.
+     */
+    function oppdaterRamme() {
+        container.hidden = !tilstand.synlig;
+        if (!tilstand.synlig) return;
+        n.dempEtikett.hidden = !tilstand.kanDempe;
+        // Bare når den faktisk avviker: å sette checked mens brukeren klikker
+        // gir et hopp.
+        if (n.dempBoks.checked !== tilstand.dempet) n.dempBoks.checked = tilstand.dempet;
+        n.lukket.hidden = tilstand.apen;
+        n.skriv.hidden = !tilstand.kanSkrive;
+        n.tom.hidden = innlegg.length > 0;
+    }
+
+    function nodeFor(i) {
+        const meg = megId && String(i.Avsender).toLowerCase() === String(megId).toLowerCase();
+        const boks = el('div', 'samtale-innlegg' + (meg ? ' meg' : ''));
+        const hode = el('div', 'samtale-hode');
+        hode.appendChild(el('span', 'samtale-avsender', i.AvsenderNavn || i.Avsender || '–'));
+        hode.appendChild(el('span', 'samtale-tid', tid(i.Dato)));
+        boks.appendChild(hode);
+        boks.appendChild(el('div', 'samtale-tekst', i.Tekst || ''));
+        return boks;
+    }
+
+    function leggTilNye(nye) {
         const varVedBunn = erVedBunn();
-
-        container.innerHTML = `
-            <div class="samtale-topp">
-                <h3 class="samtale-tittel">Samtale</h3>
-                ${tilstand.kanDempe ? `
-                    <label class="samtale-demp">
-                        <input type="checkbox" class="samtale-demp-boks" ${tilstand.dempet ? 'checked' : ''}>
-                        Demp varsling for denne saken
-                    </label>` : ''}
-            </div>
-            ${!tilstand.apen ? `
-                <p class="samtale-lukket">Saken er ferdigbehandlet, og samtalen er lukket for nye innlegg.
-                Den følger saken i PDF-en.</p>` : ''}
-            <div class="samtale-liste" role="log" aria-live="polite">
-                ${innlegg.length === 0
-                    ? '<p class="samtale-tom">Ingen innlegg ennå.</p>'
-                    : innlegg.map(tegnInnlegg).join('')}
-            </div>
-            ${tilstand.kanSkrive ? `
-                ${infotekst ? `<p class="samtale-info">${escapeHtml(infotekst)}</p>` : ''}
-                <div class="samtale-skriv">
-                    <textarea class="samtale-felt" rows="3"
-                        placeholder="Skriv et innlegg…" aria-label="Nytt innlegg"></textarea>
-                    <div class="samtale-knapperad">
-                        <span class="samtale-status" role="status"></span>
-                        <button type="button" class="samtale-send">Send</button>
-                    </div>
-                </div>` : ''}
-        `;
-
-        const felt = container.querySelector('.samtale-felt');
-        if (felt) {
-            felt.value = utkast;
-            // Ctrl/Cmd+Enter sender. Enter alene gjør linjeskift — et innlegg
-            // kan ikke redigeres etterpå, så det skal koste et bevisst trykk.
-            felt.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); send(); }
-            });
-            container.querySelector('.samtale-send').addEventListener('click', send);
-        }
-        const demp = container.querySelector('.samtale-demp-boks');
-        if (demp) demp.addEventListener('change', () => settDemping(demp.checked));
-
-        // Bare rull ned hvis brukeren allerede var nederst. Ellers river vi
-        // dem bort fra det de leser, hvert tolvte sekund.
+        for (const i of nye) n.liste.appendChild(nodeFor(i));
+        // Bare rull ned hvis brukeren allerede var nederst. Ellers rives hen
+        // bort fra det hen leser, hvert tolvte sekund.
         if (varVedBunn) tilBunn();
     }
 
-    function tegnInnlegg(i) {
-        const meg = megId && String(i.Avsender).toLowerCase() === String(megId).toLowerCase();
-        return `
-            <div class="samtale-innlegg${meg ? ' meg' : ''}">
-                <div class="samtale-hode">
-                    <span class="samtale-avsender">${escapeHtml(avsenderNavn(i))}</span>
-                    <span class="samtale-tid">${escapeHtml(tid(i.Dato))}</span>
-                </div>
-                <div class="samtale-tekst">${escapeHtml(i.Tekst || '')}</div>
-            </div>`;
-    }
-
-    function liste() { return container.querySelector('.samtale-liste'); }
-
     function erVedBunn() {
-        const l = liste();
-        if (!l) return true;
-        return l.scrollHeight - l.scrollTop - l.clientHeight < 40;
+        if (!n.liste) return true;
+        return n.liste.scrollHeight - n.liste.scrollTop - n.liste.clientHeight < 40;
     }
 
     function tilBunn() {
-        const l = liste();
-        if (l) l.scrollTop = l.scrollHeight;
+        if (n.liste) n.liste.scrollTop = n.liste.scrollHeight;
     }
 
     function status(tekst, feil = false) {
-        const s = container.querySelector('.samtale-status');
-        if (!s) return;
-        s.textContent = tekst;
-        s.classList.toggle('feil', !!feil);
+        if (!n.status) return;
+        n.status.textContent = tekst;
+        n.status.classList.toggle('feil', !!feil);
     }
 
     // ---------- data ----------
@@ -151,37 +193,45 @@ export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst 
 
         const nye = Array.isArray(svar.innlegg) ? svar.innlegg : [];
         // Med `etter` er svaret bare det nye; uten er det hele tråden.
-        innlegg = sisteId ? innlegg.concat(nye) : nye;
+        if (!sisteId) {
+            innlegg = nye;
+            if (n.liste) { while (n.liste.lastChild) n.liste.removeChild(n.liste.lastChild); n.liste.appendChild(n.tom); }
+        } else {
+            innlegg = innlegg.concat(nye);
+        }
         if (innlegg.length > 0) sisteId = innlegg[innlegg.length - 1].Id;
-        return nye.length;
+        return nye;
+    }
+
+    function tegn(nye = []) {
+        byggRamme();
+        leggTilNye(nye);
+        oppdaterRamme();
     }
 
     async function send() {
-        const felt = container.querySelector('.samtale-felt');
-        const tekst = (felt?.value || '').trim();
+        const tekst = (n.felt?.value || '').trim();
         if (!tekst || sender) return;
 
         sender = true;
-        const knapp = container.querySelector('.samtale-send');
-        if (knapp) knapp.disabled = true;
+        n.send.disabled = true;
         status('Sender…');
         try {
             await api.post(base, { tekst });
-            if (felt) felt.value = '';
+            // Tømmes først når lagringen er bekreftet.
+            n.felt.value = '';
             status('');
-            // Hent med en gang, så innlegget dukker opp uten å vente på neste
-            // polling-runde.
-            await hent();
-            tegn();
+            tegn(await hent());
             tilBunn();
+            // Brukeren skrev nettopp; hen skal kunne fortsette uten å klikke.
+            n.felt.focus();
         } catch (e) {
-            // Teksten blir stående i feltet. Å tømme det ved feil er å slette
-            // noe brukeren har skrevet.
+            // Teksten blir stående. Å tømme feltet ved feil er å slette noe
+            // brukeren har skrevet.
             status(e?.message || 'Kunne ikke sende innlegget', true);
         } finally {
             sender = false;
-            const k = container.querySelector('.samtale-send');
-            if (k) k.disabled = false;
+            if (n.send) n.send.disabled = false;
         }
     }
 
@@ -191,10 +241,9 @@ export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst 
             tilstand.dempet = !!svar.dempet;
         } catch (_) {
             // Sett haken tilbake — ellers tror brukeren at varslingen er
-            // dempet mens den ikke er det, og det er den feilen som gjør at
-            // en sak blir stående.
-            const boks = container.querySelector('.samtale-demp-boks');
-            if (boks) boks.checked = !dempet;
+            // dempet mens den ikke er det, og det er den feilen som gjør at en
+            // sak blir stående.
+            n.dempBoks.checked = !dempet;
             status('Kunne ikke lagre innstillingen', true);
         }
     }
@@ -214,8 +263,7 @@ export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst 
         // trafikk.
         if (typeof document !== 'undefined' && document.hidden) { planlegg(); return; }
         try {
-            await hent();
-            tegn();
+            tegn(await hent());
             ventMs = INTERVALL_MS;
         } catch (_) {
             // Doble intervallet ved feil. Er API-et nede, skal ikke hver åpne
@@ -228,12 +276,11 @@ export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst 
     async function start() {
         stoppet = false;
         try {
-            await hent();
-            tegn();
+            tegn(await hent());
             tilBunn();
         } catch (_) {
             // Første henting feilet. Widgeten viser ingenting heller enn en
-            // tom samtale som ser ut som «ingen har skrevet noe».
+            // tom samtale, som ser ut som «ingen har skrevet noe».
             container.hidden = true;
         }
         planlegg();
@@ -245,16 +292,8 @@ export function byggSamtale(container, { api, skjematypeId, skjemaId, infotekst 
         timer = null;
     }
 
-    /**
-     * Hent og tegn én gang, utenom pollingen.
-     *
-     * Verten kan kalle den når noe har skjedd på siden som sannsynligvis
-     * berører samtalen — typisk etter at en beslutning er registrert.
-     */
-    async function oppdater() {
-        await hent();
-        tegn();
-    }
+    /** Hent og tegn én gang, utenom pollingen. */
+    async function oppdater() { tegn(await hent()); }
 
-    return { start, stopp, tegn, oppdater, get tilstand() { return { ...tilstand }; } };
+    return { start, stopp, oppdater, get tilstand() { return { ...tilstand }; } };
 }

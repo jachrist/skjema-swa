@@ -370,12 +370,17 @@
             .venstre { max-height: none; }
             .hoyre.tom { display: none; }
         }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
+           med `display` slår den. `.knapp` setter `display: inline-block`, så
+           uten denne linja ville et skjult element stått framme — og både
+           markupen og koden som skjuler det ville sett riktig ut. */
+        [hidden] { display: none !important; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="topprad">
-            <a href="/velgskjematype.html" class="tilbake-lenke">← Til skjemaoversikten</a>
+            <a href="/velgskjematype.html" class="tilbake-lenke" data-oversiktslenke>← Til skjemaoversikten</a>
             <div class="brukerinfo">
                 <a id="lenke-datauttrekk" class="tilbake-lenke" style="margin-right: 12px; display: none;" href="#">Datauttrekk →</a>
                 <span class="upn" id="upn">…</span>
@@ -429,9 +434,13 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
-        import { hentInnloggetBruker } from './js/auth.js';
+        import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
+
+        // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
+        // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
+        styrOversiktslenker(api);
 
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');

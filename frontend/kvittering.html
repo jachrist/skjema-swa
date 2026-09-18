@@ -130,7 +130,7 @@
             <div style="margin-top: 8px;">Skjematype: <strong id="skjematype-id">…</strong></div>
         </div>
         <div class="knapperad">
-            <a class="knapp primær" href="/velgskjematype.html">Til skjemaoversikten</a>
+            <a class="knapp primær" href="/velgskjematype.html" data-oversiktslenke>Til skjemaoversikten</a>
             <a class="knapp sekundær" href="#" id="se-skjemaet">Se skjemaet</a>
             <a class="knapp sekundær" href="#" id="nytt-lignende">Fyll ut nytt</a>
         </div>
@@ -168,9 +168,19 @@
          * uten knapp.
          */
         (async () => {
-            if (skjemaId === '(mangler)' || skjematypeId === '(mangler)') return;
+            if (skjemaId === '(mangler)' || skjematypeId === '(mangler)') {
+                // Samtale-tilbudet trenger ID-ene; oversiktslenken gjør ikke det.
+                const { api } = await import('./js/api-client.js');
+                const { styrOversiktslenker } = await import('./js/auth.js');
+                styrOversiktslenker(api);
+                return;
+            }
             try {
                 const { api } = await import('./js/api-client.js');
+                const { styrOversiktslenker } = await import('./js/auth.js');
+                // Lenken til skjemaoversikten er bare for admin, skjemaskapere
+                // og eiere. Serveren avgjør, ikke denne siden.
+                styrOversiktslenker(api);
                 const svar = await api.get(
                     `/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/samtale`,
                     { hopperOver401: true });
