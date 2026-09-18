@@ -613,11 +613,20 @@
             // Skjemakontroll for nytt innlegg
             const input = document.createElement('div');
             input.className = 'dialog-input';
+            // Innsenderen kan ikke skrive interne innlegg — API-et avviser dem
+            // med 403. Uten denne sjekken sto «Intern (til andre behandlere)»
+            // som STANDARDVALG også for innsenderen, og feilen kom først etter
+            // at hen hadde skrevet ferdig.
+            //
+            // Mangler `_minRolle` (eldre API), beholdes begge valgene: API-et
+            // er den virkelige porten, og å ta bort muligheten fra en behandler
+            // er verre enn å la innsenderen møte avvisningen.
+            const kanIntern = skjema._minRolle ? skjema._minRolle !== 'innsender' : true;
             input.innerHTML = `
                 <textarea placeholder="Skriv et innlegg…" id="dialog-tekst"></textarea>
                 <div class="knapper">
-                    <select id="dialog-type">
-                        <option value="intern">Intern (til andre behandlere)</option>
+                    <select id="dialog-type"${kanIntern ? '' : ' hidden'}>
+                        ${kanIntern ? '<option value="intern">Intern (til andre behandlere)</option>' : ''}
                         <option value="ekstern">Til innsender</option>
                     </select>
                     <button class="knapp primær" onclick="sendDialog()">Legg til innlegg</button>
