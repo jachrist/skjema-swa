@@ -21,6 +21,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn } = require('../lib/auth');
 const { velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
+const skjemaStorage = require('../lib/skjema-storage');
 const samtaleStorage = require('../lib/samtale-storage');
 const samtaleTilgang = require('../lib/samtale-tilgang');
 const utsendingToken = require('../lib/utsending-token');
@@ -93,7 +94,16 @@ async function finnSakOgDeltaker(request, context) {
         context.log(`samtale: avvist for ${eksternId || upn || '(anonym)'} på ${skjematypeId}/${skjemaId}`);
         return { svar: avvis(403, 'Ingen tilgang til denne samtalen') };
     }
-    return { skjema, skjematypeId, skjemaId, deltaker };
+
+    // Innstillingen bor på skjematypen, ikke på skjemaet. Uten behandlingssteg
+    // svarer den 'Av' uansett hva som står lagret.
+    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+    const innstilling = samtaleTilgang.samtaleInnstilling(st?.JSON || null);
+    if (innstilling === 'Av') {
+        return { svar: avvis(404, 'Denne skjematypen har ikke samtale') };
+    }
+
+    return { skjema, skjematypeId, skjemaId, deltaker, innstilling };
 }
 
 app.http('samtaleHent', {
@@ -107,15 +117,33 @@ app.http('samtaleHent', {
 
             const etter = request.query.get('etter') || '';
             const innlegg = await samtaleStorage.hentInnlegg(funn.skjematypeId, funn.skjemaId, { etter });
+
+            // Ved polling er `innlegg` bare det nye, og da sier lengden
+            // ingenting om tråden. Antallet må hentes for seg — ellers ville en
+            // innsender som poller mistet skriveretten så snart svaret var
+            // tomt.
+            const antallInnlegg = etter
+                ? (await samtaleStorage.sammendrag(funn.skjematypeId, funn.skjemaId)).Antall
+                : innlegg.length;
+
+            const apen = samtaleTilgang.samtaleErAapen(funn.skjema);
+            const rolle = funn.deltaker.rolle;
+            const grunnlag = { rolle, innstilling: funn.innstilling, antallInnlegg, apen };
+
             return {
                 jsonBody: {
                     innlegg,
-                    // Klienten trenger begge for å tegne riktig: en lukket
-                    // samtale skal vises, men uten skrivefelt.
-                    apen: samtaleTilgang.samtaleErAapen(funn.skjema),
-                    minRolle: funn.deltaker.rolle,
-                    kanDempe: samtaleTilgang.kanDempe(funn.deltaker.rolle),
-                    dempet: samtaleTilgang.kanDempe(funn.deltaker.rolle)
+                    antallInnlegg,
+                    // Klienten trenger alle tre for å tegne riktig: en lukket
+                    // samtale skal vises uten skrivefelt, og en tom samtale
+                    // innsenderen ikke kan starte skal ikke vises i det hele
+                    // tatt.
+                    apen,
+                    synlig: samtaleTilgang.samtaleErSynlig(grunnlag),
+                    kanSkrive: samtaleTilgang.kanSkrive(grunnlag),
+                    minRolle: rolle,
+                    kanDempe: samtaleTilgang.kanDempe(rolle),
+                    dempet: samtaleTilgang.kanDempe(rolle)
                         ? await samtaleStorage.erDempet(funn.skjematypeId, funn.skjemaId, funn.deltaker.id)
                         : false
                 }
@@ -138,6 +166,16 @@ app.http('samtaleSkriv', {
 
             if (!samtaleTilgang.samtaleErAapen(funn.skjema)) {
                 return avvis(409, 'Samtalen er lukket fordi saken er avsluttet');
+            }
+
+            // Hvem som kan skrive det FØRSTE innlegget avgjøres av
+            // skjematypen. Sjekken gjøres her og ikke bare i grensesnittet:
+            // et skjult skrivefelt er ingen tilgangskontroll.
+            const antallInnlegg = (await samtaleStorage.sammendrag(funn.skjematypeId, funn.skjemaId)).Antall;
+            if (!samtaleTilgang.kanSkrive({
+                rolle: funn.deltaker.rolle, innstilling: funn.innstilling, antallInnlegg, apen: true
+            })) {
+                return avvis(403, 'Samtalen må startes av en behandler');
             }
 
             const body = await request.json().catch(() => ({}));

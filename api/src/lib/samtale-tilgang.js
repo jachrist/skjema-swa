@@ -15,6 +15,31 @@
 const { tilgangsRolle } = require('./dialog-tilgang');
 
 /**
+ * Samtale-innstillingen på skjematypen (`Skjematype.Samtale`).
+ *
+ *   'Av'         — ingen samtale på denne skjematypen
+ *   'Behandlere' — bare behandlere kan skrive det FØRSTE innlegget.
+ *                  Innsender kan svare når tråden finnes.
+ *   'Alle'       — innsender kan også starte, via kvitteringen
+ *
+ * `Av` er standard, og det er et bevisst valg: skjematypene som allerede
+ * ligger i produksjon skal ikke plutselig få en samtaleflate fordi vi rullet
+ * ut en ny funksjon. Eieren av skjematypen slår den på.
+ *
+ * Uten behandlingssteg er svaret alltid `Av`, uansett hva som står lagret.
+ * En samtale mellom innsender og behandlere krever at det finnes en behandler
+ * — ellers er det en meldingsboks ingen leser.
+ */
+const INNSTILLINGER = ['Av', 'Behandlere', 'Alle'];
+
+function samtaleInnstilling(skjematype) {
+    const steg = skjematype?.Behandling;
+    if (!Array.isArray(steg) || steg.length === 0) return 'Av';
+    const valgt = String(skjematype?.Samtale || '').trim();
+    return INNSTILLINGER.includes(valgt) ? valgt : 'Av';
+}
+
+/**
  * Er samtalen åpen for nye innlegg?
  *
  *   1 Mellomlagret     — skjemaet er ikke sendt inn. Ingen behandler finnes
@@ -70,4 +95,41 @@ async function finnDeltaker({ skjema, skjematypeId, upn = null, eksternId = null
     return { id: String(upn).toLowerCase(), navn: navn || '', rolle, kilde: 'swa' };
 }
 
-module.exports = { samtaleErAapen, eksternErInnsender, kanDempe, finnDeltaker };
+/**
+ * Kan denne deltakeren skrive akkurat nå?
+ *
+ * `antallInnlegg` er det som avgjør «hvem kan starte». I en gruppechat finnes
+ * det ikke noe eget startpunkt — det første innlegget ER starten. Så regelen
+ * er ikke «hvem kan opprette en tråd», men «hvem kan skrive når tråden er
+ * tom».
+ *
+ * Behandlere, eiere og administratorer kan alltid skrive i en åpen samtale.
+ * Innsenderen kan svare så snart noen har skrevet, og kan starte selv bare når
+ * skjematypen står på `Alle`.
+ */
+function kanSkrive({ rolle, innstilling, antallInnlegg = 0, apen = true }) {
+    if (innstilling === 'Av' || !apen || !rolle) return false;
+    if (rolle !== 'innsender') return true;
+    return innstilling === 'Alle' || Number(antallInnlegg) > 0;
+}
+
+/**
+ * Skal samtalen vises for denne deltakeren i det hele tatt?
+ *
+ * En innsender som verken kan skrive eller har noe å lese, skal ikke se en
+ * låst boks. Da lurer hen på hva den er og hvorfor den ikke virker — og det
+ * er verre enn at den ikke er der.
+ *
+ * En LUKKET samtale med innhold vises fortsatt, for begge parter. Det er hele
+ * poenget med at den følger saken.
+ */
+function samtaleErSynlig({ rolle, innstilling, antallInnlegg = 0, apen = true }) {
+    if (innstilling === 'Av' || !rolle) return false;
+    if (Number(antallInnlegg) > 0) return true;
+    return kanSkrive({ rolle, innstilling, antallInnlegg, apen });
+}
+
+module.exports = {
+    samtaleErAapen, eksternErInnsender, kanDempe, finnDeltaker,
+    samtaleInnstilling, kanSkrive, samtaleErSynlig, INNSTILLINGER
+};

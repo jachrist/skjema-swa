@@ -77,6 +77,80 @@ const t = require('../src/lib/samtale-tilgang');
     sjekk('ingen rolle kan ikke dempe', t.kanDempe(null), false);
 }
 
+// ---------- innstillingen på skjematypen ----------
+{
+    const medSteg = (samtale) => ({ Behandling: [{ Steg: 1 }], Samtale: samtale });
+
+    sjekk('av', t.samtaleInnstilling(medSteg('Av')), 'Av');
+    sjekk('behandlere', t.samtaleInnstilling(medSteg('Behandlere')), 'Behandlere');
+    sjekk('alle', t.samtaleInnstilling(medSteg('Alle')), 'Alle');
+
+    // Standard er Av. Skjematypene som allerede ligger i produksjon skal ikke
+    // plutselig få en samtaleflate fordi vi rullet ut en ny funksjon.
+    sjekk('uten innstilling er den av', t.samtaleInnstilling({ Behandling: [{ Steg: 1 }] }), 'Av');
+    sjekk('tom innstilling', t.samtaleInnstilling(medSteg('')), 'Av');
+    sjekk('ukjent verdi', t.samtaleInnstilling(medSteg('Kanskje')), 'Av');
+    sjekk('uten skjematype', t.samtaleInnstilling(null), 'Av');
+
+    // Uten behandlingssteg finnes det ingen behandler å snakke med, og da er
+    // samtalen av uansett hva som står lagret.
+    sjekk('uten behandlingssteg', t.samtaleInnstilling({ Samtale: 'Alle' }), 'Av');
+    sjekk('tom stegliste', t.samtaleInnstilling({ Behandling: [], Samtale: 'Alle' }), 'Av');
+}
+
+// ---------- hvem kan skrive, og hvem kan starte ----------
+{
+    const kan = (o) => t.kanSkrive({ apen: true, ...o });
+
+    // Av slår alt.
+    sjekk('av: behandler kan ikke', kan({ rolle: 'behandler', innstilling: 'Av' }), false);
+    sjekk('av: innsender kan ikke', kan({ rolle: 'innsender', innstilling: 'Av' }), false);
+
+    for (const rolle of ['behandler', 'eier', 'admin']) {
+        sjekk(`${rolle} kan starte`, kan({ rolle, innstilling: 'Behandlere', antallInnlegg: 0 }), true);
+    }
+
+    // Kjernen i spørsmålet: innsender kan svare, men ikke starte.
+    sjekk('innsender kan ikke starte under Behandlere',
+        kan({ rolle: 'innsender', innstilling: 'Behandlere', antallInnlegg: 0 }), false);
+    sjekk('men kan svare når tråden finnes',
+        kan({ rolle: 'innsender', innstilling: 'Behandlere', antallInnlegg: 1 }), true);
+    sjekk('og kan starte under Alle',
+        kan({ rolle: 'innsender', innstilling: 'Alle', antallInnlegg: 0 }), true);
+
+    // En lukket sak er lukket for alle, også behandlere.
+    sjekk('lukket sak: behandler kan ikke',
+        t.kanSkrive({ rolle: 'behandler', innstilling: 'Alle', antallInnlegg: 3, apen: false }), false);
+    sjekk('lukket sak: innsender kan ikke',
+        t.kanSkrive({ rolle: 'innsender', innstilling: 'Alle', antallInnlegg: 3, apen: false }), false);
+
+    sjekk('uten rolle', kan({ rolle: null, innstilling: 'Alle' }), false);
+}
+
+// ---------- når vises samtalen ----------
+{
+    const synlig = (o) => t.samtaleErSynlig({ apen: true, ...o });
+
+    // En innsender som verken kan skrive eller har noe å lese, skal ikke se en
+    // låst boks. Da lurer hen på hva den er og hvorfor den ikke virker.
+    sjekk('innsender, tom tråd, Behandlere → skjult',
+        synlig({ rolle: 'innsender', innstilling: 'Behandlere', antallInnlegg: 0 }), false);
+    sjekk('innsender, tom tråd, Alle → vises',
+        synlig({ rolle: 'innsender', innstilling: 'Alle', antallInnlegg: 0 }), true);
+    sjekk('innsender, med innlegg → vises',
+        synlig({ rolle: 'innsender', innstilling: 'Behandlere', antallInnlegg: 2 }), true);
+
+    // En lukket samtale med innhold vises fortsatt, for begge parter. Det er
+    // hele poenget med at den følger saken.
+    sjekk('lukket sak med innlegg vises',
+        t.samtaleErSynlig({ rolle: 'innsender', innstilling: 'Behandlere', antallInnlegg: 2, apen: false }), true);
+    sjekk('lukket sak uten innlegg vises ikke',
+        t.samtaleErSynlig({ rolle: 'behandler', innstilling: 'Alle', antallInnlegg: 0, apen: false }), false);
+
+    sjekk('av vises aldri',
+        synlig({ rolle: 'behandler', innstilling: 'Av', antallInnlegg: 5 }), false);
+}
+
 // ---------- deltakeren ----------
 async function deltakere() {
     const sak = { Innsender_Epost: 'ola@example.no', Skjema_status: 2 };

@@ -1031,12 +1031,25 @@
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
                         Ingen steg = skjemaet trenger ingen behandling etter innsending.
                     </div>
+                    <div class="samtale-valg" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);">
+                        <label for="samtale-innstilling" style="display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px;">Samtale</label>
+                        <select id="samtale-innstilling" onchange="settSamtale(this.value)">
+                            <option value="Av">Av — ingen samtale på denne skjematypen</option>
+                            <option value="Behandlere">Behandlere starter — innsender kan svare</option>
+                            <option value="Alle">Alle deltakere kan starte</option>
+                        </select>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">
+                            En felles samtale mellom innsender og behandlere. <strong>Alle deltakerne ser alt</strong>
+                            som skrives — det finnes ingen interne innlegg. Krever minst ett behandlingssteg.
+                        </div>
+                    </div>
                 </div>
             `;
 
             byggForklaringEditor();
             rendrerSeksjoner();
             rendrerBehandling();
+            rendrerSamtaleValg();
             rendrerPerioder();
             rendrerTilgang();
             oppdaterKvitteringOppsummering();
@@ -1202,6 +1215,31 @@
         }
 
         // ==================== BEHANDLINGSSTEG ====================
+
+        /**
+         * Samtale-bryteren.
+         *
+         * Standard er «Av», og det er et bevisst valg: skjematyper som
+         * allerede ligger i produksjon skal ikke plutselig få en samtaleflate
+         * fordi funksjonen ble rullet ut. Eieren slår den på.
+         *
+         * Uten behandlingssteg er valget meningsløst — en samtale mellom
+         * innsender og behandlere krever at det finnes en behandler. Da låses
+         * den, i stedet for å stå og se tilgjengelig ut.
+         */
+        function rendrerSamtaleValg() {
+            const felt = document.getElementById('samtale-innstilling');
+            if (!felt) return;
+            const harSteg = Array.isArray(data.Behandling) && data.Behandling.length > 0;
+            felt.value = harSteg ? (data.Samtale || 'Av') : 'Av';
+            felt.disabled = !harSteg;
+            const boks = felt.closest('.samtale-valg');
+            if (boks) boks.style.opacity = harSteg ? '1' : '0.55';
+        }
+
+        window.settSamtale = (verdi) => {
+            data.Samtale = verdi;
+        };
 
         function rendrerBehandling() {
             const el = document.getElementById('behandling-container');
