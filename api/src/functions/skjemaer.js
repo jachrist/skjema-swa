@@ -250,6 +250,16 @@ app.http('lagreBeslutning', {
                     stegObj.Beslutning = beslutning;
                     stegObj.BehandletAv = upn || 'ekstern-flyt';
                     stegObj.BehandletDato = new Date().toISOString();
+                    // Kommentaren ble aldri lagret her fram til 19.09.2026.
+                    // Den ble sendt inn, brukt i $kommentar i varselet til
+                    // innsenderen, og så kastet. Den som skrev en begrunnelse
+                    // for et avslag kunne ikke finne den igjen noe sted —
+                    // ikke i saken, ikke i PDF-en, ikke i uttrekket.
+                    //
+                    // «Alle må avgjøre»-grenen over har alltid lagret sin, i
+                    // Beslutninger[]. Det er derfor feilen var usynlig i test:
+                    // den modusen virket.
+                    stegObj.Kommentar = body?.kommentar || '';
                     const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
                     if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);
                     if (alleStegFerdig(skjema)) skjema.Skjema_status = 5;

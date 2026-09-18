@@ -306,6 +306,7 @@
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
+        import { kommentarerFor } from './js/behandling-kommentar.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -334,15 +335,26 @@
             }
 
             // Sett smart tilbake-lenke: hvis vi kom fra register, gå dit; ellers til oversikt
+            //
+            // Lenken får href-en sin HER, etter at modulen kjørte. Den ble
+            // derfor ikke merket av `data-oversiktslenke` i markupen, og sto
+            // igjen som «Til skjemaoversikten» for innsendere som ikke skal se
+            // den — mens knappen nederst på siden var riktig skjult.
+            //
+            // Merkingen settes nå i den grenen som faktisk peker dit, og
+            // regelen kjøres på nytt etterpå.
             const ref = document.referrer;
             const tilbakeEl = document.getElementById('tilbake');
             if (ref && ref.includes('/register.html')) {
                 tilbakeEl.href = `/register.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
                 tilbakeEl.textContent = '← Til register';
+                tilbakeEl.removeAttribute('data-oversiktslenke');
             } else {
                 tilbakeEl.href = '/velgskjematype.html';
                 tilbakeEl.textContent = '← Til skjemaoversikten';
+                tilbakeEl.setAttribute('data-oversiktslenke', '');
             }
+            styrOversiktslenker(api);
 
             try {
                 const [skjematype, skjema] = await Promise.all([
@@ -509,6 +521,16 @@
                     beh.style.cssText = 'width: 100%; font-size: 12px; color: var(--text-secondary); margin-top: 4px;';
                     beh.textContent = 'Behandlere: ' + steg.Personer.join(', ');
                     rad.appendChild(beh);
+                }
+
+                // Behandlerens begrunnelse. Innsenderen så den ikke noe sted
+                // før 19.09.2026 — bare i e-posten, og bare hvis malen
+                // tilfeldigvis brukte $kommentar.
+                for (const k of kommentarerFor(steg)) {
+                    const kom = document.createElement('div');
+                    kom.style.cssText = 'width: 100%; font-size: 11px; color: var(--text-secondary); border-left: 2px solid var(--border-color); padding-left: 8px; margin-top: 4px;';
+                    kom.textContent = k.aktor ? `${k.aktor}: ${k.kommentar}` : k.kommentar;
+                    rad.appendChild(kom);
                 }
 
                 div.appendChild(rad);

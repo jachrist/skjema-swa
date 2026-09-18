@@ -434,6 +434,7 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
+        import { kommentarerSomHtml } from './js/behandling-kommentar.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
@@ -796,6 +797,7 @@
                     <span style="font-weight: 600; flex: 1;">${escHtml(steg.Stegnavn || `Steg ${steg.Steg}`)}</span>
                     <span style="color: ${status.farge}; font-weight: 600;">${escHtml(status.tekst)}</span>
                     ${(steg.Personer || []).length > 0 ? `<div style="width: 100%; font-size: 11px; color: var(--text-secondary);">Behandlere: ${escHtml(steg.Personer.join(', '))}</div>` : ''}
+                    ${kommentarerSomHtml(steg, escHtml)}
                 `;
                 div.appendChild(rad);
             }
