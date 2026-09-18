@@ -74,6 +74,11 @@
             margin: 20px 0;
         }
         .kvittering-info strong { color: var(--accent); }
+        /* `hidden` er bare en UA-regel (`display: none`), og enhver
+           author-regel med `display` slår den. `.knapperad` under setter
+           `display: flex`, og da hadde attributtet ingen virkning — knappen
+           sto framme uansett hva JS-en bestemte. */
+        [hidden] { display: none !important; }
         .knapperad {
             margin-top: 24px;
             display: flex;
