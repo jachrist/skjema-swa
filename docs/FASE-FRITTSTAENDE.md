@@ -102,6 +102,64 @@ langt unna årsaken:
 `Tilgangskontroll`, `SystemInnstillinger`, `Teller`, `Rapporttyper`,
 `Postnumre`, `Brukernavn`, `TodoPunkter`, `Nokkelkalender`.
 
+Fem av dem vokser med bruken — `Skjemaer`, `Samtale`, `Hendelser`,
+`Utsendinger`, `Tilgangskontroll`. De elleve andre er omtrent konstante.
+
+### Hvor enkelt kan lageret være?
+
+En tilsvarende flytting er gjort før, av korportalen: samme type lagring, og
+der holdt det med noe enklere enn en full database. Spørsmålet er om det
+holder her.
+
+To målinger avgjør, og begge peker samme vei:
+
+**33 av 43 `listEntities`-kall har ingen partisjonsfilter.** De er fullskann.
+
+```
+grep -rn "listEntities(" api/src/**/*.js | grep -v PartitionKey | wc -l   →  33
+```
+
+To av dem er merket som kjente i koden: `mine-behandlinger` skanner alle
+skjemaer med status 2 ved hvert oppslag («Optimeres senere»), og
+postnummersøket gjør substring-søk over hele tabellen. Med et filbasert lager
+betyr hvert slikt kall at hele tabellen leses og parses. `Skjemaer` vokser
+med hver innsending, for alltid.
+
+**Samtalen er skrevet for samtidighet.** `lib/samtale-storage.js` har én rad
+per innlegg nettopp fordi les-endre-skriv mister meldinger når to skriver
+samtidig — og i en chat er det normalen, ikke unntaket. Et lager med én fil
+per tabell gjeninnfører akkurat det problemet. Korportalen hadde etter all
+sannsynlighet ingen chat.
+
+I tillegg: 8 steder bruker `submitTransaction`. Filer gir ingenting der.
+
+**SQLite treffer instinktet uten å koste det.** Den er enklere enn en full
+database på alle måter som betyr noe i drift — én fil, ingen server, ingen
+port, backup er en filkopi — og gir samtidig transaksjoner, skriving på
+radnivå (WAL) og indekser.
+
+Og skjemaet kan etterligne Azure-modellen direkte, slik at **de 22 lib-filene
+ikke trenger å endres**:
+
+```sql
+CREATE TABLE entiteter (
+    tabell  TEXT NOT NULL,
+    pk      TEXT NOT NULL,
+    rk      TEXT NOT NULL,
+    data    TEXT NOT NULL,   -- JSON, som i dag
+    etag    TEXT,
+    PRIMARY KEY (tabell, pk, rk)
+);
+```
+
+Da blir `listEntities` med partisjonsfilter et indeksoppslag, og de 33
+fullskannene blir tabellskann i SQLite — fortsatt fullskann, men flere
+størrelsesordener raskere enn å parse JSON.
+
+Postgres er ikke feil, men det legger til en driftskomponent uten å løse noe
+SQLite ikke løser på dette volumet. Rene filer er for lite, og det er
+samtalen og de 33 fullskannene som gjør forskjellen — ikke antall tabeller.
+
 ## Søm 3: autorisasjonen — lett å undervurdere
 
 API-siden er liten: 7 filer leser `x-ms-client-principal`, alle gjennom
@@ -210,8 +268,9 @@ den delen er ikke ny — men den må peke på et annet lager.
 - Hvilken autentisering? OIDC mot en egen identitetsleverandør er nærmest
   dagens modell og lar `lib/auth.js` beholde formen. Lokale brukere med
   passord er enklere å sette opp og vanskeligere å forvalte.
-- Hvilken database? Postgres er det opplagte valget, men SQLite er nok for
-  volumet og fjerner en hel driftskomponent.
+- Bekreft volumet før valget låses. Vurderingen over antar at `Skjemaer` og
+  `Samtale` vokser jevnt og at ingen tabell blir enorm. Blir én av dem det,
+  er det de 33 fullskannene som merker det først.
 - Skal varianten kunne lese data fra Azure-varianten, eller er de helt
   atskilte installasjoner?
 - Hvem drifter serveren, og hva er forventet oppetid?
