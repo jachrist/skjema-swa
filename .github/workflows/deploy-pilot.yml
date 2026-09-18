@@ -19,22 +19,25 @@ on:
       - '**.md'
       - 'docs/**'
       - '.gitignore'
-  pull_request:
-    types: [opened, synchronize, reopened, closed]
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
 
+# INGEN pull_request-trigger, og det er et valg.
+#
+# Actionen lager et preview-miljø per PR ved `opened`/`synchronize`, og river
+# det ned igjen ved `closed`. Fram til 18.09.2026 gjorde den det her — og
+# ingen åpnet dem. Arbeidsflyten er å merge og teste på pilot, så hver PR
+# bygget et miljø som ble revet ned minutter senere.
+#
+# Dette gjelder BARE preview per PR på pilot. Det navngitte preview-miljøet i
+# deploy-prod.yml er noe annet og skal bli stående — se begrunnelsen der.
+#
 # Dependabot-utløste kjøringer får ikke repoets secrets — de ligger i et
 # eget dependabot-scope. deployment_token blir dermed tomt, og SWA-actionen
-# feiler med «deployment_token was not provided». Slike PR-er skal derfor
-# ikke deployes; CI-jobben validerer dem i stedet.
+# feiler med «deployment_token was not provided». Uten pull_request-triggeren
+# når de ikke hit lenger, men betingelsen blir stående: den dagen noen legger
+# triggeren tilbake, skal den ikke ryke på nytt. CI-jobben validerer dem.
 jobs:
   build_and_deploy_job:
-    if: github.actor != 'dependabot[bot]' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.event.action != 'closed'))
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     name: Build and Deploy Job
     environment: pilot
@@ -80,15 +83,3 @@ jobs:
           output_location: ""
           # Ingen app_build_command: konfigurasjonen er alt bygget i steget over.
           skip_app_build: true
-
-  close_pull_request_job:
-    if: github.actor != 'dependabot[bot]' && github.event_name == 'pull_request' && github.event.action == 'closed'
-    runs-on: ubuntu-latest
-    name: Close Pull Request Job
-    steps:
-      - name: Close Pull Request
-        id: closepullrequest
-        uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW_0F2A44503 }}
-          action: "close"
