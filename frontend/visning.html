@@ -18,6 +18,7 @@
             --bg-svar: rgba(255, 255, 255, 0.7);
             --text-primary: #1c1c1e;
             --text-secondary: #6e6e73;
+            --danger: #ff3b30;
             --text-heading: #0a84ff;
             --border-color: rgba(0, 0, 0, 0.1);
             --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
@@ -38,6 +39,7 @@
             --bg-svar: rgba(20, 25, 35, 0.7);
             --text-primary: #f0f0f5;
             --text-secondary: #8e8e93;
+            --danger: #ff3b30;
             --text-heading: #64b5f6;
             --border-color: rgba(255, 255, 255, 0.1);
         }
@@ -204,8 +206,8 @@
         [hidden] { display: none !important; }
         /* ---- Samtale (gruppechat) ---- */
         .samtale {
-            background: var(--bg-kort);
-            border: 1px solid var(--border);
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
             border-radius: var(--radius-lg);
             padding: 16px 20px;
             margin-top: 14px;
@@ -224,30 +226,42 @@
         }
         .samtale-tom { font-size: 13px; color: var(--text-secondary); margin: 6px 0; }
         .samtale-innlegg {
-            background: var(--bg-sekundaer, rgba(120,120,128,0.08));
-            border-radius: var(--radius-md, 8px);
+            background: var(--bg-section);
+            border-radius: var(--radius-md);
             padding: 8px 12px;
             /* En lang UPN eller en URL uten mellomrom skal ikke presse boksen
                ut av containeren — samme feil som i .brukerinfo. */
             overflow-wrap: anywhere;
         }
-        .samtale-innlegg.meg { background: var(--accent-light, rgba(0,122,255,0.10)); }
+        .samtale-innlegg.meg { background: var(--accent-light); }
         .samtale-hode { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
         .samtale-avsender { font-weight: 600; }
         .samtale-tekst { font-size: 13px; white-space: pre-wrap; }
-        .samtale-info { font-size: 11px; color: var(--text-secondary); margin: 8px 0 6px 0; }
+        /* Skrivefeltet er en egen boks med ramme og tone.
+           Uten en tydelig avgrensning fløt det sammen med innleggene over, og
+           det var ikke åpenbart hvor man skulle skrive. */
+        .samtale-skriv {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-section);
+        }
+        .samtale-info { font-size: 11px; color: var(--text-secondary); margin: 0 0 8px 0; }
         .samtale-felt {
             width: 100%;
             box-sizing: border-box;
             font-family: inherit;
             font-size: 13px;
             padding: 8px 10px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius-md, 8px);
-            background: var(--bg-input, transparent);
-            color: inherit;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            /* Lysere enn boksen rundt, så feltet leses som et felt. */
+            background: var(--bg-svar);
+            color: var(--text-primary);
             resize: vertical;
         }
+        .samtale-felt:focus { outline: none; border-color: var(--accent); }
         .samtale-knapperad { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; }
         .samtale-status { font-size: 12px; color: var(--text-secondary); margin-right: auto; }
         .samtale-status.feil { color: var(--danger); }
@@ -257,7 +271,7 @@
             font-weight: 600;
             font-family: inherit;
             border: 2px solid var(--accent);
-            border-radius: var(--radius-md, 8px);
+            border-radius: var(--radius-md);
             background: var(--accent);
             color: white;
             cursor: pointer;
