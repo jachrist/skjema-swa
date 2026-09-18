@@ -529,6 +529,20 @@ https://<navn>-<hash>-test.<region>.<slice>.azurestaticapps.net/.auth/login/aad/
 Uten den avviser Entra innloggingen i preview-miljøet — og bare der. Det er en
 forventet feil, ikke et tegn på at oppsettet er galt.
 
+> **En allerede innlogget tester hjelper ikke.** Redirect-URI-en valideres ved
+> HVER autorisasjonsforespørsel, uavhengig av sesjon — en aktiv Entra-sesjon
+> sparer bare passordpromptet, selve OAuth-runden skjer likevel.
+>
+> Og SWA-sesjonscookien er bundet til vertsnavnet. Preview har et annet
+> vertsnavn enn produksjon, så den som er innlogget i prod er ikke innlogget i
+> preview: hen sendes til Entra, og da er vi tilbake til redirect-URI-en.
+
+**Bruk samme preview-navn hver gang.** `preview`-feltet i workflowen bestemmer
+vertsnavnet, så velger du «test» konsekvent, blir adressen stabil og trenger
+bare registreres én gang. Et nytt navn gir et nytt vertsnavn og en ny runde i
+app-registreringen — det er den eneste grunnen til at dette oppleves som
+tungvint.
+
 ### Hva som skal sjekkes
 
 | | Forventet |
