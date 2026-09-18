@@ -22,11 +22,15 @@ Dette dokumentet er vurderingen, ikke en ferdig spesifikasjon.
 | Arkivering i PDF, delt i ekstern og intern | `api/src/lib/pdf-generator.js:262` |
 | Tre autentiseringsveier: utsendings-token, OTP-token, SWA-cookie | `velgAuthvei()` i `skjemaer.js` |
 | Ekstern lesetilgang til eget skjema | `hentSkjema`, samme mønster |
-| **Kommentar på beslutning — lagres allerede** | `skjemaer.js:270` setter `Kommentar` |
+| **Kommentar på beslutning — ferdig** | `skjemaer.js:270` lagrer, `evaluering.html` skriver og viser |
 
-Det siste er verdt å merke seg: **halve forespørselen er implementert i
-API-et.** `evaluering.html` sender ingen kommentar i dag, så det som mangler er
-et felt i grensesnittet.
+Det siste er verdt å merke seg: **halve forespørselen er levert.** API-et har
+lagret `Kommentar` siden beslutnings-endepunktet ble skrevet; feltet i
+grensesnittet kom 16.09.2026 og var i produksjon til opplæringen 18.09.
+
+Da denne vurderingen først ble skrevet, sto det her at feltet manglet. Det var
+sant den formiddagen og feil noen timer senere, og notatet ble ikke rettet.
+Står det igjen noe her som ikke stemmer med koden, er koden fasiten.
 
 ## Hvorfor dette ikke kan bygges oppå dagens Dialog
 
@@ -66,7 +70,7 @@ revisjonssporet svare på hvordan noen kom inn.
 
 | Del | Vurdering |
 |---|---|
-| Kommentar ved endelig beslutning | **Smått** — felt i `evaluering.html`, API-et lagrer allerede |
+| Kommentar ved endelig beslutning | **Ferdig** — levert 16.09.2026 |
 | `Samtale`-tabell + les/skriv-endepunkter | **Moderat** — her ligger tyngden |
 | Chat-grensesnitt | **Moderat** — se «Sanntid» under |
 | Ekstern skrivetilgang | **Moderat** — mønsteret finnes, arbeidet er identitet og avgrensning |
@@ -106,8 +110,8 @@ feilen som koster mest her, og den eneste som ikke kan rettes i ettertid.
 
 ## Anbefaling
 
-**Ta kommentaren ved beslutning nå.** Den er nesten gratis og dekker halve
-forespørselen.
+**Kommentaren ved beslutning er tatt** (16.09.2026). Den dekket halve
+forespørselen og er prøvd i opplæring.
 
 **Samtalen bør gjøres som egen fase med egen tabell fra dag én.** Å bygge den
 oppå dagens `Dialog[]` vil virke i test og feile i produksjon — på den måten som
