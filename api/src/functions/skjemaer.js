@@ -31,62 +31,12 @@ const utsendingToken = require('../lib/utsending-token');
 const utsendingStorage = require('../lib/utsending-storage');
 const brukernavn = require('../lib/brukernavn-storage');
 const dialogTilgang = require('../lib/dialog-tilgang');
+const { harOtpToken, velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 const prefill = require('../lib/utsending-prefill');
 
-/**
- * Autentisering for ekstern-innsender-flyten.
- * Sjekker om request har gyldig x-otp-token og at skjematypen tillater ekstern.
- * Returnerer { ok, mottaker, kanal } eller { ok: false, melding }.
- */
-async function autentiserEkstern(request, skjematypeId) {
-    const token = request.headers.get('x-otp-token');
-    if (!token) return { ok: false };
-    const v = otpToken.valider(token);
-    if (!v.gyldig) return { ok: false, melding: v.melding };
-    const st = await skjemaStorage.hentSkjematype(skjematypeId);
-    if (!st?.JSON?.EksternTilgang) return { ok: false, melding: 'Skjematype tillater ikke ekstern innsender' };
-    return { ok: true, mottaker: v.mottaker, kanal: v.kanal };
-}
 
-/**
- * Har requesten et OTP-token?
- *
- * Et `x-otp-token` er et eksplisitt valg: brukeren har nettopp verifisert seg
- * som ekstern innsender for denne skjematypen. En SWA-cookie i samme nettleser
- * er derimot bare noe som ligger der — typisk fordi den som tester flyten også
- * er innlogget som seg selv.
- *
- * Derfor må tokenet gå foran cookien. Uten det ble ekstern innsending avvist
- * med «Ingen tilgang til denne skjematypen» så snart nettleseren hadde en
- * SWA-sesjon — og feilen traff bare dem som testet fra egen maskin, altså
- * nesten alltid oss selv og aldri den eksterne brukeren.
- */
-function harOtpToken(request) {
-    return !!request.headers.get('x-otp-token');
-}
 
-/**
- * Hvilken autentiseringsvei gjelder for denne requesten?
- *
- * Rekkefølgen er regelen, og den er verdt å ha ett sted:
- *   1. utsendings-token — en konkret invitasjon til én mottaker
- *   2. OTP-token       — brukeren har verifisert seg som ekstern
- *   3. SWA-cookie      — det som ligger igjen
- *
- * Uten token og uten cookie faller vi til «ekstern», som da avviser med 401.
- */
-function velgAuthvei(request, upn) {
-    if (request.headers.get('x-utsending-token')) return 'utsending';
-    if (harOtpToken(request)) return 'ekstern';
-    return upn ? 'innlogget' : 'ekstern';
-}
 
-function eksternInnsenderUpn(mottaker, kanal) {
-    // Bruker mottaker som "identitet" i innsender-feltet.
-    // E-post går i Innsender_Epost; mobilnr merkes med prefiks for å unngå
-    // forvirring med reelle e-poster i register/PDF.
-    return kanal === 'sms' ? `mobil:${mottaker}` : String(mottaker).toLowerCase();
-}
 
 /**
  * Dekrypter skjema hvis det er kryptert (Kryptert=true/string). Best-effort:
@@ -1220,4 +1170,5 @@ app.http('hentSkjema', {
 // Eksporteres for test. Rekkefølgen mellom OTP-token og SWA-cookie er lett å
 // snu ved en senere opprydding, og feilen den gir viser seg bare for den som
 // tester fra en innlogget nettleser — derfor er den festet i test.
+// Re-eksportert for test. Selve reglene bor i lib/ekstern-auth.js.
 module.exports = { _harOtpToken: harOtpToken, _velgAuthvei: velgAuthvei };

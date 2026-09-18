@@ -190,5 +190,5 @@ Dagens eksterne innlegg hører hjemme i samtalen; de interne blir værende i
 
 - Skal innsenderen kunne dempe varsling, eller bare behandlere? Slik det står
   nå er det bare behandlere — innsenderen må være mulig å nå.
-- Hva slags informasjonstekst skal stå ved oppstart av samtalen, og hvem
-  formulerer den? Den bærer hele begrunnelsen for punkt 3.
+- Informasjonsteksten ved oppstart: utkast i `docs/SAMTALE-INFOTEKST.md`, til
+  godkjenning hos oppdragsgiver. Den bærer hele begrunnelsen for punkt 3.
