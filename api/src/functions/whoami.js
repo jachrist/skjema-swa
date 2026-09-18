@@ -40,7 +40,10 @@ app.http('whoami', {
 
         // Skal denne brukeren se lenken til skjemaoversikten?
         //
-        // Admin, skjemaskapere og eiere. Eierskap er per skjematype, så det
+        // Admin, skjemaskapere og eiere. En vanlig innsender kommer via en
+        // lenke til én bestemt skjematype og skal videre til noe annet
+        // etterpå; skjemavelgeren er arbeidsflaten til dem som forvalter
+        // skjemaene. Eierskap er per skjematype, så det
         // finnes ikke noe globalt «er eier»-flagg å slå opp — vi må spørre om
         // hen eier NOEN av dem.
         //

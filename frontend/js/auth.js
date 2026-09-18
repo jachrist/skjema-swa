@@ -29,6 +29,13 @@ export function logUt(redirectTo = '/') {
  * ikke her: eierskap er per skjematype, og en klient kan uansett ikke være
  * kilden til hvem som er hva.
  *
+ * Hvorfor ikke for alle: en vanlig innsender kommer via en lenke til én
+ * bestemt skjematype, fyller ut, og gjør noe annet. Skjemaer som skal være
+ * åpne for alle eksponeres i egen layout — i et team eller på en nettside —
+ * ikke gjennom skjemavelgeren. Å hoppe fram og tilbake til oversikten er
+ * arbeidsmønsteret til dem som forvalter skjemaene, og for alle andre er
+ * lenken en avsporing fra det de kom for å gjøre.
+ *
  * Lenkene merkes med `data-oversiktslenke` i markupen. Det er med vilje, og
  * ikke et selektor-søk etter `href="/velgskjematype.html"`: den samme URL-en
  * brukes også som «Avbryt» midt i utfyllingen, og den knappen skal virke for
