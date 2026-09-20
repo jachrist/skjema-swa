@@ -72,28 +72,61 @@ function arkivId(skjematypeId, dato = new Date()) {
 }
 
 /**
+ * Filnavnet arkivet lastes ned som.
+ *
+ * Navnet er det eneste den som leter i en backupmappe om to år har å gå
+ * etter, så det må si hvilken skjematype og nøyaktig når. Datoen alene
+ * holder ikke: to kjøringer samme dag ville fått samme navn, og nettleseren
+ * legger da på «(1)» i stedet for å si fra.
+ *
+ * Tidspunktet er da arkivet ble laget, ikke datogrensen. Grensen står i
+ * manifestet; det er kjøringen man skal kunne peke på.
+ */
+function filnavnFor(manifest) {
+    const del = (s) => String(s || '')
+        .replace(/[^\p{L}\p{N}]+/gu, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40);
+    const navn = del(manifest?.Skjema_navn) || del(manifest?.Skjematype_id) || 'ukjent';
+    const id = del(manifest?.Skjematype_id) || 'ukjent';
+    // 2026-09-20T16:21:06.524Z → 2026-09-20_1621
+    const t = String(manifest?.Arkivert || '');
+    const stempel = `${t.slice(0, 10)}_${t.slice(11, 13)}${t.slice(14, 16)}${t.slice(17, 19)}`;
+    return `arkiv_${navn}_${id}_${stempel}.json`;
+}
+
+/**
  * Sett sammen arkivet.
  *
  * `vedlegg` er et kart fra skjema-ID til `[{ filnavn, innhold }]` (base64).
- * Er det tomt, står `MedVedlegg: false` i manifestet — og da skal slettingen
- * la vedleggene ligge. Et arkiv som ikke inneholder vedleggene, gir ikke rett
- * til å slette dem.
+ *
+ * `medVedlegg` sier om vedleggene VAR MED I JOBBEN, ikke om noen av skjemaene
+ * hadde vedlegg. De to er ikke det samme: fem skjemaer uten vedlegg gir et
+ * komplett arkiv, og det skal ikke stå igjen en advarsel om vedlegg som
+ * verken finnes eller ble utelatt. `MedVedlegg` styrer slettingen, så det må
+ * være valget som avgjør — ikke utfallet.
+ *
+ * `skjematypeId` er påkrevd og hentes ikke ut av `skjematype`. Den er
+ * nøkkelen arkivet senere slås opp på (PK i Arkiv-tabellen), og et arkiv med
+ * tom nøkkel kan ikke finnes igjen. Derfor kaster vi her, der feilen oppstår,
+ * i stedet for å la den bli til «Fant ikke arkivet» ved slettingen.
  */
-function byggArkiv({ skjematype, skjemaer, samtaler = {}, vedlegg = {}, foerDato, arkivertAv, dato = new Date() }) {
+function byggArkiv({ skjematypeId, skjematype, skjemaer, samtaler = {}, vedlegg = {}, medVedlegg = true, foerDato, arkivertAv, dato = new Date() }) {
+    const typeId = String(skjematypeId ?? skjematype?.id ?? skjematype?.JSON?.Skjematype_id ?? '');
+    if (!typeId) throw new Error('Skjematype_id mangler — arkivet kunne ikke bygges');
     const ider = (skjemaer || []).map(s => String(s.Skjema_id));
-    const medVedlegg = Object.values(vedlegg).some(v => (v || []).length > 0);
     return {
         Manifest: {
-            ArkivId: arkivId(skjematype?.Skjematype_id ?? '', dato),
-            Skjematype_id: String(skjematype?.Skjematype_id ?? ''),
-            Skjema_navn: skjematype?.JSON?.Skjema_navn || '',
+            ArkivId: arkivId(typeId, dato),
+            Skjematype_id: typeId,
+            Skjema_navn: skjematype?.JSON?.Skjema_navn || skjematype?.navn || '',
             Arkivert: dato.toISOString(),
             ArkivertAv: String(arkivertAv || ''),
             FoerDato: String(foerDato || ''),
             Antall: ider.length,
             AntallSamtaleinnlegg: Object.values(samtaler).reduce((n, v) => n + (v || []).length, 0),
             AntallVedlegg: Object.values(vedlegg).reduce((n, v) => n + (v || []).length, 0),
-            MedVedlegg: medVedlegg,
+            MedVedlegg: !!medVedlegg,
             Sjekksum: sjekksum(ider),
             // Sies i selve fila, ikke bare i grensesnittet: den som finner
             // arkivet om to år har ikke sett skjermbildet.
@@ -129,4 +162,4 @@ function verifiser(manifest, oppgittSjekksum, skjemaIder) {
     return { ok: true };
 }
 
-module.exports = { kanArkiveres, sjekksum, arkivId, byggArkiv, verifiser, AVSLUTTET };
+module.exports = { kanArkiveres, sjekksum, arkivId, filnavnFor, byggArkiv, verifiser, AVSLUTTET };

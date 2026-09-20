@@ -33,7 +33,7 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
-const { kanArkiveres, sjekksum, byggArkiv, verifiser } = require('../src/lib/arkiv');
+const { kanArkiveres, sjekksum, byggArkiv, verifiser, filnavnFor } = require('../src/lib/arkiv');
 
 const GRENSE = '2026-01-01';
 const gammel = (status = 5) => ({ Skjema_id: '1', Skjema_status: status, Sist_endret: '2025-06-01T10:00:00Z' });
@@ -74,12 +74,17 @@ const gammel = (status = 5) => ({ Skjema_id: '1', Skjema_status: status, Sist_en
 
 // ---------- arkivet ----------
 {
-    const skjematype = { Skjematype_id: '7', JSON: { Skjema_navn: 'Reiseregning' } };
+    // NB: dette er formen `skjema-storage.hentSkjematype` faktisk returnerer —
+    // `{ id, navn, JSON }`, ikke `{ Skjematype_id }`. Første versjon av denne
+    // testen fant på sin egen form, og da gikk testen grønt mens produksjons-
+    // koden bygget arkiv med tom skjematype-ID.
+    const skjematype = { id: '7', navn: 'Reiseregning', JSON: { Skjema_navn: 'Reiseregning' } };
     const skjemaer = [gammel(), { ...gammel(), Skjema_id: '2' }];
     const a = byggArkiv({
-        skjematype, skjemaer,
+        skjematypeId: '7', skjematype, skjemaer,
         samtaler: { '1': [{ Id: 'x', Tekst: 'hei' }] },
         vedlegg: { '1': [{ filnavn: 'a.pdf', innhold: 'AAA=' }] },
+        medVedlegg: true,
         foerDato: GRENSE, arkivertAv: 'sjef@fhs.no',
         dato: new Date('2026-09-20T12:00:00Z')
     });
@@ -92,17 +97,87 @@ const gammel = (status = 5) => ({ Skjema_id: '1', Skjema_status: status, Sist_en
     sjekk('kriteriet er med', a.Manifest.FoerDato, GRENSE);
     sjekk('sjekksum stemmer med skjemaene', a.Manifest.Sjekksum, sjekksum(['1', '2']));
 
+    // Skjematype-ID-en er nøkkelen arkivet slås opp på senere (PK i Arkiv-
+    // tabellen). Er den tom, lagres raden under en annen nøkkel enn den
+    // slettingen leter på, og svaret blir «Fant ikke arkivet».
+    sjekk('skjematype-id i manifestet', a.Manifest.Skjematype_id, '7');
+    sjekk('skjematype-id i arkiv-id', a.Manifest.ArkivId.endsWith('_7'), true);
+    sjekk('navnet er med', a.Manifest.Skjema_navn, 'Reiseregning');
+
     // Definisjonen må med — uten den kan arkivet ikke tolkes om to år.
     sjekk('skjematypedefinisjonen er med', a.Skjematype.Skjema_navn, 'Reiseregning');
     // Og merknaden står i FILA, ikke bare i grensesnittet: den som finner
     // arkivet senere har ikke sett skjermbildet.
     sjekk('merknad om klartekst', /klartekst/.test(a.Manifest.Merknad), true);
     sjekk('merknad om at skjemaene er slettet', /slettet/.test(a.Manifest.Merknad), true);
+}
 
-    // Uten vedlegg: da skal ikke slettingen røre dem.
-    const uten = byggArkiv({ skjematype, skjemaer, foerDato: GRENSE, arkivertAv: 'a@b.no' });
-    sjekk('uten vedlegg', uten.Manifest.MedVedlegg, false);
-    sjekk('og telles til null', uten.Manifest.AntallVedlegg, 0);
+// ---------- MedVedlegg er valget, ikke utfallet ----------
+{
+    const skjematype = { id: '7', navn: 'Reiseregning', JSON: { Skjema_navn: 'Reiseregning' } };
+    const skjemaer = [gammel()];
+    const felles = { skjematypeId: '7', skjematype, skjemaer, foerDato: GRENSE, arkivertAv: 'a@b.no' };
+
+    // Skjemaer UTEN vedlegg, men vedlegg var med i jobben. Arkivet er
+    // komplett, og slettingen skal ikke stoppes av en advarsel om filer som
+    // ikke finnes.
+    const ingenFiler = byggArkiv({ ...felles, medVedlegg: true, vedlegg: {} });
+    sjekk('ingen vedlegg å ta, men de var med i jobben', ingenFiler.Manifest.MedVedlegg, true);
+    sjekk('og telles til null', ingenFiler.Manifest.AntallVedlegg, 0);
+
+    // Vedlegg valgt bort: da skal slettingen la dem ligge.
+    const valgtBort = byggArkiv({ ...felles, medVedlegg: false, vedlegg: {} });
+    sjekk('vedlegg valgt bort', valgtBort.Manifest.MedVedlegg, false);
+
+    // Og motsatt: valget skal ikke kunne overstyres av at det tilfeldigvis
+    // finnes vedlegg i kartet.
+    const bortMenFinnes = byggArkiv({
+        ...felles, medVedlegg: false, vedlegg: { '1': [{ filnavn: 'a.pdf', innhold: 'AAA=' }] }
+    });
+    sjekk('valget veier tyngst', bortMenFinnes.Manifest.MedVedlegg, false);
+}
+
+// ---------- skjematype-ID kan ikke mangle ----------
+{
+    const skjemaer = [gammel()];
+    let kastet = '';
+    try {
+        byggArkiv({ skjematype: { navn: 'Uten id', JSON: {} }, skjemaer, foerDato: GRENSE, arkivertAv: 'a@b.no' });
+    } catch (e) { kastet = e.message; }
+    sjekk('tom skjematype-id kaster', /Skjematype_id/.test(kastet), true);
+
+    // Den kan hentes fra objektets egen form hvis kalleren ikke sender den.
+    const fraObjekt = byggArkiv({
+        skjematype: { id: '9', JSON: { Skjema_navn: 'X' } }, skjemaer, foerDato: GRENSE, arkivertAv: 'a@b.no'
+    });
+    sjekk('id leses fra skjematype-objektet', fraObjekt.Manifest.Skjematype_id, '9');
+}
+
+// ---------- filnavnet ----------
+{
+    const m = {
+        Skjematype_id: '120', Skjema_navn: 'PLANNER',
+        Arkivert: '2026-09-20T16:21:06.524Z', FoerDato: '2026-09-21'
+    };
+    const navn = filnavnFor(m);
+    sjekk('skjematypen er med i navnet', navn.includes('PLANNER'), true);
+    sjekk('id-en er med', navn.includes('120'), true);
+    sjekk('datoen er med', navn.includes('2026-09-20'), true);
+    // Klokkeslettet er det som skiller to kjøringer samme dag fra hverandre.
+    sjekk('klokkeslettet er med', navn.includes('162106'), true);
+    sjekk('endelse', navn.endsWith('.json'), true);
+
+    const senere = filnavnFor({ ...m, Arkivert: '2026-09-20T18:05:00.000Z' });
+    sjekk('to kjøringer samme dag får ulike navn', navn === senere, false);
+
+    // Navn er fritekst fra skjemaeier og havner i et filnavn.
+    const stygt = filnavnFor({ ...m, Skjema_navn: 'A/B: «test» \\ 100%' });
+    sjekk('ingen skilletegn i filnavnet', /[\\/:*?"<>|]/.test(stygt), false);
+    sjekk('æøå beholdes', filnavnFor({ ...m, Skjema_navn: 'Søknad' }).includes('Søknad'), true);
+
+    // Mangler navnet, skal ikke fila hete «arkiv__…».
+    const utenNavn = filnavnFor({ ...m, Skjema_navn: '' });
+    sjekk('ingen tomme ledd', utenNavn.includes('__'), false);
 }
 
 // ---------- verifisering før sletting ----------

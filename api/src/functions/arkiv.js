@@ -24,7 +24,7 @@ const samtaleStorage = require('../lib/samtale-storage');
 const vedleggStorage = require('../lib/vedlegg-storage');
 const arkivStorage = require('../lib/arkiv-storage');
 const hendelser = require('../lib/hendelser-storage');
-const { kanArkiveres, byggArkiv, verifiser } = require('../lib/arkiv');
+const { kanArkiveres, byggArkiv, verifiser, filnavnFor } = require('../lib/arkiv');
 
 function avvis(status, melding) {
     return { status, jsonBody: { status: status === 403 ? 'avvist' : 'feil', melding } };
@@ -149,9 +149,12 @@ app.http('arkivEksporter', {
             }
 
             const arkiv = byggArkiv({
-                skjematype, skjemaer, samtaler, vedlegg,
+                skjematypeId, skjematype, skjemaer, samtaler, vedlegg, medVedlegg,
                 foerDato, arkivertAv: a.upn
             });
+            // Filnavnet bestemmes her, ikke i nettleseren: den som senere skal
+            // kjenne igjen fila, og den som leser manifestet, skal se det samme.
+            arkiv.Filnavn = filnavnFor(arkiv.Manifest);
             await arkivStorage.lagre(arkiv.Manifest, skjemaer.map(s => s.Skjema_id));
 
             context.log(`arkiv: ${a.upn} eksporterte ${skjemaer.length} skjema fra ${skjematypeId} (${arkiv.Manifest.ArkivId})`);
@@ -188,12 +191,27 @@ app.http('arkivSlett', {
             if (!manifest) return avvis(404, 'Fant ikke arkivet');
             if (manifest.Slettet) return avvis(409, `Dette arkivet ble tømt ${manifest.Slettet}`);
 
-            const v = verifiser(manifest, oppgittSjekksum, manifest.SkjemaIder);
+            // Sammenligningen går mot skjemaene som står i tabellen NÅ, ikke mot
+            // manifestets egen liste. Sistnevnte ville vært et kall som alltid
+            // sier ja.
+            const iTabellen = (await finnKandidater(skjematypeId, manifest.FoerDato))
+                .map(s => String(s.Skjema_id));
+            const v = verifiser(manifest, oppgittSjekksum, iTabellen);
             if (!v.ok) return avvis(400, v.grunn);
 
-            let slettet = 0, feilet = 0;
+            let slettet = 0, feilet = 0, hoppetOver = 0;
             for (const id of manifest.SkjemaIder) {
                 try {
+                    // Er saken endret etter at arkivet ble laget, er den ikke
+                    // den arkivet beskriver. Da gjelder ikke tillatelsen den
+                    // ga, og skjemaet blir stående.
+                    const naa = await forekomstStorage.hentSkjema(id, skjematypeId);
+                    if (naa && String(naa.Sist_endret || '') > String(manifest.Arkivert || '')) {
+                        hoppetOver++;
+                        context.log(`arkiv-slett: skjema ${id} er endret etter arkiveringen — hoppet over`);
+                        continue;
+                    }
+
                     // Rekkefølgen er bevisst: vedlegg og samtale først, raden
                     // sist. Ryker noe underveis, står saken igjen med en rad
                     // som fortsatt peker på det som er igjen — i stedet for
@@ -211,16 +229,16 @@ app.http('arkivSlett', {
             }
 
             await arkivStorage.merkSlettet(skjematypeId, arkivId, slettet);
-            context.log(`arkiv: ${a.upn} slettet ${slettet} skjema fra ${skjematypeId} (${arkivId}), ${feilet} feilet`);
+            context.log(`arkiv: ${a.upn} slettet ${slettet} skjema fra ${skjematypeId} (${arkivId}), ${feilet} feilet, ${hoppetOver} hoppet over`);
             try {
                 await hendelser.logg({
                     Type: 'arkiv.slettet', Aktor: a.upn,
                     ObjektType: 'skjematype', ObjektId: String(skjematypeId),
-                    Melding: `${slettet} skjema slettet (${feilet} feilet), arkiv ${arkivId}`
+                    Melding: `${slettet} skjema slettet (${feilet} feilet, ${hoppetOver} endret etter arkivering), arkiv ${arkivId}`
                 });
             } catch (_) { /* logging skal ikke velte slettingen */ }
 
-            return { jsonBody: { status: 'ok', slettet, feilet, medVedlegg: manifest.MedVedlegg } };
+            return { jsonBody: { status: 'ok', slettet, feilet, hoppetOver, medVedlegg: manifest.MedVedlegg } };
         } catch (e) {
             context.log('arkiv-slett FEIL:', e.message);
             return avvis(500, 'Kunne ikke slette');
