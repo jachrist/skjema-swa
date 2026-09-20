@@ -116,6 +116,29 @@
             border: 1px solid var(--input-border); border-radius: var(--radius-sm);
             background: var(--bg-input); color: var(--text-primary); font-family: inherit;
         }
+        /* Oversikt over skjematyper. Egen tabellstil — admin har ingen fra før. */
+        .oversikt { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .oversikt th {
+            text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+            letter-spacing: 0.04em; color: var(--text-secondary);
+            padding: 6px 8px; border-bottom: 1px solid var(--border-color); white-space: nowrap;
+        }
+        .oversikt td { padding: 7px 8px; border-bottom: 1px solid var(--border-color); vertical-align: top; }
+        .oversikt tr:last-child td { border-bottom: none; }
+        .oversikt .tall { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+        /* Navn og eiere kan være lange og uten mellomrom. */
+        .oversikt .navnkol { min-width: 160px; overflow-wrap: anywhere; }
+        .oversikt .eierkol { overflow-wrap: anywhere; color: var(--text-secondary); font-size: 12px; }
+        .oversikt .ubrukt td { opacity: 0.6; }
+        .oversikt .ingen-eier { color: var(--warning); }
+        /* Tabellen er bred; på smal skjerm skal den rulle, ikke sprenge siden. */
+        .oversikt-ramme { overflow-x: auto; }
+        .merkelapp {
+            display: inline-block; padding: 1px 7px; border-radius: 999px;
+            font-size: 11px; font-weight: 600; white-space: nowrap;
+        }
+        .merkelapp.utvikling { background: var(--accent-light); color: var(--accent); }
+        .merkelapp.produksjon { background: rgba(52, 199, 89, 0.15); color: var(--success); }
         .rad { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
         .rad label { font-size: 12px; color: var(--text-secondary); min-width: 90px; }
 
@@ -312,6 +335,7 @@
             <nav class="sidebar" id="sidebar">
                 <a class="fane" data-fane="oppgaver" href="#oppgaver">✅ Oppgaver</a>
                 <div class="skille"></div>
+                <a class="fane" data-fane="skjematyper" href="#skjematyper">📑 Skjematyper</a>
                 <a class="fane" data-fane="roller" href="#roller">👥 Roller</a>
                 <a class="fane" data-fane="nokler" href="#nokler">🔐 Nøkler</a>
                 <a class="fane" data-fane="nokkelkalender" href="#nokkelkalender">🗓 Nøkkelkalender</a>
@@ -413,6 +437,7 @@
             markerFane(h);
             switch (h) {
                 case 'oppgaver':    rendrOppgaver(); break;
+                case 'skjematyper': rendrSkjematyper(); break;
                 case 'roller':      rendrRoller(); break;
                 case 'nokler':      rendrNokler(); break;
                 case 'nokkelkalender': rendrNokkelkalender(); break;
@@ -2106,6 +2131,96 @@
         }
 
         // ==================== BACKUP-FANE ====================
+
+        // ==================== SKJEMATYPER ====================
+
+        /**
+         * Oversikt over skjematyper: eiere, fase, bruk og siste aktivitet.
+         *
+         * Sortert mest brukt først — ikke alfabetisk. Den som åpner denne
+         * siden lurer på hva som faktisk er i bruk, og de ubrukte er
+         * interessante nettopp fordi de havner nederst.
+         *
+         * Serveren gjør sammenstillingen (`lib/skjematype-oversikt.js`). Denne
+         * siden tegner bare.
+         */
+        async function rendrSkjematyper() {
+            const innhold = document.getElementById('innhold');
+            innhold.innerHTML = '<div class="laster">Laster oversikt…</div>';
+            let data;
+            try {
+                data = await api.get('/api/skjematype-oversikt');
+            } catch (e) {
+                innhold.innerHTML = `<div class="panel"><h2>Skjematyper</h2>
+                    <div style="color: var(--danger);">Kunne ikke hente oversikten: ${escHtml(e.message)}</div></div>`;
+                return;
+            }
+
+            const s = data.sum || {};
+            innhold.innerHTML = `
+                <div class="panel">
+                    <h2>Sammendrag</h2>
+                    <div style="display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px;">
+                        <div><strong>${s.Skjematyper ?? 0}</strong> skjematyper</div>
+                        <div><strong>${s.Utfylte ?? 0}</strong> innsendte skjemaer</div>
+                        <div><strong>${s.Mellomlagret ?? 0}</strong> mellomlagrede</div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Skjematyper <small style="font-weight: 400; text-transform: none;">— mest brukt først</small></h2>
+                    <div class="oversikt-ramme">${byggOversiktTabell(data.rader || [])}</div>
+                </div>`;
+        }
+
+        function byggOversiktTabell(rader) {
+            if (rader.length === 0) return '<div style="font-size: 13px; color: var(--text-secondary);">Ingen skjematyper.</div>';
+            return `
+                <table class="oversikt">
+                    <thead><tr>
+                        <th class="navnkol">Skjematype</th>
+                        <th>Fase</th>
+                        <th>Eiere</th>
+                        <th class="tall">Innsendt</th>
+                        <th class="tall">Mellomlagret</th>
+                        <th class="tall">Avsluttet</th>
+                        <th>Siste aktivitet</th>
+                    </tr></thead>
+                    <tbody>${rader.map(oversiktRad).join('')}</tbody>
+                </table>`;
+        }
+
+        function oversiktRad(r) {
+            const fase = String(r.Fase || 'Produksjon');
+            // En skjematype uten eier er ikke en tom celle — det er et
+            // forvaltningshull, og det er nettopp slikt en oversikt skal
+            // gjøre synlig.
+            const eiere = r.Eiere
+                ? escHtml(r.Eiere)
+                : '<span class="ingen-eier">ingen eier satt</span>';
+            return `
+                <tr class="${r.Totalt === 0 ? 'ubrukt' : ''}">
+                    <td class="navnkol">
+                        <a href="/editor.html?skjematype_id=${encodeURIComponent(r.Skjematype_id)}">${escHtml(r.Skjema_navn || '(uten navn)')}</a>
+                        <div style="font-size: 11px; color: var(--text-secondary);">
+                            ${escHtml(r.Skjematype_id)}${r.Behandlingssteg > 0 ? ` · ${r.Behandlingssteg} behandlingssteg` : ' · ingen behandling'}${r.Samtale && r.Samtale !== 'Av' ? ' · samtale' : ''}
+                        </div>
+                    </td>
+                    <td><span class="merkelapp ${fase.toLowerCase()}">${escHtml(fase)}</span></td>
+                    <td class="eierkol">${eiere}</td>
+                    <td class="tall">${r.Utfylte}</td>
+                    <td class="tall">${r.Mellomlagret}</td>
+                    <td class="tall">${r.Avsluttet}</td>
+                    <td style="white-space: nowrap; font-size: 12px; color: var(--text-secondary);">${escHtml(kortDato(r.SisteDato))}</td>
+                </tr>`;
+        }
+
+        /** Dato uten klokkeslett — en oversikt trenger ikke minuttet. */
+        function kortDato(iso) {
+            if (!iso) return '–';
+            const d = new Date(iso);
+            if (isNaN(d)) return '–';
+            return d.toLocaleDateString('no-NO', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        }
 
         function rendrBackup() {
             document.getElementById('innhold').innerHTML = `

@@ -37,6 +37,7 @@ require('./functions/todo');
 require('./functions/nokkelkalender');
 require('./functions/gevinst');
 require('./functions/samtale');
+require('./functions/skjematype-oversikt');
 
 // Etter hvert:
 // require('./functions/skjema');
