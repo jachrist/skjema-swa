@@ -130,6 +130,9 @@ const { arkVelg, arkForhandsvis, arkEksporter, arkSlett } = vindu;
 sjekk('alle fire handlingene er eksponert',
     [arkVelg, arkForhandsvis, arkEksporter, arkSlett].every(f => typeof f === 'function'), true);
 
+// Filnavnet lages av API-et, ikke av siden — se lib/arkiv.js:filnavnFor.
+const FILNAVN = 'arkiv_PLANNER_120_2026-09-20_162106.json';
+
 const MANIFEST = {
     ArkivId: 'ark-2026-09-20-001',
     Skjematype_id: '120',
@@ -145,8 +148,8 @@ async function gjennomførEksport(manifest = MANIFEST) {
     friskStart();
     apiSvar = {
         '/api/arkiv/120/forhandsvis': { antall: 42, antallVedlegg: 7, eldste: '2020-03-01', nyeste: '2024-12-30' },
-        '/api/arkiv/120': { Manifest: manifest, Skjemaer: [{ Skjema_id: '1' }] },
-        '/api/arkiv/120/slett': { slettet: 42, feilet: 0 },
+        '/api/arkiv/120': { Manifest: manifest, Filnavn: FILNAVN, Skjemaer: [{ Skjema_id: '1' }] },
+        '/api/arkiv/120/slett': { slettet: 40, feilet: 0, hoppetOver: 2 },
         '/api/arkiv': { arkiv: [] }
     };
     arkVelg('120');
@@ -203,6 +206,11 @@ async function kjor() {
         sjekk('nedlastingen ble faktisk utløst', logg.includes('nedlasting') && logg.includes('klikk'), true);
         sjekk('sjekksummen er tatt vare på', state.nedlastet.sjekksum, MANIFEST.Sjekksum);
         sjekk('arkiv-id er tatt vare på', state.nedlastet.arkivId, MANIFEST.ArkivId);
+
+        // Filnavnet kommer fra API-et. Bygde siden det selv, ville den måttet
+        // gjette på felter i manifestet — og et felt som ikke finnes gir
+        // «arkiv__2026-09-21.json» uten at noe sier fra.
+        sjekk('fila heter det API-et sa', el['ark-eksport-status'].innerHTML.includes(FILNAVN), true);
 
         const aapen = slettePanel();
         sjekk('slett-knappen er der nå', /arkSlett\(\)/.test(aapen), true);
@@ -262,14 +270,19 @@ async function kjor() {
         await gjennomførEksport();
         await arkSlett();
         sjekk('arkivet kan ikke slettes to ganger', miljo.hentState().nedlastet, null);
-        sjekk('antallet slettede vises', el['ark-slett-status'].innerHTML.includes('42'), true);
+        sjekk('antallet slettede vises', el['ark-slett-status'].innerHTML.includes('40'), true);
+        // Skjemaer som ble endret etter arkiveringen står igjen. Sies det ikke,
+        // tror brukeren at alt er borte — og sletter arkivfila.
+        sjekk('de som står igjen nevnes',
+            el['ark-slett-status'].innerHTML.includes('2') &&
+            el['ark-slett-status'].innerHTML.includes('endret etter arkiveringen'), true);
     }
 
     // ---------- vedlegg som ikke er med, blir ikke slettet ----------
     {
         await gjennomførEksport({ ...MANIFEST, MedVedlegg: false });
         sjekk('advarer om vedlegg utenfor arkivet',
-            slettePanel().includes('Vedlegg er ikke med'), true);
+            slettePanel().includes('Vedlegg ble ikke tatt med'), true);
         promptSvar = 'SLETT';
         await arkSlett();
         sjekk('bekreftelsen lover ikke at vedlegg forsvinner',
@@ -281,6 +294,13 @@ async function kjor() {
         await arkSlett();
         sjekk('bekreftelsen nevner vedlegg når de er med',
             promptTekst.includes('med vedlegg'), true);
+    }
+    {
+        // Skjemaer uten vedlegg er ikke det samme som vedlegg utelatt.
+        // MedVedlegg kommer fra avkrysningsboksen, ikke fra AntallVedlegg.
+        await gjennomførEksport({ ...MANIFEST, MedVedlegg: true, AntallVedlegg: 0 });
+        sjekk('ingen advarsel når jobben tok vedlegg, men ingen fantes',
+            slettePanel().includes('ble ikke tatt med'), false);
     }
 
     // ---------- feil fra API-et stopper flyten ----------

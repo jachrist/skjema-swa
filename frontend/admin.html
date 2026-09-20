@@ -2326,7 +2326,7 @@
                 <div style="font-size: 13px; line-height: 1.7;">
                     Arkiv <code>${escHtml(n.arkivId)}</code> er lastet ned med
                     <strong>${n.antall}</strong> skjema${n.medVedlegg ? ` og <strong>${n.antallVedlegg}</strong> vedlegg` : ''}.
-                    ${n.medVedlegg ? '' : '<div style="color: var(--warning);">Vedlegg er ikke med i arkivet, og blir derfor ikke slettet.</div>'}
+                    ${n.medVedlegg ? '' : '<div style="color: var(--warning);">Vedlegg ble ikke tatt med i arkivet, og blir derfor ikke slettet.</div>'}
                 </div>
                 <div style="margin-top: 10px;">
                     <button class="knapp danger" onclick="arkSlett()">
@@ -2399,7 +2399,9 @@
 
                 // Last ned FØR slettingen tilbys. Sjekksummen tas fra svaret
                 // vi nettopp skrev til fil — altså det samme innholdet.
-                const navn = `arkiv_${arkiv.Manifest.Skjematype_id}_${(arkiv.Manifest.FoerDato || '').slice(0, 10)}.json`;
+                // Filnavnet kommer fra API-et, så fila heter det samme som
+                // manifestet og arkivlista sier at den gjør.
+                const navn = arkiv.Filnavn;
                 lastNedJson(arkiv, navn);
 
                 arkivState.nedlastet = {
@@ -2447,6 +2449,7 @@ Skriv SLETT for å bekrefte.`);
                 const r = await api.post(`/api/arkiv/${encodeURIComponent(arkivState.valgt)}/slett`,
                     { arkivId: n.arkivId, sjekksum: n.sjekksum });
                 ut.innerHTML = `<strong>${r.slettet}</strong> skjema slettet.`
+                    + (r.hoppetOver > 0 ? ` <span style="color: var(--warning);">${r.hoppetOver} ble endret etter arkiveringen og står igjen.</span>` : '')
                     + (r.feilet > 0 ? ` <span style="color: var(--danger);">${r.feilet} feilet — se hendelsesloggen.</span>` : '');
                 arkivState.nedlastet = null;
                 arkivState.tidligere = (await api.get('/api/arkiv'))?.arkiv || [];
