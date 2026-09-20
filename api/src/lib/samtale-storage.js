@@ -214,7 +214,45 @@ async function settDemping(skjematypeId, skjemaId, upn, dempet) {
     return !!dempet;
 }
 
+/**
+ * Slett hele samtalen for én sak.
+ *
+ * Brukes av arkiveringen. Samtalen ligger i egen tabell, så en sletting av
+ * skjemaraden alene ville latt innleggene bli igjen — uten noe som viser til
+ * dem, og uten at noe sier fra.
+ *
+ * Returnerer antall slettede innlegg, så kalleren kan se at det faktisk
+ * skjedde noe. Dempingsradene ryddes også: de er verdiløse uten samtalen.
+ */
+async function slettForSak(skjematypeId, skjemaId) {
+    const pk = sakNokkel(skjematypeId, skjemaId);
+    let antall = 0;
+
+    const innlegg = await hentInnlegg(skjematypeId, skjemaId);
+    if (innlegg.length > 0) {
+        const t = await storage.sikreTabell(TABELL);
+        for (const i of innlegg) {
+            try { await t.deleteEntity(pk, i.Id); antall++; }
+            catch (e) { if (e.statusCode !== 404) throw e; }
+        }
+    }
+
+    // Demping er per bruker per sak. Feiler oppryddingen, er det en rad som
+    // ikke betyr noe lenger — den skal ikke stoppe arkiveringen.
+    try {
+        const d = await storage.sikreTabell(DEMPING);
+        const filter = `PartitionKey eq ${sitat(pk)}`;
+        const rader = [];
+        for await (const e of d.listEntities({ queryOptions: { filter } })) rader.push(e.rowKey);
+        for (const rk of rader) {
+            try { await d.deleteEntity(pk, rk); } catch (_) { /* neste */ }
+        }
+    } catch (_) { /* dempingen er ikke kritisk */ }
+
+    return antall;
+}
+
 module.exports = {
-    leggTil, hentInnlegg, sammendrag, erDempet, settDemping,
+    leggTil, hentInnlegg, sammendrag, erDempet, settDemping, slettForSak,
     sakNokkel, radNokkel, sitat, TABELL, DEMPING, MAKS_TEGN
 };

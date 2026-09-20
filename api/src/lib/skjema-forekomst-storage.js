@@ -131,6 +131,47 @@ async function hentMetadataForType(skjematypeId) {
     return ut;
 }
 
+/**
+ * Antall skjemaer og siste dato, per skjematype.
+ *
+ * Én gjennomgang av tabellen, ikke én spørring per skjematype. Med tjue
+ * skjematyper ville det siste vært tjue rundturer for et tall som uansett
+ * krever å se på alle radene.
+ *
+ * `select` er det som gjør det billig: vi henter fire felter per rad, ikke
+ * JSON-en. Et skjema kan være titusener av tegn, og her skal vi bare telle.
+ *
+ * Statusene telles hver for seg fordi «antall utfylte» er tvetydig: et
+ * mellomlagret skjema er påbegynt, ikke levert. Kalleren avgjør hva den vil
+ * vise — men den skal ikke måtte gjette.
+ */
+async function hentAntallPerType() {
+    const tabell = await sikreTabell(TABELL);
+    const kart = new Map();
+    const iter = tabell.listEntities({
+        queryOptions: { select: ['PartitionKey', 'RowKey', 'Skjemastatus', 'Oppdatert'] }
+    });
+    for await (const e of iter) {
+        const type = String(e.partitionKey || '');
+        if (!type) continue;
+        if (!kart.has(type)) {
+            kart.set(type, { Antall: 0, Mellomlagret: 0, UnderBehandling: 0, Avsluttet: 0, SisteDato: '' });
+        }
+        const rad = kart.get(type);
+        rad.Antall++;
+        const status = Number(e.Skjemastatus || 0);
+        if (status === 1) rad.Mellomlagret++;
+        else if (status === 5) rad.Avsluttet++;
+        else rad.UnderBehandling++;
+
+        // Strengsammenligning på ISO-8601 gir kronologi uten Date-parsing —
+        // og en ugyldig dato taper mot en gyldig i stedet for å bli NaN.
+        const dato = String(e.Oppdatert || '');
+        if (dato > rad.SisteDato) rad.SisteDato = dato;
+    }
+    return kart;
+}
+
 async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}) {
     const tabell = await sikreTabell(TABELL);
 
@@ -208,6 +249,7 @@ async function slettSkjema(skjemaId, skjematypeId) {
 }
 
 module.exports = {
+    hentAntallPerType,
     hentSkjema,
     lagreSkjema,
     hentAlleSkjemaerForType,

@@ -59,6 +59,10 @@ const TABELLER = [
     // og Brukernavn, som begge bygges opp igjen.
     'Samtale',
     'SamtaleDemping',
+    // Manifestene fra arkiveringen. Selve skjemaene er borte når et arkiv er
+    // tømt; dette er det eneste sporet av at de har vært der, og av hvor
+    // fila ble lastet ned.
+    'Arkiv',
     { navn: 'Hendelser', maksAlderDager: 90 }
 ];
 
