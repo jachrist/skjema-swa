@@ -345,6 +345,7 @@
                 <a class="fane" data-fane="gevinst" href="#gevinst">📈 Gevinstoppfølging</a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS</a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup</a>
+                <a class="fane" data-fane="arkiv" href="#arkiv">🗄 Arkivering</a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
                 <a class="fane" data-fane="system" href="#system">⚙️ System</a>
             </nav>
@@ -446,6 +447,7 @@
                 case 'gevinst':     rendrGevinst(); break;
                 case 'postnumre-fs':rendrPostnumreFs(); break;
                 case 'backup':      rendrBackup(); break;
+                case 'arkiv':       rendrArkiv(); break;
                 case 'logoer':      rendrLogoer(); break;
                 case 'system':      rendrSystem(); break;
                 default: rendrRoller();
@@ -2221,6 +2223,238 @@
             if (isNaN(d)) return '–';
             return d.toLocaleDateString('no-NO', { day: '2-digit', month: '2-digit', year: 'numeric' });
         }
+
+        // ==================== ARKIVERING ====================
+
+        /**
+         * Arkiver ferdigbehandlede skjemaer og slett dem.
+         *
+         * Tre steg, og rekkefølgen er selve sikringen:
+         *
+         *   1. Forhåndsvis — hvor mange, hvor gamle, hvor mange vedlegg
+         *   2. Eksporter   — bygger arkivet OG laster det ned
+         *   3. Slett       — krever sjekksummen fra den nedlastede fila
+         *
+         * Steg 3 er ikke en avkryssingsboks ved siden av steg 2, og det er
+         * med vilje. Sjekksummen leses ut av fila etter nedlasting, så det
+         * ikke går an å slette på grunnlag av en eksport som aldri kom fram.
+         * Table Storage har ingen angreknapp.
+         */
+        let arkivState = { typer: [], valgt: '', forhaands: null, nedlastet: null };
+
+        async function rendrArkiv() {
+            const innhold = document.getElementById('innhold');
+            innhold.innerHTML = '<div class="laster">Laster…</div>';
+            try {
+                const [typer, tidligere] = await Promise.all([
+                    api.get('/api/skjematyper'),
+                    api.get('/api/arkiv')
+                ]);
+                arkivState.typer = typer || [];
+                arkivState.tidligere = tidligere?.arkiv || [];
+            } catch (e) {
+                innhold.innerHTML = `<div class="panel"><h2>Arkivering</h2>
+                    <div style="color: var(--danger);">${escHtml(e.message)}</div></div>`;
+                return;
+            }
+            tegnArkiv();
+        }
+
+        function tegnArkiv() {
+            const iAar = new Date().getFullYear();
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Hva arkivering gjør</h2>
+                    <div style="font-size: 13px; line-height: 1.6;">
+                        Ferdigbehandlede skjemaer eldre enn en valgt dato skrives til
+                        <strong>én JSON-fil</strong> — med skjematypedefinisjonen, samtalene og
+                        vedleggene — og kan deretter <strong>slettes fra systemet</strong> for å
+                        frigjøre lagring.
+                        <div style="margin-top: 8px; color: var(--warning);">
+                            Fila inneholder personopplysninger i klartekst, og den er den eneste
+                            kopien etter sletting. Lagre den et sted den hører hjemme.
+                        </div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>1 · Velg</h2>
+                    <div class="rad">
+                        <label style="min-width: 120px;">Skjematype</label>
+                        <select id="ark-type" onchange="arkVelg(this.value)" style="flex: 1;">
+                            <option value="">— velg —</option>
+                            ${arkivState.typer.map(t => `<option value="${escAttr(t.Skjematype_id)}"${t.Skjematype_id === arkivState.valgt ? ' selected' : ''}>${escHtml(t.Skjema_navn || t.Skjematype_id)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="rad">
+                        <label style="min-width: 120px;">Avsluttet før</label>
+                        <input type="date" id="ark-dato" value="${iAar - 1}-01-01" style="flex: 1;">
+                        <button class="knapp mini" onclick="arkForhandsvis()">Forhåndsvis</button>
+                    </div>
+                    <div id="ark-forhaands" style="margin-top: 10px; font-size: 13px;"></div>
+                </div>
+                <div class="panel">
+                    <h2>2 · Eksporter</h2>
+                    <label style="font-size: 13px; display: flex; align-items: center; gap: 8px;">
+                        <input type="checkbox" id="ark-vedlegg" checked>
+                        Ta med vedlegg (kreves for å kunne slette dem)
+                    </label>
+                    <div style="margin-top: 10px;">
+                        <button class="knapp primær" id="ark-eksport-knapp" onclick="arkEksporter()" disabled>
+                            Lag arkiv og last ned
+                        </button>
+                    </div>
+                    <div id="ark-eksport-status" style="margin-top: 10px; font-size: 13px;"></div>
+                </div>
+                <div class="panel">
+                    <h2>3 · Slett fra systemet</h2>
+                    <div id="ark-slett">${tegnArkivSletting()}</div>
+                </div>
+                <div class="panel">
+                    <h2>Tidligere arkiv</h2>
+                    <div class="oversikt-ramme">${tegnArkivHistorikk()}</div>
+                </div>`;
+        }
+
+        function tegnArkivSletting() {
+            if (!arkivState.nedlastet) {
+                return `<div style="font-size: 13px; color: var(--text-secondary);">
+                    Tilgjengelig når et arkiv er lastet ned i steg 2. Slettingen bruker
+                    sjekksummen fra fila, så den kan ikke kjøres på et arkiv du ikke har.</div>`;
+            }
+            const n = arkivState.nedlastet;
+            return `
+                <div style="font-size: 13px; line-height: 1.7;">
+                    Arkiv <code>${escHtml(n.arkivId)}</code> er lastet ned med
+                    <strong>${n.antall}</strong> skjema${n.medVedlegg ? ` og <strong>${n.antallVedlegg}</strong> vedlegg` : ''}.
+                    ${n.medVedlegg ? '' : '<div style="color: var(--warning);">Vedlegg er ikke med i arkivet, og blir derfor ikke slettet.</div>'}
+                </div>
+                <div style="margin-top: 10px;">
+                    <button class="knapp danger" onclick="arkSlett()">
+                        Slett ${n.antall} skjema fra systemet
+                    </button>
+                </div>
+                <div id="ark-slett-status" style="margin-top: 10px; font-size: 13px;"></div>`;
+        }
+
+        function tegnArkivHistorikk() {
+            const rader = arkivState.tidligere || [];
+            if (rader.length === 0) return '<div style="font-size: 13px; color: var(--text-secondary);">Ingen arkiv ennå.</div>';
+            return `
+                <table class="oversikt">
+                    <thead><tr>
+                        <th>Arkivert</th><th>Skjematype</th><th class="tall">Skjema</th>
+                        <th class="tall">Vedlegg</th><th>Av</th><th>Tømt</th>
+                    </tr></thead>
+                    <tbody>${rader.map(r => `
+                        <tr>
+                            <td style="white-space: nowrap;">${escHtml(kortDato(r.Arkivert))}</td>
+                            <td class="navnkol">${escHtml(r.Skjema_navn || r.Skjematype_id)}</td>
+                            <td class="tall">${r.Antall}</td>
+                            <td class="tall">${r.MedVedlegg ? r.AntallVedlegg : '–'}</td>
+                            <td class="eierkol">${escHtml(r.ArkivertAv)}</td>
+                            <td style="white-space: nowrap;">${r.Slettet
+                                ? escHtml(kortDato(r.Slettet))
+                                : '<span style="color: var(--text-secondary);">bare eksportert</span>'}</td>
+                        </tr>`).join('')}</tbody>
+                </table>`;
+        }
+
+        window.arkVelg = (id) => {
+            arkivState.valgt = id;
+            arkivState.forhaands = null;
+            arkivState.nedlastet = null;
+            document.getElementById('ark-forhaands').innerHTML = '';
+            document.getElementById('ark-eksport-knapp').disabled = true;
+            document.getElementById('ark-slett').innerHTML = tegnArkivSletting();
+        };
+
+        window.arkForhandsvis = async () => {
+            const type = arkivState.valgt;
+            const dato = document.getElementById('ark-dato').value;
+            const ut = document.getElementById('ark-forhaands');
+            if (!type || !dato) { ut.innerHTML = '<span style="color: var(--danger);">Velg skjematype og dato.</span>'; return; }
+            ut.textContent = 'Henter…';
+            try {
+                const r = await api.post(`/api/arkiv/${encodeURIComponent(type)}/forhandsvis`, { foerDato: dato });
+                arkivState.forhaands = r;
+                document.getElementById('ark-eksport-knapp').disabled = r.antall === 0;
+                ut.innerHTML = r.antall === 0
+                    ? 'Ingen ferdigbehandlede skjemaer eldre enn denne datoen.'
+                    : `<strong>${r.antall}</strong> skjema og <strong>${r.antallVedlegg}</strong> vedlegg
+                       vil bli arkivert. Eldste ${escHtml(kortDato(r.eldste))},
+                       nyeste ${escHtml(kortDato(r.nyeste))}.`;
+            } catch (e) {
+                ut.innerHTML = `<span style="color: var(--danger);">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        window.arkEksporter = async () => {
+            const type = arkivState.valgt;
+            const dato = document.getElementById('ark-dato').value;
+            const medVedlegg = document.getElementById('ark-vedlegg').checked;
+            const ut = document.getElementById('ark-eksport-status');
+            ut.textContent = 'Bygger arkivet…';
+            try {
+                const arkiv = await api.post(`/api/arkiv/${encodeURIComponent(type)}`, { foerDato: dato, medVedlegg });
+
+                // Last ned FØR slettingen tilbys. Sjekksummen tas fra svaret
+                // vi nettopp skrev til fil — altså det samme innholdet.
+                const navn = `arkiv_${arkiv.Manifest.Skjematype_id}_${(arkiv.Manifest.FoerDato || '').slice(0, 10)}.json`;
+                lastNedJson(arkiv, navn);
+
+                arkivState.nedlastet = {
+                    arkivId: arkiv.Manifest.ArkivId,
+                    sjekksum: arkiv.Manifest.Sjekksum,
+                    antall: arkiv.Manifest.Antall,
+                    antallVedlegg: arkiv.Manifest.AntallVedlegg,
+                    medVedlegg: arkiv.Manifest.MedVedlegg
+                };
+                ut.innerHTML = `Arkivet er lastet ned som <code>${escHtml(navn)}</code>.
+                    Kontroller fila før du går videre til steg 3.`;
+                document.getElementById('ark-slett').innerHTML = tegnArkivSletting();
+            } catch (e) {
+                ut.innerHTML = `<span style="color: var(--danger);">${escHtml(e.message)}</span>`;
+            }
+        };
+
+        function lastNedJson(objekt, filnavn) {
+            const blob = new Blob([JSON.stringify(objekt, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filnavn;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            // Frigjør objektet, men ikke før nettleseren har rukket å starte
+            // nedlastingen.
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
+        }
+
+        window.arkSlett = async () => {
+            const n = arkivState.nedlastet;
+            if (!n) return;
+            const svar = prompt(
+                `Dette sletter ${n.antall} skjema${n.medVedlegg ? ' med vedlegg' : ''} for godt. `
+                + `De finnes etterpå bare i fila du lastet ned.
+
+Skriv SLETT for å bekrefte.`);
+            if (svar !== 'SLETT') return;
+
+            const ut = document.getElementById('ark-slett-status');
+            ut.textContent = 'Sletter…';
+            try {
+                const r = await api.post(`/api/arkiv/${encodeURIComponent(arkivState.valgt)}/slett`,
+                    { arkivId: n.arkivId, sjekksum: n.sjekksum });
+                ut.innerHTML = `<strong>${r.slettet}</strong> skjema slettet.`
+                    + (r.feilet > 0 ? ` <span style="color: var(--danger);">${r.feilet} feilet — se hendelsesloggen.</span>` : '');
+                arkivState.nedlastet = null;
+                arkivState.tidligere = (await api.get('/api/arkiv'))?.arkiv || [];
+                tegnArkiv();
+            } catch (e) {
+                ut.innerHTML = `<span style="color: var(--danger);">${escHtml(e.message)}</span>`;
+            }
+        };
 
         function rendrBackup() {
             document.getElementById('innhold').innerHTML = `
