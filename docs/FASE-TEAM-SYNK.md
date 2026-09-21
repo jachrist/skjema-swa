@@ -125,9 +125,16 @@ fleste skriver nøstede `Apply to each`, og det er O(n·m) med en
 handlingskjøring per sammenligning. `Filter array` + `contains()` gjør hele
 jobben i to steg.
 
-Først: normaliser dagens medlemmer til en flat liste med små bokstaver.
-`contains()` matcher hele elementer, ikke felter i objekter, så en `Select`
-må til:
+**`contains()` matcher hele elementer, ikke felter i objekter.** Spør du
+
+```
+contains( body('Hent_medlemmer')?['value'], 'ola@mil.no' )
+```
+
+er svaret alltid `false` — venstresiden er en liste med objekter, og
+`contains` leter etter det objektet, ikke etter en verdi inni dem. Den feiler
+ikke; den svarer bare nei, hver gang. Derfor må du projisere til en flat
+strengliste først:
 
 ```
 Select   fra: body('Hent_medlemmer')?['value']
@@ -136,6 +143,24 @@ Select   fra: body('Hent_medlemmer')?['value']
 ```
 
 Gjør det samme for eierne → `eiereUpn`.
+
+**Feltnavnet er ikke nødvendigvis `userPrincipalName`.** Office 365
+Groups-konnektoren returnerer andre navn enn rå Graph — som regel PascalCase
+(`Id`, `DisplayName`, `UserPrincipalName`). Skriver du feil navn, gir `?[...]`
+deg `null` i stedet for en feil, og hele sammenligningen blir meningsløs uten
+at noe sier fra. Symptomet er et filter som aldri treffer.
+
+Se etter de ekte navnene før du skriver uttrykket: legg en `Compose` med
+`body('Hent_medlemmer')` rett etter handlingen, kjør én gang, og les
+utdataene. Ett minutt der sparer en times gjetting.
+
+**Store bokstaver.** Vår `Medlemmer` er små bokstaver hele veien.
+Konnektoren kan gi `Ola@MIL.no`, og `contains` på strenger er eksakt match.
+`toLower()` må stå på begge sider.
+
+Under feilsøking: bruk `toLower(coalesce(item()?['UserPrincipalName'], ''))`.
+Da skiller du «feil feltnavn» fra «ingen treff» — uten `coalesce` kan
+`toLower(null)` velte handlingen i stedet for å gi tomt.
 
 `Medlemmer` fra oss er allerede små bokstaver, uten duplikater og sortert —
 det er gjort med vilje, nettopp for at denne sammenligningen skal bli enkel.
@@ -162,6 +187,15 @@ Filter array   fra: body('Hent_medlemmer')?['value']
 Den andre betingelsen er eier-vernet fra punkt 5. En eier er som regel også
 medlem, og uten den linja kan flyten melde deg ut av ditt eget team.
 
+**Office 365 Groups-konnektoren har ingen «list eiere»-handling** — bare
+medlemmer. Eierne må hentes med `GET /groups/{id}/owners` via HTTP-handlingen,
+og den er premium. Har du ikke det, er det to veier utenom:
+
+* Sett teamets eiere inn i rollegruppa. Da står de i `Medlemmer` og blir
+  aldri meldt ut — og medlemskapet styres ett sted.
+* Be om et vernet-felt på rollegruppa, så sender vi listen i payloaden ved
+  siden av `Medlemmer`. Ikke bygget i dag; si fra hvis det trengs.
+
 Deretter én `Apply to each` over hvert resultat. De er som regel korte.
 
 ### Kallene
@@ -182,6 +216,48 @@ POST /groups/{group-id}/members/$ref
 ```
 DELETE /groups/{group-id}/members/@{item()?['id']}/$ref
 ```
+
+### Når kallet svarer 401
+
+```
+DirectApiAuthorizationRequired
+The request must be authenticated only by Shared Access scheme
+```
+
+Denne høres ut som manglende rettigheter, men betyr nesten alltid at
+**signaturen ikke var med i URL-en**. Power Automate signerer trigger-URL-en
+med en SAS i spørringsstrengen (`sp`, `sv`, `sig`). Kopieres bare delen foran
+`?`, er kallet usignert — og flyten svarer 401 uansett hvem som ringer.
+
+**Den vanligste årsaken er en høne-og-egg-felle i Power Automate selv:**
+signaturen finnes ikke i URL-en før flyten har kjørt minst én gang. Og flyten
+kan ikke kjøre uten at noen gjør en POST mot URL-en — som altså ikke virker
+ennå. Observert 21.09.2026.
+
+Bryt sirkelen ved å utløse flyten fra Power Automate én gang («Test» →
+«Manually»), lagre, og deretter hente URL-en på nytt. Den skal nå ha `sig=`.
+Hent den på nytt HVER gang du har vært inne og endret triggeren.
+
+Er URL-en komplett og kallet fortsatt 401, sjekk i denne rekkefølgen:
+
+1. **Er hele URL-en med?** Den skal slutte på noe i retning av `&sig=...`.
+   Hent den fra feltet «HTTP POST URL» øverst i Request-triggeren, ikke fra
+   adressefeltet i nettleseren.
+2. **Ble ampersandene HTML-kodet?** Noen grensesnitt gir `&amp;sig=` ved
+   kopiering. Da havner signaturen i et parameter som heter `amp;sig`.
+3. **Ble URL-en satt i riktig skall?** I `cmd.exe` og enkelte `.env`-lesere
+   kuttes strengen ved første `&`. I PowerShell må den stå i anførselstegn:
+   `$env:TEAM_FLOW_URL = "https://...&sig=..."`.
+4. **Er «Who can trigger the flow» satt til «Anyone»?** Står den på
+   «Any user in my tenant» eller «Specific users», krever flyten Entra-token
+   og ikke SAS — og da virker ikke en signert URL alene.
+
+`scripts/test-team-flyt.ps1` sjekker punkt 1 og 2 før den kaller, og retter
+punkt 2 selv.
+
+**URL-en er en hemmelighet.** Den gir hvem som helst rett til å kjøre flyten.
+Den hører hjemme i app settings og i `TEAM_FLOW_URL` lokalt — ikke i en
+chatlogg, et issue eller en commit.
 
 ### Fallgruver
 

@@ -22,6 +22,12 @@
     fra miljøvariabelen TEAM_FLOW_URL hvis den finnes, ellers spør det. Den
     skal ikke skrives inn på kommandolinja — den havner i PowerShell-historikken.
 
+    URL-en må være HELE «HTTP POST URL» fra Request-triggeren, inkludert alt
+    etter «?». Mangler den delen, svarer flyten 401 med
+    DirectApiAuthorizationRequired — en feil som høres ut som manglende
+    rettigheter, men bare betyr at signaturen ikke kom med. Skriptet sjekker
+    dette før det kaller.
+
 .PARAMETER Team
     Teamnavn eller gruppe-ID (GUID). Ser verdien ut som en GUID, sendes den
     som TeamId, ellers som TeamNavn — samme regel som i team-synk.js.
@@ -128,6 +134,53 @@ if (-not $url) {
     $url = Read-Host -Prompt 'TEAM_FLOW_URL'
 }
 if (-not $url) { throw 'Ingen flyt-URL oppgitt.' }
+
+# ---- er URL-en hel? ----
+#
+# Power Automate signerer trigger-URL-en med en SAS i spørringsstrengen
+# (sp, sv, sig). Kopierer man bare delen foran «?», svarer flyten
+#
+#     DirectApiAuthorizationRequired — «The request must be authenticated
+#     only by Shared Access scheme»
+#
+# altså en 401 som høres ut som en rettighetsfeil, men er en ufullstendig
+# URL. Sjekken her sier det rett ut, før kallet.
+$url = $url.Trim().Trim('"').Trim("'")
+
+# Noen grensesnitt HTML-koder ampersandene ved kopiering. Da blir «&sig=»
+# til «&amp;sig=», og signaturen havner i et parameter som heter «amp;sig».
+if ($url -match '&amp;') {
+    Write-Host 'URL-en inneholder «&amp;» — den er HTML-kodet ved kopiering. Retter.' -ForegroundColor Yellow
+    $url = $url -replace '&amp;', '&'
+}
+
+if ($url -notmatch '\?') {
+    throw @'
+Flyt-URL-en mangler spørringsstrengen.
+
+Power Automate signerer URL-en, og signaturen ligger etter «?». Kopier HELE
+URL-en fra «HTTP POST URL» i Request-triggeren — den skal slutte på noe i
+retning av &sig=...
+'@
+}
+if ($url -notmatch '(?i)[?&]sig=') {
+    throw @'
+Flyt-URL-en har en spørringsstreng, men ingen sig=-parameter.
+
+Vanligste årsak: flyten har aldri kjørt. Power Automate fyller ikke inn
+signaturen før første kjøring — og flyten kan ikke kjøre uten en POST mot
+URL-en, som ikke virker uten signatur.
+
+Bryt sirkelen: utløs flyten fra Power Automate én gang (Test → Manually),
+lagre, og hent URL-en på nytt. Den skal da ha sig=.
+
+Ellers: kontroller at URL-en er hentet fra «HTTP POST URL» øverst i
+Request-triggeren, ikke fra adressefeltet i nettleseren.
+'@
+}
+if ($url -notmatch '(?i)[?&]sp=') {
+    Write-Host 'Advarsel: URL-en har sig= men ikke sp=. Kontroller at hele URL-en kom med.' -ForegroundColor Yellow
+}
 
 $headere = @{ 'Content-Type' = 'application/json' }
 if ($env:FLOW_CALLBACK_KEY) { $headere['x-flow-key'] = $env:FLOW_CALLBACK_KEY }
