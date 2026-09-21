@@ -18,6 +18,8 @@
  *     PartitionKey = Rolle
  *     RowKey       = Omfang, eller '*' når omfanget er tomt
  *     Team          — teamnavn eller gruppe-ID. Tom = ingen synkronisering.
+ *     EierRolle     — rollenavnet som verner denne gruppen mot utmelding.
+ *                     Omfanget er gruppens eget: Medlem(FFT) verner Eier(FFT).
  *     SisteAntall   — antall medlemmer ved forrige VELLYKKEDE kjøring
  *     SisteSynk     — tidspunkt for samme
  *     SisteStatus   — 'ok' | 'stoppet' | 'feil' | 'hoppet-over'
@@ -49,6 +51,7 @@ function radTilGruppe(e) {
         Rolle: e.partitionKey,
         Omfang: omfangFra(e.rowKey),
         Team: e.Team || '',
+        EierRolle: e.EierRolle || '',
         SisteAntall: Number(e.SisteAntall || 0),
         SisteSynk: e.SisteSynk || '',
         SisteStatus: e.SisteStatus || '',
@@ -80,18 +83,24 @@ async function hentAlle() {
 }
 
 /**
- * Sett team-koblingen. Tom streng slår den av.
+ * Sett team-koblingen og eier-rollen. Tom streng slår av hver for seg.
  *
  * `Merge`, ikke `Replace`: synkroniseringens egne felter (SisteAntall m.m.)
  * skal ikke nullstilles fordi en administrator redigerte teamnavnet.
+ *
+ * `eierRolle` er `undefined` når kalleren ikke vil røre den — da utelates
+ * feltet, og Merge lar den stå. Tom streng er noe annet: det betyr «fjern
+ * vernet», og skrives.
  */
-async function settTeam(rolle, omfang, team) {
+async function settTeam(rolle, omfang, team, eierRolle) {
     const t = await tabell();
-    await t.upsertEntity({
+    const rad = {
         partitionKey: String(rolle),
         rowKey: rowKey(omfang),
         Team: String(team || '').trim()
-    }, 'Merge');
+    };
+    if (eierRolle !== undefined) rad.EierRolle = String(eierRolle || '').trim();
+    await t.upsertEntity(rad, 'Merge');
 }
 
 /**

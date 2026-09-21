@@ -29,6 +29,26 @@
  * Begge sperrene feiler mot å LA VÆRE å endre teamet. Et team med noen for
  * mange er et problem som kan rettes; et team som er tømt ved et uhell er
  * tapt tilgang for alle, og ingen vet hvem som sto der.
+ *
+ * EIERVERN. Teamets eiere skal ikke meldes ut fordi de ikke står i
+ * medlemslista. Rollegruppen kan derfor peke på en EIER-ROLLE med samme
+ * omfang — `Medlem(FFT)` verner `Eier(FFT)` — og eierne legges inn i
+ * medlemslista før den sendes.
+ *
+ * Det er et bevisst valg å slå dem sammen i stedet for å sende dem som en
+ * egen liste flyten må huske å trekke fra. En egen liste ville gjort vernet
+ * avhengig av at flyten implementerte det riktig, og feilen ville vært
+ * nettopp den vernet finnes for. Inne i `Medlemmer` er eierne beskyttet av
+ * konstruksjon, uansett hva flyten gjør.
+ *
+ * Prisen er at en eier også blir MELDT INN hvis hen mangler. De er altså
+ * ikke «immune mot endringer», de er «alltid medlem».
+ *
+ * SPERRENE TELLER MEDLEMMENE ALENE. Det er ikke en detalj: gikk
+ * medlemsimporten galt og `Medlem(FFT)` ble tom mens `Eier(FFT)` har tre
+ * personer, ville den sammenslåtte lista ikke vært tom — og teamet ville
+ * blitt synkronisert stille ned til bare lederne. Sammenslåingen skjer derfor
+ * ETTER at `vurderSynk` har sagt ja.
  */
 
 /** Under dette antallet er et fall ikke informativt — 2 av 3 er ikke et varsko. */
@@ -77,6 +97,32 @@ function upnListe(innehavere) {
 }
 
 /**
+ * Eier-rollen som verner denne gruppen, eller tom streng.
+ *
+ * Bare rollenavnet lagres. Omfanget er det samme som gruppens eget — en
+ * `Medlem(FFT)` verner `Eier(FFT)`, ikke `Eier(FLO)`. Å la omfanget være
+ * fritt ville åpnet for at en gruppe vernet noen fra en annen enhet, og det
+ * er ingen som ville oppdaget før feil person ble stående.
+ */
+function eierRolleFor(gruppe) {
+    return String(gruppe?.EierRolle || '').trim();
+}
+
+/**
+ * Medlemslista som faktisk sendes: medlemmene pluss eierne.
+ *
+ * Unik og sortert, som `upnListe`. En person som står i begge rollene skal
+ * telle én gang — ellers ville `Antall` løyet om hvor mange teamet får.
+ */
+function slaaSammen(medlemmer, eiere) {
+    const sett = new Set([
+        ...(medlemmer || []).map(u => String(u).trim().toLowerCase()).filter(Boolean),
+        ...(eiere || []).map(u => String(u).trim().toLowerCase()).filter(Boolean)
+    ]);
+    return [...sett].sort();
+}
+
+/**
  * Skal denne synkroniseringen kjøres?
  *
  * `forrigeAntall` er antallet ved forrige VELLYKKEDE kjøring. Er det null
@@ -118,14 +164,21 @@ function vurderSynk({ antallNaa, forrigeAntall = 0, tillatFall = false }) {
  * ikke-destruktiv variant, skal flyten kunne skille dem uten at vi må lage et
  * nytt endepunkt — og en payload uten handling ville tvunget fram nettopp det.
  */
-function byggPayload({ rolle, omfang = '', team, upner, miljo = '' }) {
+function byggPayload({ rolle, omfang = '', team, upner, eiere = [], miljo = '' }) {
+    // Eierne slås inn i medlemslista her, ett sted, og ikke hos kalleren.
+    // Da kan ingen kall komme utenom vernet.
+    const medlemmer = slaaSammen(upner, eiere);
     return {
         Handling: 'synkroniserTeamDestruktivt',
         ...teamIdentitet(team),
         Rolle: String(rolle || ''),
         Omfang: String(omfang || ''),
-        Medlemmer: [...(upner || [])],
-        Antall: (upner || []).length,
+        Medlemmer: medlemmer,
+        Antall: medlemmer.length,
+        // Eierne sendes også for seg. Flyten trenger dem ikke — de ligger
+        // allerede i Medlemmer — men da kan den logge «skjermet N eiere», og
+        // den som leser en kjøring ser hvorfor noen ikke ble meldt ut.
+        Eiere: [...(eiere || [])],
         Miljo: String(miljo || ''),
         Tidspunkt: new Date().toISOString()
     };
@@ -133,5 +186,6 @@ function byggPayload({ rolle, omfang = '', team, upner, miljo = '' }) {
 
 module.exports = {
     teamIdentitet, harTeam, upnListe, vurderSynk, byggPayload,
+    eierRolleFor, slaaSammen,
     MINSTE_GRUNNLAG, FALL_GRENSE
 };

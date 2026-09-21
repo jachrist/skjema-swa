@@ -63,8 +63,9 @@ Endepunktet settes i app setting **`TEAM_FLOW_URL`**. Payload:
   "TeamNavn": "",
   "Rolle": "Publikum",
   "Omfang": "FFT",
-  "Medlemmer": ["ola@mil.no", "kari@mil.no"],
-  "Antall": 2,
+  "Medlemmer": ["kari@mil.no", "ola@mil.no", "sjef@mil.no"],
+  "Antall": 3,
+  "Eiere": ["sjef@mil.no"],
   "Miljo": "pilot",
   "Tidspunkt": "2026-09-21T04:30:00.000Z"
 }
@@ -91,6 +92,49 @@ Flyten får `FLOW_CALLBACK_KEY` som header, som de andre flytene.
 
 `VARSLING_DEAKTIVERT=true` slår også av denne. Bryteren betyr «ikke rør noe
 utenfor systemet», og en destruktiv teamoppdatering er nettopp det.
+
+## Eiervern
+
+Teamets eiere skal ikke meldes ut fordi de ikke står i medlemslista. Det
+løses med en egen rolle med **samme omfang**:
+
+```
+Medlem(FFT)   ← lista som vedlikeholdes, og som har Team satt
+Eier(FFT)     ← de vernede
+```
+
+På rollegruppa som har `Team`, settes feltet **Eier-rolle** til `Eier`.
+Omfanget arves — `Medlem(FFT)` verner `Eier(FFT)`, aldri `Eier(FLO)`. Å la
+omfanget velges fritt ville åpnet for at en gruppe vernet noen fra en annen
+enhet, og ingen ville oppdaget det før feil person ble stående.
+
+**Eierne slås inn i `Medlemmer` før payloaden sendes.** Det er et bevisst
+valg framfor å sende dem som en egen liste flyten må huske å trekke fra: en
+egen liste ville gjort vernet avhengig av at flyten implementerte det
+riktig, og feilen ville vært nettopp den vernet finnes for. Inne i
+`Medlemmer` er eierne beskyttet av konstruksjon — **flyten trenger ingen
+endring for å verne dem.**
+
+Prisen er at en eier også blir *meldt inn* hvis hen mangler. De er altså
+ikke «immune mot endringer», de er «alltid medlem».
+
+`Eiere` sendes i tillegg, for logging og innsyn. Flyten kan ignorere den.
+
+### Sperrene teller medlemmene alene
+
+Dette er det som gjør eiervernet trygt, og det er lett å ta feil av.
+
+Gikk medlemsimporten galt og `Medlem(FFT)` ble tom mens `Eier(FFT)` har tre
+personer, ville en telling av den *sammenslåtte* lista ikke sett noe galt —
+og teamet ville blitt synkronisert stille ned til bare lederne. Nøyaktig den
+ulykken sperren finnes for.
+
+Derfor kjører `vurderSynk` på medlemstallet, og sammenslåingen skjer etterpå.
+`SisteAntall` lagrer også medlemstallet, så grunnlaget for fallsperren ikke
+hopper den dagen en eier legges til.
+
+Feiler oppslaget mot eier-rollen, **stopper** kjøringen. Å fortsette uten
+eierlista ville meldt ut nettopp dem vernet gjelder.
 
 ## Slik bygger du flyten
 
@@ -188,13 +232,13 @@ Den andre betingelsen er eier-vernet fra punkt 5. En eier er som regel også
 medlem, og uten den linja kan flyten melde deg ut av ditt eget team.
 
 **Office 365 Groups-konnektoren har ingen «list eiere»-handling** — bare
-medlemmer. Eierne må hentes med `GET /groups/{id}/owners` via HTTP-handlingen,
-og den er premium. Har du ikke det, er det to veier utenom:
+medlemmer. Det gjør ingenting: eierne ligger allerede i `Medlemmer` (se
+«Eiervern» over), så filteret trenger dem ikke. Linja med `eiereUpn` kan
+sløyfes helt, og flyten er like trygg.
 
-* Sett teamets eiere inn i rollegruppa. Da står de i `Medlemmer` og blir
-  aldri meldt ut — og medlemskapet styres ett sted.
-* Be om et vernet-felt på rollegruppa, så sender vi listen i payloaden ved
-  siden av `Medlemmer`. Ikke bygget i dag; si fra hvis det trengs.
+Vil du likevel hente eierne fra Graph — for å verne dem uavhengig av hva
+rollelista sier — krever `GET /groups/{id}/owners` HTTP-handlingen, som er
+premium.
 
 Deretter én `Apply to each` over hvert resultat. De er som regel korte.
 

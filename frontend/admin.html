@@ -1040,14 +1040,27 @@
                         <label>Team <small>(navn eller gruppe-ID)</small></label>
                         <input type="text" id="team-navn" value="${escAttr(status.Team || '')}"
                                placeholder="Tomt = ingen synkronisering" style="flex: 1;">
+                    </div>
+                    <div class="rad">
+                        <label>Eier-rolle <small>(vernes mot utmelding)</small></label>
+                        <input type="text" id="team-eierrolle" value="${escAttr(status.EierRolle || '')}"
+                               placeholder="F.eks. Eier — tomt = ingen verning" style="flex: 1;">
                         <button class="knapp mini primær" onclick="teamLagre()">Lagre</button>
                     </div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
-                        Er feltet fylt ut, oppdateres teamet <strong>destruktivt</strong> én gang i døgnet
+                        Er Team fylt ut, oppdateres teamet <strong>destruktivt</strong> én gang i døgnet
                         fra lista over: den som ikke står der, meldes ut. En gruppe-ID (GUID) er tryggere
                         enn et navn — to team kan hete det samme.
                         Tom liste sendes aldri, og et fall på mer enn halvparten siden forrige kjøring
                         stoppes til noen har sett på det.
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 6px;">
+                        <strong>Eier-rolle</strong> peker på en rolle med <em>samme omfang</em> —
+                        står du i <code>${escHtml(g.Rolle)}${g.Omfang ? `(${escHtml(g.Omfang)})` : ''}</code>
+                        og skriver <code>Eier</code>, vernes
+                        <code>Eier${g.Omfang ? `(${escHtml(g.Omfang)})` : ''}</code>.
+                        De blir aldri meldt ut, men blir meldt <em>inn</em> hvis de mangler.
+                        Sperrene over teller medlemmene alene, ikke eierne.
                     </div>
                     ${linje}
                     <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center;">
@@ -1063,8 +1076,11 @@
             const ut = document.getElementById('team-status');
             ut.textContent = 'Lagrer…';
             try {
-                await api.put(`/api/team-synk/${encodeURIComponent(g.Rolle)}`,
-                    { omfang: g.Omfang || '', team: document.getElementById('team-navn').value.trim() });
+                await api.put(`/api/team-synk/${encodeURIComponent(g.Rolle)}`, {
+                    omfang: g.Omfang || '',
+                    team: document.getElementById('team-navn').value.trim(),
+                    eierRolle: document.getElementById('team-eierrolle').value.trim()
+                });
                 ut.textContent = 'Lagret.';
             } catch (e) {
                 ut.textContent = e.message;
@@ -1084,7 +1100,8 @@
                     { omfang: g.Omfang || '', tillatFall: !!tillatFall });
                 ut.textContent = r.status === 'stoppet'
                     ? `Stoppet: ${r.melding}`
-                    : `${r.status} — ${r.antall} medlemmer`;
+                    : `${r.status} — ${r.antall} medlemmer`
+                      + (r.antallEiere ? ` + ${r.antallEiere} vernet, ${r.sendt} sendt` : '');
                 // Tegn på nytt, så status- og knappelinja stemmer med resultatet.
                 rollerVelgGruppe(rollerState.filtrerte.indexOf(g));
             } catch (e) {

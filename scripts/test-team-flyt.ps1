@@ -35,6 +35,11 @@
 .PARAMETER Medlemmer
     UPN-ene som skal være medlemmer ETTER kjøringen. Alle andre meldes ut.
 
+.PARAMETER Eiere
+    UPN-ene som er vernet (eier-rollen). De slås inn i medlemslista og sendes
+    også som Eiere, slik API-et gjør. De blir aldri meldt ut — men de blir
+    meldt INN hvis de mangler.
+
 .PARAMETER Rolle
     Rollenavnet payloaden skal si at lista kommer fra. Standard: Publikum.
 
@@ -69,6 +74,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string[]]$Medlemmer,
 
+    [string[]]$Eiere = @(),
     [string]$Rolle = 'Publikum',
     [string]$Omfang = 'TEST',
     [string]$Miljo = 'pilot',
@@ -91,6 +97,17 @@ if ($upner.Count -eq 0) {
     throw 'Tom medlemsliste. API-et sender aldri en tom liste — den ville meldt ut alle i teamet.'
 }
 
+# Eierne, samme behandling. Tellingen over gjøres på MEDLEMMENE alene, før
+# sammenslåingen — akkurat som i team-synk.js. En tom medlemsliste skal
+# stoppe selv om eier-rollen har folk.
+$eierUpner = @($Eiere |
+    ForEach-Object { $_.Trim().ToLowerInvariant() } |
+    Where-Object { $_ } |
+    Sort-Object -Unique)
+
+# Det som faktisk sendes: medlemmer pluss eiere, unikt og sortert.
+$sendteUpner = @(($upner + $eierUpner) | Sort-Object -Unique)
+
 # ---- teamets identitet, samme regel som teamIdentitet() ----
 $erGuid = $Team -match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 
@@ -106,8 +123,9 @@ $payload = [ordered]@{
     TeamNavn  = $teamNavn
     Rolle     = $Rolle
     Omfang    = $Omfang
-    Medlemmer = $upner
-    Antall    = $upner.Count
+    Medlemmer = $sendteUpner
+    Antall    = $sendteUpner.Count
+    Eiere     = $eierUpner
     Miljo     = $Miljo
     Tidspunkt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
 }
@@ -189,7 +207,10 @@ if ($env:FLOW_CALLBACK_KEY) { $headere['x-flow-key'] = $env:FLOW_CALLBACK_KEY }
 $hvem = if ($erGuid) { "gruppe-ID $Team" } else { "teamet «$Team»" }
 if (-not $Force) {
     Write-Host "Dette kaller flyten for ekte mot $hvem." -ForegroundColor Yellow
-    Write-Host "Alle medlemmer som IKKE står i lista over blir meldt ut." -ForegroundColor Yellow
+    Write-Host "Alle medlemmer som IKKE står i Medlemmer-lista over blir meldt ut." -ForegroundColor Yellow
+    if ($eierUpner.Count -gt 0) {
+        Write-Host "De $($eierUpner.Count) vernede eierne er med i lista og blir stående." -ForegroundColor Yellow
+    }
     $bekreftelse = Read-Host 'Skriv SEND for å fortsette'
     if ($bekreftelse -ne 'SEND') {
         Write-Host 'Avbrutt.' -ForegroundColor Yellow
@@ -197,7 +218,9 @@ if (-not $Force) {
     }
 }
 
-Write-Host "Sender $($upner.Count) medlem(mer) …" -ForegroundColor Cyan
+$beskrivelse = "$($upner.Count) medlem(mer)"
+if ($eierUpner.Count -gt 0) { $beskrivelse += " + $($eierUpner.Count) vernet eier(e)" }
+Write-Host "Sender $beskrivelse …" -ForegroundColor Cyan
 try {
     $svar = Invoke-WebRequest -Uri $url -Method Post -Headers $headere `
         -Body ([Text.Encoding]::UTF8.GetBytes($json)) -UseBasicParsing

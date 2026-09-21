@@ -4,7 +4,7 @@
  *   GET  /api/team-synk            — status for alle grupper med team-kobling
  *   POST /api/team-synk            — kjør alle. Scheduler eller admin.
  *   POST /api/team-synk/{rolle}    — kjør én gruppe. { omfang, tillatFall }
- *   PUT  /api/team-synk/{rolle}    — sett team-koblingen. { omfang, team }
+ *   PUT  /api/team-synk/{rolle}    — sett kobling. { omfang, team, eierRolle }
  *
  * Kjøres daglig av .github/workflows/team-synk.yml, fordi SWA Managed
  * Functions ikke har timer-triggere.
@@ -58,6 +58,31 @@ async function synkroniserGruppe(gruppe, { tillatFall = false, aktor = 'schedule
     const innehavere = await rollerStorage.hentInnehavere(rolleStreng);
     const upner = teamSynk.upnListe(innehavere);
 
+    // Eierne som skal vernes. Samme omfang som gruppen selv — se
+    // `eierRolleFor` for hvorfor omfanget ikke kan velges fritt.
+    //
+    // Feiler oppslaget, STOPPER vi. Å fortsette uten eierlista ville meldt
+    // ut nettopp dem vernet finnes for, og det er en verre utgang enn å la
+    // teamet stå urørt et døgn til.
+    const eierRolle = teamSynk.eierRolleFor(gruppe);
+    let eiere = [];
+    if (eierRolle) {
+        const eierStreng = Omfang ? `${eierRolle}(${Omfang})` : eierRolle;
+        try {
+            eiere = teamSynk.upnListe(await rollerStorage.hentInnehavere(eierStreng));
+        } catch (e) {
+            const melding = `Kunne ikke lese eier-rollen ${eierStreng}: ${e.message}. `
+                + 'Synkronisering stoppet — uten eierlista kunne eierne blitt meldt ut.';
+            log(`team-synk: ${merkelapp} STOPPET — ${melding}`);
+            await gruppeStorage.settResultat(Rolle, Omfang, { status: 'stoppet', melding });
+            return { rolle: Rolle, omfang: Omfang, team: Team, status: 'stoppet', grunn: 'eier-oppslag-feilet', antall: upner.length, melding };
+        }
+    }
+
+    // Sperrene teller MEDLEMMENE alene, ikke det sammenslåtte. Gikk
+    // medlemsimporten galt og lista ble tom mens eier-rollen har folk, ville
+    // en telling av det sammenslåtte ikke sett noe galt — og teamet ville
+    // blitt synkronisert ned til bare eierne, i stillhet.
     const dom = teamSynk.vurderSynk({
         antallNaa: upner.length,
         forrigeAntall: gruppe.SisteAntall,
@@ -77,8 +102,9 @@ async function synkroniserGruppe(gruppe, { tillatFall = false, aktor = 'schedule
         return { rolle: Rolle, omfang: Omfang, team: Team, status: 'stoppet', grunn: dom.grunn, antall: upner.length, melding: dom.melding };
     }
 
+    // Eierne slås inn i medlemslista her — etter at sperrene har sagt ja.
     const payload = teamSynk.byggPayload({
-        rolle: Rolle, omfang: Omfang, team: Team, upner, miljo: miljo()
+        rolle: Rolle, omfang: Omfang, team: Team, upner, eiere, miljo: miljo()
     });
     const res = await kallTeamSynkFlyt(payload, log);
 
@@ -93,13 +119,18 @@ async function synkroniserGruppe(gruppe, { tillatFall = false, aktor = 'schedule
         await hendelser.logg({
             Type: res.status === 'ok' ? 'team.synk.ok' : 'team.synk.feil', Aktor: aktor,
             ObjektType: 'rollegruppe', ObjektId: merkelapp,
-            Melding: `${upner.length} medlemmer → "${Team}" (${res.status}${dom.grunn === 'stort-fall-overstyrt' ? ', fall overstyrt' : ''})`
+            Melding: `${upner.length} medlemmer${eiere.length ? ` + ${eiere.length} eier(e)` : ''} `
+                + `→ "${Team}" (${res.status}${dom.grunn === 'stort-fall-overstyrt' ? ', fall overstyrt' : ''})`
         });
     } catch (_) { /* logging skal ikke velte kjøringen */ }
 
     return {
         rolle: Rolle, omfang: Omfang, team: Team,
-        status: res.status, grunn: dom.grunn, antall: upner.length,
+        status: res.status, grunn: dom.grunn,
+        // `antall` er medlemmene — det tallet sperrene gjelder. `sendt` er
+        // hva teamet faktisk får. De to er ulike når eiere er vernet, og et
+        // grensesnitt som bare viser ett av dem forklarer ikke differansen.
+        antall: upner.length, antallEiere: eiere.length, sendt: payload.Antall,
         melding: res.melding || ''
     };
 }
@@ -133,18 +164,21 @@ app.http('teamSynkSettTeam', {
             const body = await request.json().catch(() => ({}));
             const omfang = String(body?.omfang || '');
             const team = String(body?.team || '').trim();
+            // undefined når klienten ikke sendte feltet — da skal den stå.
+            const eierRolle = body?.eierRolle === undefined ? undefined : String(body.eierRolle || '').trim();
             if (!rolle) return avvis(400, 'Mangler rolle');
 
-            await gruppeStorage.settTeam(rolle, omfang, team);
+            await gruppeStorage.settTeam(rolle, omfang, team, eierRolle);
             context.log(`team-synk: ${a.upn} satte team="${team}" på ${rolle}(${omfang})`);
             try {
                 await hendelser.logg({
                     Type: 'team.kobling', Aktor: a.upn,
                     ObjektType: 'rollegruppe', ObjektId: `${rolle}${omfang ? `(${omfang})` : ''}`,
-                    Melding: team ? `Koblet til team "${team}"` : 'Team-kobling fjernet'
+                    Melding: (team ? `Koblet til team "${team}"` : 'Team-kobling fjernet')
+                        + (eierRolle ? `, eier-rolle "${eierRolle}"` : '')
                 });
             } catch (_) { /* logging skal ikke velte lagringen */ }
-            return { jsonBody: { status: 'ok', team } };
+            return { jsonBody: { status: 'ok', team, eierRolle } };
         } catch (e) {
             context.log('team-synk sett-team FEIL:', e.message);
             return avvis(500, 'Kunne ikke lagre');
