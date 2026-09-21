@@ -125,9 +125,16 @@ fleste skriver nøstede `Apply to each`, og det er O(n·m) med en
 handlingskjøring per sammenligning. `Filter array` + `contains()` gjør hele
 jobben i to steg.
 
-Først: normaliser dagens medlemmer til en flat liste med små bokstaver.
-`contains()` matcher hele elementer, ikke felter i objekter, så en `Select`
-må til:
+**`contains()` matcher hele elementer, ikke felter i objekter.** Spør du
+
+```
+contains( body('Hent_medlemmer')?['value'], 'ola@mil.no' )
+```
+
+er svaret alltid `false` — venstresiden er en liste med objekter, og
+`contains` leter etter det objektet, ikke etter en verdi inni dem. Den feiler
+ikke; den svarer bare nei, hver gang. Derfor må du projisere til en flat
+strengliste først:
 
 ```
 Select   fra: body('Hent_medlemmer')?['value']
@@ -136,6 +143,24 @@ Select   fra: body('Hent_medlemmer')?['value']
 ```
 
 Gjør det samme for eierne → `eiereUpn`.
+
+**Feltnavnet er ikke nødvendigvis `userPrincipalName`.** Office 365
+Groups-konnektoren returnerer andre navn enn rå Graph — som regel PascalCase
+(`Id`, `DisplayName`, `UserPrincipalName`). Skriver du feil navn, gir `?[...]`
+deg `null` i stedet for en feil, og hele sammenligningen blir meningsløs uten
+at noe sier fra. Symptomet er et filter som aldri treffer.
+
+Se etter de ekte navnene før du skriver uttrykket: legg en `Compose` med
+`body('Hent_medlemmer')` rett etter handlingen, kjør én gang, og les
+utdataene. Ett minutt der sparer en times gjetting.
+
+**Store bokstaver.** Vår `Medlemmer` er små bokstaver hele veien.
+Konnektoren kan gi `Ola@MIL.no`, og `contains` på strenger er eksakt match.
+`toLower()` må stå på begge sider.
+
+Under feilsøking: bruk `toLower(coalesce(item()?['UserPrincipalName'], ''))`.
+Da skiller du «feil feltnavn» fra «ingen treff» — uten `coalesce` kan
+`toLower(null)` velte handlingen i stedet for å gi tomt.
 
 `Medlemmer` fra oss er allerede små bokstaver, uten duplikater og sortert —
 det er gjort med vilje, nettopp for at denne sammenligningen skal bli enkel.
@@ -161,6 +186,15 @@ Filter array   fra: body('Hent_medlemmer')?['value']
 
 Den andre betingelsen er eier-vernet fra punkt 5. En eier er som regel også
 medlem, og uten den linja kan flyten melde deg ut av ditt eget team.
+
+**Office 365 Groups-konnektoren har ingen «list eiere»-handling** — bare
+medlemmer. Eierne må hentes med `GET /groups/{id}/owners` via HTTP-handlingen,
+og den er premium. Har du ikke det, er det to veier utenom:
+
+* Sett teamets eiere inn i rollegruppa. Da står de i `Medlemmer` og blir
+  aldri meldt ut — og medlemskapet styres ett sted.
+* Be om et vernet-felt på rollegruppa, så sender vi listen i payloaden ved
+  siden av `Medlemmer`. Ikke bygget i dag; si fra hvis det trengs.
 
 Deretter én `Apply to each` over hvert resultat. De er som regel korte.
 
