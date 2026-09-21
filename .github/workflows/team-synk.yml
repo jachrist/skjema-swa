@@ -1,0 +1,59 @@
+name: Synkroniser team fra roller
+
+# SWA Managed Functions støtter ikke timer-triggere.
+# Denne workflowen kaller /api/team-synk daglig. Endepunktet går gjennom alle
+# rollegrupper som har feltet «Team» satt, og kaller PA-flyten med
+# medlemslista. Flyten oppdaterer teamet destruktivt.
+#
+# Sperrene mot tom liste og stort fall ligger i api/src/lib/team-synk.js.
+# Denne workflowen kan IKKE overstyre dem — «kjør likevel» krever en innlogget
+# administrator, og det er med vilje.
+#
+# Kjører mot både pilot og prod hvis begge env-vars er satt.
+
+on:
+  schedule:
+    - cron: '30 4 * * *' # 04:30 UTC daglig — før arbeidsdagen, etter nattlige importer
+  workflow_dispatch:
+
+jobs:
+  synk:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: team-synk (${{ matrix.env }})
+    steps:
+      - name: Kall team-synk (${{ matrix.env }})
+        env:
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
+          fi
+          echo "Kaller $SWA_URL/api/team-synk (${{ matrix.env }}) …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/team-synk" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          if [ "$RESP" != "200" ]; then exit 1; fi
+
+          # En stoppet gruppe er ikke en feil i kjøringen — den er et varsko
+          # som krever at et menneske ser på det. Den skal derfor være synlig
+          # i kjøringsoversikten, uten at jobben blir rød.
+          STOPPET=$(node -e "try{const d=require('./response.json');process.stdout.write(String(d.stoppet||0))}catch(e){process.stdout.write('0')}")
+          if [ "$STOPPET" != "0" ]; then
+            echo "::warning::${{ matrix.env }} — $STOPPET rollegruppe(r) ble stoppet av sikringen. Se Administrasjon → Roller."
+          fi

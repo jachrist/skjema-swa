@@ -31,6 +31,7 @@ function sjekk(navn, faktisk, forventet) {
 }
 
 const t = require('../src/lib/samtale-tilgang');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 // ---------- åpen eller lukket ----------
 {
@@ -207,7 +208,7 @@ async function deltakere() {
     const path = require('path');
     const kode = fs.readFileSync(
         path.join(__dirname, '..', 'src', 'functions', 'samtale.js'), 'utf8')
-        .replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+;
 
     sjekk('endepunktet spør skalVarsle',
         /samtaleTilgang\.skalVarsle\(/.test(kode), true);

@@ -24,6 +24,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -86,7 +87,7 @@ const generator = les('lib/pdf-generator.js');
     // Kommentarene strippes først. Uten det traff regexen forklaringen rett
     // over — testen ville bestått på sin egen dokumentasjon, og feilet så
     // snart noen skrev ordet «intern» i en kommentar.
-    const kode = blokk.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const kode = utenKommentarer(blokk);
     sjekk('ingen intern-filtrering i samtale-blokken', /intern/i.test(kode), false);
 
     // Dialog-blokken under SKAL fortsatt skille intern og ekstern. Den

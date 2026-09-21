@@ -7,6 +7,7 @@
  *
  * Env-vars:
  *   VARSLING_FLOW_URL     — PA-endepunkt for behandlings-varsling (epost/teams/planner/teamskanal)
+ *   TEAM_FLOW_URL         — PA-endepunkt for destruktiv team-synk fra rollegruppe
  *   VARSLING_DEAKTIVERT   — 'true' skrur av kall (dry-run til logg)
  *
  * Payload-kontrakt (samme som legacy — se docs/FASE-6A-EPOST.md):
@@ -249,12 +250,66 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
     }
 }
 
+/**
+ * Synkroniser et team fra en rollegruppe (TODO 71).
+ *
+ * Env: TEAM_FLOW_URL — PA-flyt som melder inn og ut medlemmer i et team.
+ * Payload bygges av `team-synk.js`; se den for hvorfor kallet aldri gjøres
+ * med tom medlemsliste.
+ *
+ * `VARSLING_DEAKTIVERT` skrur også av denne. Den bryteren betyr «ikke rør noe
+ * utenfor systemet», og en destruktiv teamoppdatering er nettopp det —
+ * tydeligere enn en e-post, faktisk.
+ *
+ * Feiler kallet, returneres status 'feil' i stedet for å kaste. Kalleren
+ * kjører flere grupper etter hverandre, og én flyt som er nede skal ikke
+ * stoppe resten.
+ */
+async function kallTeamSynkFlyt(payload, log = () => {}) {
+    const url = process.env.TEAM_FLOW_URL;
+    if (!url) {
+        log('team-flyt: TEAM_FLOW_URL ikke satt — hopper over');
+        return { status: 'hoppet-over', melding: 'TEAM_FLOW_URL ikke satt' };
+    }
+    if (varslingAv()) {
+        log(`team-flyt DRY-RUN: team="${payload.TeamNavn || payload.TeamId}" `
+            + `rolle=${payload.Rolle}(${payload.Omfang}) medlemmer=${payload.Antall}`);
+        return { status: 'deaktivert', antall: payload.Antall };
+    }
+    // Siste skanse. Sperrene ligger i team-synk.js, men dette kallet melder
+    // folk UT av et team, og en tom liste skal ikke kunne nå flyten uansett
+    // hvilken vei den kom hit.
+    if (!Array.isArray(payload.Medlemmer) || payload.Medlemmer.length === 0) {
+        log('team-flyt: tom medlemsliste — kallet ble ikke sendt');
+        return { status: 'feil', melding: 'Tom medlemsliste sendes ikke' };
+    }
+    try {
+        const respons = await fetch(url, {
+            method: 'POST',
+            headers: flytHeadere(),
+            body: JSON.stringify(payload)
+        });
+        if (!respons.ok) {
+            const tekst = await respons.text().catch(() => '');
+            log(`team-flyt FEIL: HTTP ${respons.status} — ${tekst.slice(0, 300)}`);
+            return { status: 'feil', melding: `HTTP ${respons.status}` };
+        }
+        const data = await respons.json().catch(() => ({}));
+        log(`team-flyt OK: ${payload.Rolle}(${payload.Omfang}) → ${payload.Antall} medlemmer`);
+        return { status: 'ok', respons: data };
+    } catch (e) {
+        log(`team-flyt EXCEPTION: ${e.message}`);
+        return { status: 'feil', melding: e.message };
+    }
+}
+
 module.exports = {
     kallVarslingFlyt,
     varslingAv,
     sendEpostViaFlyt,
     sendVarslerViaFlyt,
     sendOtpViaFlyt,
+    kallTeamSynkFlyt,
     baseUrl,
     miljo,
     flytHeadere

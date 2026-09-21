@@ -868,7 +868,7 @@
         };
 
         // ==================== ROLLER-FANE ====================
-        let rollerState = { grupper: [], filtrerte: [], valgt: null };
+        let rollerState = { grupper: [], filtrerte: [], valgt: null, teamGrupper: [] };
 
         function rendrRoller() {
             document.getElementById('innhold').innerHTML = `
@@ -960,7 +960,13 @@
             try {
                 const g = rollerState.valgt;
                 const rolleStreng = g.Omfang ? `${g.Rolle}(${g.Omfang})` : g.Rolle;
-                const innehavere = await api.get(`/api/roller/innehavere?rolle=${encodeURIComponent(rolleStreng)}`);
+                // Team-koblingene hentes samlet — tabellen er liten, og ett
+                // kall her er billigere enn ett per gruppe brukeren klikker på.
+                const [innehavere, team] = await Promise.all([
+                    api.get(`/api/roller/innehavere?rolle=${encodeURIComponent(rolleStreng)}`),
+                    api.get('/api/team-synk').catch(() => ({ grupper: [] }))
+                ]);
+                rollerState.teamGrupper = team?.grupper || [];
                 rollerRenderInnehavere(innehavere);
             } catch (e) {
                 hoyre.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
@@ -998,8 +1004,93 @@
                     <div style="margin-top: 8px;"><button class="knapp primær" onclick="rollerLeggTil()">Legg til</button></div>
                 </div>
             `;
-            hoyre.innerHTML = tittel + under + tabell + nyBoks;
+            hoyre.innerHTML = tittel + under + tabell + teamBoks(g) + nyBoks;
         }
+
+        /**
+         * Team-kobling for denne rollegruppen.
+         *
+         * Er feltet fylt ut, synkroniseres teamet DESTRUKTIVT én gang i døgnet
+         * fra lista over. Derfor står konsekvensen skrevet her, ved feltet, og
+         * ikke bare i en dokumentasjonsfil: den som fyller det ut skal vite hva
+         * som skjer med dem som ikke står på lista.
+         */
+        function teamBoks(g) {
+            const status = (rollerState.teamGrupper || []).find(
+                t => t.Rolle === g.Rolle && (t.Omfang || '') === (g.Omfang || '')) || {};
+            const stoppet = status.SisteStatus === 'stoppet';
+            const linje = status.SisteSynk
+                ? `<div style="font-size: 12px; margin-top: 8px; color: ${stoppet ? 'var(--warning)' : 'var(--text-secondary)'};">
+                        Sist kjørt ${escHtml(kortDato(status.SisteSynk))}:
+                        <strong>${escHtml(status.SisteStatus || '')}</strong>
+                        ${status.SisteAntall ? ` — ${status.SisteAntall} medlemmer sist det gikk gjennom` : ''}
+                        ${status.SisteMelding ? `<div style="margin-top: 4px;">${escHtml(status.SisteMelding)}</div>` : ''}
+                   </div>`
+                : '';
+            // «Kjør likevel» tilbys bare når sikringen faktisk har stoppet noe.
+            // En knapp som alltid står der, inviterer til å klikke seg forbi en
+            // sperre man ikke har lest.
+            const likevel = stoppet
+                ? `<button class="knapp mini danger" onclick="teamKjor(true)">Kjør likevel</button>`
+                : '';
+            return `
+                <div class="panel" style="margin-top: 16px;">
+                    <h2>Teams-synkronisering</h2>
+                    <div class="rad">
+                        <label>Team <small>(navn eller gruppe-ID)</small></label>
+                        <input type="text" id="team-navn" value="${escAttr(status.Team || '')}"
+                               placeholder="Tomt = ingen synkronisering" style="flex: 1;">
+                        <button class="knapp mini primær" onclick="teamLagre()">Lagre</button>
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                        Er feltet fylt ut, oppdateres teamet <strong>destruktivt</strong> én gang i døgnet
+                        fra lista over: den som ikke står der, meldes ut. En gruppe-ID (GUID) er tryggere
+                        enn et navn — to team kan hete det samme.
+                        Tom liste sendes aldri, og et fall på mer enn halvparten siden forrige kjøring
+                        stoppes til noen har sett på det.
+                    </div>
+                    ${linje}
+                    <div style="margin-top: 10px; display: flex; gap: 8px; align-items: center;">
+                        <button class="knapp mini sekundær" onclick="teamKjor(false)">Kjør nå</button>
+                        ${likevel}
+                        <span id="team-status" style="font-size: 12px; color: var(--text-secondary);"></span>
+                    </div>
+                </div>`;
+        }
+
+        window.teamLagre = async () => {
+            const g = rollerState.valgt;
+            const ut = document.getElementById('team-status');
+            ut.textContent = 'Lagrer…';
+            try {
+                await api.put(`/api/team-synk/${encodeURIComponent(g.Rolle)}`,
+                    { omfang: g.Omfang || '', team: document.getElementById('team-navn').value.trim() });
+                ut.textContent = 'Lagret.';
+            } catch (e) {
+                ut.textContent = e.message;
+            }
+        };
+
+        window.teamKjor = async (tillatFall) => {
+            const g = rollerState.valgt;
+            const ut = document.getElementById('team-status');
+            if (tillatFall && !confirm(
+                'Sikringen stoppet forrige kjøring fordi gruppen har krympet kraftig.\n\n'
+                + 'Kjører du likevel, meldes alle som ikke står på lista ut av teamet.\n\n'
+                + 'Er du sikker på at lista er riktig?')) return;
+            ut.textContent = 'Kjører…';
+            try {
+                const r = await api.post(`/api/team-synk/${encodeURIComponent(g.Rolle)}`,
+                    { omfang: g.Omfang || '', tillatFall: !!tillatFall });
+                ut.textContent = r.status === 'stoppet'
+                    ? `Stoppet: ${r.melding}`
+                    : `${r.status} — ${r.antall} medlemmer`;
+                // Tegn på nytt, så status- og knappelinja stemmer med resultatet.
+                rollerVelgGruppe(rollerState.filtrerte.indexOf(g));
+            } catch (e) {
+                ut.textContent = e.message;
+            }
+        };
 
         window.rollerVisNyForm = () => {
             document.getElementById('roller-ny-form').style.display = 'block';
