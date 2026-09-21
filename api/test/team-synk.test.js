@@ -134,6 +134,97 @@ const { utenKommentarer } = require('../../scripts/test-kilde.js');
     sjekk('harTeam tåler manglende gruppe', t.harTeam(null), false);
 }
 
+// ---------- eiervern ----------
+{
+    sjekk('eier-rolle leses', t.eierRolleFor({ EierRolle: 'Eier' }), 'Eier');
+    sjekk('mellomrom trimmes', t.eierRolleFor({ EierRolle: '  Eier  ' }), 'Eier');
+    sjekk('tom betyr ingen verning', t.eierRolleFor({ EierRolle: '' }), '');
+    sjekk('manglende felt betyr ingen verning', t.eierRolleFor({}), '');
+    sjekk('null-gruppe tåles', t.eierRolleFor(null), '');
+
+    // Sammenslåingen: unik, sortert, normalisert.
+    sjekk('eierne slås inn',
+        t.slaaSammen(['b@x.no'], ['a@x.no']), ['a@x.no', 'b@x.no']);
+    sjekk('en som er begge deler telles én gang',
+        t.slaaSammen(['a@x.no'], ['a@x.no']), ['a@x.no']);
+    sjekk('store bokstaver normaliseres',
+        t.slaaSammen(['B@X.no'], ['A@x.NO']), ['a@x.no', 'b@x.no']);
+    sjekk('uten eiere er lista uendret',
+        t.slaaSammen(['a@x.no', 'b@x.no'], []), ['a@x.no', 'b@x.no']);
+    sjekk('uten medlemmer står eierne igjen',
+        t.slaaSammen([], ['sjef@x.no']), ['sjef@x.no']);
+}
+
+// ---------- eierne er med i det som sendes ----------
+{
+    const p = t.byggPayload({
+        rolle: 'Medlem', omfang: 'FFT', team: 'T',
+        upner: ['ola@mil.no'], eiere: ['sjef@mil.no']
+    });
+    // Kjernen i valget: eierne ligger INNE i Medlemmer. Da er de vernet
+    // uansett om flyten husker å bruke Eiere-lista eller ikke.
+    sjekk('eieren er med i medlemslista', p.Medlemmer.includes('sjef@mil.no'), true);
+    sjekk('sammen med medlemmet', p.Medlemmer, ['ola@mil.no', 'sjef@mil.no']);
+    sjekk('Antall stemmer med lista', p.Antall, p.Medlemmer.length);
+    // Og for seg, så flyten kan logge hvem som ble skjermet.
+    sjekk('eierne sendes også separat', p.Eiere, ['sjef@mil.no']);
+
+    const uten = t.byggPayload({ rolle: 'R', team: 'T', upner: ['a@x.no'] });
+    sjekk('tom eierliste når ingen er vernet', uten.Eiere, []);
+    sjekk('og medlemslista er urørt', uten.Medlemmer, ['a@x.no']);
+}
+
+// ---------- sperrene teller MEDLEMMENE, ikke det sammenslåtte ----------
+{
+    // Den farligste feilen i hele eiervernet: teller man det sammenslåtte,
+    // ser en tom medlemsimport ikke tom ut så lenge eier-rollen har folk —
+    // og teamet synkroniseres stille ned til bare lederne.
+    const medlemmer = [];
+    const eiere = ['sjef@x.no', 'nestleder@x.no', 'assistent@x.no'];
+
+    sjekk('tom medlemsliste stoppes selv om eier-rollen har folk',
+        t.vurderSynk({ antallNaa: medlemmer.length, forrigeAntall: 40 }).grunn, 'tom');
+
+    // Og for å vise hva feilen ville vært:
+    sjekk('hadde vi telt det sammenslåtte, ville den sluppet gjennom',
+        t.vurderSynk({ antallNaa: t.slaaSammen(medlemmer, eiere).length, forrigeAntall: 40 }).grunn,
+        'stort-fall');
+
+    // Samme for fallsperren: eierne skal ikke kunne maskere et ras.
+    sjekk('ras i medlemslista stoppes',
+        t.vurderSynk({ antallNaa: 2, forrigeAntall: 40 }).ok, false);
+}
+
+// ---------- endepunktet gjør det i riktig rekkefølge ----------
+{
+    const les = (...d) => utenKommentarer(
+        fs.readFileSync(path.join(__dirname, '..', 'src', ...d), 'utf8'));
+    const endepunkt = les('functions', 'team-synk.js');
+
+    // Rekkefølgen ER regelen. Slås eierne inn før vurderingen, er
+    // tom-sperren verdiløs — og ingenting ville feilet.
+    const iEierOppslag = endepunkt.indexOf('eierRolleFor(');
+    const iVurder = endepunkt.indexOf('vurderSynk(');
+    const iBygg = endepunkt.indexOf('byggPayload(');
+    sjekk('eierne slås ikke inn før vurderingen', iVurder < iBygg, true);
+    sjekk('vurderingen teller medlemmene',
+        /antallNaa: upner\.length/.test(endepunkt), true);
+    sjekk('og ikke det sammenslåtte',
+        /antallNaa: [a-zA-Z]*[Ss]endt|antallNaa: payload/.test(endepunkt), false);
+
+    // Eier-oppslaget må skje, og et feilet oppslag må STOPPE — ikke fortsette
+    // uten lista. Fortsetter den, meldes eierne ut.
+    sjekk('eier-rollen slås opp', iEierOppslag > -1, true);
+    sjekk('feilet eier-oppslag stopper kjøringen',
+        /eier-oppslag-feilet/.test(endepunkt), true);
+    sjekk('og lagres som stoppet',
+        /catch \(e\)[\s\S]{0,400}status: 'stoppet'[\s\S]{0,300}eier-oppslag-feilet/.test(endepunkt), true);
+
+    // Eier-rollen må bruke gruppens eget omfang.
+    sjekk('eier-rollen får samme omfang',
+        /\$\{eierRolle\}\(\$\{Omfang\}\)/.test(endepunkt), true);
+}
+
 // ---------- payloaden ----------
 {
     const p = t.byggPayload({
