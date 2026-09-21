@@ -183,6 +183,39 @@ POST /groups/{group-id}/members/$ref
 DELETE /groups/{group-id}/members/@{item()?['id']}/$ref
 ```
 
+### Når kallet svarer 401
+
+```
+DirectApiAuthorizationRequired
+The request must be authenticated only by Shared Access scheme
+```
+
+Denne høres ut som manglende rettigheter, men betyr nesten alltid at
+**signaturen ikke var med i URL-en**. Power Automate signerer trigger-URL-en
+med en SAS i spørringsstrengen (`sp`, `sv`, `sig`). Kopieres bare delen foran
+`?`, er kallet usignert — og flyten svarer 401 uansett hvem som ringer.
+
+Sjekk i denne rekkefølgen:
+
+1. **Er hele URL-en med?** Den skal slutte på noe i retning av `&sig=...`.
+   Hent den fra feltet «HTTP POST URL» øverst i Request-triggeren, ikke fra
+   adressefeltet i nettleseren.
+2. **Ble ampersandene HTML-kodet?** Noen grensesnitt gir `&amp;sig=` ved
+   kopiering. Da havner signaturen i et parameter som heter `amp;sig`.
+3. **Ble URL-en satt i riktig skall?** I `cmd.exe` og enkelte `.env`-lesere
+   kuttes strengen ved første `&`. I PowerShell må den stå i anførselstegn:
+   `$env:TEAM_FLOW_URL = "https://...&sig=..."`.
+4. **Er «Who can trigger the flow» satt til «Anyone»?** Står den på
+   «Any user in my tenant» eller «Specific users», krever flyten Entra-token
+   og ikke SAS — og da virker ikke en signert URL alene.
+
+`scripts/test-team-flyt.ps1` sjekker punkt 1 og 2 før den kaller, og retter
+punkt 2 selv.
+
+**URL-en er en hemmelighet.** Den gir hvem som helst rett til å kjøre flyten.
+Den hører hjemme i app settings og i `TEAM_FLOW_URL` lokalt — ikke i en
+chatlogg, et issue eller en commit.
+
 ### Fallgruver
 
 **`/teams/{id}/members` er noe annet enn `/groups/{id}/members`.** Det første
