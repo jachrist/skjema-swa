@@ -948,13 +948,30 @@
                 </div>
 
                 <div class="panel" data-panel-id="tilgjengelighet">
-                    <h2 onclick="togglePanel('tilgjengelighet')"><span class="kollaps-pil">▼</span>Tilgjengelighetsperioder <small style="font-weight: 400; text-transform: none;">— når utfylling er tillatt (utenfor perioden er skjemaet kun synlig for eiere)</small></h2>
+                    <h2 onclick="togglePanel('tilgjengelighet')"><span class="kollaps-pil">▼</span>Tilgjengelighet <small style="font-weight: 400; text-transform: none;">— når utfylling er tillatt, og hvor mange ganger hver person kan svare</small></h2>
+
+                    <h3 style="font-size: 13px; margin: 0 0 6px 0; color: var(--text-secondary);">Perioder <small style="font-weight: 400;">— utenfor perioden er skjemaet kun synlig for eiere</small></h3>
                     <div id="perioder-container"></div>
                     <button class="knapp mini sekundær" onclick="leggTilPeriode()" style="margin-top: 6px;">+ Legg til periode</button>
                     <!-- Ingen fast hjelpetekst her: #perioder-container skriver
                          «Ingen perioder — skjematypen er alltid tilgjengelig» selv
                          når lista er tom, og to like setninger under hverandre er
                          mer forvirrende enn én. -->
+
+                    <h3 style="font-size: 13px; margin: 18px 0 6px 0; color: var(--text-secondary);">Antall svar per person</h3>
+                    <div class="rad">
+                        <label>Maks antall svar <small>(0 = ubegrenset)</small></label>
+                        <input type="number" min="0" step="1" id="maks-svar"
+                               value="${data.MaksSvarPerBruker || 0}"
+                               onchange="setMaksSvar(this.value)" style="width: 90px;">
+                    </div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                        Brukes til avstemninger og valg der hver person skal svare et bestemt
+                        antall ganger. Sett 1 for «én stemme per person». Grensen gjelder alle,
+                        også eiere og administratorer. Mellomlagrede utkast teller ikke.
+                        Er skjematypen anonymisert, telles svarene likevel riktig —
+                        pseudonymet er det samme for samme person hver gang.
+                    </div>
                 </div>
 
                 <div class="panel" data-panel-id="tilgang">
@@ -2048,6 +2065,22 @@
 
         window.setKrypteres = (v) => { data.Krypteres = v || 'Nei'; };
         window.setAnonymiseres = (v) => { data.Anonymiseres = !!v; };
+        /**
+         * Maks antall svar per person. 0 (eller tomt) = ubegrenset.
+         *
+         * Lagres som tall, ikke streng: `grenseFor` på serveren tåler begge,
+         * men et tall i JSON-en er lettere å lese for den som ser på en
+         * skjematype senere.
+         */
+        window.setMaksSvar = (v) => {
+            const n = Math.floor(Number(v));
+            data.MaksSvarPerBruker = (!Number.isFinite(n) || n <= 0) ? 0 : n;
+            // Skriv tilbake det som faktisk ble lagret, så feltet ikke viser
+            // «-3» eller «2,5» mens skjematypen har noe annet.
+            const felt = document.getElementById('maks-svar');
+            if (felt) felt.value = data.MaksSvarPerBruker;
+        };
+
         window.setEksternTilgang = (v) => {
             data.EksternTilgang = !!v;
             const boks = document.getElementById('ekstern-lenke-boks');

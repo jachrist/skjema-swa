@@ -33,6 +33,7 @@ const brukernavn = require('../lib/brukernavn-storage');
 const dialogTilgang = require('../lib/dialog-tilgang');
 const { harOtpToken, velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 const prefill = require('../lib/utsending-prefill');
+const svargrense = require('../lib/svargrense');
 
 
 
@@ -717,6 +718,47 @@ app.http('lagreSkjema', {
                 Innsender_Epost: eksisterende?.Innsender_Epost || innsenderId,
                 Skjema_status: body.Skjema_status || eksisterende?.Skjema_status || 2
             };
+
+            // ---- Svargrense: hvor mange ganger kan én person svare? ----
+            //
+            // Sjekkes HER og ikke bare i grensesnittet. Et skjult skjema er
+            // ingen sperre, og for en avstemning er det nettopp den som går
+            // utenom grensesnittet man må stoppe.
+            //
+            // Bare ved overgangen fra ikke-innsendt til innsendt. En behandler
+            // som registrerer en beslutning på et svar som alt er avgitt, skal
+            // ikke møte en grense hen ikke har brutt.
+            //
+            // Forbehold, sagt høyt: to innsendinger som treffer akkurat
+            // samtidig kan begge se «null svar fra før». Table Storage har
+            // ingen transaksjon på tvers av rader å stoppe det med. For et
+            // valg i denne størrelsen er det akseptabelt — men det er en
+            // kappløpsluke, ikke en garanti, og den som teller opp et resultat
+            // bør vite det.
+            {
+                const stGrense = await skjemaStorage.hentSkjematype(skjematypeId);
+                const grense = svargrense.grenseFor(stGrense?.JSON || null);
+                if (svargrense.maaSjekkes({
+                    grense,
+                    nyStatus: skjemaData.Skjema_status,
+                    gammelStatus: eksisterende?.Skjema_status
+                })) {
+                    const identiteter = svargrense.identiteterFor(innsenderId, process.env.HASH_SALT || '');
+                    const brukt = await forekomstStorage.tellSvarFraBruker(
+                        skjematypeId, identiteter, { unntattSkjemaId: skjemaId });
+                    const dom = svargrense.sjekkGrense({ grense, antallSvar: brukt });
+                    if (!dom.ok) {
+                        context.log(`lagreSkjema: ${innsenderId} avvist av svargrense på ${skjematypeId} (${brukt}/${grense})`);
+                        return {
+                            status: 409,
+                            jsonBody: {
+                                status: 'avvist', svargrense: true,
+                                grense: dom.grense, brukt: dom.brukt, melding: dom.melding
+                            }
+                        };
+                    }
+                }
+            }
 
             // Innsenderens navn, én gang, ved lagring.
             //

@@ -435,6 +435,7 @@
             try {
                 skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
                 await forbereedSkjemaId();
+                if (!await svargrenseTillater()) return;
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste skjemadefinisjon: ' + e.message);
@@ -466,6 +467,7 @@
 
             try {
                 await forbereedSkjemaId();
+                if (!await svargrenseTillater()) return;
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste skjema: ' + e.message);
@@ -630,6 +632,41 @@
                     console.warn('ny-skjema-id feilet:', e.message);
                 }
             }
+        }
+
+        /**
+         * Har brukeren svar igjen på denne skjematypen?
+         *
+         * Spørres FØR skjemaet tegnes. Den ekte sperren ligger i `lagreSkjema`
+         * på serveren — dette er for at ingen skal fylle ut et helt skjema og
+         * først da få vite at de ikke kan sende det inn.
+         *
+         * `unntatt` er skjemaet som er i ferd med å åpnes, så den som ser på
+         * sitt eget innsendte svar ikke blir avvist av det.
+         *
+         * Feiler kallet, slipper vi brukeren inn. Serveren svarer uansett, og
+         * å stenge noen ute fordi et hjelpeoppslag feilet er verre enn å la
+         * dem møte sperren ett steg senere.
+         *
+         * Returnerer true hvis skjemaet skal tegnes.
+         */
+        async function svargrenseTillater() {
+            try {
+                const sti = `/api/skjematyper/${encodeURIComponent(skjematypeId)}/kan-svare`
+                    + (skjemaId ? `?unntatt=${encodeURIComponent(skjemaId)}` : '');
+                const svar = await api.get(sti);
+                if (svar?.kanSvare === false) {
+                    document.getElementById('innhold').className = 'status-melding info';
+                    document.getElementById('innhold').textContent =
+                        svar.melding || 'Du har allerede svart på dette skjemaet.';
+                    const lagre = document.getElementById('lagre-knapp');
+                    if (lagre) lagre.style.display = 'none';
+                    return false;
+                }
+            } catch (_) {
+                // Se kommentaren over: hjelpeoppslaget er ikke porten.
+            }
+            return true;
         }
 
         function visFeil(tekst) {
@@ -1101,6 +1138,18 @@
                     window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
                 }
             } catch (e) {
+                // 409 fra svargrensen er ikke en teknisk feil — personen har
+                // brukt opp svarene sine. «Innsending feilet: …» i en alert
+                // ville fått det til å se ut som noe gikk galt, og invitert
+                // til å prøve igjen. Meldingen erstatter derfor skjemaet, slik
+                // forhåndssjekken gjør.
+                if (e.status === 409) {
+                    document.getElementById('innhold').className = 'status-melding info';
+                    document.getElementById('innhold').textContent = e.message;
+                    const forklaring = document.getElementById('forklaring');
+                    if (forklaring) forklaring.innerHTML = '';
+                    return;
+                }
                 submitKnapp.disabled = false;
                 submitKnapp.textContent = 'Send inn';
                 alert('Innsending feilet: ' + e.message);

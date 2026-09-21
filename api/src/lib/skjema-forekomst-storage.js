@@ -10,6 +10,7 @@
 const { tabellKlient, sikreTabell } = require('./storage');
 const { erKompaktFormat, ekspanderSkjema } = require('./skjema-kompakt');
 const skjemaStorage = require('./skjema-storage');
+const svargrense = require('./svargrense');
 
 const TABELL = 'Skjemaer';
 
@@ -172,6 +173,51 @@ async function hentAntallPerType() {
     return kart;
 }
 
+/**
+ * Hvor mange INNSENDTE skjemaer har denne personen på denne skjematypen?
+ *
+ * Brukes av svargrensen (`svargrense.js`). `identiteter` er den åpne og den
+ * anonymiserte formen av samme person — se den modulen for hvorfor begge må
+ * telles.
+ *
+ * Ett kall per identitet, ikke ett samlet filter: `odata` er en tagget mal som
+ * escaper verdiene den får, og en liste av ukjent lengde kan ikke settes inn i
+ * den uten å bygge filterstrengen for hånd. To billige spørringer er en bedre
+ * pris enn en håndsnekret OData-streng med brukerdata i.
+ *
+ * `select` hopper over JSON-kolonnen; her skal vi bare telle rader.
+ *
+ * Mellomlagrede skjemaer (status 1) teller ikke — et utkast er ikke et svar.
+ * `unntattSkjemaId` holder raden som er i ferd med å bli lagret utenfor
+ * tellingen, slik at et utkast som sendes inn ikke teller seg selv.
+ */
+async function tellSvarFraBruker(skjematypeId, identiteter, { unntattSkjemaId = null } = {}) {
+    const ider = (identiteter || []).map(i => String(i || '').trim().toLowerCase()).filter(Boolean);
+    if (ider.length === 0) return 0;
+
+    const tabell = await sikreTabell(TABELL);
+    const { odata } = require('@azure/data-tables');
+    const sett = new Set();
+    for (const id of [...new Set(ider)]) {
+        const iter = tabell.listEntities({
+            queryOptions: {
+                filter: odata`PartitionKey eq ${String(skjematypeId)} and InnsenderEpost eq ${id}`,
+                select: ['PartitionKey', 'RowKey', 'Skjemastatus']
+            }
+        });
+        for await (const e of iter) {
+            // Regelen for hva som teller ligger i svargrense.js, ikke her —
+            // den er prøvbar uten lagringskonto, og skal ikke finnes i to
+            // utgaver.
+            if (!svargrense.radTellerMot(e, unntattSkjemaId)) continue;
+            // Et sett, ikke en teller: skulle de to identitetene mot formodning
+            // treffe samme rad, skal den telles én gang.
+            sett.add(String(e.rowKey));
+        }
+    }
+    return sett.size;
+}
+
 async function hentAlleSkjemaerForType(skjematypeId, { fulltFormat = true } = {}) {
     const tabell = await sikreTabell(TABELL);
 
@@ -250,6 +296,7 @@ async function slettSkjema(skjemaId, skjematypeId) {
 
 module.exports = {
     hentAntallPerType,
+    tellSvarFraBruker,
     hentSkjema,
     lagreSkjema,
     hentAlleSkjemaerForType,
