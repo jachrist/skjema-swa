@@ -185,5 +185,29 @@ const { utenKommentarer } = require('../../scripts/test-kilde.js');
         /Medlemmer\.length === 0[\s\S]{0,200}return \{ status: 'feil'/.test(flyt), true);
 }
 
+// ---------- testskriptet sender det samme som API-et ----------
+{
+    // scripts/test-team-flyt.ps1 brukes til å prøve flyten før den kobles på.
+    // Er payloaden der ulik den ekte, tester man noe annet enn det som
+    // kommer i produksjon — og oppdager forskjellen først når det gjelder.
+    const ps1 = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'scripts', 'test-team-flyt.ps1'), 'utf8');
+
+    const blokk = ps1.slice(ps1.indexOf('[ordered]@{'), ps1.indexOf('}', ps1.indexOf('[ordered]@{')));
+    const feltIPs1 = [...blokk.matchAll(/^\s+(\w+)\s+=/gm)].map(m => m[1]);
+    const feltIApi = Object.keys(t.byggPayload({
+        rolle: 'R', omfang: 'O', team: 'T', upner: ['a@x.no'], miljo: 'pilot'
+    }));
+    sjekk('samme felter, i samme rekkefølge', feltIPs1, feltIApi);
+
+    // Og samme verdi på handlingen — flyten kan komme til å switche på den.
+    sjekk('samme handling', /'synkroniserTeamDestruktivt'/.test(ps1), true);
+
+    // Skriptet må nekte tom liste, som API-et gjør. Det er et testverktøy mot
+    // et ekte team, ikke en sandkasse.
+    sjekk('skriptet nekter tom liste', /Tom medlemsliste/.test(ps1), true);
+    sjekk('og krever bekreftelse', /Skriv SEND/.test(ps1), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
