@@ -129,7 +129,26 @@ function samtaleErSynlig({ rolle, innstilling, antallInnlegg = 0, apen = true })
     return kanSkrive({ rolle, innstilling, antallInnlegg, apen });
 }
 
+/**
+ * Skal det sendes varsel for innlegget som nettopp ble skrevet?
+ *
+ * I første omgang: bare for det første innlegget i en sak. Det er avtalt med
+ * oppdragsgiver (TODO 69), og begrunnelsen er at det første innlegget er det
+ * eneste som bærer ny informasjon om at saken har fått en samtale i det hele
+ * tatt. Svarene etterpå kommer til folk som allerede vet at tråden finnes.
+ *
+ * `antallInnleggFoer` er antallet FØR innlegget ble lagt til. Er det null, er
+ * innlegget som nettopp ble skrevet det som startet samtalen.
+ *
+ * Regelen ligger her, ikke som et `if` i endepunktet, fordi den er ment å bli
+ * løsnet på senere. Da skal den endres ett sted, og testen som beskriver den
+ * skal endres sammen med den.
+ */
+function skalVarsle({ antallInnleggFoer }) {
+    return Number(antallInnleggFoer || 0) === 0;
+}
+
 module.exports = {
-    samtaleErAapen, eksternErInnsender, kanDempe, finnDeltaker,
+    samtaleErAapen, eksternErInnsender, kanDempe, finnDeltaker, skalVarsle,
     samtaleInnstilling, kanSkrive, samtaleErSynlig, INNSTILLINGER
 };

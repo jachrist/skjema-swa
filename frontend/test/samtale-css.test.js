@@ -29,12 +29,21 @@ function sjekk(navn, faktisk, forventet) {
 
 const mappe = path.join(__dirname, '..');
 
-// Sidene som faktisk importerer widgeten.
+// Sidene som faktisk importerer widgeten — statisk ELLER dynamisk.
+// Første versjon lette bare etter `from './js/samtale.js'`, og gikk dermed
+// glatt forbi kvittering.html, som laster widgeten med `await import(...)`.
+// En test som ikke ser siden, sier heller ikke fra når stilene mangler der.
+const IMPORT = /(?:from|import\s*\()\s*['"]\.\/js\/samtale\.js['"]/;
 const sider = fs.readdirSync(mappe)
     .filter(f => f.endsWith('.html'))
-    .filter(f => fs.readFileSync(path.join(mappe, f), 'utf8').includes("from './js/samtale.js'"));
+    .filter(f => IMPORT.test(fs.readFileSync(path.join(mappe, f), 'utf8')));
 
-sjekk('minst to sider viser samtalen', sider.length >= 2, true);
+sjekk('minst tre sider viser samtalen', sider.length >= 3, true);
+// Navngitt, ikke bare telt: en side som slutter å importere widgeten skal
+// merkes her, ikke bare senke et tall som fortsatt passerer.
+for (const s of ['evaluering.html', 'visning.html', 'kvittering.html']) {
+    sjekk(`${s} er med`, sider.includes(s), true);
+}
 
 /** Alle .samtale*-velgere som er DEFINERT på en side. */
 function velgere(kilde) {

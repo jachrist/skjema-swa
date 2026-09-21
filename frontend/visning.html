@@ -571,7 +571,10 @@
             div.className = 'seksjon';
             const h = document.createElement('h2');
             h.className = 'seksjon-tittel';
-            h.textContent = 'Dialog';
+            // Innlegg fra før Samtale fantes. Navnet sier at dette er
+            // historikk, ikke et sted å skrive — ellers står det to bokser
+            // som begge heter «Samtale» på saker som har begge deler.
+            h.textContent = 'Tidligere meldinger';
             div.appendChild(h);
             for (const i of dialog) {
                 const el = document.createElement('div');

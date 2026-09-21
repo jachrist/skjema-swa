@@ -15,8 +15,8 @@
  *   samtale-tilgang.js), og et feilende dempe-oppslag skal ikke kunne stanse
  *   varselet til den ene som må nås.
  *
- *   **Innsender og behandlere får ULIKE lenker.** Innsender leser samtalen i
- *   visning.html, behandlere i evaluering.html. Én felles lenke sender den ene
+ *   **Innsender og behandlere får ULIKE lenker.** Innsender leser samtalen på
+ *   kvitteringen, behandlere i evaluering.html. Én felles lenke sender den ene
  *   parten til en side hen ikke har tilgang til, og da ser det ut som at
  *   samtalen er borte.
  *
@@ -93,9 +93,14 @@ async function kjor() {
             // To kall: ett per lenke-side.
             const tilInnsender = kall.find(k => k.mottakere.some(m => m.epost === 'ola@example.no'));
             const tilBehandler = kall.find(k => k.mottakere.some(m => m.epost === 'per@fhs.no'));
-            sjekk('innsender sendes til visning', tilInnsender.lenker[0].url.includes('/visning.html'), true);
+            // Innsenderen til kvitteringen, som nå viser samtalen selv.
+            // Behandleren til behandlingssiden. Én felles lenke ville sendt
+            // den ene parten til en side hen ikke har tilgang til.
+            sjekk('innsender sendes til kvitteringen', tilInnsender.lenker[0].url.includes('/kvittering.html'), true);
+            sjekk('innsender sendes IKKE til behandlingssiden', tilInnsender.lenker[0].url.includes('/evaluering.html'), false);
             sjekk('behandler sendes til evaluering', tilBehandler.lenker[0].url.includes('/evaluering.html'), true);
             sjekk('lenken peker på samtalen', tilInnsender.lenker[0].url.endsWith('#samtale'), true);
+            sjekk('også for behandleren', tilBehandler.lenker[0].url.endsWith('#samtale'), true);
 
             // $lenke må være løst opp FØR kallet. Står den igjen som
             // plassholder, kommer den rått i e-posten.
