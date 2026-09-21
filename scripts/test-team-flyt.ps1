@@ -167,8 +167,15 @@ if ($url -notmatch '(?i)[?&]sig=') {
     throw @'
 Flyt-URL-en har en spørringsstreng, men ingen sig=-parameter.
 
-Da er det ikke trigger-URL-en. Hent den fra «HTTP POST URL» øverst i
-Request-triggeren i flyten, ikke fra adressefeltet i nettleseren.
+Vanligste årsak: flyten har aldri kjørt. Power Automate fyller ikke inn
+signaturen før første kjøring — og flyten kan ikke kjøre uten en POST mot
+URL-en, som ikke virker uten signatur.
+
+Bryt sirkelen: utløs flyten fra Power Automate én gang (Test → Manually),
+lagre, og hent URL-en på nytt. Den skal da ha sig=.
+
+Ellers: kontroller at URL-en er hentet fra «HTTP POST URL» øverst i
+Request-triggeren, ikke fra adressefeltet i nettleseren.
 '@
 }
 if ($url -notmatch '(?i)[?&]sp=') {

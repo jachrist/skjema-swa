@@ -195,7 +195,16 @@ Denne høres ut som manglende rettigheter, men betyr nesten alltid at
 med en SAS i spørringsstrengen (`sp`, `sv`, `sig`). Kopieres bare delen foran
 `?`, er kallet usignert — og flyten svarer 401 uansett hvem som ringer.
 
-Sjekk i denne rekkefølgen:
+**Den vanligste årsaken er en høne-og-egg-felle i Power Automate selv:**
+signaturen finnes ikke i URL-en før flyten har kjørt minst én gang. Og flyten
+kan ikke kjøre uten at noen gjør en POST mot URL-en — som altså ikke virker
+ennå. Observert 21.09.2026.
+
+Bryt sirkelen ved å utløse flyten fra Power Automate én gang («Test» →
+«Manually»), lagre, og deretter hente URL-en på nytt. Den skal nå ha `sig=`.
+Hent den på nytt HVER gang du har vært inne og endret triggeren.
+
+Er URL-en komplett og kallet fortsatt 401, sjekk i denne rekkefølgen:
 
 1. **Er hele URL-en med?** Den skal slutte på noe i retning av `&sig=...`.
    Hent den fra feltet «HTTP POST URL» øverst i Request-triggeren, ikke fra
