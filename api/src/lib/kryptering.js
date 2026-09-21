@@ -144,19 +144,37 @@ function dekrypterSkjema(skjema, nokkel) {
 }
 
 /**
+ * Pseudonymet en gitt e-postadresse får ved anonymisering.
+ *
+ * SHA-256(salt + normalisert adresse), første 12 hex-tegn. Deterministisk per
+ * salt: samme person gir samme pseudonym, på tvers av skjemaer og over tid.
+ *
+ * Det er ikke bare en egenskap — det er det som gjør at en anonymisert
+ * avstemning fortsatt kan begrenses til ett svar per person (`svargrense.js`).
+ * Regelen ligger derfor her, ett sted, og ikke som en kopi hos den som teller.
+ * To implementasjoner av samme hash ville gitt to ulike svar på «har denne
+ * personen stemt», og den ene ville sluppet en ekstra stemme gjennom.
+ *
+ * Returnerer tom streng for tom adresse.
+ */
+function pseudonymFor(epost, salt) {
+    const normalisert = String(epost || '').trim().toLowerCase();
+    if (!normalisert) return '';
+    const data = salt ? String(salt) + normalisert : normalisert;
+    const hash = crypto.createHash('sha256').update(data, 'utf8').digest('hex').substring(0, 12);
+    return `anonym-${hash}`;
+}
+
+/**
  * Anonymiser innsender-info. Salt gis via env HASH_SALT.
- * SHA-256(salt+normalisert epost), første 12 hex-tegn brukes som suffix.
- * Deterministisk pr salt — samme innsender → samme pseudonym på tvers av skjemaer.
  */
 function anonymiserInnsender(skjema, salt) {
     const kopi = JSON.parse(JSON.stringify(skjema));
     const epost = kopi.Innsender_Epost || kopi.Innsender_epost || '';
     if (!epost) return kopi;
-    const normalisert = String(epost).trim().toLowerCase();
-    const data = salt ? String(salt) + normalisert : normalisert;
-    const hash = crypto.createHash('sha256').update(data, 'utf8').digest('hex').substring(0, 12);
-    kopi.Innsender_Epost = `anonym-${hash}`;
-    kopi.Innsender_epost = `anonym-${hash}`;
+    const pseudonym = pseudonymFor(epost, salt);
+    kopi.Innsender_Epost = pseudonym;
+    kopi.Innsender_epost = pseudonym;
     if (kopi.Innsender_Navn) kopi.Innsender_Navn = 'Anonymisert';
     if (kopi.Innsender) kopi.Innsender = 'Anonymisert';
     kopi.Anonymisert = true;
@@ -176,5 +194,6 @@ module.exports = {
     krypterSkjema,
     dekrypterSkjema,
     anonymiserInnsender,
+    pseudonymFor,
     genererNokkel
 };

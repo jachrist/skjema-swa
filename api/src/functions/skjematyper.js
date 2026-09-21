@@ -4,6 +4,7 @@
  *   GET  /api/skjematyper           — mine skjematyper (filtrert på tilgang)
  *   GET  /api/skjematyper/:id       — hent én skjematype (må ha tilgang)
  *   POST /api/skjematyper           — opprett/oppdater (admin only)
+ *   GET  /api/skjematyper/:id/kan-svare — har jeg svar igjen på denne?
  *
  * Auth via SWA — bruker plukkes fra x-ms-client-principal-header.
  */
@@ -19,6 +20,8 @@ const hendelser = require('../lib/hendelser-storage');
 const gevinstSjekk = require('../lib/gevinst-sjekk');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const svarReparasjon = require('../lib/svar-reparasjon');
+const svargrense = require('../lib/svargrense');
+const { velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 // Modulobjekt, ikke destrukturert: testen bytter ut begge for aa slippe en
 // ekte lagringskonto. Destrukturert ville stubben vaert virkningslos.
 const behandling = require('../lib/behandling');
@@ -175,6 +178,70 @@ app.http('hentSkjematypeEkstern', {
         } catch (e) {
             context.log('publikum-skjematype FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * Har denne personen svar igjen på denne skjematypen?
+ *
+ * Grensesnittet spør om dette FØR utfylling, slik at ingen fyller ut et helt
+ * skjema for så å bli avvist ved innsending. Den ekte sperren ligger i
+ * `lagreSkjema` — dette endepunktet er høflighet, ikke tilgangskontroll, og
+ * den som kaller det direkte oppnår ingenting.
+ *
+ * Svarer for både innlogget bruker og ekstern OTP-innsender. Utsendings-token
+ * har sin egen regel («denne lenken er allerede besvart») og trenger ikke
+ * denne.
+ *
+ * Uten grense svarer det `{ grense: 0, kanSvare: true }` — kalleren slipper å
+ * kjenne forskjell på «ingen grense» og «mange igjen».
+ */
+app.http('kanSvarePaaSkjematype', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/{id}/kan-svare',
+    handler: async (request, context) => {
+        try {
+            const skjematypeId = String(request.params.id || '');
+            const st = await skjemaStorage.hentSkjematype(skjematypeId);
+            if (!st) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
+
+            const grense = svargrense.grenseFor(st.JSON || null);
+            if (grense === 0) return { jsonBody: { grense: 0, brukt: 0, kanSvare: true } };
+
+            // Samme tre autentiseringsveier som resten av skjema-API-et, med
+            // reglene fra ekstern-auth.js.
+            const upn = hentInnloggetUpn(request);
+            let innsenderId = upn;
+            if (velgAuthvei(request, upn) === 'ekstern') {
+                const forsøk = await autentiserEkstern(request, skjematypeId);
+                if (forsøk.ok) innsenderId = eksternInnsenderUpn(forsøk.mottaker, forsøk.kanal);
+            }
+            if (!innsenderId) {
+                return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+            }
+
+            // `unntatt` er skjemaet brukeren holder på med. Uten det ville
+            // den som åpner sitt eget innsendte svar på nytt blitt avvist av
+            // sin egen stemme — `lagreSkjema` slipper den gjennom (det er
+            // ingen NY innsending), og de to må si det samme.
+            const unntattSkjemaId = request.query.get('unntatt') || null;
+            const identiteter = svargrense.identiteterFor(innsenderId, process.env.HASH_SALT || '');
+            const brukt = await forekomstStorage.tellSvarFraBruker(
+                skjematypeId, identiteter, { unntattSkjemaId });
+            const dom = svargrense.sjekkGrense({ grense, antallSvar: brukt });
+            return {
+                jsonBody: {
+                    grense: dom.grense, brukt: dom.brukt,
+                    kanSvare: dom.ok, melding: dom.melding || ''
+                }
+            };
+        } catch (e) {
+            context.log('kan-svare FEIL:', e.message);
+            // Feiler oppslaget, skal ikke skjemaet stenge. Den ekte sperren
+            // står i lagreSkjema, og den svarer uansett.
+            return { jsonBody: { grense: 0, brukt: 0, kanSvare: true, usikker: true } };
         }
     }
 });
