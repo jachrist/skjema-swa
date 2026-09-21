@@ -38,6 +38,7 @@ function sjekk(navn, faktisk, forventet) {
 }
 
 const { kommentarerFor, kommentarLinje } = require('../src/lib/behandling-kommentar');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 // Tilfellene begge kopiene må være enige om.
 const TILFELLER = {
@@ -104,7 +105,7 @@ const TILFELLER = {
     // Det var her hullet var. Begge grenene i beslutnings-endepunktet må
     // skrive kommentaren ned; ellers finnes det ingenting for leserne å vise.
     const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'functions', 'skjemaer.js'), 'utf8');
-    const kode = kilde.replace(/\/\/.*$/gm, '');
+    const kode = utenKommentarer(kilde);
     sjekk('standardgrenen lagrer kommentaren',
         /stegObj\.Kommentar\s*=\s*body\?\.kommentar/.test(kode), true);
     sjekk('alle-grenen lagrer per aktør',
@@ -131,7 +132,7 @@ const TILFELLER = {
     }
     // Og ingen av dem skal ha sin egen kopi av filteret igjen.
     for (const fil of ['api/src/lib/pdf-generator.js', 'api/src/lib/datauttrekk.js']) {
-        const kode = les(fil).replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+        const kode = utenKommentarer(les(fil));
         sjekk(`${fil}: ingen egen Beslutninger-filtrering`,
             /Beslutninger[\s\S]{0,40}Kommentar/.test(kode), false);
     }

@@ -29,9 +29,10 @@ function sjekk(navn, faktisk, forventet) {
 
 const fs = require('fs');
 const path = require('path');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'functions', 'whoami.js'), 'utf8');
-const kode = kilde.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+const kode = utenKommentarer(kilde);
 
 // ---------- feltet finnes og returneres ----------
 {

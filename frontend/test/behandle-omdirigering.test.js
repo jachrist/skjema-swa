@@ -20,6 +20,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -66,7 +67,7 @@ const skalTilVisning = new Function(`${kilde.slice(start, slutt)}\nreturn skalTi
 
 // ---------- selve omdirigeringen ----------
 {
-    const kode = kilde.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+    const kode = utenKommentarer(kilde);
 
     sjekk('regelen brukes', /if \(skalTilVisning\(skjema\)\)/.test(kode), true);
     sjekk('går til visning.html', /location\.replace\(\s*`\/visning\.html/.test(kode), true);

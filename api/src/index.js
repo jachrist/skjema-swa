@@ -39,6 +39,7 @@ require('./functions/gevinst');
 require('./functions/samtale');
 require('./functions/skjematype-oversikt');
 require('./functions/arkiv');
+require('./functions/team-synk');
 
 // Etter hvert:
 // require('./functions/skjema');

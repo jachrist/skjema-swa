@@ -29,6 +29,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -41,8 +42,6 @@ const rot = path.join(__dirname, '..');
 const api = fs.readFileSync(
     path.join(rot, '..', 'api', 'src', 'functions', 'skjemaer.js'), 'utf8');
 
-/** Kommentarene strippes: en test skal ikke kunne bestå på sin egen forklaring. */
-const utenKommentarer = (s) => s.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 
 // ---------- navnet, på alle sidene som viser boksen ----------
 {

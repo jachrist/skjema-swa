@@ -22,6 +22,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -105,7 +106,7 @@ sjekk('fant merkede lenker', merkede > 3, true);
     const auth = fs.readFileSync(path.join(mappe, 'js', 'auth.js'), 'utf8');
     const start = auth.indexOf('export async function styrOversiktslenker');
     sjekk('hjelperen finnes', start !== -1, true);
-    const kode = auth.slice(start).replace(/\/\/.*$/gm, '');
+    const kode = utenKommentarer(auth.slice(start));
 
     // Avgjørelsen tas på serveren. Setter klienten den sammen av roller selv,
     // ligger regelen to steder og kan gli fra hverandre.

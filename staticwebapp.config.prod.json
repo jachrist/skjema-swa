@@ -168,6 +168,12 @@
             ]
         },
         {
+            "route": "/api/team-synk",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
             "route": "/api/*",
             "allowedRoles": [
                 "authenticated"

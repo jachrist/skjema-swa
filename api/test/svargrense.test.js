@@ -41,6 +41,7 @@ function sjekk(navn, faktisk, forventet) {
 
 const g = require('../src/lib/svargrense');
 const kryptering = require('../src/lib/kryptering');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 // ---------- grenseFor ----------
 {
@@ -191,8 +192,6 @@ const kryptering = require('../src/lib/kryptering');
 
 // ---------- reglene er koblet til der de gjelder ----------
 {
-    /** Kommentarene strippes: en test skal ikke bestå på sin egen forklaring. */
-    const utenKommentarer = (t) => t.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
     const les = (...p) => utenKommentarer(
         fs.readFileSync(path.join(__dirname, '..', 'src', ...p), 'utf8'));
 

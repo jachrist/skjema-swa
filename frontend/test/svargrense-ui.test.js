@@ -21,6 +21,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -30,9 +31,7 @@ function sjekk(navn, faktisk, forventet) {
 }
 
 const rot = path.join(__dirname, '..');
-/** Kommentarene strippes: en test skal ikke bestå på sin egen forklaring. */
-const les = (f) => fs.readFileSync(path.join(rot, f), 'utf8')
-    .replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/<!--[\s\S]*?-->/g, '');
+const les = (f) => utenKommentarer(fs.readFileSync(path.join(rot, f), 'utf8'));
 
 // ---------- editoren ----------
 {
