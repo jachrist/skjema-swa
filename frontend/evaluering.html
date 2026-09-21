@@ -603,6 +603,9 @@
         function byggSamtalePanel() {
             if (samtaleWidget) { samtaleWidget.stopp(); samtaleWidget = null; }
             const div = document.createElement('div');
+            // Varsellenkene ender på #samtale. Uten id-en lander behandleren
+            // på toppen av behandlingssiden og må lete.
+            div.id = 'samtale';
             samtaleWidget = byggSamtale(div, {
                 api, skjematypeId, skjemaId,
                 megId: bruker?.userDetails || '',
@@ -621,7 +624,7 @@
             div.className = 'dialog-boks';
             const h = document.createElement('h3');
             h.className = 'dialog-tittel';
-            h.textContent = 'Dialog';
+            h.textContent = 'Intern dialog (kun saksbehandlere)';
             div.appendChild(h);
 
             const liste = document.createElement('div');
@@ -648,26 +651,28 @@
             // Skjemakontroll for nytt innlegg
             const input = document.createElement('div');
             input.className = 'dialog-input';
-            // Innsenderen kan ikke skrive interne innlegg — API-et avviser dem
-            // med 403. Uten denne sjekken sto «Intern (til andre behandlere)»
-            // som STANDARDVALG også for innsenderen, og feilen kom først etter
-            // at hen hadde skrevet ferdig.
+            // Boksen er intern, og bare intern. Veien til innsenderen går via
+            // Samtale — å ha to veier dit var nettopp det som forvirret: samme
+            // budskap kunne havne to steder, og behandleren måtte vite hvilket
+            // nedtrekksvalg som gjorde hva.
             //
-            // Mangler `_minRolle` (eldre API), beholdes begge valgene: API-et
-            // er den virkelige porten, og å ta bort muligheten fra en behandler
-            // er verre enn å la innsenderen møte avvisningen.
+            // Innsenderen kan ikke skrive interne innlegg; API-et avviser dem
+            // med 403. Da skal hen heller ikke få et skrivefelt som sikkert
+            // feiler. Innsenderen som også er behandler på saken havner her
+            // (`_minRolle` er 'innsender' for hen), og har Samtale å skrive i.
+            //
+            // Mangler `_minRolle` (eldre API), vises feltet: å ta skrivefeltet
+            // fra en behandler er verre enn å la en innsender møte avvisningen.
             const kanIntern = skjema._minRolle ? skjema._minRolle !== 'innsender' : true;
-            input.innerHTML = `
-                <textarea placeholder="Skriv et innlegg…" id="dialog-tekst"></textarea>
-                <div class="knapper">
-                    <select id="dialog-type"${kanIntern ? '' : ' hidden'}>
-                        ${kanIntern ? '<option value="intern">Intern (til andre behandlere)</option>' : ''}
-                        <option value="ekstern">Til innsender</option>
-                    </select>
-                    <button class="knapp primær" onclick="sendDialog()">Legg til innlegg</button>
-                </div>
-            `;
-            div.appendChild(input);
+            if (kanIntern) {
+                input.innerHTML = `
+                    <textarea placeholder="Internt notat til andre saksbehandlere…" id="dialog-tekst"></textarea>
+                    <div class="knapper">
+                        <button class="knapp primær" onclick="sendDialog()">Legg til internt notat</button>
+                    </div>
+                `;
+                div.appendChild(input);
+            }
 
             // Videresending — kun hvis bruker har aktive steg
             if (beregnMineAktive().length > 0) {
@@ -696,7 +701,8 @@
 
         window.sendDialog = async () => {
             const tekst = document.getElementById('dialog-tekst').value.trim();
-            const type = document.getElementById('dialog-type').value;
+            // Alltid intern. Boksen har ikke lenger noe annet å være.
+            const type = 'intern';
             if (!tekst) { alert('Skriv noe tekst først'); return; }
             try {
                 await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/dialog`, { type, tekst });

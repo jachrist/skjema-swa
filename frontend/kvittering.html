@@ -23,6 +23,13 @@
             --shadow: 0 4px 30px rgba(0, 0, 0, 0.06);
             --radius-md: 12px;
             --radius-xl: 24px;
+            /* Brukes av samtale-blokken under. Samme verdier som visning.html,
+               så widgeten ser lik ut der innsenderen møter den. */
+            --bg-section: rgba(255, 255, 255, 0.55);
+            --bg-svar: rgba(255, 255, 255, 0.7);
+            --danger: #ff3b30;
+            --radius-lg: 18px;
+            --radius-sm: 8px;
         }
         [data-theme="dark"] {
             --bg-page: #0d1117;
@@ -30,7 +37,10 @@
             --text-primary: #f0f0f5;
             --text-secondary: #8e8e93;
             --border-color: rgba(255, 255, 255, 0.1);
-        }
+                    --bg-section: rgba(40, 45, 60, 0.55);
+            --bg-svar: rgba(20, 25, 35, 0.7);
+            --danger: #ff3b30;
+}
         * { box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
@@ -114,6 +124,79 @@
                av containeren i stedet for ned på egen linje. */
             flex-wrap: wrap;
         }
+        /* ---- Samtale (gruppechat) ---- */
+        .samtale {
+            background: var(--bg-container);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 16px 20px;
+            margin-top: 14px;
+        }
+        .samtale-topp { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 10px; }
+        .samtale-tittel { font-size: 16px; font-weight: 700; color: var(--accent); margin: 0 0 4px 0; }
+        .samtale-demp { font-size: 12px; color: var(--text-secondary); display: flex; align-items: center; gap: 6px; }
+        .samtale-lukket { font-size: 12px; color: var(--text-secondary); margin: 4px 0 10px 0; }
+        .samtale-liste {
+            max-height: 420px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin: 10px 0;
+        }
+        .samtale-tom { font-size: 13px; color: var(--text-secondary); margin: 6px 0; }
+        .samtale-innlegg {
+            background: var(--bg-section);
+            border-radius: var(--radius-md);
+            padding: 8px 12px;
+            /* En lang UPN eller en URL uten mellomrom skal ikke presse boksen
+               ut av containeren — samme feil som i .brukerinfo. */
+            overflow-wrap: anywhere;
+        }
+        .samtale-innlegg.meg { background: var(--accent-light); }
+        .samtale-hode { display: flex; flex-wrap: wrap; gap: 8px; font-size: 11px; color: var(--text-secondary); margin-bottom: 3px; }
+        .samtale-avsender { font-weight: 600; }
+        .samtale-tekst { font-size: 13px; white-space: pre-wrap; }
+        /* Skrivefeltet er en egen boks med ramme og tone.
+           Uten en tydelig avgrensning fløt det sammen med innleggene over, og
+           det var ikke åpenbart hvor man skulle skrive. */
+        .samtale-skriv {
+            margin-top: 12px;
+            padding: 12px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            background: var(--bg-section);
+        }
+        .samtale-info { font-size: 11px; color: var(--text-secondary); margin: 0 0 8px 0; }
+        .samtale-felt {
+            width: 100%;
+            box-sizing: border-box;
+            font-family: inherit;
+            font-size: 13px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            /* Lysere enn boksen rundt, så feltet leses som et felt. */
+            background: var(--bg-svar);
+            color: var(--text-primary);
+            resize: vertical;
+        }
+        .samtale-felt:focus { outline: none; border-color: var(--accent); }
+        .samtale-knapperad { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+        .samtale-status { font-size: 12px; color: var(--text-secondary); margin-right: auto; }
+        .samtale-status.feil { color: var(--danger); }
+        .samtale-send {
+            padding: 8px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            font-family: inherit;
+            border: 2px solid var(--accent);
+            border-radius: var(--radius-md);
+            background: var(--accent);
+            color: white;
+            cursor: pointer;
+        }
+        .samtale-send:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -134,13 +217,7 @@
             <a class="knapp sekundær" href="#" id="se-skjemaet">Se skjemaet</a>
             <a class="knapp sekundær" href="#" id="nytt-lignende">Fyll ut nytt</a>
         </div>
-        <div class="knapperad" id="samtale-rad" hidden style="margin-top: 0;">
-            <a class="knapp sekundær" href="#" id="start-samtale">Still et spørsmål om saken</a>
-        </div>
-        <p id="samtale-hjelp" hidden style="font-size: 12px; color: var(--text-secondary); margin: 10px 0 0 0;">
-            Du kan sende meldinger til dem som behandler saken. Alle som behandler den ser
-            det du skriver.
-        </p>
+        <div id="samtale" style="text-align: left;"></div>
     </div>
 
     <script type="module">
@@ -156,38 +233,41 @@
         document.getElementById('se-skjemaet').href = visningsUrl;
 
         /**
-         * Tilbud om å starte en samtale.
+         * Samtalen, på kvitteringen.
          *
-         * Knappen vises bare når SERVEREN sier at denne innsenderen kan skrive
-         * det første innlegget — altså når skjematypen står på «Alle». Vi
-         * gjentar ikke regelen her: den bor i `lib/samtale-tilgang.js`, og en
-         * kopi ville før eller siden sagt noe annet enn originalen.
+         * Den ligger her og ikke bak en knapp, av to grunner. Varselet
+         * innsenderen får når en behandler starter en samtale, lenker hit — og
+         * en side som bare sier «du har en melding et annet sted» er en omvei.
+         * Og knappen den erstattet lovet å stille et spørsmål, noe
+         * skjematypen ikke alltid tillater.
          *
-         * Feiler kallet, eller er samtalen av, vises ingenting. En kvittering
-         * som blinker med en knapp som ikke virker er verre enn en kvittering
-         * uten knapp.
+         * Widgeten avgjør selv om den skal vises: den spør API-et, som svarer
+         * ut fra skjematypens innstilling, rollen og hvor mange innlegg som
+         * finnes. Er samtalen av, eller er den tom og innsenderen ikke kan
+         * starte den, tegner den ingenting. Regelen bor i
+         * `lib/samtale-tilgang.js`, og en kopi her ville før eller siden sagt
+         * noe annet enn originalen.
          */
         (async () => {
-            if (skjemaId === '(mangler)' || skjematypeId === '(mangler)') {
-                // Samtale-tilbudet trenger ID-ene; oversiktslenken gjør ikke det.
-                const { api } = await import('./js/api-client.js');
-                const { styrOversiktslenker } = await import('./js/auth.js');
-                styrOversiktslenker(api);
-                return;
-            }
+            const { api } = await import('./js/api-client.js');
+            const { styrOversiktslenker } = await import('./js/auth.js');
+            // Lenken til skjemaoversikten er bare for admin, skjemaskapere
+            // og eiere. Serveren avgjør, ikke denne siden.
+            styrOversiktslenker(api);
+
+            // Samtalen trenger begge ID-ene; oversiktslenken gjør ikke det.
+            if (skjemaId === '(mangler)' || skjematypeId === '(mangler)') return;
+
             try {
-                const { api } = await import('./js/api-client.js');
-                const { styrOversiktslenker } = await import('./js/auth.js');
-                // Lenken til skjemaoversikten er bare for admin, skjemaskapere
-                // og eiere. Serveren avgjør, ikke denne siden.
-                styrOversiktslenker(api);
-                const svar = await api.get(
-                    `/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/samtale`,
-                    { hopperOver401: true });
-                if (!svar?.synlig || !svar?.kanSkrive) return;
-                document.getElementById('start-samtale').href = visningsUrl + '#samtale';
-                document.getElementById('samtale-rad').hidden = false;
-                document.getElementById('samtale-hjelp').hidden = false;
+                const { byggSamtale } = await import('./js/samtale.js');
+                const widget = byggSamtale(document.getElementById('samtale'), {
+                    api, skjematypeId, skjemaId,
+                    infotekst: 'Alle som behandler saken ser det du skriver her. '
+                        + 'Samtalen arkiveres sammen med saken. Ikke skriv sensitive personopplysninger.'
+                });
+                widget.start();
+                // Uten stopp lever pollingen videre når fanen forlates.
+                window.addEventListener('pagehide', () => widget.stopp());
             } catch (_) {
                 // Samtalen er av (404), brukeren er ekstern uten token (401),
                 // eller API-et er nede. Ingen av delene er noe kvitteringen

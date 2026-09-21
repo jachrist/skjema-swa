@@ -184,7 +184,42 @@ async function deltakere() {
     sjekk('navnet er med', innlogget.navn, 'Per Hansen');
     sjekk('kilden er swa', innlogget.kilde, 'swa');
 
-    console.log(`\n${ok} OK, ${feil} feil`);
+    // ---------- varsel bare ved første innlegg ----------
+{
+    // Avtalt med oppdragsgiver (TODO 69): varsel ved det første innlegget,
+    // ikke ved hvert svar. Det første er det eneste som forteller mottakeren
+    // at saken har fått en samtale — resten kommer til folk som vet det.
+    sjekk('tom tråd varsles', t.skalVarsle({ antallInnleggFoer: 0 }), true);
+    sjekk('svar nummer to varsles ikke', t.skalVarsle({ antallInnleggFoer: 1 }), false);
+    sjekk('og heller ikke nummer ti', t.skalVarsle({ antallInnleggFoer: 9 }), false);
+
+    // Mangler tallet, regnes tråden som tom. Det sender ett varsel for mye
+    // heller enn å tie stille — en stille varsling er den feilen ingen melder.
+    sjekk('manglende tall varsler', t.skalVarsle({}), true);
+    sjekk('undefined varsler', t.skalVarsle({ antallInnleggFoer: undefined }), true);
+}
+
+// ---------- endepunktet bruker regelen ----------
+{
+    // Regelen er verdiløs hvis POST-endepunktet ikke spør om den. Uten denne
+    // sjekken kunne `skalVarsle` vært riktig og likevel aldri kalt.
+    const fs = require('fs');
+    const path = require('path');
+    const kode = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'functions', 'samtale.js'), 'utf8')
+        .replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
+
+    sjekk('endepunktet spør skalVarsle',
+        /samtaleTilgang\.skalVarsle\(/.test(kode), true);
+    // Antallet må være det som gjaldt FØR innlegget ble lagt til. Telles det
+    // på nytt etterpå, er tråden aldri tom og ingen blir varslet.
+    sjekk('med antallet talt før innlegget',
+        /skalVarsle\(\{ antallInnleggFoer: antallInnlegg \}\)/.test(kode), true);
+    sjekk('og varslingen ligger inne i sjekken',
+        /skalVarsle\([^)]*\)\)\s*\{[\s\S]*?sendSamtaleVarsling/.test(kode), true);
+}
+
+console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 }
 

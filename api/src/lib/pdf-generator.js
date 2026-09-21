@@ -6,7 +6,7 @@
  *   - Header + metadata (skjema-navn, id, innsender, datoer)
  *   - Behandlingshistorikk (steg med Beslutning != 0)
  *   - Seksjoner + spørsmål/svar (to-kolonne rad-layout)
- *   - Dialog (ekstern + intern)
+ *   - Tidligere dialog (ekstern + intern), fra før Samtale fantes
  *   - Vedlegg: forside per fil, PNG/JPG embeddes, PDF-vedlegg merges
  *   - Footer: skjema-ID venstre, sidenummer høyre
  */
@@ -291,12 +291,15 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
         }
     }
 
-    // === DIALOG ===
+    // === TIDLIGERE DIALOG (før Samtale) ===
     const dialog = Array.isArray(skjema.Dialog) ? skjema.Dialog : [];
     if (dialog.length > 0) {
         const ekstern = dialog.filter(i => (i.Type || i.DialogType) === 'ekstern');
         const intern = dialog.filter(i => (i.Type || i.DialogType) === 'intern');
-        for (const [tittel, innlegg] of [['Ekstern dialog', ekstern], ['Intern dialog', intern]]) {
+        // «Ekstern dialog» het slik da det var den eneste veien til
+        // innsenderen. Nå er det Samtale, og disse er historikk — navnene
+        // følger grensesnittet, så en PDF og en skjerm sier det samme.
+        for (const [tittel, innlegg] of [['Tidligere meldinger', ekstern], ['Intern dialog (kun saksbehandlere)', intern]]) {
             if (innlegg.length === 0) continue;
             nyLinje(15);
             skrivTekst(tittel, 10, fontBold, BLAA);

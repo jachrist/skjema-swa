@@ -198,13 +198,20 @@ app.http('samtaleSkriv', {
             // Varsling etter at innlegget er lagret, og aldri slik at den kan
             // velte svaret: innlegget ER skrevet, og en feilende e-post skal
             // ikke få klienten til å tro noe annet og la brukeren sende igjen.
-            try {
-                const st = await skjemaStorage.hentSkjematype(funn.skjematypeId);
-                await varsling.sendSamtaleVarsling(funn.skjema, st?.JSON || {}, innlegg, {
-                    log: (m) => context.log(m), request
-                });
-            } catch (e) {
-                context.log(`samtale: varsling feilet — ${e.message}`);
+            //
+            // `antallInnlegg` er talt FØR innlegget over ble lagt til, så null
+            // betyr at dette innlegget startet samtalen.
+            if (samtaleTilgang.skalVarsle({ antallInnleggFoer: antallInnlegg })) {
+                try {
+                    const st = await skjemaStorage.hentSkjematype(funn.skjematypeId);
+                    await varsling.sendSamtaleVarsling(funn.skjema, st?.JSON || {}, innlegg, {
+                        log: (m) => context.log(m), request
+                    });
+                } catch (e) {
+                    context.log(`samtale: varsling feilet — ${e.message}`);
+                }
+            } else {
+                context.log(`samtale: innlegg nr ${antallInnlegg + 1} — varsles ikke (bare første)`);
             }
 
             return { status: 201, jsonBody: { status: 'ok', innlegg } };

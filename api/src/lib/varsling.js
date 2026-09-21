@@ -864,9 +864,13 @@ async function sendSamtaleVarsling(skjema, skjematype, innlegg, opts = {}) {
         return { status: 'hoppet-over' };
     }
 
-    // Innsenderen leser samtalen i visning.html, behandlerne i evaluering.html.
-    // Én felles lenke ville sendt den ene parten til en side hen ikke har
-    // tilgang til — og da ser det ut som at samtalen er borte.
+    // Innsenderen leser samtalen på kvitteringen, behandlerne i
+    // evaluering.html. Én felles lenke ville sendt den ene parten til en side
+    // hen ikke har tilgang til — og da ser det ut som at samtalen er borte.
+    //
+    // kvittering.html og ikke visning.html: kvitteringen er siden innsenderen
+    // allerede kjenner fra innsendingen, og den viser nå samtalen selv i
+    // stedet for å peke videre til den.
     //
     // Derfor to kall, ett per gruppe, med hver sin ferdig oppløste $lenke.
     // Payloaden har riktignok et `lenker`-felt for URL per mottaker, men INGEN
@@ -875,15 +879,20 @@ async function sendSamtaleVarsling(skjema, skjematype, innlegg, opts = {}) {
     // som allerede går i produksjon hver dag.
     const kontekst = byggKontekst({ skjema, skjematype, lenke: undefined });
     const navn = innlegg?.AvsenderNavn || innlegg?.Avsender || 'En deltaker';
-    const emne = `Nytt innlegg i samtalen: "${kontekst.skjemanavn}" (${skjemaId})`;
+    const emne = `Ny samtale om "${kontekst.skjemanavn}" (${skjemaId})`;
 
+    // Varselet sendes bare ved det FØRSTE innlegget (se `skalVarsle` i
+    // samtale-tilgang.js), så teksten sier at en samtale er startet. «Nytt
+    // innlegg» ville vist til en tråd mottakeren ennå ikke vet om.
+    //
     // Teksten i innlegget er bevisst ikke med — se kommentaren over funksjonen.
-    const brødtekst = `<p>${navn} har skrevet et nytt innlegg i samtalen om skjemaet `
+    const brødtekst = `<p>${navn} har startet en samtale om skjemaet `
         + `"${kontekst.skjemanavn}" (${skjemaId}).</p>`
-        + `<p><a href="$lenke">Åpne samtalen</a></p>`;
+        + `<p><a href="$lenke">Åpne samtalen</a></p>`
+        + `<p>Du får ikke varsel om hvert svar i samtalen. Åpne lenken for å se hele tråden.</p>`;
 
     const grupper = [
-        { side: 'visning.html', mottakere: aktuelle.filter(m => m.epost === innsender) },
+        { side: 'kvittering.html', mottakere: aktuelle.filter(m => m.epost === innsender) },
         { side: 'evaluering.html', mottakere: aktuelle.filter(m => m.epost !== innsender) }
     ];
 

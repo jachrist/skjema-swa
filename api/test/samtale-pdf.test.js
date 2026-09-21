@@ -65,8 +65,13 @@ const generator = les('lib/pdf-generator.js');
 
     // Avsender, dato og tekst — uten dem er utskriften en vegg av tekst der
     // ingen kan se hvem som sa hva.
+    // Slutten er markøren for den gamle dialogen. Den var hardkodet som
+    // '// === DIALOG ===' og røk da seksjonen ble omdøpt — et testbrudd på en
+    // ren navneendring. Regexen tåler at ordene rundt endrer seg, men krever
+    // fortsatt at markøren finnes.
     const start = generator.indexOf('// === SAMTALE ===');
-    const slutt = generator.indexOf('// === DIALOG ===', start);
+    const m = /\/\/ === [A-ZÆØÅ ]*DIALOG[^\n]*===/.exec(generator.slice(start));
+    const slutt = m ? start + m.index : -1;
     sjekk('fant samtale-blokken', start !== -1 && slutt > start, true);
     const blokk = generator.slice(start, slutt);
 
