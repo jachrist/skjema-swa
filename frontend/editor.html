@@ -638,7 +638,7 @@
         import { FELTTYPER, renderTekst } from './js/felt-render.js';
         import { byggDNFEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn, invaliderRolleCache } from './js/tilgang-editor.js';
-        import { apneMeldingModal, samleFeltreferanser } from './js/melding-editor.js';
+        import { apneMeldingModal, samleFeltreferanser, EPOST_IKON } from './js/melding-editor.js';
         import { migrerFeltreferanser } from './js/feltref-migrering.js';
         import { byggMdEditor } from './js/md-editor.js';
 
@@ -930,7 +930,7 @@
                                 <input type="checkbox" id="kv-aktiv" ${data.Innsenderkvittering?.Aktiv !== false ? 'checked' : ''} onchange="setKvitteringAktiv(this.checked)">
                                 Send kvittering
                             </label>
-                            <button class="knapp mini sekundær" onclick="apneKvitteringEditor()" id="kv-rediger">Rediger melding…</button>
+                            <button class="knapp mini sekundær" onclick="apneKvitteringEditor()" id="kv-rediger" title="Sendes som e-post">${EPOST_IKON} Rediger melding…</button>
                         </div>
                         <div class="melding-oppsummering" id="kv-oppsummering"></div>
                         <div style="margin-top: 8px;">
@@ -949,7 +949,7 @@
                                 <input type="checkbox" id="fv-aktiv" ${data.Ferdigvarsling?.Aktiv === true ? 'checked' : ''} onchange="setFerdigvarslingAktiv(this.checked)">
                                 Send ferdigvarsling
                             </label>
-                            <button class="knapp mini sekundær" onclick="apneFerdigvarslingEditor()">Rediger melding…</button>
+                            <button class="knapp mini sekundær" onclick="apneFerdigvarslingEditor()" title="Sendes som e-post">${EPOST_IKON} Rediger melding…</button>
                         </div>
                         <div style="font-size: 11px; color: var(--text-secondary); margin: 4px 0;">
                             Sendes når siste behandlingssteg er avgjort. Feltreferanser i mottakerrollen slås opp
@@ -1381,7 +1381,8 @@
             const valgHtml = (steg.Beslutningsvalg || []).map((v, vIdx) => {
                 const nr = Number(v.Nummer ?? vIdx + 1);
                 const fbTreff = (steg.FraBehandler || []).find(f => Number(f.BeslutningNr) === nr);
-                const fbTekst = fbTreff?.Emne ? '✏️ Egen melding' : 'Standardmelding';
+                const fbEgen = !!fbTreff?.Emne;
+                const fbTekst = `${EPOST_IKON} ${fbEgen ? 'Egen melding ✓' : 'Standardmelding'}`;
                 return `
                 <div class="valg-rad">
                     <input type="number" value="${v.Nummer ?? vIdx + 1}" min="1" style="width: 60px;"
@@ -1392,7 +1393,7 @@
                         <option value="" ${!v.Handling ? 'selected' : ''}>Vanlig</option>
                         <option value="ompuss" ${v.Handling === 'ompuss' ? 'selected' : ''}>Ompuss (retur)</option>
                     </select>
-                    <button class="knapp mini sekundær" onclick="apneFraBehandlerEditor(${idx}, ${nr})" title="Redigér tilbakemelding til innsender for denne beslutningen">${fbTekst}</button>
+                    <button class="knapp mini sekundær ${fbEgen ? 'konfigurert' : ''}" onclick="apneFraBehandlerEditor(${idx}, ${nr})" title="E-post til innsender når denne beslutningen tas">${fbTekst}</button>
                     <button class="knapp mini danger" onclick="fjernBeslutningsvalg(${idx}, ${vIdx})">✕</button>
                 </div>
             `;}).join('');
@@ -1427,7 +1428,11 @@
             ).join('');
 
             const varsling = Array.isArray(steg.Varsling) ? steg.Varsling : ['epost'];
-            const tbTekst = steg.TilBehandler?.Emne ? '✏️ Egen melding' : 'Standardmelding';
+            // Ikonet står først og alltid — det er merkingen. Teksten bak
+            // sier om malen er overstyrt, og ✓ følger samme mønster som
+            // Teams/Planner-knappene ved siden av.
+            const tbEgen = !!steg.TilBehandler?.Emne;
+            const tbTekst = `${EPOST_IKON} ${tbEgen ? 'Egen melding ✓' : 'Standardmelding'}`;
             const varslingHtml = `
                 <div class="rad">
                     <label>Varsling <small>(kanaler ved aktivering av steget)</small></label>
@@ -1450,7 +1455,8 @@
                         </label>
                     </div>
                     <div class="kanal-oppsett">
-                        <button class="knapp mini sekundær" onclick="apneTilBehandlerEditor(${idx})">${tbTekst} — til behandler</button>
+                        <button class="knapp mini sekundær ${tbEgen ? 'konfigurert' : ''}" title="E-post til behandler"
+                            onclick="apneTilBehandlerEditor(${idx})">${tbTekst} — til behandler</button>
                         ${varsling.includes('teams') ? `
                             <button class="knapp mini sekundær ${harOppsett(steg.TeamsMelding) ? 'konfigurert' : ''}"
                                 onclick="apneTeamsMeldingEditor(${idx})">
