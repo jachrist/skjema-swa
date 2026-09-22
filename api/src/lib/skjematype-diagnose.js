@@ -163,21 +163,22 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
     const plan = String(p?.TeamOgPlan || '').trim();
     const bucket = String(p?.Bucket || '').trim();
 
-    // Samme resonnement som for Teams-kanal: «Tomme felter overlates til
-    // flyten, som før» står i editorens egen hjelpetekst. Oppgaven opprettes,
-    // den havner bare i flytens standardplan.
+    // Rødt, i motsetning til Teams-kanal. Editorens hjelpetekst sier at tomme
+    // felter overlates til flyten, men det finnes INGEN standardplan å falle
+    // tilbake på (bekreftet av oppdragsgiver 22.09.2026). Uten plan blir det
+    // ingen oppgave — og ingen som venter på den, får vite det.
     if (!plan) {
         funn.push({
-            alvor: 'advarsel', kode: 'planner.mangler-plan', sted,
-            melding: 'Planner er slått på, men «Team og plan» er tom. Oppgaven havner i flytens '
-                + 'egen standardplan.'
+            alvor: 'feil', kode: 'planner.mangler-plan', sted,
+            melding: 'Planner er slått på, men «Team og plan» er tom. Det finnes ingen '
+                + 'standardplan å falle tilbake på, så ingen oppgave blir opprettet.'
         });
     }
     if (bucket && !plan) {
         funn.push({
             alvor: 'feil', kode: 'planner.bucket-uten-plan', sted,
             melding: `Bucket «${bucket}» er satt uten at «Team og plan» er fylt ut. `
-                + 'Bucketen finnes ikke i flytens standardplan.'
+                + 'Uten plan finnes det ingen bucket å legge oppgaven i.'
         });
     }
     // «Team og plan» er ETT felt med TO verdier, skilt med kolon — feltets egen
@@ -187,6 +188,17 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
     //
     // Med plassholder i verdien kan kolonet komme fra svaret («{1-1}» kan
     // løse seg til «Team:Plan»), og da vet vi ikke nok til å melde feil.
+    // Bucket er noe annet enn plan: den HAR et standardvalg. En oppgave uten
+    // bucket havner i planens felles bucket, og det virker — den er bare
+    // vanskeligere å finne igjen. Meldes bare når planen er satt; er den tom,
+    // sier linja over allerede det som må sies.
+    if (plan && !bucket) {
+        funn.push({
+            alvor: 'advarsel', kode: 'planner.mangler-bucket', sted,
+            melding: 'Bucket er tom. Oppgaven havner i planens felles bucket.'
+        });
+    }
+
     let planAlleredeMeldt = false;
     if (plan && !plan.includes(':')) {
         planAlleredeMeldt = true;

@@ -137,6 +137,7 @@ async function kjor() {
         }, { antallInnehavere: roller(3) });
         sjekk('bucket uten plan', harKode(utenPlan, 'planner.bucket-uten-plan'), true);
         sjekk('og manglende plan', harKode(utenPlan, 'planner.mangler-plan'), true);
+        sjekk('begge er feil', utenPlan.sammendrag.feil, 2);
 
         // Oppsett som aldri brukes: virker, men gjør ikke det eieren tror.
         const ikkeAktiv = await d.diagnoser({
@@ -165,15 +166,19 @@ async function kjor() {
         sjekk('meldingen foreslår formen',
             bareTeam.funn[0].melding.includes('Automatisering:Oppgaver'), true);
 
-        sjekk('riktig form gir ingenting', (await medPlan('Automatisering:Oppgaver')).funn, []);
+        // Bare plan-feltet vurderes her; en tom bucket gir sin egen advarsel,
+        // og den hører til i blokka under.
+        const planFunn = (r) => r.funn.filter(f => f.kode.startsWith('planner.plan')).map(f => f.kode);
+        sjekk('riktig form gir ingenting om planen',
+            planFunn(await medPlan('Automatisering:Oppgaver')), []);
 
         // En plassholder kan løse seg til «Team:Plan». Da vet vi ikke nok til
         // å melde feil — men vi skal si at det ikke kan sjekkes.
         const ukjent = await medPlan('{1-1}');
         sjekk('plassholder uten kolon gir info', harKode(ukjent, 'planner.plan-form-ukjent'), true);
         sjekk('og ikke feil', ukjent.sammendrag.feil, 0);
-        // Og bare ÉN linje om samme felt — to er støy.
-        sjekk('ikke to meldinger om samme felt', ukjent.funn.length, 1);
+        // Og bare ÉN linje om plan-feltet — to er støy.
+        sjekk('ikke to meldinger om samme felt', planFunn(ukjent).length, 1);
 
         // Kolon i den faste delen: formen er i orden, men verdien kan fortsatt
         // ikke sjekkes.
@@ -252,11 +257,42 @@ async function kjor() {
         sjekk('og meldingen sier hva som skjer',
             tomKanal.funn[0].melding.includes('standard'), true);
 
+        // Planner er ANNERLEDES enn Teams-kanal, og det er domenekunnskap
+        // som ikke står i editorens hjelpetekst: det finnes ingen standardplan
+        // å falle tilbake på (bekreftet av oppdragsgiver 22.09.2026). Uten
+        // plan blir det ingen oppgave, og da er rødt riktig.
         const tomPlan = await d.diagnoser({
             Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['planner'], PlannerOppgave: {} }]
         }, { antallInnehavere: roller(3) });
-        sjekk('tom planner gir advarsel, ikke feil', tomPlan.sammendrag.feil, 0);
-        sjekk('men den sies fra om', tomPlan.sammendrag.advarsel, 1);
+        sjekk('tom plan er en FEIL', harKode(tomPlan, 'planner.mangler-plan'), true);
+        sjekk('og meldes som feil',
+            tomPlan.funn.find(f => f.kode === 'planner.mangler-plan').alvor, 'feil');
+        sjekk('meldingen sier at det ikke finnes noen standardplan',
+            tomPlan.funn[0].melding.includes('ingen standardplan'), true);
+        // Uten plan skal bucket-advarselen IKKE komme i tillegg — linja over
+        // sier allerede det som må sies, og to linjer om samme felt er støy.
+        sjekk('ingen bucket-advarsel uten plan', harKode(tomPlan, 'planner.mangler-bucket'), false);
+
+        // Bucket HAR derimot et standardvalg: oppgaven havner i planens
+        // felles bucket. Den er vanskeligere å finne igjen, men den finnes.
+        const utenBucket = await d.diagnoser({
+            Behandling: [{
+                Steg: 1, Personer: ['a@b.no'], Varsling: ['planner'],
+                PlannerOppgave: { TeamOgPlan: 'Automatisering:Oppgaver' }
+            }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('manglende bucket gir advarsel', harKode(utenBucket, 'planner.mangler-bucket'), true);
+        sjekk('og ingen feil', utenBucket.sammendrag.feil, 0);
+        sjekk('meldingen sier hvor den havner',
+            utenBucket.funn[0].melding.includes('felles bucket'), true);
+
+        const komplett = await d.diagnoser({
+            Behandling: [{
+                Steg: 1, Personer: ['a@b.no'], Varsling: ['planner'],
+                PlannerOppgave: { TeamOgPlan: 'Automatisering:Oppgaver', Bucket: 'Til godkjenning' }
+            }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('komplett planner gir ingenting', komplett.funn, []);
 
         // Bucket uten plan er fortsatt en FEIL: en bucket i en plan man ikke
         // har navngitt, finnes ikke i flytens standardplan.

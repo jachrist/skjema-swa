@@ -46,7 +46,8 @@ riktig, og sluttet å tro på lista.
 
 | Kode | Når |
 |---|---|
-| `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom *(advarsel — flytens standardplan)* |
+| `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom — **feil**, det finnes ingen standardplan |
+| `planner.mangler-bucket` | Plan satt, bucket tom *(advarsel — havner i planens felles bucket)* |
 | `planner.plan-uten-plan` | `TeamOgPlan` mangler plandelen — «Automatisering» i stedet for «Automatisering:Oppgaver» |
 | `planner.plan-form-ukjent` | Som over, men verdien har plassholder — kolonet kan komme fra svaret *(info)* |
 | `planner.bucket-uten-plan` | Bucket satt uten plan |
@@ -79,19 +80,28 @@ merke seg hvorfor regelsettet bommet: den opprinnelige regelen spurte bare om
 feltet var utfylt. «Utfylt» og «riktig» er ikke det samme, og et felt som
 rommer to verdier trenger en regel om formen.
 
-### Tomt felt er ikke en feil
+### Tomt felt: det kommer an på om flyten har et standardvalg
 
-Editorens egne hjelpetekster sier det: «Tomme felter overlates til flyten, som
-før» (Planner) og «Står team eller kanal tomt, bruker flyten sitt eget
-standardvalg» (Teams-kanal). Det **virker** — innlegget havner bare et annet
-sted enn skjemaeier kanskje tror.
+Editorens hjelpetekster sier at tomme felter overlates til flyten. Men om det
+finnes noe å falle tilbake på, varierer — og det er domenekunnskap som ikke
+står noe sted i koden. Avklart med oppdragsgiver 22.09.2026:
 
-Derfor er de `advarsel`, ikke `feil`. En rød linje på noe som fungerer er den
-formen for feilmelding som gjør at folk slutter å lese lista.
+| Felt | Standardvalg | Nivå |
+|---|---|---|
+| Teams-kanal → Kanal | «Generelt» | advarsel |
+| Teams-kanal → Team | flytens eget valg | advarsel |
+| Planner → Team og plan | **ingen** | **feil** |
+| Planner → Bucket | planens felles bucket | advarsel |
 
-Unntaket er `planner.bucket-uten-plan`: en bucket i en plan man ikke har
-navngitt, finnes ikke i flytens standardplan. Den er selvmotsigende, og
-fortsatt `feil`.
+`planner.mangler-plan` er altså rød der de andre er gule: uten plan blir det
+ingen oppgave, og ingen som venter på den får vite det.
+
+`planner.bucket-uten-plan` er også rød — uten plan finnes det ingen bucket å
+legge oppgaven i, og verdien er selvmotsigende.
+
+Poenget med skillet: en rød linje på noe som fungerer er den formen for
+feilmelding som gjør at folk slutter å lese lista. En gul linje på noe som
+IKKE fungerer er like ille motsatt vei.
 
 ### Feltnavnene må være dem varslingen leser
 
