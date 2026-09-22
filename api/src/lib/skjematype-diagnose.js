@@ -163,16 +163,21 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
     const plan = String(p?.TeamOgPlan || '').trim();
     const bucket = String(p?.Bucket || '').trim();
 
+    // Samme resonnement som for Teams-kanal: «Tomme felter overlates til
+    // flyten, som før» står i editorens egen hjelpetekst. Oppgaven opprettes,
+    // den havner bare i flytens standardplan.
     if (!plan) {
         funn.push({
-            alvor: 'feil', kode: 'planner.mangler-plan', sted,
-            melding: 'Planner er slått på, men «Team og plan» er tom. Ingen oppgave kan opprettes.'
+            alvor: 'advarsel', kode: 'planner.mangler-plan', sted,
+            melding: 'Planner er slått på, men «Team og plan» er tom. Oppgaven havner i flytens '
+                + 'egen standardplan.'
         });
     }
     if (bucket && !plan) {
         funn.push({
             alvor: 'feil', kode: 'planner.bucket-uten-plan', sted,
-            melding: `Bucket «${bucket}» er satt uten at «Team og plan» er fylt ut.`
+            melding: `Bucket «${bucket}» er satt uten at «Team og plan» er fylt ut. `
+                + 'Bucketen finnes ikke i flytens standardplan.'
         });
     }
     // «Team og plan» er ETT felt med TO verdier, skilt med kolon — feltets egen
@@ -211,10 +216,19 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
     }
 }
 
-/** Teamskanal-oppsettet for ett steg. */
+/**
+ * Teamskanal-oppsettet for ett steg.
+ *
+ * Feltet heter `TeamsKanalInnlegg` — det er navnet editoren skriver og
+ * `varsling.js:byggTeamskanal` leser. Første versjon her leste `Teamskanal`,
+ * et navn som ikke finnes noe sted, og meldte derfor begge feltene som tomme
+ * uansett hva som sto i dem. Testene gikk grønt fordi testdataene brukte det
+ * oppdiktede navnet; en test som sammenligner mot varsling.js står nå i
+ * skjematype-diagnose.test.js.
+ */
 function sjekkTeamskanal(steg, nr, aktiv, funn) {
-    const t = steg?.Teamskanal;
-    const harOppsett = !!(t && (t.Team || t.Kanal || t.Tittel));
+    const t = steg?.TeamsKanalInnlegg;
+    const harOppsett = !!(t && (t.Team || t.Kanal || t.Tittel || t.Innhold));
     const sted = stedFor(steg, nr, 'Teams-kanal');
 
     if (harOppsett && !aktiv) {
@@ -230,16 +244,23 @@ function sjekkTeamskanal(steg, nr, aktiv, funn) {
     const team = String(t?.Team || '').trim();
     const kanal = String(t?.Kanal || '').trim();
 
+    // Advarsel, ikke feil. Editorens egen hjelpetekst sier «Står team eller
+    // kanal tomt, bruker flyten sitt eget standardvalg» — det VIRKER altså,
+    // det havner bare et annet sted enn skjemaeier kanskje tror. En rød linje
+    // på noe som fungerer er den formen for feilmelding som gjør at folk
+    // slutter å lese lista.
     if (!team) {
         funn.push({
-            alvor: 'feil', kode: 'teamskanal.mangler-team', sted,
-            melding: 'Teams-kanal er slått på, men «Team» er tom.'
+            alvor: 'advarsel', kode: 'teamskanal.mangler-team', sted,
+            melding: 'Teams-kanal er slått på, men «Team» er tom. Innlegget havner i flytens '
+                + 'eget standardteam.'
         });
     }
     if (!kanal) {
         funn.push({
-            alvor: 'feil', kode: 'teamskanal.mangler-kanal', sted,
-            melding: 'Teams-kanal er slått på, men «Kanal» er tom.'
+            alvor: 'advarsel', kode: 'teamskanal.mangler-kanal', sted,
+            melding: 'Teams-kanal er slått på, men «Kanal» er tom. Innlegget havner i flytens '
+                + 'egen standardkanal.'
         });
     }
     for (const [navn, verdi] of [['Team', team], ['Kanal', kanal]]) {
