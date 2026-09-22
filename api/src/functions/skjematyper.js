@@ -5,6 +5,7 @@
  *   GET  /api/skjematyper/:id       — hent én skjematype (må ha tilgang)
  *   POST /api/skjematyper           — opprett/oppdater (admin only)
  *   GET  /api/skjematyper/:id/kan-svare — har jeg svar igjen på denne?
+ *   GET  /api/skjematyper/:id/diagnose  — hva vil feile når den brukes?
  *
  * Auth via SWA — bruker plukkes fra x-ms-client-principal-header.
  */
@@ -21,6 +22,7 @@ const gevinstSjekk = require('../lib/gevinst-sjekk');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const svarReparasjon = require('../lib/svar-reparasjon');
 const svargrense = require('../lib/svargrense');
+const diagnose = require('../lib/skjematype-diagnose');
 const { velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 // Modulobjekt, ikke destrukturert: testen bytter ut begge for aa slippe en
 // ekte lagringskonto. Destrukturert ville stubben vaert virkningslos.
@@ -178,6 +180,43 @@ app.http('hentSkjematypeEkstern', {
         } catch (e) {
             context.log('publikum-skjematype FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * Hva vil feile når denne skjematypen brukes?
+ *
+ * Kjøres av editoren rett ETTER lagring, og av «Sjekk oppsettet»-knappen.
+ *
+ * Etter, ikke før: diagnosen skal aldri kunne hindre noen i å lagre. Den som
+ * nettopp skrev et teamnavn feil, er også den som skal kunne lagre rettelsen
+ * — og et oppslag som henger, ville tatt den muligheten fra hen.
+ *
+ * Eier eller admin. En skjematype-diagnose sier hvilke roller som er tomme og
+ * hvilke lister som er satt opp; det er ikke noe alle skal kunne lese.
+ */
+app.http('skjematypeDiagnose', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/{id}/diagnose',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        try {
+            const skjematypeId = String(request.params.id || '');
+            const st = await skjemaStorage.hentSkjematype(skjematypeId);
+            if (!st) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
+
+            const tillatt = await harEierPåType(skjematypeId, upn);
+            if (!tillatt) {
+                return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin' } };
+            }
+
+            return { jsonBody: await diagnose.diagnoser(st.JSON || {}) };
+        } catch (e) {
+            context.log('skjematype-diagnose FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: 'Kunne ikke kjøre diagnosen' } };
         }
     }
 });

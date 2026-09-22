@@ -31,6 +31,10 @@
             --accent-light: rgba(10, 132, 255, 0.12);
             --danger: #ff3b30;
             --danger-light: rgba(255, 59, 48, 0.1);
+            /* Diagnosen trenger disse. Samme verdier som visning.html og
+               admin.html, så et funn ser likt ut uansett hvor det vises. */
+            --success: #34c759;
+            --warning: #ff9500;
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 18px;
@@ -49,7 +53,9 @@
             --input-border: #3a3a5a;
             --bg-seksjon: rgba(100, 181, 246, 0.12);
             --seksjon-kant: rgba(100, 181, 246, 0.32);
-        }
+                    --success: #30d158;
+            --warning: #ff9f0a;
+}
         * { box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
@@ -470,6 +476,33 @@
         }
         .nullpunkt-advarsel strong { color: var(--danger); }
 
+        /* ===== Diagnose av oppsettet ===== */
+        .diagnose {
+            margin: 0 0 16px;
+            padding: 12px 16px;
+            font-size: 13px;
+            line-height: 1.5;
+            background: var(--bg-section);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+        }
+        .diagnose-topp {
+            display: flex; gap: 12px; align-items: baseline; justify-content: space-between;
+        }
+        .diagnose-tittel { font-weight: 600; }
+        .diagnose-funn { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+        .diagnose-linje {
+            display: flex; gap: 8px; align-items: flex-start;
+            padding: 6px 10px; border-radius: var(--radius-sm);
+            border-left: 3px solid var(--border-color);
+            background: var(--bg-container);
+        }
+        .diagnose-linje.feil { border-left-color: var(--danger); }
+        .diagnose-linje.advarsel { border-left-color: var(--warning); }
+        .diagnose-linje.info { border-left-color: var(--accent); }
+        .diagnose-sted { font-weight: 600; white-space: nowrap; }
+        .diagnose-ok { color: var(--success); }
+
         /* ===== Kanaloppsett per steg ===== */
         .kanal-oppsett { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
         /* En kanal med eget oppsett skal skille seg fra en som arver e-postmalen. */
@@ -840,6 +873,7 @@
                     <span id="lagre-status" class="lagre-status"></span>
                     <button class="knapp sekundær" onclick="visForhandsvisning()" title="Åpne skjemaet i ny fane med gjeldende (ulagrede) endringer">👁 Vis skjema</button>
                     ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}&fra=editor" target="_blank">🧪 Test utfylling (lagret)</a>` : ''}
+                    ${eksisterendeId ? `<button class="knapp sekundær" onclick="sjekkOppsettet()" title="Finner roller uten medlemmer, oppsett som ikke brukes og referanser til felter som ikke finnes">🩺 Sjekk oppsettet</button>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="kopier()">📋 Kopier</button>` : ''}
                     ${meg?.erAdmin ? `<button class="knapp sekundær" onclick="apneAiImportModal()" title="Last opp bilde eller PDF av papirskjema — AI genererer definisjonen">🤖 Importer med AI…</button>` : ''}
                     ${kanSlett ? `<button class="knapp danger" style="margin-left: auto;" onclick="aapneSlettModal()">🗑 Slett</button>` : ''}
@@ -1597,6 +1631,75 @@
             innhold.insertBefore(el, innhold.firstChild);
             el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
+
+        /**
+         * Diagnose av oppsettet.
+         *
+         * Kjøres rett ETTER lagring, og av «Sjekk oppsettet»-knappen.
+         *
+         * Etter, ikke før: den skal aldri kunne hindre noen i å lagre. Den som
+         * nettopp skrev et teamnavn feil er også den som skal kunne lagre
+         * rettelsen, og et oppslag som henger ville tatt den muligheten fra hen.
+         *
+         * Feiler kallet, vises ingenting. Diagnosen er en hjelp, ikke en port —
+         * en feilmelding om at hjelpen ikke virket, er bare støy for den som
+         * holder på med noe annet.
+         */
+        async function kjorDiagnose({ stille = false } = {}) {
+            if (!data.Skjematype_id) return;
+            let res;
+            try {
+                res = await api.get(`/api/skjematyper/${encodeURIComponent(data.Skjematype_id)}/diagnose`);
+            } catch (_) {
+                return;
+            }
+            visDiagnose(res, { stille });
+        }
+
+        function visDiagnose(res, { stille = false } = {}) {
+            document.getElementById('diagnose-boks')?.remove();
+            const funn = res?.funn || [];
+            const s = res?.sammendrag || {};
+
+            // Ingenting å si, og ingen som spurte: ikke ta plass.
+            if (funn.length === 0 && stille) return;
+
+            const el = document.createElement('div');
+            el.id = 'diagnose-boks';
+            el.className = 'diagnose';
+            const tall = [
+                s.feil ? `${s.feil} feil` : '',
+                s.advarsel ? `${s.advarsel} advarsel${s.advarsel === 1 ? '' : 'er'}` : '',
+                s.info ? `${s.info} kan ikke sjekkes` : ''
+            ].filter(Boolean).join(' · ');
+
+            el.innerHTML = `
+                <div class="diagnose-topp">
+                    <span class="diagnose-tittel">Oppsettet</span>
+                    <span>${funn.length === 0
+                        ? '<span class="diagnose-ok">Ingenting å bemerke ✓</span>'
+                        : escapeHtml(tall)}</span>
+                    <button class="knapp mini sekundær" title="Lukk">✕</button>
+                </div>
+                ${funn.length === 0 ? '' : `<div class="diagnose-funn">${funn.map(f => `
+                    <div class="diagnose-linje ${escapeHtml(f.alvor)}">
+                        <span class="diagnose-sted">${escapeHtml(f.sted)}</span>
+                        <span>${escapeHtml(f.melding)}</span>
+                    </div>`).join('')}</div>`}
+            `;
+            el.querySelector('button').addEventListener('click', () => el.remove());
+            const innhold = document.getElementById('innhold');
+            innhold.insertBefore(el, innhold.firstChild);
+            if (!stille) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        window.sjekkOppsettet = async () => {
+            if (!data.Skjematype_id) {
+                toast('Lagre skjematypen først', 'feil');
+                return;
+            }
+            await kjorDiagnose({ stille: false });
+        };
 
         // ==================== KANALOPPSETT PER STEG ====================
         //
@@ -3746,6 +3849,11 @@
                 // så advarselen står til den lukkes, i motsetning til toasten.
                 if (svar.advarsel) visNullpunktAdvarsel(svar.advarsel);
                 toast('Lagret ✓');
+                // Etter lagring, og uten å vente på svaret: lagringen er
+                // ferdig, og diagnosen skal ikke forsinke tilbakemeldingen om
+                // at den gikk bra. `stille` gjør at en ren skjematype ikke
+                // får en boks som bare sier at alt er i orden.
+                kjorDiagnose({ stille: true });
                 // Hvis dette var ny, oppdater URL slik at ytterligere lagringer blir oppdatering
                 if (svar.erNy) {
                     const nyUrl = `/editor.html?skjematype_id=${encodeURIComponent(svar.Skjematype_id)}`;
