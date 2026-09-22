@@ -8,6 +8,7 @@
  * Env-vars:
  *   VARSLING_FLOW_URL     — PA-endepunkt for behandlings-varsling (epost/teams/planner/teamskanal)
  *   TEAM_FLOW_URL         — PA-endepunkt for destruktiv team-synk fra rollegruppe
+ *   DIAGNOSE_FLOW_URL     — PA-endepunkt som slår opp team, planer og SP-lister
  *   VARSLING_DEAKTIVERT   — 'true' skrur av kall (dry-run til logg)
  *
  * Payload-kontrakt (samme som legacy — se docs/FASE-6A-EPOST.md):
@@ -303,6 +304,70 @@ async function kallTeamSynkFlyt(payload, log = () => {}) {
     }
 }
 
+/**
+ * Sjekk eksterne referanser i en skjematype (diagnose, fase 2).
+ *
+ * Env: DIAGNOSE_FLOW_URL — PA-flyt som slår opp team, kanaler, planer,
+ * buckets og SharePoint-lister. Se docs/FASE-DIAGNOSE.md for kontrakten.
+ *
+ * TIDSAVBRUDD er ikke valgfritt her. Diagnosen kjøres av en editor rett etter
+ * lagring, og en flyt som henger ville latt en skjemaeier sitte og vente på
+ * noe som er en hjelp, ikke en port. Ti sekunder er romslig for et titalls
+ * Graph-oppslag og kort nok til at ingen rekker å lure på om siden har hengt
+ * seg.
+ *
+ * Feiler kallet, returneres status i stedet for å kaste. Kalleren skal kunne
+ * vise det regelsettet fant, selv om flyten er nede.
+ *
+ * `varslingAv()` slår IKKE av denne. Bryteren betyr «ikke rør noe utenfor
+ * systemet», og et oppslag rører ingenting — det leser. Å skru av diagnosen i
+ * et testmiljø ville dessuten fjernet den nettopp der man prøver ut oppsett.
+ */
+async function kallDiagnoseFlyt(payload, log = () => {}, { timeoutMs = 10000 } = {}) {
+    const url = process.env.DIAGNOSE_FLOW_URL;
+    if (!url) {
+        log('diagnose-flyt: DIAGNOSE_FLOW_URL ikke satt — hopper over');
+        return { status: 'hoppet-over', melding: 'DIAGNOSE_FLOW_URL ikke satt' };
+    }
+    if (!Array.isArray(payload?.Referanser) || payload.Referanser.length === 0) {
+        log('diagnose-flyt: ingen referanser å sjekke — kaller ikke');
+        return { status: 'hoppet-over', melding: 'Ingen eksterne referanser' };
+    }
+
+    const start = Date.now();
+    const avbryt = new AbortController();
+    const timer = setTimeout(() => avbryt.abort(), timeoutMs);
+    try {
+        const respons = await fetch(url, {
+            method: 'POST',
+            headers: flytHeadere(),
+            body: JSON.stringify(payload),
+            signal: avbryt.signal
+        });
+        const ms = Date.now() - start;
+        if (!respons.ok) {
+            const tekst = await respons.text().catch(() => '');
+            log(`diagnose-flyt FEIL: HTTP ${respons.status} etter ${ms} ms — ${tekst.slice(0, 300)}`);
+            return { status: 'feil', melding: `HTTP ${respons.status}`, ms };
+        }
+        // Et tomt svar er lovlig: flyten kan kvittere 200 uten å ha sjekket
+        // noe ennå. Kalleren skiller på det, og sier det med ÉN linje.
+        const data = await respons.json().catch(() => ({}));
+        log(`diagnose-flyt OK: ${payload.Referanser.length} referanser på ${ms} ms`);
+        return { status: 'ok', respons: data, ms };
+    } catch (e) {
+        const ms = Date.now() - start;
+        if (e.name === 'AbortError') {
+            log(`diagnose-flyt: tidsavbrudd etter ${ms} ms`);
+            return { status: 'tidsavbrudd', melding: `Flyten svarte ikke innen ${timeoutMs / 1000} sekunder`, ms };
+        }
+        log(`diagnose-flyt EXCEPTION etter ${ms} ms: ${e.message}`);
+        return { status: 'feil', melding: e.message, ms };
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
 module.exports = {
     kallVarslingFlyt,
     varslingAv,
@@ -310,6 +375,7 @@ module.exports = {
     sendVarslerViaFlyt,
     sendOtpViaFlyt,
     kallTeamSynkFlyt,
+    kallDiagnoseFlyt,
     baseUrl,
     miljo,
     flytHeadere

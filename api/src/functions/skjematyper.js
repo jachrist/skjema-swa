@@ -23,6 +23,7 @@ const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const svarReparasjon = require('../lib/svar-reparasjon');
 const svargrense = require('../lib/svargrense');
 const diagnose = require('../lib/skjematype-diagnose');
+const { kallDiagnoseFlyt, miljo } = require('../lib/flyt-kaller');
 const { velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 // Modulobjekt, ikke destrukturert: testen bytter ut begge for aa slippe en
 // ekte lagringskonto. Destrukturert ville stubben vaert virkningslos.
@@ -213,7 +214,54 @@ app.http('skjematypeDiagnose', {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun eier eller admin' } };
             }
 
-            return { jsonBody: await diagnose.diagnoser(st.JSON || {}) };
+            const def = st.JSON || {};
+            const res = await diagnose.diagnoser(def);
+
+            // ---- fase 2: eksterne oppslag ----
+            //
+            // Regelsettet avgjør om det er noe å spørre om. Har skjematypen
+            // ingen eksterne referanser — eller er flyten ikke satt opp —
+            // gjøres ingen kall, og svaret ser ut som før.
+            //
+            // `?flyt=0` hopper over runden. Til feilsøking, og for å kunne
+            // sammenligne svartiden med og uten.
+            const flytPaa = request.query.get('flyt') !== '0';
+            const referanser = diagnose.eksterneReferanser(def);
+            if (flytPaa && referanser.length > 0) {
+                const svar = await kallDiagnoseFlyt({
+                    Handling: 'sjekkReferanser',
+                    Skjematype_id: skjematypeId,
+                    Skjema_navn: def.Skjema_navn || '',
+                    Miljo: miljo(),
+                    Tidspunkt: new Date().toISOString(),
+                    Referanser: referanser
+                }, (m) => context.log(m));
+
+                res.flyt = { status: svar.status, ms: svar.ms ?? null, antallSendt: referanser.length };
+
+                if (svar.status === 'ok') {
+                    res.funn.push(...diagnose.flettFlytsvar(referanser, svar.respons));
+                } else if (svar.status === 'tidsavbrudd' || svar.status === 'feil') {
+                    // Ikke en feil ved SKJEMATYPEN. Den som leser lista skal
+                    // ikke tro at oppsettet er galt fordi et oppslag ikke kom
+                    // fram — men hen skal vite at det ikke ble sjekket.
+                    res.funn.push({
+                        alvor: 'info', kode: 'flyt.utilgjengelig', sted: 'Eksterne oppslag',
+                        melding: `${referanser.length} referanse(r) ble ikke sjekket: `
+                            + `${svar.melding || svar.status}.`
+                    });
+                }
+
+                const rang = { feil: 0, advarsel: 1, info: 2 };
+                res.funn.sort((a, b) => rang[a.alvor] - rang[b.alvor]);
+                res.sammendrag = {
+                    feil: res.funn.filter(f => f.alvor === 'feil').length,
+                    advarsel: res.funn.filter(f => f.alvor === 'advarsel').length,
+                    info: res.funn.filter(f => f.alvor === 'info').length
+                };
+            }
+
+            return { jsonBody: res };
         } catch (e) {
             context.log('skjematype-diagnose FEIL:', e.message);
             return { status: 500, jsonBody: { status: 'feil', melding: 'Kunne ikke kjøre diagnosen' } };

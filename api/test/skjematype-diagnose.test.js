@@ -372,6 +372,111 @@ async function kjor() {
         }
     }
 
+    // ---------- fase 2: hvilke referanser sendes ----------
+    {
+        const def = {
+            SPListeadresse: 'https://x.sharepoint.com/sites/y', SPListenavn: 'Saker',
+            Seksjoner: [{ Seksjon_nummer: 1, Felter: [
+                { Nummer: 1, SPListefelt: 'Tittel' },
+                { Nummer: 2, SPListefelt: '{1-1}' }     // plassholder
+            ] }],
+            Behandling: [
+                { Steg: 1, Stegnavn: 'G', Varsling: ['planner', 'teamskanal'],
+                  PlannerOppgave: { TeamOgPlan: 'Automatisering:Oppgaver', Bucket: 'Nye' },
+                  TeamsKanalInnlegg: { Team: 'FHS test', Kanal: 'Generelt' } },
+                { Steg: 2, Varsling: ['planner'], PlannerOppgave: { TeamOgPlan: 'FFT:{1-1}' } }
+            ]
+        };
+        const refs = d.eksterneReferanser(def);
+        const ider = refs.map(r => r.Id);
+
+        sjekk('plan, bucket, team, kanal, liste og kolonne',
+            ider, ['steg1.plan', 'steg1.bucket', 'steg1.team', 'steg1.kanal', 'sp.liste', 'sp.kolonne.1-1']);
+
+        // Verdier med plassholder skal ALDRI sendes — de har ikke fått
+        // innhold ennå, og et oppslag på «FFT:{1-1}» ville svart finnes-ikke
+        // på noe som er helt riktig.
+        sjekk('plassholder i plan sendes ikke', ider.includes('steg2.plan'), false);
+        sjekk('plassholder i kolonne sendes ikke', ider.includes('sp.kolonne.1-2'), false);
+
+        // Kontekst må følge med: en plan hører til et team, en kanal til et
+        // team, en kolonne til en liste. Uten det kan flyten ikke slå opp.
+        const plan = refs.find(r => r.Id === 'steg1.plan');
+        sjekk('planen bærer teamet', [plan.Team, plan.Plan], ['Automatisering', 'Oppgaver']);
+        sjekk('bucketen bærer planen', refs.find(r => r.Id === 'steg1.bucket').Plan, 'Oppgaver');
+        sjekk('kanalen bærer teamet', refs.find(r => r.Id === 'steg1.kanal').Team, 'FHS test');
+        sjekk('kolonnen bærer lista', refs.find(r => r.Id === 'sp.kolonne.1-1').Liste, 'Saker');
+        sjekk('alle har et sted', refs.every(r => r.Sted), true);
+
+        // «Team og plan» deles på FØRSTE kolon — et plannavn kan inneholde et.
+        sjekk('deles på første kolon',
+            d.delTeamOgPlan('FFT:Saker: 2026'), { team: 'FFT', plan: 'Saker: 2026' });
+
+        // Ingen eksterne referanser = ingen grunn til å kalle flyten.
+        sjekk('ren skjematype gir ingen referanser',
+            d.eksterneReferanser({ Behandling: [{ Steg: 1, Varsling: ['epost'] }] }), []);
+    }
+
+    // ---------- fase 2: flytens svar flettes inn ----------
+    {
+        const refs = [
+            { Id: 'a', Type: 'team', Team: 'FHS test', Sted: 'Steg 1 · Teams-kanal' },
+            { Id: 'b', Type: 'plan', Team: 'A', Plan: 'B', Sted: 'Steg 1 · Planner' },
+            { Id: 'c', Type: 'sp-liste', Liste: 'Saker', Sted: 'SharePoint-liste' },
+            { Id: 'e', Type: 'bucket', Bucket: 'Nye', Plan: 'B', Sted: 'Steg 1 · Planner' }
+        ];
+        const funn = d.flettFlytsvar(refs, { Referanser: [
+            { Id: 'a', Status: 'finnes' },
+            { Id: 'b', Status: 'finnes-ikke', Melding: 'Fant ingen plan med det navnet.' },
+            { Id: 'c', Status: 'ingen-tilgang' },
+            { Id: 'e', Status: 'kan-ikke-sjekkes' }
+        ] });
+        const per = (kode) => funn.filter(f => f.kode === kode);
+
+        sjekk('finnes gir ingenting', funn.some(f => f.melding.includes('FHS test')), false);
+        sjekk('finnes-ikke er en feil', per('flyt.finnes-ikke')[0].alvor, 'feil');
+        sjekk('og navngir referansen', per('flyt.finnes-ikke')[0].melding.includes('«B»'), true);
+        sjekk('flytens egen melding tas med',
+            per('flyt.finnes-ikke')[0].melding.includes('Fant ingen plan'), true);
+
+        // ingen-tilgang er IKKE en feil. Flyten kjører som sin egen
+        // tilkobling, og at den ikke ser noe betyr ikke at det ikke finnes.
+        // Slås de sammen, jager skjemaeier et navn som er helt riktig.
+        sjekk('ingen-tilgang er en advarsel', per('flyt.ingen-tilgang')[0].alvor, 'advarsel');
+        sjekk('og sier at navnet kan være riktig',
+            per('flyt.ingen-tilgang')[0].melding.includes('kan være riktig'), true);
+
+        sjekk('kan-ikke-sjekkes er info', per('flyt.kan-ikke-sjekkes')[0].alvor, 'info');
+    }
+
+    // ---------- fase 2: et halvferdig endepunkt skal ikke fylle skjermen ----------
+    {
+        const refs = [
+            { Id: 'a', Type: 'team', Team: 'X', Sted: 'S' },
+            { Id: 'b', Type: 'team', Team: 'Y', Sted: 'S' },
+            { Id: 'c', Type: 'team', Team: 'Z', Sted: 'S' }
+        ];
+        // Første versjon av flyten svarer 200 uten innhold. Da skal det bli
+        // ÉN linje, ikke én per referanse.
+        for (const svar of [{}, null, { Referanser: [] }, { noe: 'annet' }]) {
+            const funn = d.flettFlytsvar(refs, svar);
+            sjekk(`tomt svar (${JSON.stringify(svar)}) gir én linje`, funn.length, 1);
+            sjekk('og den er info', funn[0].alvor, 'info');
+            sjekk('og nevner antallet', funn[0].melding.includes('3'), true);
+        }
+
+        // Svarer flyten om NOEN av dem, skal de som mangler nevnes hver for
+        // seg — da vet vi at endepunktet virker, og at akkurat disse falt ut.
+        const delvis = d.flettFlytsvar(refs, { Referanser: [{ Id: 'a', Status: 'finnes' }] });
+        sjekk('delvis svar nevner dem som mangler', delvis.length, 2);
+        sjekk('som info', delvis.every(f => f.alvor === 'info'), true);
+
+        // En ukjent status er ikke noe å bygge en feilmelding på.
+        const rar = d.flettFlytsvar([refs[0]], { Referanser: [{ Id: 'a', Status: 'kanskje' }] });
+        sjekk('ukjent status gir info', rar[0].alvor, 'info');
+        sjekk('ingen tomme referanser gir ingen linjer', d.flettFlytsvar([], {}), []);
+    }
+
     // ---------- endepunktet er koblet på ----------
     {
         const kode = utenKommentarer(fs.readFileSync(
@@ -381,12 +486,41 @@ async function kjor() {
         // Sjekkene under må gjelde DENNE handleren, ikke fila som helhet.
         // `harEierPåType` kalles fra flere endepunkter, så et søk i hele fila
         // ville bestått selv om tilgangssjekken her var byttet ut med `true`.
+        // Avgrenses til NESTE app.http, ikke til et fast antall tegn. Et fast
+        // tall gikk tom da handleren vokste, og sjekkene under begynte å lete
+        // i tomme strenger — altså bestå på ingenting.
         const iRute = kode.indexOf("route: 'skjematyper/{id}/diagnose'");
-        const handler = iRute > -1 ? kode.slice(iRute, iRute + 1400) : '';
+        const iNeste = iRute > -1 ? kode.indexOf('app.http(', iRute) : -1;
+        const handler = iRute > -1 ? kode.slice(iRute, iNeste > -1 ? iNeste : undefined) : '';
+        sjekk('fant handleren, og den er ikke tom', handler.length > 200, true);
         sjekk('den kaller regelsettet', /diagnose\.diagnoser\(/.test(handler), true);
         // Eier eller admin — en diagnose forteller hvilke roller som er tomme.
         sjekk('den krever eier eller admin', /harEierPåType\(skjematypeId, upn\)/.test(handler), true);
         sjekk('og slipper ikke gjennom uten sjekk', /const tillatt = true/.test(handler), false);
+
+        // Fase 2 må være koblet på — og i riktig rekkefølge.
+        sjekk('endepunktet henter referansene', /eksterneReferanser\(def\)/.test(handler), true);
+        sjekk('og kaller flyten', /kallDiagnoseFlyt\(/.test(handler), true);
+        sjekk('med handlingen', /Handling: 'sjekkReferanser'/.test(handler), true);
+        // Ingen referanser = ingen kall. Poenget med regelsettet er nettopp
+        // at det avgjør om det er noe å spørre om.
+        sjekk('bare når det er noe å spørre om',
+            /referanser\.length > 0/.test(handler), true);
+        // Et feilet eller avbrutt kall er ikke en feil ved SKJEMATYPEN.
+        sjekk('tidsavbrudd meldes som info',
+            /tidsavbrudd[\s\S]{0,300}alvor: 'info'/.test(handler), true);
+        // Sammendraget må regnes om etter at flytens funn er lagt til.
+        const iPush = handler.indexOf('flettFlytsvar(');
+        const iSammendrag = handler.indexOf('res.sammendrag =');
+        sjekk('sammendraget regnes om etterpå', iPush > -1 && iSammendrag > iPush, true);
+
+        const flyt = utenKommentarer(fs.readFileSync(
+            path.join(__dirname, '..', 'src', 'lib', 'flyt-kaller.js'), 'utf8'));
+        sjekk('flyt-kalleren har tidsavbrudd', /AbortController/.test(flyt), true);
+        sjekk('og en egen env-variabel', /DIAGNOSE_FLOW_URL/.test(flyt), true);
+        // Uten URL skal det ikke skje noe — og uten referanser heller ikke.
+        sjekk('hopper over uten URL',
+            /DIAGNOSE_FLOW_URL[\s\S]{0,200}status: 'hoppet-over'/.test(flyt), true);
 
         const editor = utenKommentarer(fs.readFileSync(
             path.join(__dirname, '..', '..', 'frontend', 'editor.html'), 'utf8'));
