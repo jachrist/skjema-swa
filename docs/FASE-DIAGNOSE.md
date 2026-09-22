@@ -46,12 +46,12 @@ riktig, og sluttet å tro på lista.
 
 | Kode | Når |
 |---|---|
-| `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom |
+| `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom *(advarsel — flytens standardplan)* |
 | `planner.plan-uten-plan` | `TeamOgPlan` mangler plandelen — «Automatisering» i stedet for «Automatisering:Oppgaver» |
 | `planner.plan-form-ukjent` | Som over, men verdien har plassholder — kolonet kan komme fra svaret *(info)* |
 | `planner.bucket-uten-plan` | Bucket satt uten plan |
 | `planner.ikke-aktiv` | Oppsett finnes, men «planner» er ikke huket av *(advarsel)* |
-| `teamskanal.mangler-team` / `-kanal` | Slått på, men feltet er tomt |
+| `teamskanal.mangler-team` / `-kanal` | Slått på, men feltet er tomt *(advarsel — flytens standardvalg)* |
 | `teamskanal.ikke-aktiv` | Som over *(advarsel)* |
 | `*.plassholder` | Verdien inneholder `{…}` eller `$…` *(info)* |
 
@@ -78,6 +78,31 @@ Dette var det første funnet fra testkjøring (22.09.2026), og det er verdt å
 merke seg hvorfor regelsettet bommet: den opprinnelige regelen spurte bare om
 feltet var utfylt. «Utfylt» og «riktig» er ikke det samme, og et felt som
 rommer to verdier trenger en regel om formen.
+
+### Tomt felt er ikke en feil
+
+Editorens egne hjelpetekster sier det: «Tomme felter overlates til flyten, som
+før» (Planner) og «Står team eller kanal tomt, bruker flyten sitt eget
+standardvalg» (Teams-kanal). Det **virker** — innlegget havner bare et annet
+sted enn skjemaeier kanskje tror.
+
+Derfor er de `advarsel`, ikke `feil`. En rød linje på noe som fungerer er den
+formen for feilmelding som gjør at folk slutter å lese lista.
+
+Unntaket er `planner.bucket-uten-plan`: en bucket i en plan man ikke har
+navngitt, finnes ikke i flytens standardplan. Den er selvmotsigende, og
+fortsatt `feil`.
+
+### Feltnavnene må være dem varslingen leser
+
+Første versjon leste `steg.Teamskanal`. Editoren skriver
+`steg.TeamsKanalInnlegg`, og `varsling.js:byggTeamskanal` leser det samme.
+Navnet fantes ikke noe sted, så sjekken meldte begge feltene som tomme uansett
+hva som sto i dem.
+
+Testene gikk grønt fordi **testdataene brukte det oppdiktede navnet**. En test
+som finner navnet i `varsling.js` og sammenligner står nå i
+`skjematype-diagnose.test.js`.
 
 ### To ting som er lette å gjøre galt
 

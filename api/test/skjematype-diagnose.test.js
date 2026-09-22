@@ -83,7 +83,7 @@ async function kjor() {
             Seksjoner: SEKSJONER,
             Behandling: [{
                 Steg: 1, Personer: ['a@b.no'], Varsling: ['teamskanal'],
-                Teamskanal: { Team: 'FFT', Kanal: '$stegnavn' }
+                TeamsKanalInnlegg: { Team: 'FFT', Kanal: '$stegnavn' }
             }]
         }, { antallInnehavere: roller(3) });
         sjekk('$-plassholder gir info', harKode(res2, 'teamskanal.plassholder'), true);
@@ -185,10 +185,87 @@ async function kjor() {
     // ---------- Teams-kanal ----------
     {
         const res = await d.diagnoser({
-            Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['teamskanal'], Teamskanal: { Team: 'FFT' } }]
+            Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['teamskanal'], TeamsKanalInnlegg: { Team: 'FFT' } }]
         }, { antallInnehavere: roller(3) });
         sjekk('manglende kanal', harKode(res, 'teamskanal.mangler-kanal'), true);
         sjekk('team er satt, så ingen feil der', harKode(res, 'teamskanal.mangler-team'), false);
+    }
+
+    // ---------- feltnavnene må være de varslingen faktisk leser ----------
+    {
+        // Diagnosen leste `steg.Teamskanal`. Editoren skriver
+        // `steg.TeamsKanalInnlegg`, og varsling.js leser det samme. Navnet
+        // fantes ikke noe sted, så sjekken meldte begge feltene som tomme
+        // uansett hva som sto i dem — og testene gikk grønt, fordi TESTDATAENE
+        // brukte det oppdiktede navnet.
+        //
+        // Derfor leses navnene ut av varsling.js her, og sammenlignes med det
+        // diagnosen bruker. Glir de fra hverandre igjen, feiler dette.
+        const varslingKode = utenKommentarer(fs.readFileSync(
+            path.join(__dirname, '..', 'src', 'lib', 'varsling.js'), 'utf8'));
+        const diagnoseKode = utenKommentarer(fs.readFileSync(
+            path.join(__dirname, '..', 'src', 'lib', 'skjematype-diagnose.js'), 'utf8'));
+
+        for (const [hva, regex] of [
+            ['Teams-kanal', /somTeamskanal\(steg\?\.(\w+)\)/],
+            ['Planner', /somPlannerOppgave\(steg\?\.(\w+)\)/]
+        ]) {
+            const m = regex.exec(varslingKode);
+            sjekk(`${hva}: fant feltnavnet i varsling.js`, !!m, true);
+            if (!m) continue;
+            sjekk(`${hva}: diagnosen leser «${m[1]}»`,
+                new RegExp(`steg\\?\\.${m[1]}\\b`).test(diagnoseKode), true);
+        }
+
+        // Og en oppførselstest, ikke bare en tekstsammenligning: et utfylt
+        // felt skal ikke meldes som tomt.
+        const fylt = await d.diagnoser({
+            Behandling: [{
+                Steg: 1, Personer: ['a@b.no'], Varsling: ['teamskanal'],
+                TeamsKanalInnlegg: { Team: 'FHS test', Kanal: 'Generelt' }
+            }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('utfylt teams-kanal gir ingen funn', fylt.funn, []);
+
+        const bareTeam = await d.diagnoser({
+            Behandling: [{
+                Steg: 1, Personer: ['a@b.no'], Varsling: ['teamskanal'],
+                TeamsKanalInnlegg: { Team: 'FHS test' }
+            }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('team er utfylt, så bare kanalen meldes',
+            bareTeam.funn.map(f => f.kode), ['teamskanal.mangler-kanal']);
+    }
+
+    // ---------- tomt felt er ikke en feil ----------
+    {
+        // Editorens egen hjelpetekst: «Står team eller kanal tomt, bruker
+        // flyten sitt eget standardvalg», og «Tomme felter overlates til
+        // flyten, som før». Det VIRKER altså — det havner bare et annet sted.
+        // En rød linje på noe som fungerer er den formen for feilmelding som
+        // gjør at folk slutter å lese lista.
+        const tomKanal = await d.diagnoser({
+            Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['teamskanal'], TeamsKanalInnlegg: {} }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('tom teams-kanal gir advarsel, ikke feil', tomKanal.sammendrag.feil, 0);
+        sjekk('men den sies fra om', tomKanal.sammendrag.advarsel, 2);
+        sjekk('og meldingen sier hva som skjer',
+            tomKanal.funn[0].melding.includes('standard'), true);
+
+        const tomPlan = await d.diagnoser({
+            Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['planner'], PlannerOppgave: {} }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('tom planner gir advarsel, ikke feil', tomPlan.sammendrag.feil, 0);
+        sjekk('men den sies fra om', tomPlan.sammendrag.advarsel, 1);
+
+        // Bucket uten plan er fortsatt en FEIL: en bucket i en plan man ikke
+        // har navngitt, finnes ikke i flytens standardplan.
+        const bucket = await d.diagnoser({
+            Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['planner'], PlannerOppgave: { Bucket: 'Nye' } }]
+        }, { antallInnehavere: roller(3) });
+        sjekk('bucket uten plan er fortsatt feil', harKode(bucket, 'planner.bucket-uten-plan'), true);
+        sjekk('og meldes som feil',
+            bucket.funn.find(f => f.kode === 'planner.bucket-uten-plan').alvor, 'feil');
     }
 
     // ---------- SharePoint: de tre delene må stå sammen ----------
