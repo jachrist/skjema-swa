@@ -224,7 +224,17 @@ behandlingssteg (`steg.Personer`), `Ferdigvarsling.Mottakere.Personer` og
 `Innsenderkvittering.Kopi.Personer`. Logikken ligger i
 `api/src/lib/feltperson.js`.
 
-Fire regler, og tre av dem er valgt for å unngå en stille feil:
+Fem regler, og fire av dem er valgt for å unngå en stille feil:
+
+**Bare felter av typen `E-post` er gyldige.** Den typen har syntakssjekk ved
+utfylling, så verdien er kontrollert før den når oss — ingen annen felttype gir
+den garantien. Et `Tekst`-felt som *tilfeldigvis* inneholder en adresse avvises
+også: regelen skal kunne leses av felttypen alene, ikke av hva noen kan ha
+skrevet. Lista står i `GYLDIGE_FELTTYPER`, og både skjemaeditorens velger og
+diagnosen leser den derfra.
+
+Konsekvens verdt å kjenne: `E-post` er ikke en flervalgstype, så **én referanse
+gir én mottaker**. Skal flere nås, er roller verktøyet.
 
 **Hele oppføringen må være referansen.** `"{2-01}"` er lov, `"sjef-{2-01}@x.no"`
 er det ikke — den siste går uendret videre som en vanlig (ubrukelig) adresse. En
@@ -246,18 +256,17 @@ stående er verre:
 - `beregnAlleKrav` legger `{2-01}` inn som et krav ingen kan dekke, og et «alle
   må avgjøre»-steg blir stående for alltid
 
-**Flervalgsfelt gir én mottaker per valg** — samme regel som for dynamiske
-roller.
-
 For behandlingssteg ekspanderes referansen **ved innsending**, av samme grunn
 som rolleomfanget: tilgangssjekken kjører før dekryptering. Malen lagres i
 `PersonerMal`, så ompuss + ny innsending ekspanderer på nytt fra malen.
 Ferdigvarsling og kvitteringskopi løses derimot opp **ved sending**
 (`varsling.løsMottakere`) — de leser skjemaet mens det ennå er i klartekst.
 
-Diagnosen ved lagring melder `person.feltref-mangler` (rødt) når feltet ikke
-finnes, og `person.feltref-type` (gult) når det finnes, men ikke er av typen
-E-post.
+Diagnosen ved lagring melder **rødt** i begge tilfellene som kan avgjøres der:
+`person.feltref-mangler` når feltet ikke finnes, og `person.feltref-type` når
+det finnes, men er av feil type. Ved innsending skilles fire grunner til at det
+ikke ble noen mottaker — feltet finnes ikke, feil type, ubesvart, ugyldig verdi
+— fordi rettelsen er ulik for hver.
 
 ## Visningstekst for valglister (`SvarTekst` / `svt`)
 

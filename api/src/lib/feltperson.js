@@ -18,10 +18,19 @@
  * adresse satt sammen av et svar vi ikke kontrollerer — og den hadde vi sendt
  * saksdokumenter til.
  *
- * **Verdier som ikke ser ut som e-post forkastes.** Peker referansen på feil
- * felt, får vi "Ja" eller "MILM23-1" som behandler. Da kan ingen behandle
- * steget, og ingen får beskjed om hvorfor — akkurat den stille varianten.
- * Bedre å droppe den og si fra i loggen.
+ * **Bare felter av typen E-post er gyldige.** Den typen har syntakssjekk ved
+ * utfylling, så verdien er kontrollert allerede før den når oss — ingen annen
+ * felttype gir den garantien. Et Tekst-felt som *tilfeldigvis* inneholder en
+ * adresse avvises altså også: regelen skal være mulig å lese av felttypen
+ * alene, ikke av hva noen kan ha skrevet.
+ *
+ * Konsekvens verdt å kjenne: E-post er ikke en flervalgstype, så én referanse
+ * gir én mottaker. Et flervalgsfelt med adresser kan ikke brukes til å sende
+ * til flere — det er rollene som er verktøyet for det.
+ *
+ * **Verdier som ikke ser ut som e-post forkastes likevel.** Typesjekken sier
+ * at feltet SKAL være kontrollert; den sier ikke at raden i lagringen er det.
+ * Importerte og eldre svar har ikke vært gjennom skjemaets validering.
  *
  * **En ubesvart referanse forkastes — malen beholdes IKKE.** Her skiller vi
  * lag med dynamisk-rolle.js, som beholder "Klassesjef({2-01})" når feltet er
@@ -36,7 +45,7 @@
  * Peker referansen på et flervalgsfelt, gir hvert valg sin egen mottaker —
  * samme regel som for dynamiske roller.
  */
-const { finnAlleSvarForFeltRef, finnAlleSvarForFeltViaId } = require('./placeholder');
+const { finnFeltViaRef, finnFeltViaId, alleSvarIFelt } = require('./placeholder');
 
 /** Hele oppføringen, ikke en del av den. Se toppkommentaren. */
 const HEL_REFERANSE = /^\s*\{([^{}]+)\}\s*$/;
@@ -51,6 +60,15 @@ const POSISJONELL = /^(\d+)-(\d+)$/;
  * "ola@kontoret" eller "a@b, c@d" skal ikke slippe gjennom.
  */
 const EPOST = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/;
+
+/**
+ * Felttypene en personreferanse kan peke på.
+ *
+ * Ett sted, og eksportert: diagnosen melder feil for alt annet, og
+ * skjemaeditoren tilbyr bare disse i velgeren. Tre kopier av «hvilke typer er
+ * lov» ville gitt en velger som tilbyr noe diagnosen underkjenner.
+ */
+const GYLDIGE_FELTTYPER = ['E-post'];
 
 function erEpost(verdi) {
     return EPOST.test(String(verdi || '').trim());
@@ -67,23 +85,39 @@ function referansen(person) {
     return m ? m[1].trim() : '';
 }
 
-function slaOppSvar(ref, seksjoner) {
+/** Feltet referansen peker på, eller null. */
+function feltFor(ref, seksjoner) {
     const m = POSISJONELL.exec(ref);
-    return m
-        ? finnAlleSvarForFeltRef(seksjoner, m[1], m[2])
-        : finnAlleSvarForFeltViaId(seksjoner, ref);
+    return (m ? finnFeltViaRef(seksjoner, m[1], m[2]) : finnFeltViaId(seksjoner, ref)) || null;
 }
 
 /**
  * Løs én referanse mot svarene.
  *
- * Returnerer { eposter, ubesvart, ugyldige }. `ubesvart` og `ugyldige` er
- * skilt fra hverandre fordi rettelsen er ulik: den ene betyr «innsenderen
- * fylte ikke ut feltet», den andre «skjematypen peker på feil felt».
+ * Returnerer { eposter, mangler, feilType, ubesvart, ugyldige }. De fire
+ * grunnene til at det ikke ble noen adresse holdes fra hverandre fordi
+ * rettelsen er ulik for hver:
+ *
+ *   mangler   — feltet finnes ikke: skjematypen må rettes
+ *   feilType  — feltet er ikke et E-post-felt: skjematypen må rettes
+ *   ubesvart  — innsenderen fylte ikke ut feltet
+ *   ugyldige  — feltet var utfylt, men verdien er ikke en adresse
+ *
+ * En samlet «ingen mottaker» ville sendt skjemaeier på leting i feil ende.
  */
 function slaOppEposter(ref, seksjoner) {
-    const verdier = slaOppSvar(String(ref || '').trim(), seksjoner || []);
-    if (verdier.length === 0) return { eposter: [], ubesvart: true, ugyldige: [] };
+    const felt = feltFor(String(ref || '').trim(), seksjoner || []);
+    if (!felt) return { eposter: [], mangler: true, feilType: null, ubesvart: false, ugyldige: [] };
+
+    const type = String(felt.Type || '');
+    if (!GYLDIGE_FELTTYPER.includes(type)) {
+        return { eposter: [], mangler: false, feilType: type || 'ukjent', ubesvart: false, ugyldige: [] };
+    }
+
+    const verdier = alleSvarIFelt(felt);
+    if (verdier.length === 0) {
+        return { eposter: [], mangler: false, feilType: null, ubesvart: true, ugyldige: [] };
+    }
 
     const eposter = [];
     const ugyldige = [];
@@ -94,7 +128,7 @@ function slaOppEposter(ref, seksjoner) {
         const e = s.toLowerCase();
         if (!eposter.includes(e)) eposter.push(e);
     }
-    return { eposter, ubesvart: false, ugyldige };
+    return { eposter, mangler: false, feilType: null, ubesvart: false, ugyldige };
 }
 
 /**
@@ -119,7 +153,12 @@ function ekspanderPersoner(personer, seksjoner) {
     for (const p of inn) {
         if (!erFeltreferanse(p)) { leggTil(p); continue; }
         const ref = referansen(p);
-        const { eposter, ubesvart, ugyldige: ug } = slaOppEposter(ref, seksjoner);
+        const { eposter, mangler, feilType, ubesvart, ugyldige: ug } = slaOppEposter(ref, seksjoner);
+        if (mangler) { uloste.push({ mal: String(p), grunn: 'feltet finnes ikke' }); continue; }
+        if (feilType) {
+            uloste.push({ mal: String(p), grunn: `feltet er av typen «${feilType}», ikke E-post` });
+            continue;
+        }
         if (ubesvart) { uloste.push({ mal: String(p), grunn: 'ubesvart' }); continue; }
         for (const u of ug) ugyldige.push({ mal: String(p), verdi: u });
         if (eposter.length === 0 && ug.length > 0) {
@@ -170,6 +209,7 @@ function ekspanderBehandlingPersoner(skjema) {
 }
 
 module.exports = {
+    GYLDIGE_FELTTYPER,
     erEpost,
     erFeltreferanse,
     referansen,

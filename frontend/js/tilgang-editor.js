@@ -20,8 +20,19 @@
  *
  * Feltperson: samme `feltReferanser` gir også en personoppføring som er en ren
  * referanse — "{2-01}" — der adressen hentes fra innsenderens eget svar. Hele
- * oppføringen må være referansen; se api/src/lib/feltperson.js for hvorfor.
+ * oppføringen må være referansen, og feltet må være av typen E-post; se
+ * api/src/lib/feltperson.js for hvorfor. Entringene trenger da også `type`.
  */
+
+/**
+ * Felttypene som kan brukes som mottaker.
+ *
+ * Holdt lik `GYLDIGE_FELTTYPER` i api/src/lib/feltperson.js — det er den som
+ * faktisk avgjør ved innsending. `frontend/test/feltperson-ui.test.js` leser
+ * begge listene og krever at de er like, så velgeren ikke kan tilby noe
+ * ekspansjonen avviser.
+ */
+export const FELTPERSON_TYPER = ['E-post'];
 
 let _rolleGrupperCache = null;
 let _teamNavnCache = null;
@@ -201,7 +212,7 @@ export function byggTilgangEditor(container, verdi, options = {}) {
     // ==================== Personer ====================
     function byggPersonerSeksjon() {
         const sek = seksjon('Personer', feltReferanser.length > 0
-            ? '(e-postadresser — eller hentet fra et svar i skjemaet)'
+            ? '(e-postadresser — eller hentet fra et E-post-felt i skjemaet)'
             : '(e-postadresser)');
         sek.appendChild(byggChipListe('Personer', state.Personer, (verdi) => {
             const trimmet = String(verdi || '').trim().toLowerCase();
@@ -221,37 +232,58 @@ export function byggTilgangEditor(container, verdi, options = {}) {
      * er lett å bomme på, og en referanse som peker feil gir ingen mottaker
      * uten at noe sier fra før skjemaet er sendt inn.
      *
-     * Alle felter listes, ikke bare de av typen E-post. Et Tekst-felt kan godt
-     * være der adressen står i en skjematype som alt er i bruk. Diagnosen ved
-     * lagring gir gul advarsel for de andre typene (person.feltref-type), så
-     * valget er mulig, men ikke stille.
+     * BARE E-post-felter listes. Den typen har syntakssjekk ved utfylling, og
+     * det er den garantien som gjør referansen trygg — et Tekst-felt kan
+     * inneholde hva som helst. `feltperson.js` avviser andre typer ved
+     * innsending, så en velger som tilbød dem ville tilbudt noe som ikke
+     * virker.
+     *
+     * Har skjemaet ingen E-post-felter, vises velgeren likevel — deaktivert,
+     * med grunnen. En kontroll som forsvinner, forklarer ingenting.
      */
     function byggFeltperson() {
         const boks = document.createElement('div');
         boks.style.cssText = 'display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0 0 0;';
 
+        const aktuelle = feltReferanser.filter(f => FELTPERSON_TYPER.includes(String(f.type || '')));
+
         const velg = document.createElement('select');
         velg.style.cssText = `flex: 1; min-width: 180px; padding: 3px 8px; font-size: ${kompakt ? '12px' : '13px'}; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;`;
         const tom = document.createElement('option');
         tom.value = '';
-        tom.textContent = 'e-post fra felt…';
+        tom.textContent = aktuelle.length > 0
+            ? 'e-post fra felt…'
+            : '(skjemaet har ingen felt av typen E-post)';
         velg.appendChild(tom);
-        for (const f of feltReferanser) {
+        for (const f of aktuelle) {
             const o = document.createElement('option');
             o.value = f.ref;
             o.textContent = f.tekst;
             velg.appendChild(o);
         }
+        velg.disabled = aktuelle.length === 0;
 
         const knapp = document.createElement('button');
         knapp.type = 'button';
         knapp.textContent = '+ Feltreferanse';
-        knapp.title = 'Adressen hentes fra innsenderens svar når skjemaet sendes inn';
-        knapp.style.cssText = 'padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
+        knapp.disabled = aktuelle.length === 0;
+        knapp.title = aktuelle.length > 0
+            ? 'Adressen hentes fra innsenderens svar når skjemaet sendes inn'
+            : 'Krever et felt av typen E-post. Legg til ett i skjemaet først.';
+        knapp.style.cssText = `padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: ${aktuelle.length > 0 ? 'pointer' : 'not-allowed'}; opacity: ${aktuelle.length > 0 ? '1' : '0.5'};`;
         knapp.addEventListener('click', () => {
             const ref = velg.value;
             if (!ref) {
                 alert('Velg et felt først.');
+                return;
+            }
+            // Siste sperre. Dropdownen er allerede filtrert, men lista kan
+            // komme fra en kaller som ikke sendte `type` — og da skal vi
+            // heller la være enn å legge inn en referanse som avvises ved
+            // innsending.
+            const valgt = feltReferanser.find(f => f.ref === ref);
+            if (!FELTPERSON_TYPER.includes(String(valgt?.type || ''))) {
+                alert(`Bare felter av typen ${FELTPERSON_TYPER.join(', ')} kan brukes som mottaker.`);
                 return;
             }
             const streng = `{${ref}}`;

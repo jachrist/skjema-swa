@@ -8,6 +8,11 @@
  * flere ganger i dette repoet — derfor kjøres BEGGE regexene mot de samme
  * tilfellene og må svare likt. Endrer noen den ene, blir dette rødt.
  *
+ * Det samme gjelder listen over LOVLIGE FELTTYPER. Tilbyr velgeren et
+ * Tekst-felt som ekspansjonen avviser, har skjemaeier gjort et valg som ikke
+ * virker — uten å få vite det før noen ikke fikk e-post. Også den lista leses
+ * fra begge steder og sammenlignes.
+ *
  * Ellers tre ting:
  *
  *   **Velgeren vises bare der den betyr noe.** Publikum og Eiere får ingen
@@ -66,6 +71,28 @@ const api = utenKommentarer(
     }
 }
 
+// ---------- samme typeliste to steder ----------
+{
+    const uiListe = /export const FELTPERSON_TYPER = (\[[^\]]*\]);/.exec(ui);
+    const apiListe = /const GYLDIGE_FELTTYPER = (\[[^\]]*\]);/.exec(api);
+    sjekk('editoren har en typeliste', !!uiListe, true);
+    sjekk('api-et har en typeliste', !!apiListe, true);
+    if (uiListe && apiListe) {
+        // eslint-disable-next-line no-eval
+        sjekk('listene er like', eval(uiListe[1]), eval(apiListe[1]));
+        // eslint-disable-next-line no-eval
+        sjekk('og inneholder E-post', eval(apiListe[1]), ['E-post']);
+    }
+
+    // Velgeren må faktisk BRUKE lista, ikke bare ha den liggende.
+    sjekk('dropdownen filtreres på typen',
+        /feltReferanser\.filter\(f => FELTPERSON_TYPER\.includes\(String\(f\.type \|\| ''\)\)\)/.test(ui), true);
+    sjekk('knappen sperrer også',
+        /if \(!FELTPERSON_TYPER\.includes\(String\(valgt\?\.type \|\| ''\)\)\)/.test(ui), true);
+    sjekk('uten E-post-felt er velgeren deaktivert',
+        /velg\.disabled = aktuelle\.length === 0;/.test(ui), true);
+}
+
 // ---------- velgeren finnes, og bare der den betyr noe ----------
 {
     sjekk('velgeren bygges', /function byggFeltperson\(\)/.test(ui), true);
@@ -82,6 +109,11 @@ const api = utenKommentarer(
     const pub = editor.slice(editor.indexOf('const pubEl'), editor.indexOf('const eiEl'));
     sjekk('Publikum får ingen feltreferanser', /feltReferanser/.test(pub), false);
     sjekk('mottakervelgerne får dem', /const felles = \{[^}]*feltReferanser: felter/.test(editor), true);
+
+    // Uten `type` på oppføringene ville filteret over tømt dropdownen, og
+    // velgeren sett ut som om skjemaet ikke har E-post-felter.
+    sjekk('felttypen følger med referansen',
+        /felter\.push\(\{ ref, type: felt\.Type \|\| '', tekst:/.test(editor), true);
 }
 
 // ---------- chipen viser feltet, ikke koden ----------

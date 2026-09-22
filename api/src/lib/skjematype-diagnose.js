@@ -159,12 +159,19 @@ async function sjekkRolle(rolle, { seksjoner, sted, antallInnehavere, funn }) {
  * peke feil, og gjør den det, oppdages det først når skjemaet er sendt inn og
  * ingen fikk det.
  *
- * To ulike feil, to ulike nivåer:
- *   - feltet finnes ikke → rødt. Referansen gir garantert ingen mottaker.
- *   - feltet finnes, men er ikke av typen E-post → gult. Et Tekst-felt kan
- *     godt inneholde en adresse, og da virker det. Inneholder det noe annet,
- *     forkastes verdien (feltperson.js) — så det blir ingen mottaker, men vi
- *     kan ikke vite det her.
+ * Begge feilene er røde, og begge er sikre:
+ *   - feltet finnes ikke
+ *   - feltet finnes, men er ikke av typen E-post
+ *
+ * Den andre var gul til 23.09.2026, med den begrunnelsen at et Tekst-felt
+ * godt KAN inneholde en adresse. Etter avklaring med oppdragsgiver er bare
+ * E-post gyldig: den typen har syntakssjekk ved utfylling, og det er nettopp
+ * den garantien som gjør referansen trygg. `feltperson.js` avviser derfor
+ * andre typer uansett — og et funn som sier «advarsel» om noe som garantert
+ * ikke virker, er verre enn ingen advarsel.
+ *
+ * Typelista leses fra feltperson.js. To lister ville før eller siden gitt en
+ * diagnose som godkjenner det ekspansjonen avviser.
  */
 function sjekkPerson(person, { seksjoner, sted, funn }) {
     const streng = String(person || '').trim();
@@ -181,12 +188,13 @@ function sjekkPerson(person, { seksjoner, sted, funn }) {
         return;
     }
     const type = String(felt.Type || '');
-    if (type !== 'E-post') {
+    if (!feltperson.GYLDIGE_FELTTYPER.includes(type)) {
+        const lovlige = feltperson.GYLDIGE_FELTTYPER.map(t => `«${t}»`).join(', ');
         funn.push({
-            alvor: 'advarsel', kode: 'person.feltref-type', sted,
+            alvor: 'feil', kode: 'person.feltref-type', sted,
             melding: `Mottakeren «${streng}» peker på feltet «${felt.Tekst?.Verdi || ref}», `
-                + `som er av typen «${type || 'ukjent'}». Bare svar som ser ut som en `
-                + 'e-postadresse blir brukt — resten forkastes.'
+                + `som er av typen «${type || 'ukjent'}». Bare felter av typen ${lovlige} `
+                + 'kan brukes som mottaker — ingen adresse blir hentet.'
         });
         return;
     }

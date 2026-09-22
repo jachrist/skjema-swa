@@ -65,7 +65,7 @@ riktig, og sluttet å tro på lista.
 | `rolle.feltref-mangler` | Dynamisk rolle peker på et felt som ikke finnes |
 | `rolle.dynamisk` | Rollen settes sammen av svar og kan ikke slås opp *(info)* |
 | `person.feltref-mangler` | Mottakeren `{2-01}` peker på et felt som ikke finnes |
-| `person.feltref-type` | Feltet finnes, men er ikke av typen E-post *(advarsel)* |
+| `person.feltref-type` | Feltet finnes, men er ikke av typen E-post |
 | `person.dynamisk` | Adressen hentes fra et svar ved innsending *(info)* |
 
 Personreglene kjøres både på behandlingsstegene og på mottakerne i

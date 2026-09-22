@@ -2407,7 +2407,10 @@
                     if (felt.Type === 'Informasjon' || felt.Type === 'Opplasting') continue;
                     const ref = felt.Id || `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
                     const tekst = felt.Tekst?.Verdi || '(uten tekst)';
-                    felter.push({ ref, tekst: `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}` });
+                    // type følger med: mottakervelgeren i tilgang-editoren
+                    // godtar bare E-post-felter. De andre bruksstedene
+                    // (dynamisk rolle, vilkår) ser bort fra den.
+                    felter.push({ ref, type: felt.Type || '', tekst: `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}` });
                 }
             }
             return felter;
