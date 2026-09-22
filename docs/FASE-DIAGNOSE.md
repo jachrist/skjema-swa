@@ -47,6 +47,8 @@ riktig, og sluttet å tro på lista.
 | Kode | Når |
 |---|---|
 | `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom |
+| `planner.plan-uten-plan` | `TeamOgPlan` mangler plandelen — «Automatisering» i stedet for «Automatisering:Oppgaver» |
+| `planner.plan-form-ukjent` | Som over, men verdien har plassholder — kolonet kan komme fra svaret *(info)* |
 | `planner.bucket-uten-plan` | Bucket satt uten plan |
 | `planner.ikke-aktiv` | Oppsett finnes, men «planner» er ikke huket av *(advarsel)* |
 | `teamskanal.mangler-team` / `-kanal` | Slått på, men feltet er tomt |
@@ -65,6 +67,17 @@ riktig, og sluttet å tro på lista.
 `rolle.tom` skiller ikke «rollen finnes ikke» fra «rollen er tom» — i denne
 datamodellen *er* en rolle sine medlemsrader, så de to er samme tilstand.
 Meldingen sier derfor «gir ingen mottakere», som er sant uansett.
+
+### «Team og plan» er ett felt med to verdier
+
+Feltets plassholder er `Automatisering:Oppgaver`, og hjelpeteksten sier «på
+formen Team:Plan». Skriver man bare teamnavnet, er verdien **ikke tom** — alt
+ser riktig ut, og flyten får et teamnavn der den venter et par.
+
+Dette var det første funnet fra testkjøring (22.09.2026), og det er verdt å
+merke seg hvorfor regelsettet bommet: den opprinnelige regelen spurte bare om
+feltet var utfylt. «Utfylt» og «riktig» er ikke det samme, og et felt som
+rommer to verdier trenger en regel om formen.
 
 ### To ting som er lette å gjøre galt
 

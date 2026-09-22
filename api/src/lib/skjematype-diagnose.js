@@ -175,7 +175,33 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
             melding: `Bucket «${bucket}» er satt uten at «Team og plan» er fylt ut.`
         });
     }
-    for (const [navn, verdi] of [['Team og plan', plan], ['Bucket', bucket]]) {
+    // «Team og plan» er ETT felt med TO verdier, skilt med kolon — feltets egen
+    // plassholder er «Automatisering:Oppgaver». Skriver man bare teamnavnet,
+    // er verdien ikke tom, og alt ser riktig ut. Flyten får da et teamnavn der
+    // den venter et par, og finner ingen plan.
+    //
+    // Med plassholder i verdien kan kolonet komme fra svaret («{1-1}» kan
+    // løse seg til «Team:Plan»), og da vet vi ikke nok til å melde feil.
+    let planAlleredeMeldt = false;
+    if (plan && !plan.includes(':')) {
+        planAlleredeMeldt = true;
+        funn.push(harPlassholder(plan)
+            ? {
+                alvor: 'info', kode: 'planner.plan-form-ukjent', sted,
+                melding: `«Team og plan» er «${plan}». Formen er Team:Plan — kolonet må komme `
+                    + 'fra plassholderen, og det kan ikke sjekkes før innsending.'
+            }
+            : {
+                alvor: 'feil', kode: 'planner.plan-uten-plan', sted,
+                melding: `«Team og plan» er «${plan}», men mangler plandelen. Formen er `
+                    + `Team:Plan — for eksempel «${plan}:Oppgaver». Slik den står nå, finner `
+                    + 'flyten ingen plan.'
+            });
+    }
+
+    // `plan` hoppes over når den alt er meldt over — to info-linjer om samme
+    // felt er støy, og den første sier allerede at verdien ikke kan sjekkes.
+    for (const [navn, verdi] of [['Team og plan', planAlleredeMeldt ? '' : plan], ['Bucket', bucket]]) {
         if (verdi && harPlassholder(verdi)) {
             funn.push({
                 alvor: 'info', kode: 'planner.plassholder', sted,

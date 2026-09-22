@@ -73,7 +73,9 @@ async function kjor() {
                 PlannerOppgave: { TeamOgPlan: 'FFT {1-1}', Bucket: 'Nye' }
             }]
         }, { antallInnehavere: roller(3) });
-        sjekk('plassholder gir info', harKode(res, 'planner.plassholder'), true);
+        // «FFT {1-1}» har plassholder, men mangler kolon — da er det den mer
+        // presise koden som gjelder. Poenget er det samme: info, ikke feil.
+        sjekk('plassholder gir info', res.sammendrag.info > 0, true);
         sjekk('og ingen feil', res.sammendrag.feil, 0);
 
         // $-plassholdere også.
@@ -145,6 +147,39 @@ async function kjor() {
         }, { antallInnehavere: roller(3) });
         sjekk('ubrukt planner-oppsett gir advarsel', harKode(ikkeAktiv, 'planner.ikke-aktiv'), true);
         sjekk('og ikke feil', ikkeAktiv.sammendrag.feil, 0);
+    }
+
+    // ---------- «Team og plan» er ETT felt med TO verdier ----------
+    {
+        // Funnet i testkjøring 22.09.2026: feltets plassholder er
+        // «Automatisering:Oppgaver», og skriver man bare teamnavnet er
+        // verdien ikke tom — alt så riktig ut, og diagnosen sa ingenting.
+        // Flyten fikk et teamnavn der den venter et par.
+        const medPlan = async (v) => d.diagnoser({
+            Behandling: [{ Steg: 1, Personer: ['a@b.no'], Varsling: ['planner'], PlannerOppgave: { TeamOgPlan: v } }]
+        }, { antallInnehavere: roller(3) });
+
+        const bareTeam = await medPlan('Automatisering');
+        sjekk('team uten plan gir feil', harKode(bareTeam, 'planner.plan-uten-plan'), true);
+        // Meldingen skal vise hvordan det skal se ut, ikke bare si at det er galt.
+        sjekk('meldingen foreslår formen',
+            bareTeam.funn[0].melding.includes('Automatisering:Oppgaver'), true);
+
+        sjekk('riktig form gir ingenting', (await medPlan('Automatisering:Oppgaver')).funn, []);
+
+        // En plassholder kan løse seg til «Team:Plan». Da vet vi ikke nok til
+        // å melde feil — men vi skal si at det ikke kan sjekkes.
+        const ukjent = await medPlan('{1-1}');
+        sjekk('plassholder uten kolon gir info', harKode(ukjent, 'planner.plan-form-ukjent'), true);
+        sjekk('og ikke feil', ukjent.sammendrag.feil, 0);
+        // Og bare ÉN linje om samme felt — to er støy.
+        sjekk('ikke to meldinger om samme felt', ukjent.funn.length, 1);
+
+        // Kolon i den faste delen: formen er i orden, men verdien kan fortsatt
+        // ikke sjekkes.
+        const halvt = await medPlan('FFT:{1-1}');
+        sjekk('kolon utenfor plassholderen er nok', harKode(halvt, 'planner.plan-uten-plan'), false);
+        sjekk('men verdien kan ikke sjekkes', harKode(halvt, 'planner.plassholder'), true);
     }
 
     // ---------- Teams-kanal ----------
