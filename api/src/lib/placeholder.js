@@ -211,5 +211,9 @@ module.exports = {
     // ville to regler for «hvilket felt er {2-3}?» levd side om side — og den
     // som sjekker ville før eller siden sagt noe annet enn den som henter.
     finnFeltViaRef,
-    finnFeltViaId
+    finnFeltViaId,
+    // Eksportert av samme grunn, for feltperson.js: den må se felttypen FØR
+    // den leser svarene, og skal lese dem etter nøyaktig samme regel som alle
+    // andre — inkludert at bare flervalgstyper gir mer enn én verdi.
+    alleSvarIFelt
 };

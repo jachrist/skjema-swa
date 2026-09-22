@@ -158,6 +158,37 @@
         }
         .kollaps-verktoy .knapp.mini { padding: 4px 10px; font-size: 12px; }
 
+        /* Vis alle / Skjul alle følger med nedover siden.
+           Skjemaeditoren er lang — tjue seksjoner med felter er vanlig — og
+           behovet for å kollapse alt oppstår nettopp når man har blad langt
+           ned. Måtte man tilbake til toppen for å nå knappen, var den ikke
+           der da den trengtes.
+
+           Bare den øverste linja flyter. Den inne i Seksjoner-panelet har
+           samme klasse, og uten `flytende` ville vi fått to striper som
+           kjempet om samme plass på skjermen.
+
+           De negative margene drar båndet ut til containerens kant (28px
+           padding), så innhold ikke titter fram langs sidene når det glir
+           under. Bakgrunnen er containerens egen, med samme blur — stripa
+           skal se ut som en del av flaten, ikke som et nytt panel. */
+        .kollaps-verktoy.flytende {
+            position: sticky;
+            top: 0;
+            /* Over panelene, godt under modalene (1000) og AI-importen (9999). */
+            z-index: 20;
+            margin: 0 -28px 10px;
+            padding: 8px 28px;
+            background: var(--bg-container);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        /* Sticky krever at ingen forelder klipper. Står det her som en
+           påminnelse: setter noen overflow på .container, slutter stripa å
+           feste seg — uten feilmelding noe sted. */
+        .container { overflow: visible; }
+
         .seksjon.kollapset .seksjon-innhold { display: none !important; }
         .seksjon-innhold { margin-top: 10px; }
         .seksjon-kollaps-btn, .felt-kollaps-btn {
@@ -881,7 +912,7 @@
             `;
 
             const kollapsVerktoy = `
-                <div class="kollaps-verktoy">
+                <div class="kollaps-verktoy flytende">
                     <button class="knapp mini sekundær" onclick="ekspanderAlt()" title="Vis alle avsnitt og seksjoner">▸ Vis alle</button>
                     <button class="knapp mini sekundær" onclick="kollapsAlt()" title="Skjul alle avsnitt og seksjoner">▾ Skjul alle</button>
                 </div>
@@ -2407,7 +2438,10 @@
                     if (felt.Type === 'Informasjon' || felt.Type === 'Opplasting') continue;
                     const ref = felt.Id || `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
                     const tekst = felt.Tekst?.Verdi || '(uten tekst)';
-                    felter.push({ ref, tekst: `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}` });
+                    // type følger med: mottakervelgeren i tilgang-editoren
+                    // godtar bare E-post-felter. De andre bruksstedene
+                    // (dynamisk rolle, vilkår) ser bort fra den.
+                    felter.push({ ref, type: felt.Type || '', tekst: `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}` });
                 }
             }
             return felter;

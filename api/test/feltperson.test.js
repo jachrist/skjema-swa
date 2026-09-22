@@ -12,9 +12,14 @@
  *   løses opp. Tillater vi innfletting, kan innsenderen selv sette sammen
  *   adressen saksdokumentene går til.
  *
- *   **Verdier som ikke er e-post forkastes.** Peker referansen på et
- *   flervalgsfelt, blir «Ja» til behandler. Ingen kan behandle steget, og
- *   ingen får vite hvorfor.
+ *   **Bare E-post-felter er gyldige.** Typen har syntakssjekk ved utfylling,
+ *   og det er den garantien som gjør referansen trygg. Et Tekst-felt som
+ *   tilfeldigvis inneholder en adresse avvises også — regelen skal kunne
+ *   leses av felttypen alene. Testen står her fordi «den inneholder jo en
+ *   adresse, så la den passere» er den intuitive lempningen.
+ *
+ *   **Verdier som ikke er e-post forkastes likevel.** Typesjekken sier at
+ *   feltet skal være kontrollert, ikke at raden i lagringen er det.
  *
  *   **En ubesvart referanse blir BORTE, ikke stående.** Dette er det motsatte
  *   av dynamisk-rolle.js, og det er med vilje: en rollestreng som blir
@@ -23,8 +28,10 @@
  *   ingen kan dekke. Testen finnes fordi «behold malen» er den intuitive
  *   løsningen, og den er feil her.
  *
- *   **Et flervalgsfelt gir én mottaker per valg.** Samme regel som for
- *   dynamiske roller. Leses bare første verdi, mister resten varselet.
+ *   **De fire grunnene til at det ikke ble noen mottaker holdes fra
+ *   hverandre.** «Feltet finnes ikke», «feil type», «ubesvart» og «ugyldig
+ *   verdi» har hver sin rettelse, og en samlet melding sender skjemaeier til
+ *   feil ende.
  *
  *   **Malen tas vare på.** Uten `PersonerMal` ville ompuss + ny innsending
  *   ekspandert fra forrige resultat, og referansen vært borte for godt.
@@ -74,6 +81,25 @@ const EPOSTFELT = (svar, type = 'E-post') => [{ Nummer: 1, Type: type, Svar: sva
     sjekk('tom avvises', fp.erEpost(''), false);
 }
 
+// ---------- bare E-post-felter ----------
+{
+    sjekk('typelista har ett medlem', fp.GYLDIGE_FELTTYPER, ['E-post']);
+
+    // Et Tekst-felt med en helt gyldig adresse i skal AVVISES. Det er ikke
+    // verdien som er kravet, det er typen.
+    const tekst = fp.ekspanderPersoner(['{2-01}'], seksjoner(EPOSTFELT(['ola@x.no'], 'Tekst')));
+    sjekk('Tekst-felt gir ingen mottaker', tekst.personer, []);
+    sjekk('og grunnen nevner typen', /typen «Tekst»/.test(tekst.uloste[0].grunn), true);
+
+    // Flervalg var mulig før innstrammingen og er det ikke lenger.
+    const flervalg = [{ Nummer: 1, Type: 'Flervalg-knapper', Svar: ['a@x.no', 'b@x.no'] }];
+    sjekk('flervalgsfelt avvises', fp.ekspanderPersoner(['{2-01}'], seksjoner(flervalg)).personer, []);
+
+    // Felt som ikke finnes skilles fra felt med feil type.
+    const borte = fp.ekspanderPersoner(['{9-99}'], seksjoner(EPOSTFELT(['a@x.no'])));
+    sjekk('manglende felt har sin egen grunn', borte.uloste[0].grunn, 'feltet finnes ikke');
+}
+
 // ---------- oppslag og forkasting ----------
 {
     const s = seksjoner(EPOSTFELT(['Ola@Example.NO']));
@@ -107,16 +133,12 @@ const EPOSTFELT = (svar, type = 'E-post') => [{ Nummer: 1, Type: type, Svar: sva
         (skjema.Behandling[0].Personer || []).length > 0, false);
 }
 
-// ---------- flervalg gir én mottaker per valg ----------
+// ---------- én referanse gir én mottaker ----------
 {
-    const felt = [{ Nummer: 1, Type: 'Flervalg-knapper', Svar: ['a@x.no', 'b@x.no'] }];
-    const r = fp.ekspanderPersoner(['{2-01}'], seksjoner(felt));
-    sjekk('alle valgene blir mottakere', r.personer, ['a@x.no', 'b@x.no']);
-
-    // Kontrollen: et enkeltverdifelt kutter etter den første — det er
-    // placeholder.js' regel, og den skal gjelde her også.
+    // E-post er ikke en flervalgstype, så placeholder.js kutter etter første
+    // verdi. Det er regelen som skal gjelde her også — ikke en egen.
     const enkelt = fp.ekspanderPersoner(['{2-01}'], seksjoner(EPOSTFELT(['a@x.no', 'b@x.no'])));
-    sjekk('enkeltfelt gir bare første', enkelt.personer, ['a@x.no']);
+    sjekk('bare første verdi brukes', enkelt.personer, ['a@x.no']);
 }
 
 // ---------- malen tas vare på ----------
@@ -174,7 +196,10 @@ function les(...deler) {
     const diagnose = les('lib', 'skjematype-diagnose.js');
     sjekk('diagnosen sjekker personreferanser', /function sjekkPerson\(/.test(diagnose), true);
     sjekk('manglende felt er rødt', /alvor: 'feil', kode: 'person\.feltref-mangler'/.test(diagnose), true);
-    sjekk('feil felttype er gult', /alvor: 'advarsel', kode: 'person\.feltref-type'/.test(diagnose), true);
+    sjekk('feil felttype er rødt', /alvor: 'feil', kode: 'person\.feltref-type'/.test(diagnose), true);
+    // Diagnosen må bruke ekspansjonens typeliste, ikke sin egen.
+    sjekk('typelista leses fra feltperson',
+        /feltperson\.GYLDIGE_FELTTYPER\.includes\(type\)/.test(diagnose), true);
 }
 
 // ---------- diagnosen, i praksis ----------
@@ -193,7 +218,9 @@ function les(...deler) {
 
     return diagnose.diagnoser(def, ingenOppslag).then(r => {
         sjekk('e-postfelt gir info', koder(r).includes('person.dynamisk'), true);
-        sjekk('tekstfelt gir advarsel', koder(r).includes('person.feltref-type'), true);
+        sjekk('tekstfelt gir funn', koder(r).includes('person.feltref-type'), true);
+        sjekk('og det er rødt',
+            r.funn.find(f => f.kode === 'person.feltref-type').alvor, 'feil');
         sjekk('manglende felt gir feil', koder(r).includes('person.feltref-mangler'), true);
 
         // Ferdigvarslingen har samme fallgruve og skal ikke være usynlig.
