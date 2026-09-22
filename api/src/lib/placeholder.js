@@ -205,5 +205,11 @@ module.exports = {
     finnSvarForFeltRef,
     finnSvarForFeltViaId,
     finnAlleSvarForFeltRef,
-    finnAlleSvarForFeltViaId
+    finnAlleSvarForFeltViaId,
+    // Eksportert for diagnosen (skjematype-diagnose.js), som må avgjøre om en
+    // feltreferanse peker på noe som finnes. Den kunne slått opp selv, men da
+    // ville to regler for «hvilket felt er {2-3}?» levd side om side — og den
+    // som sjekker ville før eller siden sagt noe annet enn den som henter.
+    finnFeltViaRef,
+    finnFeltViaId
 };
