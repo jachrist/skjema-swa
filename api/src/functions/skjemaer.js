@@ -20,6 +20,7 @@ const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
+const feltperson = require('../lib/feltperson');
 const varsling = require('../lib/varsling');
 const { kallEksternFlyt } = require('../lib/ekstern-flyt');
 const { oppdaterSPListe } = require('../lib/sp-liste');
@@ -855,6 +856,36 @@ app.http('lagreSkjema', {
                     // Ekspansjon skal ikke velte en innsending — steget beholder
                     // malen og fanges opp av hendelsesloggen over.
                     context.log(`dynamisk-rolle: ekspansjon feilet — ${e.message}`);
+                }
+            }
+
+            // Samme frysing for personreferanser: «{2-01}» → adressen
+            // innsenderen skrev. Må skje FØR skip-logikken og sikreBehandler
+            // under, som begge leser steg.Personer og ville telt en uløst
+            // referanse som en behandler.
+            if (erInnsending && Array.isArray(skjemaData.Behandling)) {
+                try {
+                    const endret = feltperson.ekspanderBehandlingPersoner(skjemaData);
+                    for (const e of endret) {
+                        context.log(`feltperson: steg ${e.steg} ${e.mal.map(m => `"${m}"`).join(', ')} → ` +
+                            (e.personer.length ? e.personer.join(', ') : '(ingen adresser)'));
+                        for (const u of e.uloste) context.log(`feltperson: steg ${e.steg} "${u.mal}" droppet — ${u.grunn}`);
+                        for (const u of e.ugyldige) context.log(`feltperson: steg ${e.steg} "${u.mal}" ga "${u.verdi}", ikke en e-postadresse`);
+                    }
+                    // Bare det som gikk galt havner i hendelsesloggen. En
+                    // referanse som løste seg er hverdagen; en som ikke gjorde
+                    // det er grunnen til at noen aldri fikk skjemaet.
+                    const problem = endret.filter(e => e.uloste.length || e.ugyldige.length);
+                    if (problem.length > 0) {
+                        hendelser.logg({
+                            Type: 'behandling.person.ulost', Aktor: innsenderId,
+                            ObjektType: 'skjema', ObjektId: skjemaId,
+                            Melding: `${problem.length} steg fikk ikke løst en personreferanse`,
+                            Detaljer: { steg: problem }
+                        });
+                    }
+                } catch (e) {
+                    context.log(`feltperson: ekspansjon feilet — ${e.message}`);
                 }
             }
 

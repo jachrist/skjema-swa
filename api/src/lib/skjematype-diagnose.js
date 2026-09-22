@@ -29,6 +29,7 @@
  * er riktig.
  */
 const { finnFeltViaRef, finnFeltViaId } = require('./placeholder');
+const feltperson = require('./feltperson');
 
 /** Feltreferanser i dynamiske roller og plassholdere: {2-3} eller {felt-id}. */
 const FELTREF = /\{([^}]+)\}/g;
@@ -70,6 +71,12 @@ function refFinnes(seksjoner, ref) {
     return m
         ? !!finnFeltViaRef(seksjoner, m[1], m[2])
         : !!finnFeltViaId(seksjoner, ref);
+}
+
+/** Feltet en referanse peker på, eller null. Samme regel som refFinnes. */
+function feltFor(seksjoner, ref) {
+    const m = POSISJONELL.exec(ref);
+    return (m ? finnFeltViaRef(seksjoner, m[1], m[2]) : finnFeltViaId(seksjoner, ref)) || null;
 }
 
 function stedFor(steg, nr, del) {
@@ -142,6 +149,51 @@ async function sjekkRolle(rolle, { seksjoner, sted, antallInnehavere, funn }) {
             melding: `Rollen «${streng}» gir ingen mottakere. Varsling for dette steget går ingen steder.`
         });
     }
+}
+
+/**
+ * Sjekk én personoppføring.
+ *
+ * En vanlig adresse er det ingenting å si om her — den er skrevet ferdig, og
+ * om den er feilstavet ser vi det ikke uansett. En FELTREFERANSE kan derimot
+ * peke feil, og gjør den det, oppdages det først når skjemaet er sendt inn og
+ * ingen fikk det.
+ *
+ * To ulike feil, to ulike nivåer:
+ *   - feltet finnes ikke → rødt. Referansen gir garantert ingen mottaker.
+ *   - feltet finnes, men er ikke av typen E-post → gult. Et Tekst-felt kan
+ *     godt inneholde en adresse, og da virker det. Inneholder det noe annet,
+ *     forkastes verdien (feltperson.js) — så det blir ingen mottaker, men vi
+ *     kan ikke vite det her.
+ */
+function sjekkPerson(person, { seksjoner, sted, funn }) {
+    const streng = String(person || '').trim();
+    if (!streng || !feltperson.erFeltreferanse(streng)) return;
+
+    const ref = feltperson.referansen(streng);
+    const felt = feltFor(seksjoner, ref);
+    if (!felt) {
+        funn.push({
+            alvor: 'feil', kode: 'person.feltref-mangler', sted,
+            melding: `Mottakeren «${streng}» viser til et felt som ikke finnes i skjemaet. `
+                + 'Ingen adresse blir hentet.'
+        });
+        return;
+    }
+    const type = String(felt.Type || '');
+    if (type !== 'E-post') {
+        funn.push({
+            alvor: 'advarsel', kode: 'person.feltref-type', sted,
+            melding: `Mottakeren «${streng}» peker på feltet «${felt.Tekst?.Verdi || ref}», `
+                + `som er av typen «${type || 'ukjent'}». Bare svar som ser ut som en `
+                + 'e-postadresse blir brukt — resten forkastes.'
+        });
+        return;
+    }
+    funn.push({
+        alvor: 'info', kode: 'person.dynamisk', sted,
+        melding: `Mottakeren «${streng}» hentes fra feltet «${felt.Tekst?.Verdi || ref}» ved innsending.`
+    });
 }
 
 /** Planner-oppsettet for ett steg. */
@@ -607,12 +659,32 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
                 seksjoner, sted: stedFor(s, nr, 'Roller'), antallInnehavere, funn
             });
         }
+        for (const person of (s?.Personer || [])) {
+            sjekkPerson(person, { seksjoner, sted: stedFor(s, nr, 'Personer'), funn });
+        }
         const ansvarlig = s?.PlannerOppgave?.AnsvarligRolle;
         if (ansvarlig && kanaler.includes('planner')) {
             await sjekkRolle(ansvarlig, {
                 seksjoner, sted: stedFor(s, nr, 'Planner · ansvarlig'), antallInnehavere, funn
             });
         }
+    }
+
+    // Mottakerne utenfor behandlingsstegene har nøyaktig samme fallgruve.
+    // Uten disse to linjene ville en feilskrevet referanse i ferdigvarslingen
+    // vært usynlig for diagnosen mens den samme referansen på et steg ble rød.
+    for (const [oppsett, hvor] of [
+        [def?.Ferdigvarsling?.Mottakere, 'Ferdigvarsling · mottakere'],
+        [def?.Innsenderkvittering?.Kopi, 'Innsenderkvittering · kopi']
+    ]) {
+        for (const person of (oppsett?.Personer || [])) {
+            sjekkPerson(person, { seksjoner, sted: hvor, funn });
+        }
+        // Rollene her sjekkes bevisst IKKE. `sjekkRolle` melder «Varsling for
+        // dette steget går ingen steder», og det er feil ordlyd utenfor et
+        // steg — og en tom mottakerrolle i ferdigvarslingen er ikke noe noen
+        // har bedt om å få rødt på. Skal det inn, trenger regelen sin egen
+        // melding.
     }
 
     const rang = { feil: 0, advarsel: 1, info: 2 };
@@ -629,7 +701,7 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
 }
 
 module.exports = {
-    diagnoser, aktiveKanaler, harPlassholder, feltreferanser, refFinnes,
+    diagnoser, aktiveKanaler, harPlassholder, feltreferanser, refFinnes, feltFor, sjekkPerson,
     sjekkSPListe, KANALER,
     // Fase 2
     eksterneReferanser, flettFlytsvar, delTeamOgPlan, kanSlaasOpp,

@@ -208,6 +208,57 @@ rollelista i etterkant, får steget behandler uten at skjemaet må røres.
 Er feltet ubesvart, beholdes malen uendret i `Roller` (steget får ingen
 behandler, og `behandling.rolle.ekspandert` logger det som uløst).
 
+## Mottaker hentet fra et svar (`"{2-01}"` i `Personer`)
+
+En personoppføring kan være en ren feltreferanse i stedet for en adresse:
+
+```json
+{
+  "Steg": 1,
+  "Personer": ["{2-01}", "arkiv@fhs.no"]
+}
+```
+
+Adressen hentes fra innsenderens svar i feltet. Gjelder tre steder —
+behandlingssteg (`steg.Personer`), `Ferdigvarsling.Mottakere.Personer` og
+`Innsenderkvittering.Kopi.Personer`. Logikken ligger i
+`api/src/lib/feltperson.js`.
+
+Fire regler, og tre av dem er valgt for å unngå en stille feil:
+
+**Hele oppføringen må være referansen.** `"{2-01}"` er lov, `"sjef-{2-01}@x.no"`
+er det ikke — den siste går uendret videre som en vanlig (ubrukelig) adresse. En
+rollestreng har referansen som ett ledd av omfanget; en e-postadresse er én
+verdi. Innfletting ville latt innsenderen selv sette sammen adressen
+saksdokumentene går til.
+
+**Verdier som ikke ser ut som e-post forkastes.** Peker referansen på feil felt,
+blir «Ja» eller «MILM23-1» behandler. Da kan ingen behandle steget, og ingen får
+vite hvorfor.
+
+**En ubesvart referanse fjernes — malen blir ikke stående.** Her er regelen
+*motsatt* av dynamisk rolle over, og det er med vilje. En rollestreng som blir
+stående er inert: `hentInnehavere` finner ingenting. En personoppføring som blir
+stående er verre:
+
+- `sikreBehandler` hopper over steget fordi `Personer.length > 0`, så
+  reserverollen slår ikke inn
+- `beregnAlleKrav` legger `{2-01}` inn som et krav ingen kan dekke, og et «alle
+  må avgjøre»-steg blir stående for alltid
+
+**Flervalgsfelt gir én mottaker per valg** — samme regel som for dynamiske
+roller.
+
+For behandlingssteg ekspanderes referansen **ved innsending**, av samme grunn
+som rolleomfanget: tilgangssjekken kjører før dekryptering. Malen lagres i
+`PersonerMal`, så ompuss + ny innsending ekspanderer på nytt fra malen.
+Ferdigvarsling og kvitteringskopi løses derimot opp **ved sending**
+(`varsling.løsMottakere`) — de leser skjemaet mens det ennå er i klartekst.
+
+Diagnosen ved lagring melder `person.feltref-mangler` (rødt) når feltet ikke
+finnes, og `person.feltref-type` (gult) når det finnes, men ikke er av typen
+E-post.
+
 ## Visningstekst for valglister (`SvarTekst` / `svt`)
 
 Valglister lagrer **verdien**, ikke teksten: en klasse blir FS-nøkkelen

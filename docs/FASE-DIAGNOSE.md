@@ -64,6 +64,15 @@ riktig, og sluttet å tro på lista.
 | `rolle.tom` | Rollen gir ingen mottakere |
 | `rolle.feltref-mangler` | Dynamisk rolle peker på et felt som ikke finnes |
 | `rolle.dynamisk` | Rollen settes sammen av svar og kan ikke slås opp *(info)* |
+| `person.feltref-mangler` | Mottakeren `{2-01}` peker på et felt som ikke finnes |
+| `person.feltref-type` | Feltet finnes, men er ikke av typen E-post *(advarsel)* |
+| `person.dynamisk` | Adressen hentes fra et svar ved innsending *(info)* |
+
+Personreglene kjøres både på behandlingsstegene og på mottakerne i
+`Ferdigvarsling` og `Innsenderkvittering.Kopi` — samme fallgruve begge steder.
+Rollene utenfor stegene sjekkes derimot **ikke**: `rolle.tom` sier «Varsling for
+dette steget går ingen steder», og det er feil ordlyd der. Skal den inn, trenger
+den sin egen melding.
 
 `rolle.tom` skiller ikke «rollen finnes ikke» fra «rollen er tom» — i denne
 datamodellen *er* en rolle sine medlemsrader, så de to er samme tilstand.

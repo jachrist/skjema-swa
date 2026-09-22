@@ -17,6 +17,7 @@ const { erstattPlassholdere, byggKontekst } = require('./placeholder');
 const rollerStorage = require('./roller-storage');
 const teamStorage = require('./team-storage');
 const dynamiskRolle = require('./dynamisk-rolle');
+const feltperson = require('./feltperson');
 
 function standardKvittering() {
     return {
@@ -511,7 +512,14 @@ async function samleBehandlerMottakere(steg) {
         out.push({ epost: e, navn: navn || '' });
     };
 
-    for (const p of (steg?.Personer || [])) leggTil(p, '');
+    // En feltreferanse som fortsatt står her er IKKE en adresse. Den skulle
+    // vært ekspandert ved innsending (feltperson.js); står den igjen, er
+    // skjemaet enten et utkast eller så gikk ekspansjonen galt. Å sende til
+    // «{2-01}» ville uansett bare gitt en sprettert fra e-postserveren.
+    for (const p of (steg?.Personer || [])) {
+        if (feltperson.erFeltreferanse(p)) continue;
+        leggTil(p, '');
+    }
 
     for (const r of (steg?.Roller || [])) {
         try {
@@ -545,16 +553,29 @@ function standardFerdigVarsling() {
 /**
  * Løs et mottakeroppsett { Personer, Roller } til e-postadresser.
  *
- * Rollestrengene kan ha feltreferanser — "Klassesjef({2-01})" — og de slås opp
- * mot skjemaets svar her og nå, ikke mot det som ble frosset ved innsending.
- * Det er trygt fordi kryptering først skjer i det skjemaet lagres med status 5:
- * så lenge kalleren holder på skjemaet før den lagringen, er svarene i klartekst.
+ * Både rollestrengene og personoppføringene kan ha feltreferanser —
+ * "Klassesjef({2-01})" og "{2-01}" — og de slås opp mot skjemaets svar her og
+ * nå, ikke mot det som ble frosset ved innsending. Det er trygt fordi
+ * kryptering først skjer i det skjemaet lagres med status 5: så lenge kalleren
+ * holder på skjemaet før den lagringen, er svarene i klartekst.
  *
- * Peker referansen på et flervalgsfelt, blir det én rolle per valg — samme
- * regel som for behandlingssteg.
+ * Peker referansen på et flervalgsfelt, blir det én rolle — eller én mottaker
+ * — per valg, samme regel som for behandlingssteg.
  */
 async function løsMottakere(oppsett, skjema, log = () => {}) {
     if (!oppsett) return [];
+
+    // Personer først: en referanse som ikke lar seg løse skal si fra her, ikke
+    // forsvinne inn i en tom mottakerliste lenger nede.
+    const { personer, uloste: ulostePersoner, ugyldige } = feltperson.ekspanderPersoner(
+        oppsett.Personer || [], skjema?.Seksjoner || []);
+    for (const u of ulostePersoner) {
+        log(`varsling: mottakeren "${u.mal}" ga ingen adresse — ${u.grunn}`);
+    }
+    for (const u of ugyldige) {
+        log(`varsling: mottakeren "${u.mal}" ga "${u.verdi}", som ikke er en e-postadresse — hoppes over`);
+    }
+
     const roller = [];
     for (const mal of (oppsett.Roller || [])) {
         if (!dynamiskRolle.erDynamisk(mal)) {
@@ -573,7 +594,7 @@ async function løsMottakere(oppsett, skjema, log = () => {}) {
         }
     }
     // Personer + roller slås sammen og dedupliseres av samleBehandlerMottakere.
-    return await samleBehandlerMottakere({ Personer: oppsett.Personer || [], Roller: roller });
+    return await samleBehandlerMottakere({ Personer: personer, Roller: roller });
 }
 
 /**
@@ -613,7 +634,18 @@ async function forklarMottakere(oppsett, skjema) {
         }
         roller.push({ mal, dynamisk: true, vurderte: resultat.vurderte, perRolle });
     }
-    return { personer: oppsett?.Personer || [], roller };
+    // Diagnosen skal vise BÅDE malen og det den ble til. «{2-01}» alene sier
+    // ikke om feltet var besvart, og adressen alene skjuler at den kom fra et
+    // svar innsenderen kan endre.
+    const { personer, uloste, ugyldige } = feltperson.ekspanderPersoner(
+        oppsett?.Personer || [], skjema?.Seksjoner || []);
+    return {
+        personer,
+        personerMal: oppsett?.Personer || [],
+        personerUloste: uloste,
+        personerUgyldige: ugyldige,
+        roller
+    };
 }
 
 /**

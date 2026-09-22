@@ -18,6 +18,20 @@
  */
 
 /**
+ * Ikonet som merker e-postfelt i editoren.
+ *
+ * Ett sted, fordi det skal stå på HVER knapp som åpner denne modalen og
+ * ingen andre. Teams (💬), Planner (📋) og Teams-kanal (📢) har sine egne,
+ * og poenget med merkingen forsvinner i det e-post deler ikon med dem eller
+ * mangler det ett sted.
+ *
+ * `frontend/test/epost-ikon.test.js` leser denne konstanten og krever at hver
+ * funksjon i editor.html som kaller `apneMeldingModal` har en knapp som bærer
+ * den — så en femte e-postmelding ikke kan legges til umerket.
+ */
+export const EPOST_IKON = '📧';
+
+/**
  * Plassholderne som tilbys i meldings-editoren.
  *
  * Lista er et løfte: alt som står her skal `erstattPlassholdere` kunne bytte ut
@@ -53,7 +67,10 @@ export const STANDARD_PLASSHOLDERE = [
  */
 export function apneMeldingModal(mal, options = {}) {
     return new Promise(resolve => {
-        const tittel = options.tittel || 'Rediger melding';
+        // Ikonet foran tittelen også: åpner du modalen fra en knapp du ikke
+        // helt husket hva gjorde, står det i overskriften at dette blir en
+        // e-post.
+        const tittel = `${EPOST_IKON} ${options.tittel || 'Rediger melding'}`;
         const forslag = options.forslag || { Emne: '', Tekst: '' };
         const plassholdere = options.plassholdere || STANDARD_PLASSHOLDERE;
         const feltreferanser = options.feltreferanser || [];

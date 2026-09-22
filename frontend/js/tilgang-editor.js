@@ -17,6 +17,10 @@
  * Dynamisk rolle: er `feltReferanser` satt (kun meningsfullt for behandlingssteg),
  * kan omfanget hentes fra et svar i skjemaet — "Klassesjef({2-01})". Referansen
  * løses opp ved innsending, se api/src/lib/dynamisk-rolle.js.
+ *
+ * Feltperson: samme `feltReferanser` gir også en personoppføring som er en ren
+ * referanse — "{2-01}" — der adressen hentes fra innsenderens eget svar. Hele
+ * oppføringen må være referansen; se api/src/lib/feltperson.js for hvorfor.
  */
 
 let _rolleGrupperCache = null;
@@ -116,6 +120,26 @@ export function byggTilgangEditor(container, verdi, options = {}) {
         };
     }
 
+    /** Er personoppføringen en feltreferanse? Samme regel som feltperson.js. */
+    function erFeltperson(p) {
+        return /^\s*\{[^{}]+\}\s*$/.test(String(p || ''));
+    }
+
+    /**
+     * "{2-01}" → «E-post fra «S1-F2: Din e-post»».
+     *
+     * Referansekoden vises ikke: den sier ingenting til den som satte opp
+     * skjemaet, og det er nettopp forvekslingen mellom to felter denne
+     * visningen skal hindre.
+     */
+    function personTilVisning(p) {
+        const streng = String(p || '');
+        if (!erFeltperson(streng)) return streng;
+        const ref = streng.trim().slice(1, -1).trim();
+        const felt = feltReferanser.find(f => f.ref === ref);
+        return felt ? `E-post fra «${felt.tekst}»` : `E-post fra svar {${ref}}`;
+    }
+
     function rolleTilVisning(r) {
         // "Emneansvarlig(CBU2501)" → "Emneansvarlig — CBU2501"
         const m = /^(.+?)\((.+)\)$/.exec(String(r || '').trim());
@@ -176,15 +200,70 @@ export function byggTilgangEditor(container, verdi, options = {}) {
 
     // ==================== Personer ====================
     function byggPersonerSeksjon() {
-        const sek = seksjon('Personer', '(e-postadresser)');
+        const sek = seksjon('Personer', feltReferanser.length > 0
+            ? '(e-postadresser — eller hentet fra et svar i skjemaet)'
+            : '(e-postadresser)');
         sek.appendChild(byggChipListe('Personer', state.Personer, (verdi) => {
             const trimmet = String(verdi || '').trim().toLowerCase();
             if (!trimmet || state.Personer.includes(trimmet)) return false;
             state.Personer.push(trimmet);
             ferdig();
             return true;
-        }, 'ola@example.no'));
+        }, 'ola@example.no', { visning: personTilVisning }));
+        if (feltReferanser.length > 0) sek.appendChild(byggFeltperson());
         return sek;
+    }
+
+    /**
+     * «Hent adressen fra et felt» — velgeren for feltperson.
+     *
+     * Egen kontroll og ikke fritekst i chip-lista: "{2-01}" skrevet for hånd
+     * er lett å bomme på, og en referanse som peker feil gir ingen mottaker
+     * uten at noe sier fra før skjemaet er sendt inn.
+     *
+     * Alle felter listes, ikke bare de av typen E-post. Et Tekst-felt kan godt
+     * være der adressen står i en skjematype som alt er i bruk. Diagnosen ved
+     * lagring gir gul advarsel for de andre typene (person.feltref-type), så
+     * valget er mulig, men ikke stille.
+     */
+    function byggFeltperson() {
+        const boks = document.createElement('div');
+        boks.style.cssText = 'display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0 0 0;';
+
+        const velg = document.createElement('select');
+        velg.style.cssText = `flex: 1; min-width: 180px; padding: 3px 8px; font-size: ${kompakt ? '12px' : '13px'}; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;`;
+        const tom = document.createElement('option');
+        tom.value = '';
+        tom.textContent = 'e-post fra felt…';
+        velg.appendChild(tom);
+        for (const f of feltReferanser) {
+            const o = document.createElement('option');
+            o.value = f.ref;
+            o.textContent = f.tekst;
+            velg.appendChild(o);
+        }
+
+        const knapp = document.createElement('button');
+        knapp.type = 'button';
+        knapp.textContent = '+ Feltreferanse';
+        knapp.title = 'Adressen hentes fra innsenderens svar når skjemaet sendes inn';
+        knapp.style.cssText = 'padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
+        knapp.addEventListener('click', () => {
+            const ref = velg.value;
+            if (!ref) {
+                alert('Velg et felt først.');
+                return;
+            }
+            const streng = `{${ref}}`;
+            if (!state.Personer.includes(streng)) {
+                state.Personer.push(streng);
+                ferdig();
+                render();
+            }
+        });
+
+        boks.append(velg, knapp);
+        return boks;
     }
 
     // ==================== Roller ====================
