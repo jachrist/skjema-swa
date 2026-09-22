@@ -46,7 +46,8 @@ riktig, og sluttet å tro på lista.
 
 | Kode | Når |
 |---|---|
-| `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom *(advarsel — flytens standardplan)* |
+| `planner.mangler-plan` | Planner slått på, `TeamOgPlan` tom — **feil**, det finnes ingen standardplan |
+| `planner.mangler-bucket` | Plan satt, bucket tom *(advarsel — havner i planens felles bucket)* |
 | `planner.plan-uten-plan` | `TeamOgPlan` mangler plandelen — «Automatisering» i stedet for «Automatisering:Oppgaver» |
 | `planner.plan-form-ukjent` | Som over, men verdien har plassholder — kolonet kan komme fra svaret *(info)* |
 | `planner.bucket-uten-plan` | Bucket satt uten plan |
@@ -79,19 +80,28 @@ merke seg hvorfor regelsettet bommet: den opprinnelige regelen spurte bare om
 feltet var utfylt. «Utfylt» og «riktig» er ikke det samme, og et felt som
 rommer to verdier trenger en regel om formen.
 
-### Tomt felt er ikke en feil
+### Tomt felt: det kommer an på om flyten har et standardvalg
 
-Editorens egne hjelpetekster sier det: «Tomme felter overlates til flyten, som
-før» (Planner) og «Står team eller kanal tomt, bruker flyten sitt eget
-standardvalg» (Teams-kanal). Det **virker** — innlegget havner bare et annet
-sted enn skjemaeier kanskje tror.
+Editorens hjelpetekster sier at tomme felter overlates til flyten. Men om det
+finnes noe å falle tilbake på, varierer — og det er domenekunnskap som ikke
+står noe sted i koden. Avklart med oppdragsgiver 22.09.2026:
 
-Derfor er de `advarsel`, ikke `feil`. En rød linje på noe som fungerer er den
-formen for feilmelding som gjør at folk slutter å lese lista.
+| Felt | Standardvalg | Nivå |
+|---|---|---|
+| Teams-kanal → Kanal | «Generelt» | advarsel |
+| Teams-kanal → Team | flytens eget valg | advarsel |
+| Planner → Team og plan | **ingen** | **feil** |
+| Planner → Bucket | planens felles bucket | advarsel |
 
-Unntaket er `planner.bucket-uten-plan`: en bucket i en plan man ikke har
-navngitt, finnes ikke i flytens standardplan. Den er selvmotsigende, og
-fortsatt `feil`.
+`planner.mangler-plan` er altså rød der de andre er gule: uten plan blir det
+ingen oppgave, og ingen som venter på den får vite det.
+
+`planner.bucket-uten-plan` er også rød — uten plan finnes det ingen bucket å
+legge oppgaven i, og verdien er selvmotsigende.
+
+Poenget med skillet: en rød linje på noe som fungerer er den formen for
+feilmelding som gjør at folk slutter å lese lista. En gul linje på noe som
+IKKE fungerer er like ille motsatt vei.
 
 ### Feltnavnene må være dem varslingen leser
 
@@ -128,23 +138,123 @@ Editoren kaller den to steder:
 * **«🩺 Sjekk oppsettet»-knappen**, som alltid viser resultatet, også når det
   er tomt.
 
-## Fase 2: eksterne oppslag (ikke bygget)
+## Fase 2: eksterne oppslag
 
-Finnes teamet? Finnes kanalen i det? Finnes planen, bucketen, SP-sida, lista,
-kolonnene? Det krever en flytrunde, og den plugges inn samme sted: regelsettet
-avgjør om det er noe å spørre om, og flyten svarer per referanse.
+Finnes teamet? Finnes kanalen i det? Finnes planen, bucketen, lista,
+kolonnene? Det krever en flytrunde. **Wiringen er bygget** — flyten gjenstår.
 
-Foreslått svarform per referanse:
+### Oppsett
 
+App setting **`DIAGNOSE_FLOW_URL`**. Er den ikke satt, gjøres ingen kall og
+svaret ser ut som før. Flyten får `x-flow-key` (`FLOW_CALLBACK_KEY`) som de
+andre.
+
+`VARSLING_DEAKTIVERT` slår **ikke** av denne. Den bryteren betyr «ikke rør noe
+utenfor systemet», og et oppslag rører ingenting — det leser. Å skru den av i
+et testmiljø ville dessuten fjernet diagnosen nettopp der man prøver ut
+oppsett.
+
+### Hva som sendes
+
+Regelsettet avgjør. En verdi sendes bare når den kan slås opp:
+
+* **ikke tom** — en tom verdi er alt dekket av reglene i fase 1
+* **uten plassholder** — `FFT:{1-1}` har ikke fått innhold ennå, og et
+  oppslag ville svart «finnes ikke» på noe som er helt riktig
+* **med kontekst** — en plan hører til et team, en kanal til et team, en
+  kolonne til en liste. En plan uten team sendes ikke; Planner-planer er ikke
+  globalt unike
+
+Har skjematypen ingen slike referanser, kalles flyten ikke.
+
+```json
+{
+  "Handling": "sjekkReferanser",
+  "Skjematype_id": "128",
+  "Skjema_navn": "Diagnosetest",
+  "Miljo": "pilot",
+  "Tidspunkt": "2026-09-22T09:14:00.000Z",
+  "Referanser": [
+    { "Id": "steg1.plan",     "Type": "plan",       "Team": "Automatisering", "Plan": "Oppgaver",
+      "Sted": "Steg 1 «Godkjenning» · Planner" },
+    { "Id": "steg1.bucket",   "Type": "bucket",     "Team": "Automatisering", "Plan": "Oppgaver",
+      "Bucket": "Til godkjenning", "Sted": "Steg 1 «Godkjenning» · Planner" },
+    { "Id": "steg1.team",     "Type": "team",       "Team": "FHS test",
+      "Sted": "Steg 1 «Godkjenning» · Teams-kanal" },
+    { "Id": "steg1.kanal",    "Type": "kanal",      "Team": "FHS test", "Kanal": "Generelt",
+      "Sted": "Steg 1 «Godkjenning» · Teams-kanal" },
+    { "Id": "sp.liste",       "Type": "sp-liste",   "Adresse": "https://…/sites/y", "Liste": "Saker",
+      "Sted": "SharePoint-liste" },
+    { "Id": "sp.kolonne.1-1", "Type": "sp-kolonne", "Adresse": "https://…/sites/y", "Liste": "Saker",
+      "Kolonne": "Tittel", "Sted": "SharePoint-liste · felt 1-1" }
+  ]
+}
 ```
-finnes | finnes-ikke | ingen-tilgang | kan-ikke-sjekkes
+
+| Type | Felter | Slå opp |
+|---|---|---|
+| `team` | `Team` | Finnes teamet? |
+| `kanal` | `Team`, `Kanal` | Finnes kanalen i det teamet? |
+| `plan` | `Team`, `Plan` | Finnes planen i det teamet? |
+| `bucket` | `Team`, `Plan`, `Bucket` | Finnes bucketen i den planen? |
+| `sp-liste` | `Adresse`, `Liste` | Finnes lista på den sida? |
+| `sp-kolonne` | `Adresse`, `Liste`, `Kolonne` | Finnes kolonnen i den lista? |
+
+`Id` er stabil og unik. Bruk den til å koble svaret tilbake — **ikke
+rekkefølgen**. `Sted` er til visning hos oss og trenger ikke sendes tilbake.
+
+### Hva flyten skal svare
+
+```json
+{
+  "Referanser": [
+    { "Id": "steg1.plan",   "Status": "finnes" },
+    { "Id": "steg1.bucket", "Status": "finnes-ikke", "Melding": "Planen har ingen bucket med det navnet." },
+    { "Id": "steg1.team",   "Status": "ingen-tilgang" },
+    { "Id": "sp.liste",     "Status": "kan-ikke-sjekkes" }
+  ]
+}
 ```
 
-**`finnes-ikke` og `ingen-tilgang` må skilles.** Flyten kjører som sin egen
-tilkobling. Finner den ikke teamet, kan det være fordi navnet er feil *eller*
-fordi tilkoblingen mangler tilgang. Slås de sammen, jager skjemaeier et navn
-som er korrekt.
+| Status | Blir til | Hvorfor |
+|---|---|---|
+| `finnes` | ingenting | |
+| `finnes-ikke` | **feil** | Navnet peker ingen steder |
+| `ingen-tilgang` | advarsel | Flyten kjører som sin egen tilkobling. At den ikke ser noe, betyr ikke at det ikke finnes |
+| `kan-ikke-sjekkes` | info | Flyten klarte ikke å avgjøre det |
 
-Og: sjekk bare det som **er endret** siden forrige lagring. Editoren lagrer
-ofte, og et eksternt oppslag per tastetrykk er verken raskt eller vennlig mot
-Graph-strupingen.
+**`finnes-ikke` og `ingen-tilgang` må holdes fra hverandre.** Slås de sammen,
+ender skjemaeier med å jage et navn som er helt riktig, fordi tilkoblingen
+mangler tilgang.
+
+`Melding` er valgfri og legges til i vår egen tekst. Hold den kort og konkret.
+
+### Mens flyten bygges
+
+Svarer flyten **200 uten innhold**, blir det én info-linje:
+
+> Flyten svarte, men sa ingenting om de 6 referansene som ble sendt. De er
+> ikke sjekket.
+
+Én linje, ikke én per referanse — et halvferdig endepunkt skal ikke fylle
+skjermen. Svarer den om noen av dem, nevnes de som mangler hver for seg; da
+vet vi at endepunktet virker og at akkurat disse falt ut.
+
+### Tid
+
+Kallet har **ti sekunders tidsavbrudd**. Går det over, meldes det som info
+(«ble ikke sjekket»), ikke som en feil ved skjematypen — og lista fra fase 1
+vises som vanlig.
+
+Editoren viser kostnaden i overskriften: `6 oppslag, 840 ms`. Diagnosen kjøres
+etter lagring og blokkerer den ikke, men tallet er der for å se hva runden
+koster.
+
+`?flyt=0` på endepunktet hopper over runden. Til feilsøking, og for å
+sammenligne svartiden med og uten.
+
+### Fortsatt igjen
+
+Sjekk bare det som **er endret** siden forrige lagring. Editoren lagrer ofte,
+og et eksternt oppslag per tastetrykk er verken raskt eller vennlig mot
+Graph-strupingen. Ikke bygget — vent til vi ser hva runden faktisk koster.

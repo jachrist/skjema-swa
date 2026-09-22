@@ -163,21 +163,22 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
     const plan = String(p?.TeamOgPlan || '').trim();
     const bucket = String(p?.Bucket || '').trim();
 
-    // Samme resonnement som for Teams-kanal: «Tomme felter overlates til
-    // flyten, som før» står i editorens egen hjelpetekst. Oppgaven opprettes,
-    // den havner bare i flytens standardplan.
+    // Rødt, i motsetning til Teams-kanal. Editorens hjelpetekst sier at tomme
+    // felter overlates til flyten, men det finnes INGEN standardplan å falle
+    // tilbake på (bekreftet av oppdragsgiver 22.09.2026). Uten plan blir det
+    // ingen oppgave — og ingen som venter på den, får vite det.
     if (!plan) {
         funn.push({
-            alvor: 'advarsel', kode: 'planner.mangler-plan', sted,
-            melding: 'Planner er slått på, men «Team og plan» er tom. Oppgaven havner i flytens '
-                + 'egen standardplan.'
+            alvor: 'feil', kode: 'planner.mangler-plan', sted,
+            melding: 'Planner er slått på, men «Team og plan» er tom. Det finnes ingen '
+                + 'standardplan å falle tilbake på, så ingen oppgave blir opprettet.'
         });
     }
     if (bucket && !plan) {
         funn.push({
             alvor: 'feil', kode: 'planner.bucket-uten-plan', sted,
             melding: `Bucket «${bucket}» er satt uten at «Team og plan» er fylt ut. `
-                + 'Bucketen finnes ikke i flytens standardplan.'
+                + 'Uten plan finnes det ingen bucket å legge oppgaven i.'
         });
     }
     // «Team og plan» er ETT felt med TO verdier, skilt med kolon — feltets egen
@@ -187,6 +188,17 @@ function sjekkPlanner(steg, nr, aktiv, funn) {
     //
     // Med plassholder i verdien kan kolonet komme fra svaret («{1-1}» kan
     // løse seg til «Team:Plan»), og da vet vi ikke nok til å melde feil.
+    // Bucket er noe annet enn plan: den HAR et standardvalg. En oppgave uten
+    // bucket havner i planens felles bucket, og det virker — den er bare
+    // vanskeligere å finne igjen. Meldes bare når planen er satt; er den tom,
+    // sier linja over allerede det som må sies.
+    if (plan && !bucket) {
+        funn.push({
+            alvor: 'advarsel', kode: 'planner.mangler-bucket', sted,
+            melding: 'Bucket er tom. Oppgaven havner i planens felles bucket.'
+        });
+    }
+
     let planAlleredeMeldt = false;
     if (plan && !plan.includes(':')) {
         planAlleredeMeldt = true;
@@ -334,6 +346,202 @@ function sjekkMottakere(steg, nr, funn) {
     }
 }
 
+/* ==================================================================
+ * FASE 2: eksterne referanser
+ *
+ * Reglene over avgjør alt som kan avgjøres her. Resten — finnes teamet,
+ * finnes lista, finnes bucketen — må noen andre svare på, og det er flyten
+ * som har tilkoblingene.
+ *
+ * Vi sender BARE det som er verdt å spørre om. En verdi med plassholder kan
+ * ikke sjekkes (den får først innhold ved innsending), en tom verdi er alt
+ * dekket av reglene over, og en kanal uten team gir ikke noe meningsfullt
+ * oppslag. Har skjematypen ingen eksterne referanser, kalles ikke flyten.
+ * ================================================================== */
+
+/** Kan denne verdien i det hele tatt slås opp? */
+function kanSlaasOpp(verdi) {
+    const v = String(verdi || '').trim();
+    return v.length > 0 && !harPlassholder(v);
+}
+
+/**
+ * «Team og plan» deles på FØRSTE kolon.
+ *
+ * Et plannavn kan inneholde kolon; et teamnavn før det kan det ikke, siden
+ * skilletegnet er definert som det første. `split(':')` uten grense ville
+ * delt «FFT:Saker: 2026» i tre og mistet halve plannavnet.
+ */
+function delTeamOgPlan(verdi) {
+    const v = String(verdi || '').trim();
+    const i = v.indexOf(':');
+    if (i === -1) return { team: v, plan: '' };
+    return { team: v.slice(0, i).trim(), plan: v.slice(i + 1).trim() };
+}
+
+/**
+ * Referansene flyten skal slå opp.
+ *
+ * Hver får en `Id` som er stabil på tvers av kjøringer, slik at svaret kan
+ * kobles tilbake uten å gjette på rekkefølge. `Sted` er til visning og
+ * gjentas i svaret vårt, ikke i flytens.
+ */
+function eksterneReferanser(def) {
+    const ut = [];
+    const steg = Array.isArray(def?.Behandling) ? def.Behandling : [];
+
+    for (let i = 0; i < steg.length; i++) {
+        const s = steg[i];
+        const nr = s?.Steg ?? (i + 1);
+        const kanaler = aktiveKanaler(s);
+
+        if (kanaler.includes('planner')) {
+            const { team, plan } = delTeamOgPlan(s?.PlannerOppgave?.TeamOgPlan);
+            const bucket = String(s?.PlannerOppgave?.Bucket || '').trim();
+            // Plan uten team gir ikke noe oppslag — Planner-planer er ikke
+            // globalt unike, de hører til et team.
+            if (kanSlaasOpp(team) && kanSlaasOpp(plan)) {
+                ut.push({
+                    Id: `steg${nr}.plan`, Type: 'plan', Team: team, Plan: plan,
+                    Sted: stedFor(s, nr, 'Planner')
+                });
+                if (kanSlaasOpp(bucket)) {
+                    ut.push({
+                        Id: `steg${nr}.bucket`, Type: 'bucket', Team: team, Plan: plan, Bucket: bucket,
+                        Sted: stedFor(s, nr, 'Planner')
+                    });
+                }
+            }
+        }
+
+        if (kanaler.includes('teamskanal')) {
+            const t = s?.TeamsKanalInnlegg;
+            const team = String(t?.Team || '').trim();
+            const kanal = String(t?.Kanal || '').trim();
+            if (kanSlaasOpp(team)) {
+                ut.push({
+                    Id: `steg${nr}.team`, Type: 'team', Team: team,
+                    Sted: stedFor(s, nr, 'Teams-kanal')
+                });
+                // Kanaler er ikke globalt unike heller — de hører til et team.
+                if (kanSlaasOpp(kanal)) {
+                    ut.push({
+                        Id: `steg${nr}.kanal`, Type: 'kanal', Team: team, Kanal: kanal,
+                        Sted: stedFor(s, nr, 'Teams-kanal')
+                    });
+                }
+            }
+        }
+    }
+
+    const adresse = String(def?.SPListeadresse || '').trim();
+    const listenavn = String(def?.SPListenavn || '').trim();
+    if (kanSlaasOpp(adresse) && kanSlaasOpp(listenavn)) {
+        ut.push({
+            Id: 'sp.liste', Type: 'sp-liste', Adresse: adresse, Liste: listenavn,
+            Sted: 'SharePoint-liste'
+        });
+        // Kolonnenavnene, én referanse hver. Finnes ikke lista, svarer flyten
+        // «finnes-ikke» på alle sammen — og det er riktig: ingen av dem finnes.
+        for (const sek of (def?.Seksjoner || [])) {
+            for (const f of (sek.Felter || [])) {
+                const kol = String(f?.SPListefelt || '').trim();
+                if (!kanSlaasOpp(kol)) continue;
+                const feltRef = `${sek.Seksjon_nummer ?? sek.Nummer ?? '?'}-${f.Nummer ?? '?'}`;
+                ut.push({
+                    Id: `sp.kolonne.${feltRef}`, Type: 'sp-kolonne',
+                    Adresse: adresse, Liste: listenavn, Kolonne: kol,
+                    Sted: `SharePoint-liste · felt ${feltRef}`
+                });
+            }
+        }
+    }
+
+    return ut;
+}
+
+/** Statusene flyten kan svare med. */
+const FLYT_STATUS = ['finnes', 'finnes-ikke', 'ingen-tilgang', 'kan-ikke-sjekkes'];
+
+/**
+ * Flett flytens svar inn i funnene.
+ *
+ * `finnes-ikke` er en feil: navnet peker ingen steder.
+ *
+ * `ingen-tilgang` er en ADVARSEL, ikke en feil. Flyten kjører som sin egen
+ * tilkobling, og at den ikke ser noe betyr ikke at det ikke finnes. Slår man
+ * de to sammen, ender skjemaeier med å jage et navn som er helt riktig.
+ *
+ * Svarer flyten ingenting om referansene — som når den bare kvitterer 200 —
+ * blir det ÉN linje, ikke én per referanse. Et halvferdig endepunkt skal
+ * ikke fylle skjermen.
+ */
+function flettFlytsvar(referanser, svar) {
+    const funn = [];
+    const liste = Array.isArray(svar?.Referanser) ? svar.Referanser : null;
+
+    if (!liste || liste.length === 0) {
+        if ((referanser || []).length > 0) {
+            funn.push({
+                alvor: 'info', kode: 'flyt.ingen-svar', sted: 'Eksterne oppslag',
+                melding: `Flyten svarte, men sa ingenting om de ${referanser.length} referansene `
+                    + 'som ble sendt. De er ikke sjekket.'
+            });
+        }
+        return funn;
+    }
+
+    const perId = new Map(liste.map(r => [String(r?.Id || ''), r]));
+    for (const ref of (referanser || [])) {
+        const svarFor = perId.get(ref.Id);
+        const status = String(svarFor?.Status || '').trim();
+        const hva = beskrivReferanse(ref);
+        const fraFlyten = String(svarFor?.Melding || '').trim();
+
+        if (!svarFor || !FLYT_STATUS.includes(status)) {
+            funn.push({
+                alvor: 'info', kode: 'flyt.uten-svar', sted: ref.Sted,
+                melding: `${hva} ble ikke sjekket — flyten svarte ikke om den.`
+            });
+            continue;
+        }
+        if (status === 'finnes') continue;
+        if (status === 'finnes-ikke') {
+            funn.push({
+                alvor: 'feil', kode: 'flyt.finnes-ikke', sted: ref.Sted,
+                melding: `${hva} finnes ikke.${fraFlyten ? ` ${fraFlyten}` : ''}`
+            });
+            continue;
+        }
+        if (status === 'ingen-tilgang') {
+            funn.push({
+                alvor: 'advarsel', kode: 'flyt.ingen-tilgang', sted: ref.Sted,
+                melding: `${hva} kunne ikke sjekkes — flyten har ikke tilgang. `
+                    + `Navnet kan være riktig.${fraFlyten ? ` ${fraFlyten}` : ''}`
+            });
+            continue;
+        }
+        funn.push({
+            alvor: 'info', kode: 'flyt.kan-ikke-sjekkes', sted: ref.Sted,
+            melding: `${hva} kunne ikke sjekkes.${fraFlyten ? ` ${fraFlyten}` : ''}`
+        });
+    }
+    return funn;
+}
+
+/** Menneskelig beskrivelse av en referanse, til meldingene. */
+function beskrivReferanse(ref) {
+    switch (ref?.Type) {
+        case 'plan':       return `Planen «${ref.Plan}» i teamet «${ref.Team}»`;
+        case 'bucket':     return `Bucketen «${ref.Bucket}» i planen «${ref.Plan}»`;
+        case 'team':       return `Teamet «${ref.Team}»`;
+        case 'kanal':      return `Kanalen «${ref.Kanal}» i teamet «${ref.Team}»`;
+        case 'sp-liste':   return `Lista «${ref.Liste}»`;
+        case 'sp-kolonne': return `Kolonnen «${ref.Kolonne}» i lista «${ref.Liste}»`;
+        default:           return 'Referansen';
+    }
+}
+
 /**
  * Kjør hele regelsettet.
  *
@@ -387,5 +595,8 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
 
 module.exports = {
     diagnoser, aktiveKanaler, harPlassholder, feltreferanser, refFinnes,
-    sjekkSPListe, KANALER
+    sjekkSPListe, KANALER,
+    // Fase 2
+    eksterneReferanser, flettFlytsvar, delTeamOgPlan, kanSlaasOpp,
+    beskrivReferanse, FLYT_STATUS
 };

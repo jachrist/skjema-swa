@@ -1673,12 +1673,20 @@
                 s.info ? `${s.info} kan ikke sjekkes` : ''
             ].filter(Boolean).join(' · ');
 
+            // Kostnaden ved de eksterne oppslagene, når de er slått på. Vises
+            // fordi den er det eneste her som tar merkbar tid, og den som
+            // lurer på om siden henger skal kunne se hvor tiden gikk.
+            const f = res?.flyt;
+            const flytTekst = f && f.status !== 'hoppet-over'
+                ? ` · ${f.antallSendt} oppslag${f.ms != null ? `, ${f.ms} ms` : ''}${f.status === 'ok' ? '' : ` (${escapeHtml(f.status)})`}`
+                : '';
+
             el.innerHTML = `
                 <div class="diagnose-topp">
                     <span class="diagnose-tittel">Oppsettet</span>
                     <span>${funn.length === 0
                         ? '<span class="diagnose-ok">Ingenting å bemerke ✓</span>'
-                        : escapeHtml(tall)}</span>
+                        : escapeHtml(tall)}<span style="color: var(--text-secondary); font-weight: 400;">${flytTekst}</span></span>
                     <button class="knapp mini sekundær" title="Lukk">✕</button>
                 </div>
                 ${funn.length === 0 ? '' : `<div class="diagnose-funn">${funn.map(f => `
