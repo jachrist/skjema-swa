@@ -48,7 +48,44 @@ jobs:
           echo "HTTP $RESP"
           cat response.json
           echo ""
-          if [ "$RESP" != "200" ]; then exit 1; fi
+
+          # En bar «HTTP 302» sier ingenting til den som ser den om tre
+          # måneder. Statuskodene her har hver sin årsak, og hver sin
+          # rettelse — så de får hver sin melding.
+          if [ "$RESP" != "200" ]; then
+            case "$RESP" in
+              301|302|307|308)
+                echo "::error::${{ matrix.env }} — HTTP $RESP. SWA sendte kallet til innlogging i stedet for til API-et. Ruteregelen for /api/team-synk er ikke i kraft i dette miljøet."
+                echo ""
+                echo "Regelen ligger i staticwebapp.config.${{ matrix.env }}.json:"
+                echo '    { "route": "/api/team-synk", "allowedRoles": ["anonymous"] }'
+                echo ""
+                echo "Den settes i kraft først ved deploy. Er miljøet deployet etter at"
+                echo "regelen ble lagt til? Prod deployes manuelt (workflow_dispatch), og"
+                echo "preview-miljøet er en EGEN host som ikke oppdaterer prod."
+                echo ""
+                echo "Nøkkelsjekken skjer i koden, ikke i ruta — en anonym rute er derfor"
+                echo "ikke et hull. Se docs/FASE-TEAM-SYNK.md."
+                ;;
+              401|403)
+                echo "::error::${{ matrix.env }} — HTTP $RESP. Ruta slapp kallet gjennom, men endepunktet avviste det."
+                echo "Sjekk at hemmeligheten ${{ matrix.key_secret }} her stemmer med app settingen"
+                echo "SCHEDULER_KEY i SWA Configuration for dette miljøet."
+                ;;
+              404)
+                echo "::error::${{ matrix.env }} — HTTP 404. Endepunktet finnes ikke i dette miljøet."
+                echo "Vanligste årsak: api/src/index.js mangler require av functions/team-synk,"
+                echo "eller miljøet er ikke deployet etter at endepunktet ble lagt til."
+                ;;
+              000)
+                echo "::error::${{ matrix.env }} — curl nådde ikke fram. Sjekk at variabelen ${{ matrix.url_var }} peker på riktig host."
+                ;;
+              *)
+                echo "::error::${{ matrix.env }} — HTTP $RESP. Se svaret fra API-et over."
+                ;;
+            esac
+            exit 1
+          fi
 
           # En stoppet gruppe er ikke en feil i kjøringen — den er et varsko
           # som krever at et menneske ser på det. Den skal derfor være synlig

@@ -84,6 +84,20 @@ const kode = utenKommentarer(rå);
     // En stoppet gruppe skal være synlig uten at jobben blir rød.
     sjekk('stoppede grupper varsles', /::warning::/.test(flyt), true);
 
+    // Første ekte kjøring feilet med en bar «HTTP 302» og tom kropp. Den
+    // sier ingenting til den som ser den om tre måneder — årsaken var at
+    // ruteregelen ikke var i kraft fordi miljøet ikke var deployet ennå.
+    // Hver statuskode har sin egen årsak, og skal ha sin egen melding.
+    sjekk('302 forklares', /302[\s\S]{0,400}ikke i kraft/.test(flyt), true);
+    sjekk('og peker på deploy', /302[\s\S]{0,900}deployet/.test(flyt), true);
+    sjekk('401 og 403 forklares', /401\|403/.test(flyt), true);
+    sjekk('og peker på nøkkelen', /401\|403[\s\S]{0,400}SCHEDULER_KEY/.test(flyt), true);
+    sjekk('404 forklares', /404\)[\s\S]{0,300}index\.js/.test(flyt), true);
+    // curl svarer 000 når den ikke når fram i det hele tatt.
+    sjekk('uoppnåelig host forklares', /000\)[\s\S]{0,200}peker på riktig host/.test(flyt), true);
+    // Og alt som ikke er 200 skal fortsatt gjøre jobben rød.
+    sjekk('feil gir fortsatt exit 1', /esac\s*\n\s*exit 1/.test(flyt), true);
+
     // Endepunktet må være anonymt i SWA-ruta, ellers svarer plattformen 302
     // til innlogging før koden i det hele tatt kjører.
     for (const f of ['staticwebapp.config.pilot.json', 'staticwebapp.config.prod.json']) {

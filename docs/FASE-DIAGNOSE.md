@@ -186,7 +186,7 @@ Har skjematypen ingen slike referanser, kalles flyten ikke.
     { "Id": "sp.liste",       "Type": "sp-liste",   "Adresse": "https://…/sites/y", "Liste": "Saker",
       "Sted": "SharePoint-liste" },
     { "Id": "sp.kolonne.1-1", "Type": "sp-kolonne", "Adresse": "https://…/sites/y", "Liste": "Saker",
-      "Kolonne": "Tittel", "Sted": "SharePoint-liste · felt 1-1" }
+      "Kolonne": "Tittel", "Avhenger": "sp.liste", "Sted": "SharePoint-liste · felt 1-1" }
   ]
 }
 ```
@@ -202,6 +202,23 @@ Har skjematypen ingen slike referanser, kalles flyten ikke.
 
 `Id` er stabil og unik. Bruk den til å koble svaret tilbake — **ikke
 rekkefølgen**. `Sted` er til visning hos oss og trenger ikke sendes tilbake.
+
+### `Avhenger`
+
+En bucket ligger i en plan, en kanal i et team, en kolonne i en liste. Barnet
+peker på forelderen sin med `Avhenger`:
+
+| Type | Avhenger av |
+|---|---|
+| `bucket` | `stegN.plan` |
+| `kanal` | `stegN.team` |
+| `sp-kolonne` | `sp.liste` |
+
+**Flyten kan bruke den til å hoppe over oppslag**: finner den ikke lista,
+trenger den ikke slå opp de tjue kolonnene. Svar gjerne `kan-ikke-sjekkes`
+på dem, eller la dem stå — vi undertrykker dem uansett (se under).
+
+Feltet er valgfritt å bruke. Ignorerer flyten det, virker alt som før.
 
 ### Hva flyten skal svare
 
@@ -228,6 +245,25 @@ ender skjemaeier med å jage et navn som er helt riktig, fordi tilkoblingen
 mangler tilgang.
 
 `Melding` er valgfri og legges til i vår egen tekst. Hold den kort og konkret.
+
+### Én årsak gir én linje
+
+Svarer flyten at en forelder ikke finnes, meldes ikke barna hver for seg —
+vi vet allerede hvorfor de ikke finnes. I stedet står det på forelderens
+linje:
+
+> Lista «Saker» finnes ikke. De 20 underliggende referansene er derfor ikke
+> sjekket.
+
+Uten dette ville ett feilstavet listenavn på et skjema med tjue mappede
+kolonner gitt **tjueén røde linjer for én skrivefeil**.
+
+To presiseringer:
+
+* `ingen-tilgang` undertrykker også — ser ikke flyten lista, ser den ikke
+  kolonnene heller.
+* Et **ubesvart** foreldre undertrykker ikke. Da vet vi ingenting om årsaken,
+  og barnas egne svar kan fortsatt være verdt å lese.
 
 ### Mens flyten bygges
 

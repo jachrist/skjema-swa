@@ -449,6 +449,93 @@ async function kjor() {
         sjekk('kan-ikke-sjekkes er info', per('flyt.kan-ikke-sjekkes')[0].alvor, 'info');
     }
 
+    // ---------- fase 2: én årsak gir én linje ----------
+    {
+        // Referansene henger sammen: en kolonne ligger i en liste, en kanal i
+        // et team, en bucket i en plan. Et feilstavet listenavn på et skjema
+        // med tjue mappede kolonner ville ellers gitt tjueén røde linjer for
+        // én skrivefeil — nøyaktig det «fyller skjermen»-problemet.
+        const refs = [
+            { Id: 'sp.liste', Type: 'sp-liste', Liste: 'Saker', Sted: 'SP' },
+            { Id: 'sp.kolonne.1-1', Type: 'sp-kolonne', Liste: 'Saker', Kolonne: 'A', Avhenger: 'sp.liste', Sted: 'SP·1-1' },
+            { Id: 'sp.kolonne.1-2', Type: 'sp-kolonne', Liste: 'Saker', Kolonne: 'B', Avhenger: 'sp.liste', Sted: 'SP·1-2' },
+            { Id: 'steg1.team', Type: 'team', Team: 'T', Sted: 'Steg1' },
+            { Id: 'steg1.kanal', Type: 'kanal', Team: 'T', Kanal: 'K', Avhenger: 'steg1.team', Sted: 'Steg1' }
+        ];
+
+        const listaBorte = d.flettFlytsvar(refs, { Referanser: [
+            { Id: 'sp.liste', Status: 'finnes-ikke' },
+            { Id: 'sp.kolonne.1-1', Status: 'finnes-ikke' },
+            { Id: 'sp.kolonne.1-2', Status: 'finnes-ikke' },
+            { Id: 'steg1.team', Status: 'finnes' },
+            { Id: 'steg1.kanal', Status: 'finnes' }
+        ] });
+        sjekk('én linje for lista, ikke tre', listaBorte.length, 1);
+        sjekk('og den sier hvor mange som ikke ble sjekket',
+            listaBorte[0].melding.includes('De 2 underliggende'), true);
+
+        // Entall skal hete entall.
+        const enKolonne = d.flettFlytsvar(refs.slice(0, 2), { Referanser: [
+            { Id: 'sp.liste', Status: 'finnes-ikke' },
+            { Id: 'sp.kolonne.1-1', Status: 'finnes-ikke' }
+        ] });
+        sjekk('entall', enKolonne[0].melding.includes('Den underliggende referansen'), true);
+
+        // Finnes forelderen, skal barnet meldes helt vanlig.
+        const teamFinnes = d.flettFlytsvar(refs, { Referanser: [
+            { Id: 'sp.liste', Status: 'finnes' },
+            { Id: 'sp.kolonne.1-1', Status: 'finnes' },
+            { Id: 'sp.kolonne.1-2', Status: 'finnes-ikke' },
+            { Id: 'steg1.team', Status: 'finnes' },
+            { Id: 'steg1.kanal', Status: 'finnes-ikke' }
+        ] });
+        sjekk('barn under en forelder som finnes, meldes',
+            teamFinnes.map(f => f.kode), ['flyt.finnes-ikke', 'flyt.finnes-ikke']);
+
+        // Også ingen-tilgang undertrykker: ser ikke flyten lista, ser den
+        // ikke kolonnene heller.
+        const utenTilgang = d.flettFlytsvar(refs.slice(0, 3), { Referanser: [
+            { Id: 'sp.liste', Status: 'ingen-tilgang' },
+            { Id: 'sp.kolonne.1-1', Status: 'finnes-ikke' },
+            { Id: 'sp.kolonne.1-2', Status: 'finnes-ikke' }
+        ] });
+        sjekk('ingen-tilgang undertrykker også', utenTilgang.length, 1);
+        sjekk('og forblir en advarsel', utenTilgang[0].alvor, 'advarsel');
+
+        // Men et UBESVART foreldre undertrykker IKKE — da vet vi ingenting
+        // om årsaken, og barnas egne svar kan fortsatt være verdt å lese.
+        const forelderTaus = d.flettFlytsvar(refs.slice(0, 3), { Referanser: [
+            { Id: 'sp.kolonne.1-1', Status: 'finnes-ikke' },
+            { Id: 'sp.kolonne.1-2', Status: 'finnes-ikke' }
+        ] });
+        sjekk('ubesvart forelder undertrykker ikke', forelderTaus.length, 3);
+    }
+
+    // ---------- fase 2: avhengigheten settes ved uttrekk ----------
+    {
+        const refs = d.eksterneReferanser({
+            SPListeadresse: 'https://x', SPListenavn: 'Saker',
+            Seksjoner: [{ Seksjon_nummer: 1, Felter: [{ Nummer: 1, SPListefelt: 'Tittel' }] }],
+            Behandling: [{
+                Steg: 1, Varsling: ['planner', 'teamskanal'],
+                PlannerOppgave: { TeamOgPlan: 'A:B', Bucket: 'C' },
+                TeamsKanalInnlegg: { Team: 'T', Kanal: 'K' }
+            }]
+        });
+        const av = Object.fromEntries(refs.map(r => [r.Id, r.Avhenger || null]));
+        sjekk('bucket avhenger av planen', av['steg1.bucket'], 'steg1.plan');
+        sjekk('kanal avhenger av teamet', av['steg1.kanal'], 'steg1.team');
+        sjekk('kolonne avhenger av lista', av['sp.kolonne.1-1'], 'sp.liste');
+        // Og foreldrene selv avhenger ikke av noe.
+        sjekk('planen er sin egen rot', av['steg1.plan'], null);
+        sjekk('teamet er sin egen rot', av['steg1.team'], null);
+        sjekk('lista er sin egen rot', av['sp.liste'], null);
+        // Hver Avhenger må peke på en referanse som faktisk sendes.
+        const ider = new Set(refs.map(r => r.Id));
+        sjekk('alle avhengigheter peker på noe som sendes',
+            refs.filter(r => r.Avhenger && !ider.has(r.Avhenger)), []);
+    }
+
     // ---------- fase 2: et halvferdig endepunkt skal ikke fylle skjermen ----------
     {
         const refs = [

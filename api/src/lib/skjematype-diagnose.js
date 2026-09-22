@@ -408,7 +408,7 @@ function eksterneReferanser(def) {
                 if (kanSlaasOpp(bucket)) {
                     ut.push({
                         Id: `steg${nr}.bucket`, Type: 'bucket', Team: team, Plan: plan, Bucket: bucket,
-                        Sted: stedFor(s, nr, 'Planner')
+                        Avhenger: `steg${nr}.plan`, Sted: stedFor(s, nr, 'Planner')
                     });
                 }
             }
@@ -427,7 +427,7 @@ function eksterneReferanser(def) {
                 if (kanSlaasOpp(kanal)) {
                     ut.push({
                         Id: `steg${nr}.kanal`, Type: 'kanal', Team: team, Kanal: kanal,
-                        Sted: stedFor(s, nr, 'Teams-kanal')
+                        Avhenger: `steg${nr}.team`, Sted: stedFor(s, nr, 'Teams-kanal')
                     });
                 }
             }
@@ -441,8 +441,10 @@ function eksterneReferanser(def) {
             Id: 'sp.liste', Type: 'sp-liste', Adresse: adresse, Liste: listenavn,
             Sted: 'SharePoint-liste'
         });
-        // Kolonnenavnene, én referanse hver. Finnes ikke lista, svarer flyten
-        // «finnes-ikke» på alle sammen — og det er riktig: ingen av dem finnes.
+        // Kolonnenavnene, én referanse hver. Finnes ikke lista, gir de alle
+        // samme svar — derfor `Avhenger`: da meldes de ikke hver for seg. Et
+        // feilstavet listenavn på et skjema med tjue mappede kolonner ville
+        // ellers gitt tjueén røde linjer for én skrivefeil.
         for (const sek of (def?.Seksjoner || [])) {
             for (const f of (sek.Felter || [])) {
                 const kol = String(f?.SPListefelt || '').trim();
@@ -451,7 +453,7 @@ function eksterneReferanser(def) {
                 ut.push({
                     Id: `sp.kolonne.${feltRef}`, Type: 'sp-kolonne',
                     Adresse: adresse, Liste: listenavn, Kolonne: kol,
-                    Sted: `SharePoint-liste · felt ${feltRef}`
+                    Avhenger: 'sp.liste', Sted: `SharePoint-liste · felt ${feltRef}`
                 });
             }
         }
@@ -492,7 +494,26 @@ function flettFlytsvar(referanser, svar) {
     }
 
     const perId = new Map(liste.map(r => [String(r?.Id || ''), r]));
+
+    // Referansene henger sammen: en bucket ligger i en plan, en kanal i et
+    // team, en kolonne i en liste. Svarer flyten at forelderen ikke finnes,
+    // vet vi allerede hvorfor barna ikke gjør det — og én årsak skal gi én
+    // linje, ikke én per barn.
+    //
+    // Bare et DEFINITIVT svar undertrykker. Er forelderen ubesvart, kan
+    // barnas egne svar fortsatt være verdt å lese.
+    const sviktendeForeldre = new Set();
+    for (const [id, r] of perId) {
+        const st = String(r?.Status || '').trim();
+        if (FLYT_STATUS.includes(st) && st !== 'finnes') sviktendeForeldre.add(id);
+    }
+    const undertrykt = new Map();   // forelder-Id → antall
+
     for (const ref of (referanser || [])) {
+        if (ref.Avhenger && sviktendeForeldre.has(ref.Avhenger)) {
+            undertrykt.set(ref.Avhenger, (undertrykt.get(ref.Avhenger) || 0) + 1);
+            continue;
+        }
         const svarFor = perId.get(ref.Id);
         const status = String(svarFor?.Status || '').trim();
         const hva = beskrivReferanse(ref);
@@ -525,6 +546,20 @@ function flettFlytsvar(referanser, svar) {
             alvor: 'info', kode: 'flyt.kan-ikke-sjekkes', sted: ref.Sted,
             melding: `${hva} kunne ikke sjekkes.${fraFlyten ? ` ${fraFlyten}` : ''}`
         });
+    }
+
+    // Si fra om det som ble undertrykt, på forelderens egen linje. Uten det
+    // ville tjue kolonner forsvunnet i stillhet, og den som leser ville ikke
+    // visst at de heller ikke er sjekket.
+    for (const [forelderId, antall] of undertrykt) {
+        const forelder = (referanser || []).find(r => r.Id === forelderId);
+        const linje = funn.find(f => f.sted === forelder?.Sted
+            && (f.kode === 'flyt.finnes-ikke' || f.kode === 'flyt.ingen-tilgang'
+                || f.kode === 'flyt.kan-ikke-sjekkes'));
+        const tekst = antall === 1
+            ? ' Den underliggende referansen er derfor ikke sjekket.'
+            : ` De ${antall} underliggende referansene er derfor ikke sjekket.`;
+        if (linje) linje.melding += tekst;
     }
     return funn;
 }
