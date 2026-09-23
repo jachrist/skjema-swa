@@ -621,7 +621,33 @@ async function kjor() {
         sjekk('knappen finnes', /sjekkOppsettet\(\)/.test(editor), true);
     }
 
-    console.log(`\n${ok} OK, ${feil} feil`);
+    // ---------- avhengighet mellom steg ----------
+// `stegErBlokkertAvAvhengighet` svarer TRUE når steget det vises til ikke
+// finnes. Steget blir da aldri aktivt: ingen varsling, ingen behandler, og
+// skjemaet står for alltid. Ingenting i driften sier fra — derfor her.
+{
+    const ferdig = (r) => r.funn.map(f => `${f.alvor}:${f.kode}`);
+    const def = {
+        Seksjoner: [],
+        Behandling: [
+            { Steg: 1, Stegnavn: 'A', Personer: ['a@x.no'] },
+            { Steg: 2, Stegnavn: 'B', Personer: ['b@x.no'], AvhengigAv: 9 },
+            { Steg: 3, Stegnavn: 'C', Personer: ['c@x.no'], AvhengigAv: 3 },
+            { Steg: 4, Stegnavn: 'D', Personer: ['d@x.no'], AvhengigAv: 5 },
+            { Steg: 5, Stegnavn: 'E', Personer: ['e@x.no'], AvhengigAv: 1 }
+        ]
+    };
+    const r = await d.diagnoser(def, { antallInnehavere: roller(1) });
+    const k = ferdig(r);
+    sjekk('ukjent steg er rødt', k.includes('feil:steg.avhengig-mangler'), true);
+    sjekk('seg selv er rødt', k.includes('feil:steg.avhengig-seg-selv'), true);
+    sjekk('senere steg er gult', k.includes('advarsel:steg.avhengig-senere'), true);
+    // En gyldig avhengighet bakover skal ikke gi funn i det hele tatt.
+    sjekk('gyldig avhengighet gir ingen funn',
+        r.funn.filter(f => f.sted.startsWith('Steg 5')).length, 0);
+}
+
+console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 }
 

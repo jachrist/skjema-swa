@@ -1404,9 +1404,26 @@
             div.className = 'seksjon';
             div.style.marginBottom = '12px';
 
-            const forrigeSteg = (data.Behandling || []).slice(0, idx);
-            const avhengOptions = forrigeSteg.map(s =>
-                `<option value="${s.Steg}" ${steg.AvhengigAv === s.Steg ? 'selected' : ''}>Steg ${s.Steg}: ${escapeHtml(s.Stegnavn || '')}</option>`
+            // Kandidatene er stegene med LAVERE Steg-nummer — ikke de som
+            // tilfeldigvis ligger foran i arrayet.
+            //
+            // Fram til 23.09.2026 var dette `slice(0, idx)`. Så lenge
+            // rekkefølgen i arrayet og Steg-numrene følger hverandre, er de to
+            // det samme — og det gjør de så lenge skjematypen bare redigeres
+            // her. En definisjon som er importert, kopiert eller håndredigert
+            // trenger ikke være sortert, og da forsvant feltet uten et ord:
+            // steget så ut til å være det første, og avhengigheten kunne ikke
+            // settes i det hele tatt.
+            //
+            // Lavere nummer og ikke «alle andre»: det hindrer at to steg kan
+            // vente på hverandre. Et slikt par blokkerer hverandre for alltid,
+            // og ingenting i behandlingen ville sagt fra.
+            const nr = Number(steg.Steg);
+            const tidligere = (data.Behandling || [])
+                .filter(s => Number(s.Steg) < nr)
+                .sort((a, b) => Number(a.Steg) - Number(b.Steg));
+            const avhengOptions = tidligere.map(s =>
+                `<option value="${s.Steg}" ${Number(steg.AvhengigAv) === Number(s.Steg) ? 'selected' : ''}>Steg ${s.Steg}: ${escapeHtml(s.Stegnavn || '')}</option>`
             ).join('');
 
             const valgHtml = (steg.Beslutningsvalg || []).map((v, vIdx) => {
@@ -1559,7 +1576,7 @@
                     ${varslingHtml}
                 </div>
 
-                ${forrigeSteg.length > 0 ? `
+                ${tidligere.length > 0 ? `
                     <div class="rad">
                         <label>Avhengig av <small>(kjøres først etter dette steget er ferdig — valgfritt)</small></label>
                         <select onchange="setStegAvhengig(${idx}, this.value)">
@@ -1567,7 +1584,14 @@
                             ${avhengOptions}
                         </select>
                     </div>
-                ` : ''}
+                ` : `
+                    <div class="rad">
+                        <label>Avhengig av</label>
+                        <div style="font-size: 12px; color: var(--text-secondary);">
+                            Ingen steg med lavere nummer å vente på. Første steg starter alltid ved innsending.
+                        </div>
+                    </div>
+                `}
 
                 <div class="dnf-slot" data-slot="steg-vilkar-${idx}"></div>
             `;
@@ -1604,16 +1628,34 @@
             renummererBehandling();
             rendrerBehandling();
         };
+        /**
+         * Steg-numrene følger arrayposisjonen. AvhengigAv peker på et nummer,
+         * så referansene må flyttes med.
+         *
+         * Kartet bygges FERDIG før noe skrives. Den gamle koden renummererte
+         * og skrev om referanser i samme løkke, og da kunne en referanse bli
+         * skrevet om to ganger: først til sitt nye nummer, og så en gang til
+         * fordi et senere steg hadde nettopp det nummeret fra før.
+         *
+         * Utslaget var stille og alvorlig — avhengigheten pekte på FEIL steg
+         * etterpå, ikke på ingenting. Reproduksjon: tre steg der C avhenger av
+         * B, flytt B fremst. C endte med å avhenge av A.
+         */
         function renummererBehandling() {
-            (data.Behandling || []).forEach((s, i) => {
-                const gammel = s.Steg;
+            const steg = data.Behandling || [];
+            const nyttNummer = new Map();
+            steg.forEach((s, i) => nyttNummer.set(Number(s.Steg), i + 1));
+
+            // Les avhengighetene mot det GAMLE kartet før numrene endres.
+            const nyeAvhengigheter = steg.map(s => {
+                if (s.AvhengigAv === undefined || s.AvhengigAv === null) return undefined;
+                return nyttNummer.get(Number(s.AvhengigAv));
+            });
+
+            steg.forEach((s, i) => {
                 s.Steg = i + 1;
-                // Oppdater AvhengigAv-referanser i andre steg som pekte på gammel Steg
-                if (gammel !== s.Steg) {
-                    (data.Behandling || []).forEach(annen => {
-                        if (annen.AvhengigAv === gammel) annen.AvhengigAv = s.Steg;
-                    });
-                }
+                if (nyeAvhengigheter[i] === undefined) delete s.AvhengigAv;
+                else s.AvhengigAv = nyeAvhengigheter[i];
             });
         }
         window.setStegNavn = (idx, v) => { data.Behandling[idx].Stegnavn = v; };

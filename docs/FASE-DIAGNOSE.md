@@ -61,6 +61,9 @@ riktig, og sluttet å tro på lista.
 | Kode | Når |
 |---|---|
 | `steg.ingen-behandlere` | Steget har hverken personer, roller eller team |
+| `steg.avhengig-mangler` | `AvhengigAv` peker på et steg som ikke finnes — steget blir aldri aktivt |
+| `steg.avhengig-seg-selv` | Steget venter på seg selv |
+| `steg.avhengig-senere` | Venter på et steg med høyere nummer *(advarsel)* |
 | `rolle.tom` | Rollen gir ingen mottakere |
 | `rolle.feltref-mangler` | Dynamisk rolle peker på et felt som ikke finnes |
 | `rolle.dynamisk` | Rollen settes sammen av svar og kan ikke slås opp *(info)* |
