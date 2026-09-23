@@ -33,6 +33,12 @@ export function formaterBehandler(b) {
  * `behandletAv` går foran: er steget avgjort, er det hvem som FAKTISK gjorde
  * det som er interessant. Kandidatlista svarer på et annet spørsmål, og
  * API-et fyller derfor bare én av dem per steg.
+ *
+ * Feilet oppslaget på serveren, kommer raden som `{ _feil: "…" }`. Den
+ * trenger ingen egen sjekk her: begge listene er da tomme, og funksjonen
+ * svarer null av seg selv. En egen vakt for den ville vært død kode med en
+ * kommentar som påsto noe annet — og mutasjonstesting viste nettopp at ingen
+ * test kunne skille den fra ingenting.
  */
 export function behandlerlinje(rad) {
     const gjort = (rad?.behandletAv || []).filter(b => b?.epost);

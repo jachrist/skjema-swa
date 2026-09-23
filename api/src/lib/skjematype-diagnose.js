@@ -393,6 +393,49 @@ function sjekkSPListe(def, funn) {
     }
 }
 
+/**
+ * Peker avhengigheten på et steg som finnes?
+ *
+ * `stegErBlokkertAvAvhengighet` svarer TRUE når steget det vises til ikke
+ * finnes — med vilje, for en referanse vi ikke kan vurdere skal ikke slippe
+ * steget løs. Følgen er at steget aldri blir aktivt: ingen varsling, ingen
+ * behandler, og skjemaet står for alltid. Ingenting i driften sier fra.
+ *
+ * Et steg kan heller ikke vente på seg selv eller på et høyere nummer. Det
+ * siste er ikke ulovlig i behandlingen, men det er alltid en skrivefeil her —
+ * og to steg som venter på hverandre låser begge.
+ */
+function sjekkAvhengighet(steg, nr, alleNumre, funn) {
+    const av = steg?.AvhengigAv;
+    if (av === undefined || av === null || av === '') return;
+    const sted = stedFor(steg, nr, '');
+    const mål = Number(av);
+
+    if (!alleNumre.has(mål)) {
+        funn.push({
+            alvor: 'feil', kode: 'steg.avhengig-mangler', sted,
+            melding: `Steget venter på steg ${av}, som ikke finnes. Det blir derfor `
+                + 'aldri aktivt — ingen varsling, ingen behandler.'
+        });
+        return;
+    }
+    if (mål === Number(nr)) {
+        funn.push({
+            alvor: 'feil', kode: 'steg.avhengig-seg-selv', sted,
+            melding: 'Steget venter på seg selv og blir aldri aktivt.'
+        });
+        return;
+    }
+    if (mål > Number(nr)) {
+        funn.push({
+            alvor: 'advarsel', kode: 'steg.avhengig-senere', sted,
+            melding: `Steget venter på steg ${mål}, som kommer etter det selv. `
+                + 'Det er lov, men er som regel en skrivefeil — og venter de to på '
+                + 'hverandre, blir ingen av dem aktive.'
+        });
+    }
+}
+
 /** Har steget i det hele tatt noen som kan behandle det? */
 function sjekkMottakere(steg, nr, funn) {
     const antall = (steg?.Personer || []).length
@@ -653,12 +696,14 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
     sjekkSPListe(def, funn);
 
     const steg = Array.isArray(def?.Behandling) ? def.Behandling : [];
+    const alleStegNumre = new Set(steg.map((s, i) => Number(s?.Steg ?? (i + 1))));
     for (let i = 0; i < steg.length; i++) {
         const s = steg[i];
         const nr = s?.Steg ?? (i + 1);
         const kanaler = aktiveKanaler(s);
 
         sjekkMottakere(s, nr, funn);
+        sjekkAvhengighet(s, nr, alleStegNumre, funn);
         sjekkPlanner(s, nr, kanaler.includes('planner'), funn);
         sjekkTeamskanal(s, nr, kanaler.includes('teamskanal'), funn);
 

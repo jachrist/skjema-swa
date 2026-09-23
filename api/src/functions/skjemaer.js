@@ -1244,7 +1244,13 @@ app.http('hentSkjema', {
             // tilbød evaluering.html «Intern (til andre behandlere)» også til
             // innsenderen — som standardvalg — og API-et avviste innlegget med
             // 403 etter at hen hadde skrevet det ferdig.
-            skjema._minRolle = minRolle;
+            //
+            // `?? null` er ikke pynt: JSON.stringify DROPPER egenskaper med
+            // verdien undefined, og en nøkkel som mangler er umulig å skille
+            // fra gammel kode som aldri satte den. Det skillet kostet en time
+            // 23.09.2026 — `_minRolle` manglet i et svar der `_mineStegNumre`
+            // sto rett ved siden av, og begge forklaringene var i live.
+            skjema._minRolle = minRolle ?? null;
 
             skjema._mineStegNumre = mineStegNumre;
 
@@ -1256,10 +1262,16 @@ app.http('hentSkjema', {
             //
             // Best-effort: en feilet berikelse skal ikke gjøre skjemaet
             // uleselig. Da står oppsummeringen uten navn, som før.
+            //
+            // Feltet settes ALLTID, også når oppslaget feiler. En stille
+            // catch som lot nøkkelen forsvinne gjorde «det gikk galt» umulig
+            // å skille fra «koden er ikke deployet» — og bare den ene av dem
+            // er noe jeg kan rette.
             try {
                 skjema._behandlere = await varsling.behandlereForVisning(skjema.Behandling);
             } catch (e) {
                 context.log(`skjemaer GET: kunne ikke berike behandlere — ${e.message}`);
+                skjema._behandlere = { _feil: String(e.message || e) };
             }
             return { jsonBody: skjema };
         } catch (e) {
