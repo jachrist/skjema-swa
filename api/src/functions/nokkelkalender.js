@@ -18,6 +18,9 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const kalender = require('../lib/nokkelkalender-storage');
 const { sendEpostViaFlyt } = require('../lib/flyt-kaller');
 const hendelser = require('../lib/hendelser-storage');
+const pbToken = require('../lib/pb-token-storage');
+const pbKalender = require('../lib/pb-kalender');
+const skjemaStorage = require('../lib/skjema-storage');
 
 function admin(request) {
     const upn = hentInnloggetUpn(request);
@@ -244,6 +247,33 @@ app.http('nokkelkalenderSjekk', {
             const na = new Date();
 
             const rader = await kalender.listAlle({ kunMiljo: m });
+
+            // Power BI-koblingene føres ikke i kalenderen — de opprettes av
+            // skjemaeiere når som helst, og utløpet ligger allerede på
+            // tokenraden. De formes som kalenderrader her, slik at ÉN
+            // eskaleringsregel gjelder for begge slag og alt havner i samme
+            // e-post. Se lib/pb-kalender.js.
+            //
+            // Best-effort: feiler oppslaget, skal de andre hemmelighetene
+            // varsles likevel. En Power BI-rapport som viser gamle tall er
+            // ikke verdt å tie om et sertifikat som ryker.
+            try {
+                const tokens = await pbToken.listPbEierTokens();
+                if (tokens.length > 0) {
+                    const navn = new Map();
+                    for (const id of new Set(tokens.map(t => t.skjematypeId).filter(Boolean))) {
+                        try {
+                            const st = await skjemaStorage.hentSkjematype(id);
+                            if (st?.navn) navn.set(id, st.navn);
+                        } catch (_) { /* ID-en står i varselet i stedet */ }
+                    }
+                    rader.push(...pbKalender.somKalenderRader(tokens, {
+                        na, navnFor: (id) => navn.get(id) || ''
+                    }));
+                }
+            } catch (e) {
+                context.log(`nokkelkalender/sjekk: kunne ikke lese Power BI-tokens — ${e.message}`);
+            }
             const forfalte = [];
             for (const rad of rader) {
                 const trinn = kalender.skalVarsles(rad, na);
@@ -312,7 +342,13 @@ app.http('nokkelkalenderSjekk', {
             }
 
             for (const f of forfalte) {
-                await kalender.markerVarslet(f.rad.Id, f.trinn, m);
+                // Power BI-radene er syntetiske og har ingen kalenderrad å
+                // merke av på. Avkryssingen går til tokenraden selv.
+                if (pbKalender.erPbRad(f.rad)) {
+                    await pbToken.markerVarslet(f.rad._pb.upn, f.rad._pb.guid, f.trinn);
+                } else {
+                    await kalender.markerVarslet(f.rad.Id, f.trinn, m);
+                }
             }
             hendelser.logg({
                 Type: 'nokkelkalender.varsel', Aktor: a.upn,

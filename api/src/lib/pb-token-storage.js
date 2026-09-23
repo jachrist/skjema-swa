@@ -67,8 +67,57 @@ async function validerPbToken({ upn, guid, skjematypeId }) {
     }
 }
 
+/**
+ * Alle pb-eier-tokenene i dette miljøet, til nøkkelkalenderen.
+ *
+ * Tabellen deles med OTP-tokenene, som er kortlevde og mange. Filteret på
+ * Tilgangstype gjøres derfor i spørringen, ikke i minnet.
+ *
+ * `SistVarslet` og `SistVarsletTrinn` bor på selve raden. Alternativet var å
+ * føre dem i nøkkelkalenderen, men den ligger i en annen lagringskonto og
+ * vedlikeholdes manuelt — og et token som opprettes av en skjemaeier i dag
+ * ville da ikke hatt noen rad å varsle fra.
+ */
+async function listPbEierTokens() {
+    const t = await tabell();
+    const ut = [];
+    for await (const e of t.listEntities({
+        queryOptions: { filter: "Tilgangstype eq 'pb-eier'" }
+    })) {
+        ut.push({
+            upn: String(e.partitionKey || ''),
+            guid: String(e.rowKey || ''),
+            skjematypeId: String(e.SkjematypeId || ''),
+            utloper: String(e.ExpiresUTC || ''),
+            sistVarslet: String(e.SistVarslet || ''),
+            sistVarsletTrinn: e.SistVarsletTrinn === undefined || e.SistVarsletTrinn === null || e.SistVarsletTrinn === ''
+                ? null : Number(e.SistVarsletTrinn)
+        });
+    }
+    return ut;
+}
+
+/**
+ * Merk at det er varslet om dette tokenet på gitt trinn.
+ *
+ * Merge og ikke Replace: raden bærer tokenet selv, og en full erstatning som
+ * glemte et felt ville gjort Power BI-koblingen ugyldig. Et varsel er ikke
+ * verdt den risikoen.
+ */
+async function markerVarslet(upn, guid, trinn) {
+    const t = await tabell();
+    await t.updateEntity({
+        partitionKey: String(upn).toLowerCase(),
+        rowKey: String(guid),
+        SistVarslet: new Date().toISOString(),
+        SistVarsletTrinn: String(trinn)
+    }, 'Merge');
+}
+
 module.exports = {
     opprettPbToken,
     validerPbToken,
+    listPbEierTokens,
+    markerVarslet,
     TTL_DAGER_PB
 };

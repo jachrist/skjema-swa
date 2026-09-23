@@ -637,6 +637,24 @@ async function kjor() {
             { Steg: 5, Stegnavn: 'E', Personer: ['e@x.no'], AvhengigAv: 1 }
         ]
     };
+    // AvhengigAv = 0 betyr INGEN avhengighet — steg nummereres fra 1, og eldre
+    // definisjoner har nullen liggende. Diagnosen fikk først sin egen sjekk på
+    // undefined/null/'' og meldte da «venter på steg 0, som ikke finnes» på
+    // skjematyper som var helt i orden (meldt 23.09.2026).
+    for (const tom of [0, undefined, null, '']) {
+        const ren = await d.diagnoser({
+            Seksjoner: [],
+            Behandling: [{ Steg: 1, Stegnavn: 'Produsere innkjøpsordre', Personer: ['a@x.no'], AvhengigAv: tom }]
+        }, { antallInnehavere: roller(1) });
+        sjekk(`AvhengigAv=${JSON.stringify(tom)} gir ingen funn`, ren.funn.length, 0);
+    }
+    // Og regelen skal komme fra den som faktisk blokkerer steget, ikke fra en
+    // kopi her. Uten det svarer de to ulikt igjen før eller siden.
+    sjekk('diagnosen bruker behandlingens egen regel',
+        d.diagnoser.toString().length > 0 && /harAvhengighet/.test(
+            require('fs').readFileSync(
+                require('path').join(__dirname, '..', 'src', 'lib', 'skjematype-diagnose.js'), 'utf8')), true);
+
     const r = await d.diagnoser(def, { antallInnehavere: roller(1) });
     const k = ferdig(r);
     sjekk('ukjent steg er rødt', k.includes('feil:steg.avhengig-mangler'), true);
