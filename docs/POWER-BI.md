@@ -70,21 +70,24 @@ gevinsten under to timer i verste fall.
 i `api/src/lib/pb-token-storage.js`. Når det går ut, begynner oppdateringen å
 feile med 403, og Power BI deaktiverer planen.
 
-**Ingenting varsler om dette i dag.** Tokenene står ikke i nøkkelkalenderen, og
-`sjekk-nokler`-jobben ser dem ikke.
+**`sjekk-nokler`-jobben varsler om dette fra 23.09.2026.** Tokenene står ikke
+som rader i `Nokkelkalender` — de opprettes av skjemaeiere når som helst, og en
+manuelt vedlikeholdt rad ville manglet for nettopp de koblingene ingen husket.
+I stedet formes de som kalenderrader ved varsling (`lib/pb-kalender.js`), slik
+at **én** eskaleringsregel gjelder for begge slag og alt havner i samme e-post.
+Utløpet leses fra `ExpiresUTC` hver gang og kan derfor aldri komme ut av takt.
 
-Det er heller ikke sikkert at et sentralt varsel er riktig sted å løse det:
-rapportene forvaltes av **eierne av skjematypen**, ikke av drift. Den som må
-gjøre noe, er den som eier rapporten — og den personen kjenner vi ikke
-nødvendigvis fra en utløpsdato alene.
+Varselet går til **ADMIN_UPNS**, ikke til rapporteier. Rapportene forvaltes av
+eierne av skjematypen, men eierskap flytter seg, og vi vet ikke hvem det er på
+utløpstidspunktet. Admin videreformidler. Avklart med oppdragsgiver
+23.09.2026.
 
-Håndteringen er derfor **via support**: eieren melder at Power BI-rapporten har
-sluttet å oppdatere seg, og får dette svaret:
+Selve håndteringen gjøres av skjemaeier:
 
 1. Datauttrekk → skjematypen → **Lag eller forny Power BI-kobling**
 2. Bytt URL-en i Power BI Desktop
 3. Publiser .pbix på nytt
 4. Sett legitimasjonen i tjenesten igjen (Anonym), og slå oppdateringsplanen på
 
-Et varsel før utløp er mulig — dataene finnes — men krever at vi først avklarer
-hvem det skal gå til. Se nøkkelkalenderen.
+Eieren kan også melde inn via support uten å ha fått varselet — symptomet er at
+rapporten har sluttet å oppdatere seg.
