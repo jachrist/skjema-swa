@@ -30,6 +30,7 @@
  */
 const { finnFeltViaRef, finnFeltViaId } = require('./placeholder');
 const feltperson = require('./feltperson');
+const { harAvhengighet } = require('./behandling');
 
 /** Feltreferanser i dynamiske roller og plassholdere: {2-3} eller {felt-id}. */
 const FELTREF = /\{([^}]+)\}/g;
@@ -406,8 +407,12 @@ function sjekkSPListe(def, funn) {
  * og to steg som venter på hverandre låser begge.
  */
 function sjekkAvhengighet(steg, nr, alleNumre, funn) {
-    const av = steg?.AvhengigAv;
-    if (av === undefined || av === null || av === '') return;
+    // Samme spørsmål som den som faktisk blokkerer steget. Her sto det først
+    // en egen sjekk på undefined/null/'', og den meldte «venter på steg 0,
+    // som ikke finnes» på skjematyper uten avhengighet i det hele tatt —
+    // 0 er «ingen», siden steg nummereres fra 1.
+    if (!harAvhengighet(steg)) return;
+    const av = steg.AvhengigAv;
     const sted = stedFor(steg, nr, '');
     const mål = Number(av);
 

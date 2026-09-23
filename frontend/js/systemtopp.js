@@ -73,12 +73,42 @@ function byggTekst(m) {
     return tekst;
 }
 
+/**
+ * Raden merket havner i må tåle en smal skjerm.
+ *
+ * Merket har `flex: 0 0 auto` og krymper ikke — det skal det ikke, en
+ * graderingsmerking som er presset sammen til ukjennelighet er verre enn
+ * ingen. Følgen er at ALT annet i raden må gi etter, og på mobil gjorde ikke
+ * tittelen det: `.tittelrad` har `min-width: 0`, så h1-boksen krympet, men et
+ * langt ord uten bindestrek kan ikke brytes — og teksten fløt utenfor boksen,
+ * rett oppå merket. «Gaveprotokoll FHS» lå tvers over «Kun for UGRADERT»
+ * (meldt 23.09.2026).
+ *
+ * To grep, og begge trengs: raden får brekke slik at merket kan gå ned på
+ * egen linje, og tittelen får brytes inne i et ord når den ikke har noe annet
+ * sted å gå.
+ *
+ * Settes her og ikke i hver enkelt sides CSS: tolv sider har merket, og de
+ * kaller beholderen `.topplinje`, `.topprad` eller `.topp`. Regelen hører
+ * hjemme hos den som plasserer merket, ikke i tolv kopier som kan skli fra
+ * hverandre.
+ */
+function sikreRad(rad) {
+    if (!rad) return;
+    rad.style.flexWrap = 'wrap';
+    for (const h of rad.querySelectorAll('h1')) {
+        h.style.overflowWrap = 'anywhere';
+        h.style.minWidth = '0';
+    }
+}
+
 function settInn(merke) {
     // Sider som vil styre plasseringen selv lager en beholder med denne id-en
     // (utfyllingssiden har merket til høyre for tittelen, ikke til venstre).
     const plass = document.getElementById('systemmerke-plass');
     if (plass) {
         plass.appendChild(merke);
+        sikreRad(plass.parentElement);
         return;
     }
 
@@ -93,7 +123,7 @@ function settInn(merke) {
         h1.parentNode.insertBefore(rad, h1);
         rad.append(merke, h1);
         h1.style.flex = '1';
-        h1.style.minWidth = '0';
+        sikreRad(rad);
         return;
     }
     // Ingen overskrift på siden — legg merket øverst uansett.

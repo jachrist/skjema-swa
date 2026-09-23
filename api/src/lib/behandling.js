@@ -18,8 +18,24 @@ function stegErFerdig(steg) {
     return Number(steg?.Beslutning || 0) !== 0;
 }
 
+/**
+ * Har steget en avhengighet i det hele tatt?
+ *
+ * Alt falsy betyr «nei»: `undefined`, `null`, `''` og — ikke minst — `0`.
+ * Steg nummereres fra 1, så 0 er «ingen», og eldre definisjoner har den
+ * verdien liggende.
+ *
+ * Eksportert fordi diagnosen må stille NØYAKTIG samme spørsmål. Den fikk
+ * først sin egen sjekk som bare så etter undefined/null/'', og meldte da
+ * «venter på steg 0, som ikke finnes» på skjematyper som var helt i orden.
+ * Regelen bor her, hos den som faktisk blokkerer steget.
+ */
+function harAvhengighet(steg) {
+    return !!steg?.AvhengigAv;
+}
+
 function stegErBlokkertAvAvhengighet(steg, alleSteg) {
-    if (!steg?.AvhengigAv) return false;
+    if (!harAvhengighet(steg)) return false;
     const avh = alleSteg.find(s => Number(s.Steg) === Number(steg.AvhengigAv));
     if (!avh) return true; // referanse til ikke-eksisterende steg blokkerer
     return !stegErFerdig(avh);
@@ -161,6 +177,7 @@ function skipStegSomIkkeSkalKjore(skjema) {
 }
 
 module.exports = {
+    harAvhengighet,
     beregnAktiveSteg,
     brukerErBehandler,
     brukerErBehandlerAsync,
