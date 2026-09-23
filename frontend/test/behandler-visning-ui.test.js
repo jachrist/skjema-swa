@@ -74,6 +74,13 @@ const { formaterBehandler, behandlerlinje } = (function () {
     }), 'Behandlet av: A (a@x.no), B (b@x.no)');
 
     sjekk('ingenting gir ingen linje', behandlerlinje({ behandletAv: [], kandidater: [] }), null);
+    // `_feil` er diagnosenøkkelen serveren setter når oppslaget feiler.
+    // Kontrakten er at den ikke gir en linje — ikke fordi vi vokter mot den,
+    // men fordi begge listene da er tomme. Sjekken står som dokumentasjon av
+    // kontrakten, ikke som dekning av en vakt: den vakten fantes i et utkast,
+    // og mutasjonstesting viste at ingen test kunne skille den fra ingenting.
+    sjekk('en diagnosenøkkel gir ingen linje',
+        behandlerlinje({ _feil: 'noe gikk galt' }), null);
     sjekk('manglende rad gir ingen linje', behandlerlinje(undefined), null);
     // En oppføring uten adresse er ikke en behandler.
     sjekk('tomme oppføringer filtreres bort',

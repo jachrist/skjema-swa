@@ -152,6 +152,16 @@ const varsling = require('../src/lib/varsling.js');
         // En feilet berikelse skal ikke gjøre skjemaet uleselig.
         const berik = skjemaer.indexOf('_behandlere = await');
         sjekk('berikelsen er pakket i try', skjemaer.lastIndexOf('try {', berik) > berik - 400, true);
+
+        // Nøkkelen skal ALLTID stå i svaret. En stille catch som lot den
+        // forsvinne gjorde «det gikk galt» umulig å skille fra «koden er ikke
+        // deployet» — og bare den ene av dem er noe vi kan rette.
+        sjekk('feilen havner i svaret, ikke bare i loggen',
+            /skjema\._behandlere = \{ _feil: String\(e\.message \|\| e\) \}/.test(skjemaer), true);
+
+        // Samme grunn: JSON.stringify dropper undefined, så en rolle som er
+        // undefined ville gitt en manglende nøkkel i stedet for et svar.
+        sjekk('_minRolle kan ikke forsvinne', /skjema\._minRolle = minRolle \?\? null;/.test(skjemaer), true);
     }
 
     console.log(`\n${ok} OK, ${feil} feil`);
