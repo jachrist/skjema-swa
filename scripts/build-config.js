@@ -37,8 +37,33 @@ for (const [nokkel, verdi] of Object.entries(konfig)) {
     }
 }
 
+/**
+ * Byggstempelet — hvilken commit som faktisk kjører.
+ *
+ * Lagt til 23.09.2026, etter en time brukt på å finne ut om en rettelse var
+ * ute i miljøet eller ikke. Det spørsmålet lot seg ikke besvare: API-svaret
+ * så feil ut, koden så riktig ut, og deploy-jobben var grønn. Uten et stempel
+ * er «er dette deployet?» et gjettespørsmål — og et dyrt et.
+ *
+ * GITHUB_SHA settes av Actions. Lokalt blir det 'lokal', som er det ærlige
+ * svaret: da er det arbeidstreet ditt som kjører, ikke en commit.
+ */
+const bygg = {
+    commit: (process.env.GITHUB_SHA || '').slice(0, 7) || 'lokal',
+    kjoring: process.env.GITHUB_RUN_NUMBER || '',
+    tid: new Date().toISOString(),
+    miljø: effektivtMiljo
+};
+
 const ut = `// GENERERT av scripts/build-config.js — ikke rediger manuelt.\n`
-    + `export const CONFIG = ${JSON.stringify(publicVerdier, null, 4)};\n`;
+    + `export const CONFIG = ${JSON.stringify(publicVerdier, null, 4)};\n`
+    + `export const BUILD = ${JSON.stringify(bygg, null, 4)};\n`;
+
+// Samme stempel til API-et. Det er to separate spørsmål — frontend og API
+// deployes sammen, men en av dem kan bli hengende, og da vil man vite hvilken.
+const versjonFil = path.join(__dirname, '..', 'api', 'src', 'versjon.json');
+fs.writeFileSync(versjonFil, JSON.stringify(bygg, null, 4) + '\n');
+console.log(`Skrev ${versjonFil} (commit=${bygg.commit})`);
 
 const utFil = path.join(__dirname, '..', 'frontend', 'js', 'config.js');
 fs.writeFileSync(utFil, ut);
