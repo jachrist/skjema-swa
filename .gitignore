@@ -23,3 +23,6 @@ frontend/staticwebapp.config.json
 # ligger i staticwebapp.config.<miljø>.json — en fil som må være identisk med
 # en annen fil er duplisering, ikke dokumentasjon.
 /staticwebapp.config.json
+
+# Byggstempel — skrives av scripts/build-config.js ved deploy.
+api/src/versjon.json
