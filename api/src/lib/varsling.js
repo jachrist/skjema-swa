@@ -540,6 +540,81 @@ async function samleBehandlerMottakere(steg) {
     return out;
 }
 
+/**
+ * Behandlerne per steg, med navn — for oppsummeringen i visning.html.
+ *
+ * Bygger på `samleBehandlerMottakere`, SAMME funksjon som avgjør hvem som får
+ * e-post. Det er hele poenget: står det et navn i oppsummeringen som ikke
+ * fikk varselet, er en av de to gal, og da skal de gå i stykker sammen.
+ * Oppsummeringen leste `steg.Personer` direkte til 23.09.2026, og et steg med
+ * rollebasert behandler sto derfor tomt — selv om e-posten gikk til rett
+ * person.
+ *
+ * To ulike spørsmål, avhengig av hvor steget står:
+ *
+ *   Uavgjort  → HVEM KAN behandle det. Rolleoppslag, som i varslingen.
+ *   Avgjort   → HVEM GJORDE det. Står allerede i `BehandletAv`, og er det
+ *               mer interessante svaret. At det også sparer oss for
+ *               rolleoppslag på hvert eneste sidevisning er en bonus, ikke
+ *               grunnen.
+ *   Hoppet over → ingen av delene.
+ *
+ * Navnet hentes fra Brukernavn-tabellen når rolleoppslaget ikke ga et —
+ * konkrete `Personer` er bare adresser. Har brukeren aldri logget inn, blir
+ * navnet tomt, og kalleren viser adressen alene.
+ *
+ * @returns {Promise<Object>} { "<stegnr>": { kandidater: [{epost,navn}], behandletAv: [{epost,navn}] } }
+ */
+async function behandlereForVisning(behandling) {
+    const brukernavn = require('./brukernavn-storage');
+    const ut = {};
+    // Én oppslagsrunde per adresse, ikke per steg. Samme person står ofte på
+    // flere steg.
+    const navneCache = new Map();
+
+    async function medNavn(epost, kjentNavn) {
+        const e = String(epost || '').trim().toLowerCase();
+        if (!e) return null;
+        if (kjentNavn) return { epost: e, navn: kjentNavn };
+        // Sentinelverdier er ikke personer og skal ikke slås opp.
+        if (e === 'ekstern-flyt' || e === 'alle-behandlere') return { epost: e, navn: '' };
+        if (!navneCache.has(e)) {
+            navneCache.set(e, await brukernavn.hentNavn(e).catch(() => ''));
+        }
+        return { epost: e, navn: navneCache.get(e) || '' };
+    }
+
+    for (const steg of (behandling || [])) {
+        const nr = String(steg?.Steg ?? '');
+        if (!nr) continue;
+        const beslutning = Number(steg?.Beslutning || 0);
+        const rad = { kandidater: [], behandletAv: [] };
+
+        if (beslutning === 0) {
+            for (const m of await samleBehandlerMottakere(steg)) {
+                const b = await medNavn(m.epost, m.navn);
+                if (b) rad.kandidater.push(b);
+            }
+        } else if (beslutning !== 5) {
+            // «alle-behandlere» er en markør for at steget ble avgjort av
+            // flere, ikke en adresse. De virkelige aktørene ligger i
+            // Beslutninger — uten dette hadde oppsummeringen vist ordet
+            // «alle-behandlere» som om det var et navn.
+            const aktorer = String(steg.BehandletAv || '') === 'alle-behandlere'
+                ? (steg.Beslutninger || []).map(b => b.Aktor)
+                : [steg.BehandletAv];
+            const sett = new Set();
+            for (const a of aktorer) {
+                const b = await medNavn(a, '');
+                if (b && !sett.has(b.epost)) { sett.add(b.epost); rad.behandletAv.push(b); }
+            }
+        }
+
+        ut[nr] = rad;
+    }
+    return ut;
+}
+
 function standardFerdigVarsling() {
     return {
         Emne: 'Ferdig behandlet: "$skjemanavn"',
@@ -947,6 +1022,7 @@ async function sendSamtaleVarsling(skjema, skjematype, innlegg, opts = {}) {
 }
 
 module.exports = {
+    behandlereForVisning,
     sendSamtaleVarsling,
     sendInnsenderKvittering,
     sendBehandlerVarsling,

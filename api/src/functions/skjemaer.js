@@ -1247,6 +1247,20 @@ app.http('hentSkjema', {
             skjema._minRolle = minRolle;
 
             skjema._mineStegNumre = mineStegNumre;
+
+            // Behandlerne per steg, med navn. Oppsummeringen leste
+            // `steg.Personer` direkte og viste derfor ingenting for et steg
+            // med rollebasert behandler — selv om e-posten gikk til rett
+            // person. Beriket her fordi rolleoppslag hører hjemme på serveren,
+            // og fordi svaret skal komme fra samme funksjon som varslingen.
+            //
+            // Best-effort: en feilet berikelse skal ikke gjøre skjemaet
+            // uleselig. Da står oppsummeringen uten navn, som før.
+            try {
+                skjema._behandlere = await varsling.behandlereForVisning(skjema.Behandling);
+            } catch (e) {
+                context.log(`skjemaer GET: kunne ikke berike behandlere — ${e.message}`);
+            }
             return { jsonBody: skjema };
         } catch (e) {
             context.log('skjemaer GET FEIL:', e.message, e.stack);
