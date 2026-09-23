@@ -307,6 +307,7 @@
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
         import { kommentarerFor } from './js/behandling-kommentar.js';
+        import { behandlerlinje } from './js/behandler-visning.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -375,6 +376,7 @@
         }
 
         function rendrer(skjematype, skjema) {
+            behandlereForSteg = skjema._behandlere || {};
             document.getElementById('tittel').textContent = skjematype.Skjema_navn || 'Skjema';
             document.title = `${skjematype.Skjema_navn || 'Skjema'} — ${skjema.Skjema_id}`;
 
@@ -487,6 +489,10 @@
             }
         });
 
+        // Settes av rendrer() fra skjemaets `_behandlere`. Modulnivå fordi
+        // byggBehandlingVisning bare får behandlingslista.
+        let behandlereForSteg = {};
+
         function byggBehandlingVisning(behandling) {
             const div = document.createElement('div');
             div.className = 'seksjon';
@@ -516,10 +522,20 @@
                 statusEl.textContent = status.tekst;
                 rad.appendChild(statusEl);
 
-                if ((steg.Personer || []).length > 0) {
+                // `_behandlere` kommer fra API-et og dekker Personer, Roller
+                // OG Team. Fram til 23.09.2026 sto det `steg.Personer` her, og
+                // et steg med rollebasert behandler viste derfor ingenting —
+                // selv om e-posten gikk til rett person.
+                //
+                // Faller tilbake til den gamle lesingen hvis berikelsen
+                // mangler (eldre API, eller et oppslag som feilet). En
+                // oppsummering uten navn er bedre enn en som krasjer.
+                const linje = behandlerlinje(behandlereForSteg[String(steg.Steg)])
+                    || ((steg.Personer || []).length > 0 ? 'Behandlere: ' + steg.Personer.join(', ') : null);
+                if (linje) {
                     const beh = document.createElement('div');
                     beh.style.cssText = 'width: 100%; font-size: 12px; color: var(--text-secondary); margin-top: 4px;';
-                    beh.textContent = 'Behandlere: ' + steg.Personer.join(', ');
+                    beh.textContent = linje;
                     rad.appendChild(beh);
                 }
 

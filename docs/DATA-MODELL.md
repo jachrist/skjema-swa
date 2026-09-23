@@ -268,6 +268,45 @@ det finnes, men er av feil type. Ved innsending skilles fire grunner til at det
 ikke ble noen mottaker — feltet finnes ikke, feil type, ubesvart, ugyldig verdi
 — fordi rettelsen er ulik for hver.
 
+## Behandlere i oppsummeringen (`_behandlere`)
+
+`GET /api/skjemaer/{type}/{id}` beriker svaret med ett oppslag per steg:
+
+```json
+"_behandlere": {
+  "1": { "kandidater": [], "behandletAv": [{ "epost": "ola@x.no", "navn": "Ola Nordmann" }] },
+  "2": { "kandidater": [{ "epost": "kari@x.no", "navn": "Hansen, Kari" }], "behandletAv": [] }
+}
+```
+
+Bygget av `varsling.behandlereForVisning`, som kaller
+`samleBehandlerMottakere` — **samme funksjon som avgjør hvem som får e-post**.
+Det er med vilje: står det et navn i oppsummeringen som ikke fikk varselet, er
+en av de to gal, og da skal de gå i stykker sammen.
+
+Fram til 23.09.2026 leste `visning.html` `steg.Personer` direkte. Et steg med
+rollebasert behandler sto derfor tomt, selv om varslingen gikk til rett person.
+
+Bare ett av feltene fylles per steg, fordi de svarer på ulike spørsmål:
+
+| Steget er | Felt | Spørsmålet |
+|---|---|---|
+| uavgjort (`Beslutning = 0`) | `kandidater` | hvem *kan* behandle det |
+| avgjort | `behandletAv` | hvem *gjorde* det |
+| hoppet over (`Beslutning = 5`) | ingen | — |
+
+At avgjorte steg slipper rolleoppslag er en bonus, ikke grunnen.
+
+`BehandletAv = "alle-behandlere"` er en markør for et steg avgjort av flere,
+ikke en adresse. Den løses opp til de faktiske aktørene fra `Beslutninger`.
+`"ekstern-flyt"` sendes videre som den er — den er ingen person, og slås
+derfor ikke opp i Brukernavn.
+
+`navn` kommer fra rollelista når mottakeren er rolle- eller team-basert, ellers
+fra `Brukernavn`-tabellen. Den fylles ved innlogging, så en behandler som aldri
+har logget inn har tomt navn — og da viser grensesnittet adressen alene
+(`frontend/js/behandler-visning.js`).
+
 ## Visningstekst for valglister (`SvarTekst` / `svt`)
 
 Valglister lagrer **verdien**, ikke teksten: en klasse blir FS-nøkkelen
