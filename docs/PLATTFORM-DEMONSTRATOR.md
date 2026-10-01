@@ -86,10 +86,34 @@ konfigurasjon å holde i takt.
 enn ekte utsending: Mailpit fanger all post og viser den i et web-grensesnitt,
 så du kan *vise fram* e-posten som ble sendt.
 
-**6. Planlagte jobber.** systemd-timere mot de samme endepunktene som
-GitHub Actions kaller i dag — `/api/team-synk`, `/api/nokkelkalender/sjekk`,
-`/api/utsending/send-forfalte`, `/api/backup/kjor` m.fl. Nøkkelen i
-`x-scheduler-key` fungerer uendret.
+**6. Planlagte jobber.** Flere av dem er funksjoner systemet trenger, ikke
+deploy-plumbing: utsendinger skal sendes, purringer skal gå, FS-data og
+postnumre skal oppdateres. Jobbene må altså finnes — men ikke som GitHub
+Actions.
+
+Grunnen er konkret: demonstratoren står på **lokalnettet**, og en
+GitHub-runner kommer ikke dit. Workflowene ville feilet uansett hva vi gjorde
+med dem.
+
+Og de finnes bare fordi SWA Managed Functions ikke støtter timer-triggere. På
+Linux faller den begrensningen bort — systemd-timere, cron eller en
+timer i prosessen gjør samme nytte. Det er i seg selv et poeng verdt å vise:
+plattformen krever mindre stillas, ikke mer.
+
+Tidsplanene står i workflowene som slettes, så her er de:
+
+| Jobb | UTC | Endepunkt | I demonstratoren |
+|---|---|---|---|
+| Utsendinger | `0 5 * * *` | `/api/utsending/send-forfalte` | **ja** |
+| Purringer | `0 6 * * *` | `/api/utsending/purre` | **ja** |
+| FS-data | `0 4 * * *` | `/api/refresh-fs` | dummy eller kopiert datasett |
+| Postnumre | `30 4 15 1,7 *` | `/api/postnumre/refresh-bring` | dummy — halvårlig uansett |
+| Nøkkelkalender | `0 7 * * *` | `/api/nokkelkalender/sjekk` | valgfritt |
+| Team-synk | `30 4 * * *` | `/api/team-synk` | nei — Graph er dummy |
+| Backup | `0 2 * * 0` | `/api/backup/kjor` | nei — SharePoint er dummy |
+
+Nøkkelen i `x-scheduler-key` fungerer uendret, og endepunktene er de samme.
+De to første er de eneste som må virke for å demonstrere en hel saksgang.
 
 ## Hva som skal være dummy
 
@@ -108,8 +132,10 @@ svare tomt.
   herding, ingen backup. Det er en annen jobb.
 - **Ikke endre testene.** De skal gå uendret. En test som må tilpasses er et
   funn, ikke en justering.
-- **Slett deploy-workflowene i klonen.** `deploy-pilot.yml` og `deploy-prod.yml`
-  hører ikke hjemme der, og røde kjøringer skaper bare forvirring.
+- **Slett alle workflowene unntatt `ci.yml`.** `deploy-pilot.yml` fyrer på hver
+  push, og seks andre står på cron — alle ville feilet rødt mot et miljø som
+  ikke finnes, og mot en maskin GitHub ikke når. `ci.yml` blir stående: den
+  kjører testpakken, og den er hele beviset. Tidsplanene over erstatter dem.
 
 ## Når demonstratoren er ferdig
 
