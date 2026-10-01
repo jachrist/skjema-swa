@@ -40,6 +40,46 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
   Frontend-tester klipper ut den aktuelle seksjonen fra HTML-fila og kjører den
   mot stubbet DOM. Deploy kjører testene før utrulling og stopper på rødt.
 
+## Arbeidsmåte
+
+Disse er lært av feil som faktisk har skjedd her, ikke av prinsipp.
+
+**Én regel, ett sted.** Den tilbakevendende feilklassen i dette repoet er at
+samme regel finnes i to eksemplarer som svarer ulikt. Felttypen diagnosen
+godtar mot den ekspansjonen avviser. Editorens «hva er en feltreferanse» mot
+API-ets. «Har steget en avhengighet» i behandlingen mot den samme i diagnosen.
+Må en regel finnes to steder — frontend kan ikke `require` backend — skal en
+test lese BEGGE og kreve likt svar.
+
+**Test ved å bryte koden.** En grønn test beviser ingenting før du har sett den
+bli rød. Bryt regelen med vilje, i flere retninger, og se at riktig test
+feiler.
+
+**Verifiser at mutasjonen faktisk ble påført.** `sed` med feil flagg og
+python-ankre som treffer feil forekomst gir en no-op som ser ut som et hull i
+testdekningen. Det har skjedd tre ganger og ført til gale konklusjoner begge
+veier. Sjekk at endringen står i fila før du tolker resultatet.
+
+**Test mot den ekte formen.** Flere feil har overlevd fordi testen brukte et
+feltnavn eller en returform som ble funnet opp i testen. Les navnet ut av
+modulen som produserer det, eller kjør den ekte funksjonen.
+
+**En nøkkel som kan forsvinne kan ikke feilsøkes.** `JSON.stringify` dropper
+`undefined`, og en stille `catch` gjør det samme. Da er «det gikk galt» umulig
+å skille fra «koden er ikke deployet». Sett feltet alltid, med årsaken i det
+når noe feilet.
+
+**Ikke anta at deployet kode er gjeldende.** `/api/ping` og `/js/config.js`
+bærer commit-SHA-en de kjører. Sjekk den før du feilsøker en rettelse du tror
+er ute.
+
+**Fjern død kode i stedet for å kommentere den.** En vakt ingen test kan skille
+fra ingenting, er ingenting — med en kommentar som påstår det motsatte.
+
+**Avslutt hver runde med én tydelig linje:** «klar til merge: PR #N», eller
+«ikke ferdig ennå» med hva som gjenstår. Arbeid som ikke er i en PR når
+brukeren merger, blir liggende igjen.
+
 ## Miljøer
 
 - **development** — SWA i egen tenant, `env.development.json` + Key Vault `kv-fhsskjema-pilot`.
