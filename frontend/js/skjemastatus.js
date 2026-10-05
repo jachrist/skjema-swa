@@ -76,3 +76,36 @@ export function statusTekst(skjema) {
     if (kode === 2 && erIGang(skjema)) return 'Under behandling';
     return statusTekstFraKode(kode);
 }
+
+/**
+ * Klassen som gir statusmerket farge.
+ *
+ * Den utledes av TEKSTEN, ikke av tallet, og det er hele poenget: siden
+ * «Under behandling» ikke har en egen statuskode, ville en klasse bygget på
+ * tallet gitt den fargen til «Innsendt». Da sier merket ett og fargen et
+ * annet.
+ *
+ * Det var `status-${kode}` som sto der før, og det ga den verste varianten:
+ * status 5 fikk klassen `status-5`, som ingen av sidene hadde en regel for.
+ * Merket har hvit skrift, så «AVSLUTTET» ble hvitt på kortbakgrunnen — og i
+ * registeret er den raden lyseblå når den er valgt. Usynlig tekst, ingen
+ * feilmelding.
+ *
+ * Nye tekster får derfor ikke en klasse av seg selv. `skjemastatus.test.js`
+ * krever at hver klasse denne kan returnere HAR en bakgrunnsregel på hver side
+ * som bruker merket.
+ */
+const KLASSE_FOR_TEKST = {
+    'Mellomlagret': 'status-mellomlagret',
+    'Innsendt': 'status-innsendt',
+    'Under behandling': 'status-behandling',
+    'Til revidering': 'status-revidering',
+    'Avsluttet': 'status-avsluttet'
+};
+
+export function statusKlasse(skjema) {
+    return KLASSE_FOR_TEKST[statusTekst(skjema)] || 'status-ukjent';
+}
+
+/** Klassene merket kan få. Testen leser denne i stedet for å gjette. */
+export const STATUSKLASSER = [...Object.values(KLASSE_FOR_TEKST), 'status-ukjent'];

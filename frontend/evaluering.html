@@ -396,6 +396,7 @@
         import { byggSamtale } from './js/samtale.js';
         import { kommentarerFor as kommentarer } from './js/behandling-kommentar.js';
         import { formaterBehandler } from './js/behandler-visning.js';
+        import { visningslenke } from './js/visningsgrunn.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -433,9 +434,12 @@
                     // replace, ikke assign: tilbakeknappen skal ikke sende
                     // brukeren inn igjen på en side hen nettopp ble ledet bort
                     // fra.
+                    //
+                    // Grunnen følger med i lenka, og visningssiden sier den
+                    // høyt. Uten den ser omdirigeringen ut som at lenka fra
+                    // e-posten pekte feil.
                     window.location.replace(
-                        `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}`
-                        + `&skjema_id=${encodeURIComponent(skjemaId)}${window.location.hash}`);
+                        visningslenke(skjematypeId, skjemaId, 'ingen-behandling', window.location.hash));
                     return;
                 }
                 rendrer();

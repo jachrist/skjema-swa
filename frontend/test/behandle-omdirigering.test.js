@@ -70,15 +70,24 @@ const skalTilVisning = new Function(`${kilde.slice(start, slutt)}\nreturn skalTi
     const kode = utenKommentarer(kilde);
 
     sjekk('regelen brukes', /if \(skalTilVisning\(skjema\)\)/.test(kode), true);
-    sjekk('går til visning.html', /location\.replace\(\s*`\/visning\.html/.test(kode), true);
+
+    // Lenka bygges av `js/visningsgrunn.js`, som også eier parameteren
+    // visningssiden leser for å si HVORFOR brukeren ble sendt hit. Sto den
+    // som en håndskrevet streng her, ville en skrivefeil gitt en stum
+    // omdirigering — se visningsgrunn.test.js.
+    sjekk('modulen importeres',
+        /import \{ visningslenke \} from '\.\/js\/visningsgrunn\.js'/.test(kode), true);
+    sjekk('lenka bygges av modulen', /location\.replace\(\s*visningslenke\(/.test(kode), true);
+    sjekk('ingen håndskrevet lenke igjen', /['"`]\/visning\.html\?/.test(kode), false);
 
     // replace, ikke assign: tilbakeknappen skal ikke sende brukeren inn igjen
     // på siden hen nettopp ble ledet bort fra.
-    sjekk('bruker replace', /location\.href\s*=\s*[`'"]\/visning\.html/.test(kode), false);
+    sjekk('bruker replace', /location\.href\s*=\s*visningslenke/.test(kode), false);
 
-    // ID-ene må følge med, ellers lander hen på en side uten innhold.
-    sjekk('tar med skjematype_id', /visning\.html\?skjematype_id=/.test(kode), true);
-    sjekk('tar med skjema_id', /skjema_id=\$\{encodeURIComponent\(skjemaId\)\}/.test(kode), true);
+    // ID-ene og grunnen må følge med. Uten id-ene lander hen på en side uten
+    // innhold; uten grunnen får hen ingen forklaring.
+    sjekk('tar med begge id-ene og grunnen',
+        /visningslenke\(skjematypeId, skjemaId, 'ingen-behandling'/.test(kode), true);
 
     // Skjer FØR rendrer(): ellers tegnes behandlersiden et øyeblikk først.
     sjekk('omdirigerer før siden tegnes',
