@@ -190,8 +190,9 @@ app.http('rollerSlett', {
  * ingenting skrives. Med `bekreft` kjøres nøyaktig samme kode og planen
  * utføres — så det admin fikk se er det som skjer.
  *
- * Importen eier bare rader med Kilde='import'. Manuelt innlagte innehavere
- * står urørt, også når de er med i fila.
+ * Importen eier bare rader med Kilde='import', og bare i de (Rolle, Omfang)-
+ * gruppene fila nevner. Manuelt innlagte innehavere står urørt, også når de er
+ * med i fila, og roller fila ikke nevner røres ikke i det hele tatt.
  */
 app.http('rollerImport', {
     methods: ['POST'],
@@ -237,13 +238,21 @@ app.http('rollerImport', {
                 fjern: plan.fjern.length,
                 uendret: plan.uendret.length,
                 manuelle: plan.manuelle.length,
-                ugyldige: feil.length
+                ugyldige: feil.length,
+                // Hvor langt importen rekker. Uten dette tallet er «fjerner 22»
+                // umulig å vurdere: det sier ingenting om HVA den har lov til
+                // å røre.
+                grupper: plan.grupper.length
             };
 
             if (!bekreft) {
                 return {
                     jsonBody: {
                         status: 'forhandsvisning', filnavn: fil.name, sammendrag, feil,
+                        // Hele lista, ikke et utdrag: dette er området importen
+                        // eier, og det skal admin kunne lese i sin helhet før
+                        // hen bekrefter.
+                        grupper: plan.grupper,
                         // Nok til å se hva som skjer, uten å sende hele lista.
                         eksempler: {
                             leggTil: plan.leggTil.slice(0, 25),

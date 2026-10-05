@@ -878,9 +878,14 @@
                         Kolonner: <code>Rolle</code> (påkrevd), <code>UPN</code> eller <code>E-post</code> (påkrevd),
                         <code>Omfang</code>, <code>Fornavn</code>, <code>Etternavn</code>, <code>Rollebeskrivelse</code>.
                         Første rad må være overskrifter.<br>
-                        <strong>Importen eier bare sine egne rader.</strong> Alt den legger inn merkes med kilde
-                        <code>import</code>, og bare de radene kan den fjerne igjen. Innehavere du har lagt inn
-                        for hånd står urørt — også om de er med i fila.
+                        <strong>Importen eier bare sine egne rader, i de rollene fila nevner.</strong>
+                        Alt den legger inn merkes med kilde <code>import</code>, og bare de radene kan den
+                        fjerne igjen. Innehavere du har lagt inn for hånd står urørt — også om de er med i
+                        fila. En fil med bare «Ansatt FOSK» rører ikke «Bransjeveileder», og en fil med
+                        «Bransjeveileder (LOG 24-27)» rører ikke «Bransjeveileder (MM 23-26)»: fila er fasiten
+                        for hver kombinasjon av rolle og omfang den nevner, og bare dem. Skal den siste
+                        innehaveren i et omfang bort, slett raden her — da forsvinner omfanget ut av fila, og
+                        importen slutter å eie det.
                     </div>
                     <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                         <input type="file" id="roller-import-fil" accept=".xlsx,.xlsm,.xls,.csv,.txt"
@@ -1157,6 +1162,25 @@
             </div>`;
         }
 
+        /**
+         * Hva importen i det hele tatt kan røre.
+         *
+         * «Fjerner 22» er umulig å vurdere uten dette: tallet sier hva som
+         * skjer, men ikke hva fila har lov til å røre. Fram til 05.10.2026
+         * hadde den lov til å røre alt, og en fil med fire rader foreslo å
+         * slette 22 fra en helt annen rolle.
+         */
+        function rollerImportOmrade(grupper) {
+            if (!grupper || grupper.length === 0) return '';
+            const vist = grupper.map(g =>
+                `${escHtml(g.Rolle)}${g.Omfang ? ' (' + escHtml(g.Omfang) + ')' : ''}`
+            ).join(', ');
+            return `<div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
+                <strong>Importen gjelder ${grupper.length} rolle${grupper.length === 1 ? '' : 'r'}:</strong>
+                ${vist}.<br>Roller som ikke står her, røres ikke.
+            </div>`;
+        }
+
         function rollerImportFeilliste(feil) {
             if (!feil || feil.length === 0) return '';
             const vist = feil.slice(0, 20).map(f =>
@@ -1186,6 +1210,7 @@
                         ${s.uendret ? `<br><small>${s.uendret} rad${s.uendret === 1 ? '' : 'er'} er uendret.</small>` : ''}
                         ${s.manuelle ? `<br><small>${s.manuelle} rad${s.manuelle === 1 ? '' : 'er'} finnes fra før som manuelt innlagt og røres ikke.</small>` : ''}
                     </div>
+                    ${rollerImportOmrade(r.grupper)}
                     ${rollerImportFeilliste(r.feil)}
                     ${rollerImportListe('Legges til', r.eksempler.leggTil, s.leggTil)}
                     ${rollerImportListe('Oppdateres', r.eksempler.oppdater, s.oppdater)}
