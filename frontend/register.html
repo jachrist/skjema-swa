@@ -29,8 +29,9 @@
             --danger-light: rgba(255, 59, 48, 0.1);
             --status-utkast: #ff9500;
             --status-innsendt: #34c759;
-            --status-avvist: #ff3b30;
+            --status-revidering: #ff3b30;
             --status-behandling: #af52de;
+            --status-avsluttet: #48484a;
             --radius-sm: 8px;
             --radius-md: 12px;
             --radius-lg: 18px;
@@ -196,11 +197,15 @@
             color: white;
             white-space: nowrap;
         }
-        .status-badge.status-1 { background: var(--status-utkast); }
-        .status-badge.status-2 { background: var(--status-innsendt); }
-        .status-badge.status-3 { background: var(--status-avvist); }
-        .status-badge.status-4 { background: var(--status-behandling); }
-        .status-badge.status-0 { background: var(--text-secondary); }
+        /* Én regel per klasse `statusKlasse()` kan gi — se skjemastatus.js.
+           Klassene het `status-1` … `status-4` før, bygget av statuskoden, og
+           status 5 (Avsluttet) hadde ingen regel: hvit skrift uten bakgrunn. */
+        .status-badge.status-mellomlagret { background: var(--status-utkast); }
+        .status-badge.status-innsendt { background: var(--status-innsendt); }
+        .status-badge.status-behandling { background: var(--status-behandling); }
+        .status-badge.status-revidering { background: var(--status-revidering); }
+        .status-badge.status-avsluttet { background: var(--status-avsluttet); }
+        .status-badge.status-ukjent { background: var(--text-secondary); }
 
         .tom-melding {
             color: var(--text-secondary);
@@ -438,7 +443,7 @@
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
-        import { statusTekst } from './js/skjemastatus.js';
+        import { statusTekst, statusKlasse } from './js/skjemastatus.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -629,7 +634,6 @@
                 return;
             }
             el.innerHTML = state.filtrert.map(s => {
-                const status = s.Skjema_status ?? 0;
                 const dato = formaterDato(s.Sist_endret);
                 const aktiv = state.valgtId === s.Skjema_id ? ' aktiv' : '';
                 return `
@@ -637,7 +641,7 @@
                         <div class="liste-tittel">#${escHtml(s.Skjema_id)} — ${escHtml(s.Innsender_Epost || '–')}</div>
                         <div class="liste-meta">
                             <span>${escHtml(dato)}</span>
-                            <span class="status-badge status-${status}">${escHtml(statusTekst(s))}</span>
+                            <span class="status-badge ${statusKlasse(s)}">${escHtml(statusTekst(s))}</span>
                         </div>
                     </div>
                 `;
@@ -662,7 +666,6 @@
         function renderDetalj() {
             const s = state.valgtSkjema;
             const hoyre = document.getElementById('hoyre');
-            const status = s.Skjema_status ?? 0;
 
             // Bygg svar-lookup fra skjemaet
             // Id først, posisjon som fallback. Lagret visningstekst —
@@ -675,7 +678,7 @@
             topplinje.className = 'detalj-topplinje';
             topplinje.innerHTML = `
                 <h2 class="detalj-tittel">#${escHtml(s.Skjema_id)}</h2>
-                <span class="status-badge status-${status}">${escHtml(statusTekst(s))}</span>
+                <span class="status-badge ${statusKlasse(s)}">${escHtml(statusTekst(s))}</span>
             `;
             hoyre.appendChild(topplinje);
 

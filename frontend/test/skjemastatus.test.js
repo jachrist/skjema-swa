@@ -46,11 +46,12 @@ function sjekk(navn, faktisk, forventet) {
 }
 
 const kilde = fs.readFileSync(path.join(__dirname, '..', 'js', 'skjemastatus.js'), 'utf8');
-const { statusTekst, statusTekstFraKode } = (function () {
+const { statusTekst, statusTekstFraKode, statusKlasse, STATUSKLASSER } = (function () {
     const modul = {};
     // eslint-disable-next-line no-eval
     eval(kilde.replace(/^export /gm, '')
-        + '\nmodul.statusTekst = statusTekst; modul.statusTekstFraKode = statusTekstFraKode;');
+        + '\nmodul.statusTekst = statusTekst; modul.statusTekstFraKode = statusTekstFraKode;'
+        + '\nmodul.statusKlasse = statusKlasse; modul.STATUSKLASSER = STATUSKLASSER;');
     return modul;
 })();
 
@@ -153,13 +154,63 @@ const { statusTekst, statusTekstFraKode } = (function () {
     ]) {
         const kode = utenKommentarer(fs.readFileSync(path.join(frontend, fil), 'utf8'));
         sjekk(`${fil} importerer ${fn}`,
-            new RegExp(`import \\{ ${fn} \\} from '\\./js/skjemastatus\\.js'`).test(kode), true);
+            new RegExp(`import \\{[^}]*\\b${fn}\\b[^}]*\\} from '\\./js/skjemastatus\\.js'`).test(kode), true);
         sjekk(`${fil} bruker den`, new RegExp(`${fn}\\(`).test(kode.split("import {").pop()), true);
     }
     // rapport.html har BARE tallet — den kan ikke bruke den rike varianten.
     const rapport = utenKommentarer(fs.readFileSync(path.join(frontend, 'rapport.html'), 'utf8'));
     sjekk('rapporten bruker ikke den rike varianten',
         /[^a-zA-Z]statusTekst\(/.test(rapport), false);
+}
+
+// ---------- fargen følger ordet ----------
+{
+    // Klassen bygges av teksten, ikke av tallet. Det er grunnen til at den
+    // finnes: «Under behandling» har ingen egen statuskode, så en klasse
+    // bygget på tallet ville gitt den fargen til «Innsendt».
+    sjekk('mellomlagret', statusKlasse({ Skjema_status: 1 }), 'status-mellomlagret');
+    sjekk('innsendt', statusKlasse({ Skjema_status: 2, Behandling: [{ Beslutning: 0 }] }), 'status-innsendt');
+    sjekk('til revidering', statusKlasse({ Skjema_status: 3 }), 'status-revidering');
+    sjekk('avsluttet', statusKlasse({ Skjema_status: 5 }), 'status-avsluttet');
+
+    const iGang = { Skjema_status: 2, Behandling: [{ Beslutning: 1 }, { Beslutning: 0 }] };
+    sjekk('under behandling', statusKlasse(iGang), 'status-behandling');
+    sjekk('under behandling har EGEN farge',
+        statusKlasse(iGang) === statusKlasse({ Skjema_status: 2 }), false);
+
+    // En status uten tekst skal ha en klasse likevel. Det var nettopp en
+    // klasse uten regel som gjorde merket usynlig.
+    sjekk('0 får en klasse', statusKlasse({ Skjema_status: 0 }), 'status-ukjent');
+    sjekk('4 får en klasse', statusKlasse({ Skjema_status: 4 }), 'status-ukjent');
+    sjekk('tomt objekt får en klasse', statusKlasse({}), 'status-ukjent');
+
+    // Lista testen under leser må dekke alt funksjonen kan svare.
+    const koder = [0, 1, 2, 3, 4, 5];
+    const utenfor = koder
+        .flatMap(k => [{ Skjema_status: k }, { Skjema_status: k, Behandling: [{ Beslutning: 1 }] }])
+        .map(statusKlasse)
+        .filter(k => !STATUSKLASSER.includes(k));
+    sjekk('alle klasser står i STATUSKLASSER', [...new Set(utenfor)], []);
+}
+
+// ---------- hver klasse har en farge på hver side ----------
+{
+    // Dette er feilen testen finnes for. Klassen het `status-${kode}`, og
+    // status 5 hadde ingen regel på noen av sidene. Merket har hvit skrift,
+    // så «AVSLUTTET» ble hvitt på kortbakgrunnen — lyseblå i registeret når
+    // raden er valgt. Ingen feilmelding, bare usynlig tekst.
+    const frontend = path.join(__dirname, '..');
+    for (const fil of ['register.html', 'visning.html']) {
+        const kode = utenKommentarer(fs.readFileSync(path.join(frontend, fil), 'utf8'));
+
+        sjekk(`${fil} bruker statusKlasse()`, /\$\{statusKlasse\(/.test(kode), true);
+        // Ingen side får bygge klassen av statuskoden igjen.
+        sjekk(`${fil} bygger ikke klassen av tallet`, /status-\$\{/.test(kode), false);
+
+        const uten = STATUSKLASSER.filter(k =>
+            !new RegExp(`\\.status-badge\\.${k}\\s*\\{[^}]*background`).test(kode));
+        sjekk(`${fil}: alle klasser har bakgrunn`, uten, []);
+    }
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

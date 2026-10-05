@@ -434,20 +434,14 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
                 label.classList.remove('selected');
                 antallValgt--;
             }
-            container.querySelectorAll('.flervalg-knapp').forEach(k => {
-                const c = k.querySelector('input');
-                c.disabled = !c.checked && antallValgt >= maks && maks > 1;
-            });
+            oppdaterLaas();
         });
         const span = document.createElement('span');
         span.textContent = valg.Tekst;
         label.append(cb, span);
         container.appendChild(label);
     }
-    // Sett initial disabled-state for de som ikke er valgt hvis grensen er nådd
-    if (antallValgt >= maks) {
-        container.querySelectorAll('.flervalg-knapp input:not(:checked)').forEach(c => { c.disabled = true; });
-    }
+    oppdaterLaas();
 
     if (merkAlle) {
         const settAlle = (på) => {
@@ -455,10 +449,13 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
             container.querySelectorAll('.flervalg-knapp').forEach(k => {
                 const c = k.querySelector('input');
                 c.checked = på;
-                c.disabled = false;
                 k.classList.toggle('selected', på);
                 if (på) antallValgt++;
             });
+            // Også her: låsen settes av den ene funksjonen, ikke av en egen
+            // `c.disabled = false` som tilfeldigvis stemmer fordi MerkAlle
+            // opphever taket.
+            oppdaterLaas();
             oppdaterVerktoy();
             // Knappeklikk gir ingen change-hendelse av seg selv, men skjemaet
             // lytter delegert på 'change' for vilkår og avhengige FasteData-felt.
@@ -468,6 +465,26 @@ function _lagFlervalgKnapper(felt, feltId, initialSvar) {
         fjernAlle.addEventListener('click', () => settAlle(false));
         container.addEventListener('change', oppdaterVerktoy);
         oppdaterVerktoy();
+    }
+
+    /**
+     * Lås de uvalgte når taket er nådd — men BARE når feltet har plass til
+     * flere svar.
+     *
+     * Ved enkeltvalg skal man kunne bytte ved å klikke den nye verdien. Var de
+     * andre knappene låst, måtte brukeren først klikke bort sitt eget svar og
+     * deretter velge på nytt: to klikk for å endre «Ja» til «Nei».
+     *
+     * Regelen fantes i to eksemplarer som var uenige. Endringslytteren hadde
+     * `maks > 1`, initialtilstanden hadde den ikke — så et ja/nei-felt med
+     * svar var låst fram til første klikk, og åpnet seg etterpå. Nå er det én
+     * funksjon, kalt fra begge stedene.
+     */
+    function oppdaterLaas() {
+        container.querySelectorAll('.flervalg-knapp').forEach(k => {
+            const c = k.querySelector('input');
+            c.disabled = !c.checked && maks > 1 && antallValgt >= maks;
+        });
     }
 
     function oppdaterVerktoy() {
