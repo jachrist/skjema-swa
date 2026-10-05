@@ -101,20 +101,21 @@ function les(...d) {
 // ---------- status 3 heter «Til revidering» ----------
 {
     const frontend = path.join(__dirname, '..', '..', 'frontend');
-    const kart = [];
+    // Kartet lå i tre HTML-filer og var uenig med seg selv. Det bor nå i
+    // frontend/js/skjemastatus.js, og ingen side skal ha sitt eget igjen.
+    const egne = [];
     for (const fil of fs.readdirSync(frontend).filter(f => f.endsWith('.html'))) {
         const kode = utenKommentarer(fs.readFileSync(path.join(frontend, fil), 'utf8'));
-        for (const m of kode.matchAll(/STATUS_TEKST = \{([^}]*)\}/g)) {
-            const treff = /3:\s*'([^']*)'/.exec(m[1]);
-            if (treff) kart.push({ fil, tekst: treff[1] });
-        }
+        if (/STATUS_TEKST\s*=/.test(kode)) egne.push(fil);
     }
-    sjekk('fant statuskartene', kart.length >= 3, true);
-    // Bakenden har alltid ment «Til revidering» — rapport-motor.js og
-    // datauttrekk.js. To frontend-sider sa «Avvist», og det var det
-    // innsenderen leste etter en ompuss.
-    sjekk('ingen sier «Avvist» om status 3',
-        kart.filter(k => k.tekst !== 'Til revidering'), []);
+    sjekk('ingen side har sitt eget statuskart', egne, []);
+
+    // Uten kommentarer: ordet «Avvist» står med vilje i modulens forklaring
+    // av hva som var galt før, og det er ikke en regel.
+    const modul = utenKommentarer(
+        fs.readFileSync(path.join(frontend, 'js', 'skjemastatus.js'), 'utf8'));
+    sjekk('modulen sier «Til revidering» om 3', /case 3: return 'Til revidering';/.test(modul), true);
+    sjekk('og ingen kode sier «Avvist»', /Avvist/.test(modul), false);
 
     const motor = les('lib', 'rapport-motor.js');
     sjekk('bakenden sier det samme', /3: 'Til revidering'/.test(motor), true);

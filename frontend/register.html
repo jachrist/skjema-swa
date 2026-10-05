@@ -438,6 +438,7 @@
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
+        import { statusTekst } from './js/skjemastatus.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -449,7 +450,7 @@
         // (?status=5 = Avsluttet).
         const statusParam = params.get('status');
 
-        const STATUS_TEKST = { 0: '–', 1: 'Utkast', 2: 'Innsendt', 3: 'Til revidering', 4: 'Under behandling', 5: 'Avsluttet' };
+
         const state = {
             skjematype: null,
             alle: [],
@@ -636,7 +637,7 @@
                         <div class="liste-tittel">#${escHtml(s.Skjema_id)} — ${escHtml(s.Innsender_Epost || '–')}</div>
                         <div class="liste-meta">
                             <span>${escHtml(dato)}</span>
-                            <span class="status-badge status-${status}">${escHtml(STATUS_TEKST[status] || '?')}</span>
+                            <span class="status-badge status-${status}">${escHtml(statusTekst(s))}</span>
                         </div>
                     </div>
                 `;
@@ -674,7 +675,7 @@
             topplinje.className = 'detalj-topplinje';
             topplinje.innerHTML = `
                 <h2 class="detalj-tittel">#${escHtml(s.Skjema_id)}</h2>
-                <span class="status-badge status-${status}">${escHtml(STATUS_TEKST[status] || '?')}</span>
+                <span class="status-badge status-${status}">${escHtml(statusTekst(s))}</span>
             `;
             hoyre.appendChild(topplinje);
 

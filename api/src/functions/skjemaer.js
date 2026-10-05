@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender } = require('../lib/behandling');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const feltperson = require('../lib/feltperson');
 const varsling = require('../lib/varsling');
@@ -321,9 +321,17 @@ app.http('lagreBeslutning', {
             const beslutningTekst = valgtValg?.Tekst || '';
             const varslOpts = { log: (m) => context.log(m), request };
             const log = (m) => context.log(m);
-            const varslinger = [
-                varsling.sendBeslutningVarsling(skjemaKlartekst, skjematype, stegObj, beslutning, beslutningTekst, body?.kommentar || '', varslOpts)
-            ];
+            // Beslutningsvalget kan slå av meldingen til innsenderen — se
+            // behandling.skalVarsleInnsender. Ompuss varsler alltid, uansett
+            // hva som står i oppsettet.
+            const varslinger = [];
+            if (skalVarsleInnsender(valgtValg)) {
+                varslinger.push(varsling.sendBeslutningVarsling(
+                    skjemaKlartekst, skjematype, stegObj, beslutning, beslutningTekst,
+                    body?.kommentar || '', varslOpts));
+            } else {
+                context.log(`beslutning: steg ${stegNr} «${beslutningTekst}» varsler ikke innsender (VarsleInnsender=false)`);
+            }
             if (alleFerdig) {
                 // Hele skjemaet er ferdig behandlet — varsle rollene skjematypen
                 // har pekt ut. Feltreferanser løses opp mot klartekst-utgaven.
@@ -1112,6 +1120,10 @@ app.http('listSkjemaer', {
                     Skjema_navn: s.Skjema_navn || '',
                     Innsender_Epost: s.Innsender_Epost || s.Innsender_epost || '',
                     Skjema_status: s.Skjema_status || 0,
+                    // Lista er kompakt og bærer ikke Behandling, men registeret
+                    // skal kunne skille «innsendt» fra «under behandling» — og
+                    // det er nettopp i en oversikt den forskjellen betyr noe.
+                    UnderBehandling: noenStegErBehandlet(s),
                     Opprettet: s.Opprettet || s.OpprettetDato || '',
                     Sist_endret: s.Sist_endret || s.Oppdatert || '',
                     FilterSvar: filterFelt.length > 0 ? hentFilterSvar(s) : undefined
