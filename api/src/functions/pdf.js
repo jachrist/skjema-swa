@@ -17,7 +17,7 @@ const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const vedleggStorage = require('../lib/vedlegg-storage');
 const { filtrerTyperPåTilgang } = require('../lib/tilgang');
-const { beregnAktiveSteg, brukerErBehandlerAsync } = require('../lib/behandling');
+const { erBehandlerPaaNoeSteg } = require('../lib/behandling');
 const { genererOppsummeringPdf } = require('../lib/pdf-generator');
 const kryptering = require('../lib/kryptering');
 const dialogTilgang = require('../lib/dialog-tilgang');
@@ -36,17 +36,12 @@ async function harTilgang(skjema, skjematypeId, upn) {
         if (treff.length > 0) return true;
     }
 
-    // Behandler på aktivt steg
-    const aktive = beregnAktiveSteg(skjema);
-    for (const s of aktive) {
-        if (await brukerErBehandlerAsync(s, upn)) return true;
-    }
-
-    // Behandler på et TIDLIGERE steg (skjema.Behandling[].BehandletAv === upn)
-    for (const s of (skjema?.Behandling || [])) {
-        if (String(s.BehandletAv || '').toLowerCase() === upnLower) return true;
-    }
-    return false;
+    // Behandler på et hvilket som helst steg — aktivt, ferdig eller blokkert.
+    // Regelen bor i behandling.js; den fantes i tre varianter, og PDF-en var
+    // den ene som godtok BehandletAv men ikke Beslutninger[].Aktor. Et «alle
+    // må avgjøre»-steg har markøren «alle-behandlere» der, så deltakerne falt
+    // utenfor.
+    return await erBehandlerPaaNoeSteg(skjema, upn);
 }
 
 async function hentAlleVedlegg(skjematypeId, skjemaId, log) {

@@ -155,6 +155,12 @@ app.http('varslingDiagSkjema', {
                         Skjema_id: skjema.Skjema_id,
                         Skjematype_id: skjema.Skjematype_id,
                         Skjema_status: skjema.Skjema_status,
+                        // Innsenderen er mottaker av kvitteringen og av
+                        // beslutningsvarselet, og begge lenker til
+                        // visning.html. Uten adressen her er «hvem fikk den
+                        // lenka?» et gjettespørsmål — og det kostet en runde
+                        // 05.10.2026.
+                        Innsender_Epost: skjema.Innsender_Epost || skjema.Innsender_epost || '',
                         alleStegFerdig: alleFerdig,
                         aktiveSteg: aktive.map(s => ({ steg: s.Steg, stegnavn: s.Stegnavn || '' })),
                         steg

@@ -17,7 +17,7 @@
 const { erAdmin } = require('./auth');
 const skjemaStorage = require('./skjema-storage');
 const { filtrerTyperPåTilgang } = require('./tilgang');
-const { brukerErBehandlerAsync } = require('./behandling');
+const { erBehandlerPaaNoeSteg } = require('./behandling');
 
 /** 'admin' | 'innsender' | 'eier' | 'behandler' | null */
 async function tilgangsRolle(skjema, skjematypeId, upn) {
@@ -31,11 +31,10 @@ async function tilgangsRolle(skjema, skjematypeId, upn) {
     const eier = await filtrerTyperPåTilgang([st], upn, 'Eiere');
     if (eier.length > 0) return 'eier';
 
-    if (Array.isArray(skjema?.Behandling)) {
-        for (const steg of skjema.Behandling) {
-            if (await brukerErBehandlerAsync(steg, upn)) return 'behandler';
-        }
-    }
+    // Samme regel som tilgangssjekken i skjemaer.js og pdf.js. Den som
+    // avgjorde et steg skal også telle som behandler for dialogen — ellers
+    // mister hen de interne innleggene i saken hen selv har behandlet.
+    if (await erBehandlerPaaNoeSteg(skjema, upn)) return 'behandler';
     return null;
 }
 
