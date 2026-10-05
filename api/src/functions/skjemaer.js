@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg } = require('../lib/behandling');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const feltperson = require('../lib/feltperson');
 const varsling = require('../lib/varsling');
@@ -1222,23 +1222,40 @@ app.http('hentSkjema', {
                 }
             }
 
-            // Tilgang: admin, eier, innsender selv, ELLER behandler (Personer/Roller)
-            //   på et aktivt steg.
+            // Tilgang: admin, eier, innsender selv, ELLER behandler på ET STEG
+            //   — aktivt eller ikke.
             const upnLower = upn.toLowerCase();
             const erInnsender = (skjema.Innsender_Epost || '').toLowerCase() === upnLower;
             const aktive = beregnAktiveSteg(skjema);
 
-            // Bygg liste over hvilke aktive steg brukeren er behandler for (via
-            // Personer eller Roller). Brukes både til tilgangsvurdering og som
-            // beriket felt i responsen (_mineStegNumre) så frontend slipper
-            // rolle-oppslag på sin side.
+            // Hvilke AKTIVE steg brukeren er behandler for. Dette er hva hen kan
+            // handle på nå, og sendes med som `_mineStegNumre` så frontend
+            // slipper rolle-oppslag på sin side.
             const mineStegNumre = [];
             for (const s of aktive) {
                 if (await brukerErBehandlerAsync(s, upn)) mineStegNumre.push(Number(s.Steg));
             }
 
+            // Tilgang er et videre spørsmål enn «kan handle nå».
+            //
+            // Fram til 05.10.2026 ga bare AKTIVE steg tilgang. Følgen var at en
+            // behandler mistet saken i det den ble ferdig: hen kunne verken se
+            // hva hen selv hadde bestemt, åpne lenka fra e-posten eller hente
+            // PDF-en. Meldt fra testing — «Ingen tilgang» på et skjema
+            // behandleren nettopp var satt på.
+            //
+            // Det gjelder også MELLOM steg: er steg 2 blokkert av en
+            // avhengighet, sto behandleren der uten innsyn i saken hen snart
+            // skal avgjøre.
+            //
+            // Å ha vært utpekt som behandler på et steg er nok for å LESE
+            // saken. Hva hen kan gjøre med den, avgjøres fortsatt av
+            // mineStegNumre og av beslutningsendepunktet.
+            const erBehandlerPaNoeSteg = mineStegNumre.length > 0
+                || (!erInnsender && !erAdmin(upn) && await erBehandlerPaaNoeSteg(skjema, upn));
+
             let erEier = false;
-            if (!erInnsender && !erAdmin(upn) && mineStegNumre.length === 0) {
+            if (!erInnsender && !erAdmin(upn) && !erBehandlerPaNoeSteg) {
                 erEier = await harEierTilgang(skjematypeId, upn);
                 if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
             }

@@ -150,6 +150,55 @@ async function brukerErBehandlerAsync(steg, upn, cache = null) {
 }
 
 /**
+ * Har denne brukeren noe med saken å gjøre som behandler — på ETHVERT steg?
+ *
+ * Skilt fra «kan handle nå», som er behandler på et AKTIVT steg. De to er
+ * ulike spørsmål, og å blande dem har kostet oss tre ulike svar på det samme:
+ *
+ *   skjemaer.js GET  krevde aktivt steg
+ *   pdf.js           aktivt steg ELLER BehandletAv
+ *   dialog-tilgang   ethvert steg
+ *
+ * Følgen av den strengeste var at en behandler mistet saken i det den ble
+ * ferdig: hen kunne verken se hva hen selv hadde bestemt, åpne lenka fra
+ * e-posten eller hente PDF-en. Det gjaldt også mellom steg — er steg 2
+ * blokkert av en avhengighet, sto behandleren uten innsyn i saken hen snart
+ * skal avgjøre. (Meldt fra testing 05.10.2026.)
+ *
+ * Tre kilder, fordi lista kan ha endret seg siden beslutningen ble tatt:
+ *
+ *   `BehandletAv`          den som avgjorde steget
+ *   `Beslutninger[].Aktor` deltakerne i «alle må avgjøre» — der er
+ *                          BehandletAv markøren «alle-behandlere», ikke en
+ *                          person
+ *   `Personer/Roller/Team` de som er utpekt nå
+ *
+ * Dette gir LESETILGANG. Hva brukeren kan gjøre med saken avgjøres fortsatt
+ * av de aktive stegene og av beslutningsendepunktet.
+ */
+/**
+ * Verdier som står i `BehandletAv` uten å være personer.
+ *
+ * `alle-behandlere` markerer et steg avgjort av flere, `ekstern-flyt` en
+ * beslutning fra en Power Automate-flyt, `system` et steg skip-logikken
+ * hoppet over. Ingen av dem er en UPN, men de ville matchet som strenger —
+ * og da ga de tilgang til den som klarte å logge inn med navnet.
+ */
+const IKKE_PERSONER = new Set(['alle-behandlere', 'ekstern-flyt', 'system']);
+
+async function erBehandlerPaaNoeSteg(skjema, upn, cache = null) {
+    if (!upn) return false;
+    const upnLower = String(upn).toLowerCase();
+    if (IKKE_PERSONER.has(upnLower)) return false;
+    for (const s of (skjema?.Behandling || [])) {
+        if (String(s.BehandletAv || '').toLowerCase() === upnLower) return true;
+        if ((s.Beslutninger || []).some(b => String(b.Aktor || '').toLowerCase() === upnLower)) return true;
+        if (await brukerErBehandlerAsync(s, upn, cache)) return true;
+    }
+    return false;
+}
+
+/**
  * Hvem som fortsatt må avgi beslutning på et «alle må avgjøre»-steg.
  *
  * Kravene er stegets konkrete Personer, hver rollestreng i Roller og hvert Team.
@@ -241,6 +290,7 @@ function skipStegSomIkkeSkalKjore(skjema) {
 }
 
 module.exports = {
+    erBehandlerPaaNoeSteg,
     skalVarsleInnsender,
     noenStegErBehandlet,
     finnBeslutningsvalg,
