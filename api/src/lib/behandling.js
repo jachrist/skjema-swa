@@ -14,6 +14,29 @@
 const { evaluerVilkar } = require('./vilkar');
 const { erRolleMedlem, erTeamMedlem } = require('./tilgang');
 
+/**
+ * Beslutningsvalget med dette nummeret på steget, eller null.
+ */
+function finnBeslutningsvalg(steg, beslutningNr) {
+    return (steg?.Beslutningsvalg || [])
+        .find(v => Number(v.Nummer) === Number(beslutningNr)) || null;
+}
+
+/**
+ * Er dette valget en ompuss — «tilbake til innsender for retting»?
+ *
+ * Eksportert fordi to steder må stille samme spørsmål: lagringen, som
+ * nullstiller steget og setter status 3, og varslingen, som må lenke
+ * innsenderen til utfyllingssiden i stedet for visningssiden.
+ *
+ * Fram til 05.10.2026 fantes regelen bare i lagringen, og varslingen lenket
+ * alltid til visning.html. Innsenderen fikk dermed «Fikses» med en lenke til
+ * et skrivebeskyttet skjema — en blindvei.
+ */
+function erOmpussValg(valg) {
+    return valg?.Handling === 'ompuss';
+}
+
 function stegErFerdig(steg) {
     return Number(steg?.Beslutning || 0) !== 0;
 }
@@ -177,6 +200,8 @@ function skipStegSomIkkeSkalKjore(skjema) {
 }
 
 module.exports = {
+    finnBeslutningsvalg,
+    erOmpussValg,
     harAvhengighet,
     beregnAktiveSteg,
     brukerErBehandler,

@@ -18,6 +18,7 @@ const rollerStorage = require('./roller-storage');
 const teamStorage = require('./team-storage');
 const dynamiskRolle = require('./dynamisk-rolle');
 const feltperson = require('./feltperson');
+const { finnBeslutningsvalg, erOmpussValg } = require('./behandling');
 
 function standardKvittering() {
     return {
@@ -837,8 +838,23 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
     const mal = treff && (treff.Emne || treff.Tekst) ? treff : standardFraBehandler();
 
     // Beslutningen går til innsenderen, som ikke har tilgang til
-    // behandlersiden. visning.html viser skjemaet med beslutningen.
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request, 'visning.html');
+    // behandlersiden.
+    //
+    // Hvilken side avhenger av hva beslutningen BETYR. Ved ompuss skal
+    // innsenderen rette skjemaet, ikke lese det — og visning.html er
+    // skrivebeskyttet. Lenka førte dermed til en blindvei: «Fikses», uten
+    // noen måte å fikse på (meldt 05.10.2026).
+    //
+    // index.html med skjema_id åpner skjemaet for utfylling igjen, samme vei
+    // som «Fortsett» på et mellomlagret skjema. Lagringen godtar det: status
+    // 3 → 2 teller som en ny innsending, så varslinger går ut på nytt og
+    // dynamiske roller ekspanderes fra malen.
+    //
+    // Regelen for «er dette en ompuss» kommer fra behandling.js, samme sted
+    // som lagringen spør.
+    const ompuss = erOmpussValg(finnBeslutningsvalg(steg, beslutningNr));
+    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request,
+        ompuss ? 'index.html' : 'visning.html');
     const kontekst = byggKontekst({
         skjema, skjematype, steg,
         beslutningTekst,

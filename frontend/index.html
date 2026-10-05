@@ -620,6 +620,38 @@
             if (lagre) lagre.style.display = 'none';
         }
 
+        /**
+         * Banner når skjemaet er sendt tilbake til retting (status 3).
+         *
+         * Beskjeden fra behandleren lagres som et `ekstern`-innlegg i Dialog
+         * (se skjemaer.js, ompuss-grenen). Interne innlegg er allerede filtrert
+         * bort av API-et for en innsender, men vi leser `Type` likevel: en
+         * innsender som ogsa er behandler far se alt, og da skal ikke en intern
+         * notat-utveksling havne oyerst pa utfyllingssiden.
+         */
+        function visRevideringsbanner(skjema) {
+            if (Number(skjema?.Skjema_status) !== 3) return;
+            const innlegg = (skjema.Dialog || []).filter(d => d?.Type === 'ekstern');
+            const sist = innlegg[innlegg.length - 1];
+
+            const banner = document.createElement('div');
+            banner.className = 'status-melding info forklaring';
+            banner.style.cssText += 'margin-bottom: 12px;';
+            const tittel = document.createElement('div');
+            tittel.style.cssText = 'font-weight: 600; margin-bottom: 4px;';
+            tittel.textContent = 'Skjemaet er sendt tilbake for retting';
+            banner.appendChild(tittel);
+            const tekst = document.createElement('div');
+            tekst.textContent = sist?.Tekst
+                || 'Rett opplysningene og send inn på nytt.';
+            banner.appendChild(tekst);
+
+            const forklaring = document.getElementById('forklaring');
+            if (forklaring && forklaring.parentNode) {
+                forklaring.parentNode.insertBefore(banner, forklaring);
+            }
+        }
+
         async function forbereedSkjemaId() {
             if (skjemaIdParam) {
                 skjemaId = skjemaIdParam;
@@ -691,6 +723,12 @@
                 logoEl.src = skjematype.Logo_url;
                 logoEl.style.display = '';
             }
+
+            // Skjemaet er sendt tilbake for retting. Uten denne banneren
+            // møter innsenderen et ferdig utfylt skjema uten et ord om hvorfor
+            // det er åpent igjen — og beskjeden fra behandleren ligger i
+            // Dialog, som utfyllingssiden ellers ikke viser.
+            visRevideringsbanner(eksisterendeSkjema);
 
             if (skjematype.Skjemaforklaring?.Innhold) {
                 document.getElementById('forklaring').innerHTML =

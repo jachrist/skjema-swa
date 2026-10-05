@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg } = require('../lib/behandling');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const feltperson = require('../lib/feltperson');
 const varsling = require('../lib/varsling');
@@ -176,12 +176,12 @@ app.http('lagreBeslutning', {
             }
 
             // Valider beslutning mot Beslutningsvalg (eller 5 = hoppet over)
-            const valgtValg = (stegObj.Beslutningsvalg || []).find(v => Number(v.Nummer) === beslutning);
+            const valgtValg = finnBeslutningsvalg(stegObj, beslutning);
             if (beslutning !== 5 && !valgtValg) {
                 return { status: 400, jsonBody: { status: 'feil', melding: 'Ugyldig beslutning for dette steget' } };
             }
 
-            const erOmpuss = valgtValg?.Handling === 'ompuss';
+            const erOmpuss = erOmpussValg(valgtValg);
 
             if (erOmpuss) {
                 // Ompuss: skjemaet sendes tilbake til innsender for revidering.
