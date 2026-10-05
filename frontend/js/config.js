@@ -6,6 +6,6 @@ export const CONFIG = {
 export const BUILD = {
     "commit": "lokal",
     "kjoring": "",
-    "tid": "2026-10-01T12:38:25.578Z",
+    "tid": "2026-10-05T10:24:59.541Z",
     "miljø": "pilot"
 };

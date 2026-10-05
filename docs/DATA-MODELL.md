@@ -307,6 +307,75 @@ fra `Brukernavn`-tabellen. Den fylles ved innlogging, så en behandler som aldri
 har logget inn har tomt navn — og da viser grensesnittet adressen alene
 (`frontend/js/behandler-visning.js`).
 
+## Skjema_status og ordene for den
+
+Statusene som faktisk settes (`api/src/functions/skjemaer.js`):
+
+| Kode | Når | Tekst |
+|---|---|---|
+| 1 | lagring uten innsending | **Mellomlagret** |
+| 2 | innsending | **Innsendt** |
+| 3 | ompuss — sendt tilbake til innsender | **Til revidering** |
+| 5 | alle steg ferdige, eller ingen steg definert | **Avsluttet** |
+
+`0` betyr «ingen status lagret» og oppstår i praksis ikke. **`4` settes aldri**
+— den sto som etikett «Under behandling» i `register.html` uten at noe brukte
+den.
+
+Et avsluttet skjema heter **Avsluttet uansett utfall**. Innvilget og avslått er
+beslutninger på steg, ikke statuser på skjemaet.
+
+### «Under behandling» har ingen status
+
+Et skjema som er avgjort på steg 1 og venter på steg 2 står fortsatt på **2**,
+akkurat som et ingen har rørt. Forskjellen utledes: *minst ett steg har
+`Beslutning` som verken er 0 (uavgjort) eller 5 (hoppet over)*.
+
+Et hoppet steg teller ikke — det er ikke arbeid noen har gjort.
+
+Regelen finnes to steder, fordi frontend ikke kan `require` bakenden:
+
+- `behandling.noenStegErBehandlet(skjema)` — serveren
+- `frontend/js/skjemastatus.js` — de sidene som har hele skjemaet
+
+`frontend/test/skjemastatus.test.js` kjører begge mot de samme tilfellene og
+krever likt svar.
+
+Registerlista (`/api/skjema-liste/{type}`) er kompakt og bærer ikke
+`Behandling`. Serveren regner derfor ut svaret der og sender det som
+`UnderBehandling`. `statusTekst` foretrekker `Behandling` når den finnes, og
+faller tilbake på flagget.
+
+`statusTekstFraKode(kode)` finnes for rapportkolonner, som bare har tallet. Den
+svarer **Innsendt** på 2 — det ærlige svaret når man ikke vet mer.
+
+> Bakenden har fortsatt egne kart i `rapport-motor.js` og `datauttrekk.js`.
+> `datauttrekk` er eksportformatet Power BI-rapportene leser, så en endring av
+> tekstene der endrer innholdet i rapporter noen alt har bygget. Står urørt til
+> noen bestemmer det.
+
+## Varsle innsender per beslutningsvalg (`VarsleInnsender`)
+
+Et beslutningsvalg kan slå av meldingen til innsenderen:
+
+```json
+{ "Nummer": 1, "Tekst": "Anbefalt", "VarsleInnsender": false }
+```
+
+Standard er å varsle, og **`true` lagres som fravær av feltet** — en skjematype
+der bryteren aldri er rørt og en der den er slått av og på igjen skal se like
+ut.
+
+Brukt for skjemaer med flere steg der innsenderen ikke skal høre fra oss ved
+hver delbeslutning, bare ved den endelige. Den andre halvdelen av det oppsettet
+er `Ferdigvarsling`, som går når alle steg er ferdige — den berøres ikke av
+denne bryteren, og heller ikke varslingen til neste steg.
+
+**Ompuss varsler alltid.** `behandling.skalVarsleInnsender` overstyrer
+bryteren, og editoren låser avkryssingsboksen. Et skjema som sendes tilbake for
+retting uten at noen får beskjed blir liggende: innsenderen vet ikke at ballen
+er hos hen, og behandleren venter på et svar som aldri kommer.
+
 ## Visningstekst for valglister (`SvarTekst` / `svt`)
 
 Valglister lagrer **verdien**, ikke teksten: en klasse blir FS-nøkkelen

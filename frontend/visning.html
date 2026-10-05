@@ -308,6 +308,7 @@
         import { byggSamtale } from './js/samtale.js';
         import { kommentarerFor } from './js/behandling-kommentar.js';
         import { behandlerlinje } from './js/behandler-visning.js';
+        import { statusTekst } from './js/skjemastatus.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -317,7 +318,7 @@
         const skjematypeId = params.get('skjematype_id');
         const skjemaId = params.get('skjema_id');
 
-        const STATUS_TEKST = { 0: '–', 1: 'Utkast', 2: 'Innsendt', 3: 'Avvist' };
+
 
         // Modulnivå: samtalepanelet trenger den som `megId` for å merke egne
         // innlegg, og det bygges etter at init er ferdig.
@@ -387,7 +388,7 @@
                 <div><strong>Skjema-ID:</strong> ${escapeHtml(skjema.Skjema_id)}</div>
                 <div><strong>Innsender:</strong> ${escapeHtml(skjema.Innsender_Epost || '–')}</div>
                 ${dato ? `<div><strong>Sist endret:</strong> ${escapeHtml(dato)}</div>` : ''}
-                <div><strong>Status:</strong> <span class="status-badge status-${status}">${escapeHtml(STATUS_TEKST[status] || '?')}</span></div>
+                <div><strong>Status:</strong> <span class="status-badge status-${status}">${escapeHtml(statusTekst(skjema))}</span></div>
             `;
 
             // Bygg lookup: skjema.Seksjoner har svar; skjematype.Seksjoner har definisjonen

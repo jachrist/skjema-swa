@@ -14,6 +14,70 @@
 const { evaluerVilkar } = require('./vilkar');
 const { erRolleMedlem, erTeamMedlem } = require('./tilgang');
 
+/**
+ * Beslutningsvalget med dette nummeret på steget, eller null.
+ */
+function finnBeslutningsvalg(steg, beslutningNr) {
+    return (steg?.Beslutningsvalg || [])
+        .find(v => Number(v.Nummer) === Number(beslutningNr)) || null;
+}
+
+/**
+ * Er dette valget en ompuss — «tilbake til innsender for retting»?
+ *
+ * Eksportert fordi to steder må stille samme spørsmål: lagringen, som
+ * nullstiller steget og setter status 3, og varslingen, som må lenke
+ * innsenderen til utfyllingssiden i stedet for visningssiden.
+ *
+ * Fram til 05.10.2026 fantes regelen bare i lagringen, og varslingen lenket
+ * alltid til visning.html. Innsenderen fikk dermed «Fikses» med en lenke til
+ * et skrivebeskyttet skjema — en blindvei.
+ */
+function erOmpussValg(valg) {
+    return valg?.Handling === 'ompuss';
+}
+
+/**
+ * Har noen faktisk behandlet et steg?
+ *
+ * «Under behandling» har ingen egen Skjema_status. Et skjema som er avgjort
+ * på steg 1 og venter på steg 2 står fortsatt på 2, akkurat som et ingen har
+ * rørt. Forskjellen må derfor utledes, og regelen er denne.
+ *
+ * `Beslutning = 5` er «hoppet over» — et steg som ikke skulle kjøre. Det er
+ * ikke arbeid noen har gjort, og skal ikke få skjemaet til å se ut som om
+ * behandlingen er i gang.
+ *
+ * Eksportert fordi registerlista er kompakt og ikke bærer `Behandling`.
+ * Serveren regner ut svaret der og sender det som `UnderBehandling`.
+ * `frontend/js/skjemastatus.js` har samme regel for de sidene som HAR hele
+ * skjemaet, og en test krever at de to svarer likt.
+ */
+function noenStegErBehandlet(skjema) {
+    return (skjema?.Behandling || []).some(s => {
+        const b = Number(s?.Beslutning || 0);
+        return b !== 0 && b !== 5;
+    });
+}
+
+/**
+ * Skal innsenderen varsles om denne beslutningen?
+ *
+ * Standard er ja. `VarsleInnsender: false` slår den av — brukerønske fra
+ * skjemaer med flere steg, der innsenderen ikke skal høre fra oss ved hver
+ * delbeslutning, bare ved den endelige. (`Ferdigvarsling` er den andre
+ * halvdelen av det oppsettet.)
+ *
+ * **Ompuss varsler ALLTID.** Et skjema som sendes tilbake for retting uten at
+ * noen får beskjed, blir liggende til evig tid: innsenderen vet ikke at
+ * ballen er hos hen, og behandleren venter på et svar som aldri kommer.
+ * Bryteren kan ikke slå av den meldingen, og editoren lar den ikke prøve.
+ */
+function skalVarsleInnsender(valg) {
+    if (erOmpussValg(valg)) return true;
+    return valg?.VarsleInnsender !== false;
+}
+
 function stegErFerdig(steg) {
     return Number(steg?.Beslutning || 0) !== 0;
 }
@@ -177,6 +241,10 @@ function skipStegSomIkkeSkalKjore(skjema) {
 }
 
 module.exports = {
+    skalVarsleInnsender,
+    noenStegErBehandlet,
+    finnBeslutningsvalg,
+    erOmpussValg,
     harAvhengighet,
     beregnAktiveSteg,
     brukerErBehandler,

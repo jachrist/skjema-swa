@@ -1431,6 +1431,11 @@
                 const fbTreff = (steg.FraBehandler || []).find(f => Number(f.BeslutningNr) === nr);
                 const fbEgen = !!fbTreff?.Emne;
                 const fbTekst = `${EPOST_IKON} ${fbEgen ? 'Egen melding ✓' : 'Standardmelding'}`;
+                // Ompuss varsler alltid. Et skjema som sendes tilbake for
+                // retting uten at noen får beskjed, blir liggende: innsenderen
+                // vet ikke at ballen er hos hen. Bryteren låses derfor på.
+                const erOmpuss = v.Handling === 'ompuss';
+                const varsler = erOmpuss || v.VarsleInnsender !== false;
                 return `
                 <div class="valg-rad">
                     <input type="number" value="${v.Nummer ?? vIdx + 1}" min="1" style="width: 60px;"
@@ -1441,7 +1446,16 @@
                         <option value="" ${!v.Handling ? 'selected' : ''}>Vanlig</option>
                         <option value="ompuss" ${v.Handling === 'ompuss' ? 'selected' : ''}>Ompuss (retur)</option>
                     </select>
-                    <button class="knapp mini sekundær ${fbEgen ? 'konfigurert' : ''}" onclick="apneFraBehandlerEditor(${idx}, ${nr})" title="E-post til innsender når denne beslutningen tas">${fbTekst}</button>
+                    <label class="checkbox-rad" style="margin: 0; white-space: nowrap;"
+                        title="${erOmpuss
+                            ? 'Ompuss varsler alltid — innsenderen må få vite at skjemaet er tilbake hos hen'
+                            : 'Av: innsenderen får ingen melding om denne beslutningen'}">
+                        <input type="checkbox" ${varsler ? 'checked' : ''} ${erOmpuss ? 'disabled' : ''}
+                            onchange="setBeslutningsvalgVarsle(${idx}, ${vIdx}, this.checked)"> Varsle
+                    </label>
+                    <button class="knapp mini sekundær ${fbEgen ? 'konfigurert' : ''}" onclick="apneFraBehandlerEditor(${idx}, ${nr})"
+                        ${varsler ? '' : 'disabled style="opacity: 0.45; cursor: not-allowed;"'}
+                        title="${varsler ? 'E-post til innsender når denne beslutningen tas' : 'Varsling er slått av for dette valget'}">${fbTekst}</button>
                     <button class="knapp mini danger" onclick="fjernBeslutningsvalg(${idx}, ${vIdx})">✕</button>
                 </div>
             `;}).join('');
@@ -2181,6 +2195,19 @@
             if (v === '') delete data.Behandling[idx].AvhengigAv;
             else data.Behandling[idx].AvhengigAv = Number(v);
         };
+        /**
+         * Skal innsenderen varsles om denne beslutningen?
+         *
+         * `true` lagres som fravær av feltet, ikke som `VarsleInnsender: true`.
+         * Standard er å varsle, og en skjematype som aldri har rørt bryteren
+         * skal se lik ut som en der den er slått på igjen.
+         */
+        window.setBeslutningsvalgVarsle = (sIdx, vIdx, pa) => {
+            const valg = data.Behandling[sIdx].Beslutningsvalg[vIdx];
+            if (pa) delete valg.VarsleInnsender;
+            else valg.VarsleInnsender = false;
+            rendrerBehandling();
+        };
         window.setBeslutningsvalgNr = (sIdx, vIdx, v) => {
             data.Behandling[sIdx].Beslutningsvalg[vIdx].Nummer = Number(v) || vIdx + 1;
         };
@@ -2188,8 +2215,14 @@
             data.Behandling[sIdx].Beslutningsvalg[vIdx].Tekst = v;
         };
         window.setBeslutningsvalgHandling = (sIdx, vIdx, v) => {
-            if (v) data.Behandling[sIdx].Beslutningsvalg[vIdx].Handling = v;
-            else delete data.Behandling[sIdx].Beslutningsvalg[vIdx].Handling;
+            const valg = data.Behandling[sIdx].Beslutningsvalg[vIdx];
+            if (v) valg.Handling = v;
+            else delete valg.Handling;
+            // Ompuss varsler alltid. Var bryteren slått av før valget ble gjort
+            // om til ompuss, skal den ikke bli stående av i dataene — da ville
+            // avkryssingsboksen vist «på» mens JSON-en sa noe annet.
+            if (v === 'ompuss') delete valg.VarsleInnsender;
+            rendrerBehandling();
         };
         window.leggTilBeslutningsvalg = (sIdx) => {
             const steg = data.Behandling[sIdx];

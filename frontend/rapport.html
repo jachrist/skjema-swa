@@ -224,6 +224,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
+        import { statusTekstFraKode } from './js/skjemastatus.js';
 
         const params = new URLSearchParams(location.search);
         const rapporttypeId = params.get('rapporttype_id') || '';
@@ -240,7 +241,7 @@
         document.getElementById('theme-btn').textContent =
             document.documentElement.getAttribute('data-theme') === 'dark' ? '☀️' : '🌙';
 
-        const STATUS_TEKST = { 0: 'Utkast', 1: 'Mellomlagret', 2: 'Innsendt', 3: 'Til revidering', 5: 'Avsluttet' };
+
 
         function visStatus(tekst, klasse) {
             const el = document.getElementById('status');
@@ -266,7 +267,7 @@
             if (v === null || v === undefined) return '';
             if (Array.isArray(v)) return v.map(x => formaterVerdi(x, { ...kol, format: kol.format === 'dato' ? 'dato' : null })).join(', ');
             if (kol?.format === 'dato') return formaterDato(v);
-            if (kol?.format === 'status') return STATUS_TEKST[v] || String(v);
+            if (kol?.format === 'status') return statusTekstFraKode(v);
             if (kol?.format === 'nummer') return formaterNummer(v);
             return String(v);
         }
