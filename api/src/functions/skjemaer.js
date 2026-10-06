@@ -19,6 +19,7 @@ const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg } = require('../lib/behandling');
+const { listekolonner } = require('../lib/listekolonne');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const feltperson = require('../lib/feltperson');
 const varsling = require('../lib/varsling');
@@ -1048,8 +1049,11 @@ app.http('listSkjemaer', {
             const erEier = await harEierTilgang(skjematypeId, upn);
             if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever eier-tilgang' } };
 
-            // Finn hvilke felter som er filtrerbare i skjematypen — kun disse
-            // trenger svar-verdi i lista (register-filtre + kolonne-fremvisning).
+            // Hvilke felter trenger svar-verdi i lista?
+            //
+            // To grunner, og de er uavhengige: feltet er filtrerbart (register-
+            // filtrene), eller det skal stå i oversiktskolonna. Begge hentes
+            // ut i `FilterSvar`, så lista kan både filtrere og tegne.
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             const filterFelt = []; // [{sekNr, feltNrPadded}]
             for (const s of (st?.JSON?.Seksjoner || [])) {
@@ -1061,6 +1065,13 @@ app.http('listSkjemaer', {
                         });
                     }
                 }
+            }
+            // Oversiktskolonna. Regelen bor i lib/listekolonne.js, med en kopi
+            // i frontend/js — registeret må lese de samme feltene som serveren
+            // sender, ellers tegner lista tomt uten å si fra.
+            for (const k of listekolonner(st?.JSON)) {
+                if (filterFelt.some(f => `${f.sekNr}-${f.feltNrPadded}` === k.nokkel)) continue;
+                filterFelt.push({ sekNr: k.sekNr, feltNrPadded: k.feltNrPadded });
             }
 
             // Rask sti: ingen filtrerbare felt → hopp over JSON-parse + ekspandering

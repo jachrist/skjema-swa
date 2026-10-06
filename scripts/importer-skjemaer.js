@@ -1,0 +1,370 @@
+#!/usr/bin/env node
+/**
+ * Importer rader fra et regneark som skjemaer av en skjematype.
+ *
+ * Laget for verdivurderingsregisteret — 270 informasjonstyper som alt er
+ * vurdert i et Excel-ark — men skriptet kjenner ingenting til det registeret.
+ * Det leser skjematypedefinisjonen og lar DEN bestemme hvilke kolonner som
+ * finnes og hvilke verdier som er gyldige.
+ *
+ * Kjøres lokalt av admin, ikke deployet. Trenger STORAGE_CONNECTION_STRING og
+ * `npm install` i api/ (xlsx + @azure/data-tables).
+ *
+ *   node scripts/importer-skjemaer.js --fil vurdering.xlsx --skjematype 130 \
+ *       --innsender datasikkerhetsleder@mil.no --nokkelfelt "Datapunkt (navn)"
+ *
+ * Uten `--utfor` er kjøringen en tørrkjøring: fila leses, kolonnene kobles,
+ * verdiene valideres og planen skrives ut — men ingenting lagres. Samme kode
+ * kjører begge veier, så det du ser er det som skjer.
+ *
+ * ## Hvorfor valideringen er det viktigste her
+ *
+ * Svar lagres som verdier, ikke som referanser til valglista. Skriver vi
+ * «TJENSTLIG» inn i et felt der valglista sier «Tjenstlig», ser raden riktig
+ * ut i visningen — men åpner noen den for redigering i registeret, filtrerer
+ * widgeten bort verdien som ukjent, og lagringen skriver den bort. Stille.
+ *
+ * Derfor: hver eneste verdi mot et valgfelt må finnes i `Valg`. Gjør den ikke
+ * det, stopper importen og sier hvilken rad, hvilken kolonne og hvilke
+ * alternativer som finnes. Store og små bokstaver godtas — verdien som
+ * LAGRES er alltid den kanoniske fra definisjonen.
+ *
+ * ## Kobling kolonne → felt
+ *
+ * Automatisk på etiketten: kolonneoverskriften matches mot `Tekst` på
+ * feltene, uten hensyn til store bokstaver, doble mellomrom og etterstilt
+ * kolon. Treffer det ikke, oppgi en koblingsfil:
+ *
+ *   --kolonner kobling.json   →  { "Særlig kategori per GDPR": "1-06" }
+ *
+ * Kolonner uten kobling hoppes over, og tørrkjøringen sier hvilke. Det er
+ * med vilje: et regneark har gjerne kolonner som ikke hører hjemme i skjemaet.
+ *
+ * ## Hva som skrives
+ *
+ * Ett skjema per rad, i fullt format — samme form som `samleSeksjonerFraDom`
+ * i frontend produserer: `Seksjoner[].Felter[] = { Id, Nummer, Type, Svar }`.
+ *
+ * Standard status er 5 (Avsluttet) UTEN behandlingssteg: radene er alt
+ * vurdert, og å sende 270 av dem gjennom behandling ville sendt 270
+ * varslinger til datasikkerhetsleder. `--status 2` arver i stedet
+ * behandlingsstrukturen fra skjematypen med Beslutning 0, slik en vanlig
+ * innsending gjør — men heller ikke da varsles noen, for skriptet går utenom
+ * API-et.
+ *
+ * `--nokkelfelt` gjør kjøringen idempotent: rader der nøkkelverdien allerede
+ * finnes blant skjemaene, hoppes over. Uten den vil en ny kjøring lage
+ * dubletter.
+ */
+const fs = require('fs');
+const path = require('path');
+
+const API = path.join(__dirname, '..', 'api', 'src', 'lib');
+const skjemaStorage = require(path.join(API, 'skjema-storage'));
+const forekomstStorage = require(path.join(API, 'skjema-forekomst-storage'));
+const { genererSkjemaId } = require(path.join(API, 'skjema-id'));
+
+// ==================== argumenter ====================
+
+function lesArgumenter(argv) {
+    const ut = { utfor: false, status: 5 };
+    for (let i = 0; i < argv.length; i++) {
+        const a = argv[i];
+        if (a === '--utfor') { ut.utfor = true; continue; }
+        if (!a.startsWith('--')) continue;
+        const navn = a.slice(2);
+        const verdi = argv[++i];
+        if (navn === 'status') ut.status = Number(verdi);
+        else ut[navn] = verdi;
+    }
+    return ut;
+}
+
+function krev(args, navn) {
+    if (!args[navn]) {
+        console.error(`Mangler --${navn}. Se kommentaren øverst i skriptet.`);
+        process.exit(2);
+    }
+    return args[navn];
+}
+
+// ==================== regneark ====================
+
+function lesMatrise(sti) {
+    const ext = path.extname(sti).toLowerCase();
+    if (ext === '.csv' || ext === '.txt') {
+        // Norsk Excel skriver semikolon. Samme vurdering som i rolle-import.js:
+        // tell i første linje og la flertallet bestemme.
+        const tekst = fs.readFileSync(sti, 'utf8').replace(/^﻿/, '');
+        const forste = tekst.split(/\r?\n/, 1)[0] || '';
+        const skille = [';', '\t', ','].sort((a, b) =>
+            (forste.split(b).length - 1) - (forste.split(a).length - 1))[0];
+        return tekst.split(/\r?\n/).map(l => l.split(skille).map(c => c.replace(/^"|"$/g, '')));
+    }
+    const XLSX = require(path.join(__dirname, '..', 'api', 'node_modules', 'xlsx'));
+    const wb = XLSX.read(fs.readFileSync(sti), { type: 'buffer' });
+    const arkNavn = wb.SheetNames[0];
+    // raw:false gir tekst også for tall, så «2501» ikke blir 2501.
+    return XLSX.utils.sheet_to_json(wb.Sheets[arkNavn], { header: 1, raw: false, defval: '' });
+}
+
+/** Normaliser en overskrift for sammenligning: små bokstaver, ett mellomrom, uten kolon. */
+function normaliser(v) {
+    return String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/:$/, '');
+}
+
+/**
+ * Finn overskriftsraden.
+ *
+ * Arket har en tittelrad over overskriftene («VERKTØY FOR KARTLEGGING …»), så
+ * rad 1 er ikke overskriftene. Vi leter etter den FØRSTE raden der minst to
+ * celler matcher et feltnavn — en tittelrad har én utfylt celle, og det
+ * skiller dem.
+ */
+function finnOverskrift(matrise, feltEtiketter) {
+    for (let i = 0; i < Math.min(matrise.length, 20); i++) {
+        const rad = (matrise[i] || []).map(normaliser);
+        const treff = rad.filter(c => c && feltEtiketter.has(c)).length;
+        if (treff >= 2) return i;
+    }
+    return -1;
+}
+
+// ==================== skjematypen ====================
+
+/** Alle felt som kan ta imot et svar, med etikett og valgliste. */
+function feltKatalog(def) {
+    const ut = [];
+    for (const s of (def?.Seksjoner || [])) {
+        for (const f of (s?.Felter || [])) {
+            if (f.Type === 'Informasjon') continue;
+            const sekNr = String(s.Seksjon_nummer ?? s.Nummer ?? '');
+            const feltNr = String(f.Nummer ?? '');
+            ut.push({
+                nokkel: `${sekNr}-${feltNr.padStart(2, '0')}`,
+                sekNr, feltNr,
+                Id: f.Id || null,
+                Type: f.Type,
+                etikett: typeof f.Tekst === 'object' && f.Tekst ? String(f.Tekst.Verdi ?? '') : String(f.Tekst ?? ''),
+                // Verdien som LAGRES er `Verdi ?? Tekst` — samme regel som
+                // felt-render.js bruker når widgeten tegnes. Men regnearket
+                // inneholder det et menneske har sett på skjermen, altså
+                // TEKSTEN. Begge formene må kunne gjenkjennes; bare verdien
+                // skrives.
+                valg: Array.isArray(f.Valg) && f.Valg.length > 0
+                    ? f.Valg
+                        .map(v => ({ verdi: String(v.Verdi ?? v.Tekst ?? ''), tekst: String(v.Tekst ?? v.Verdi ?? '') }))
+                        .filter(v => v.verdi)
+                    : null
+            });
+        }
+    }
+    return ut;
+}
+
+/**
+ * Koble kolonner til felt.
+ *
+ * Koblingsfila vinner over navnetreffet. Den peker på feltnøkkelen
+ * («1-06»), ikke på etiketten, så en omdøpt etikett ikke river koblingen.
+ */
+function koble(overskrifter, katalog, overstyringer) {
+    const påEtikett = new Map(katalog.map(f => [normaliser(f.etikett), f]));
+    const påNokkel = new Map(katalog.map(f => [f.nokkel, f]));
+    const kobling = [];   // [{ kolonne, overskrift, felt }]
+    const ukoblede = [];
+    for (let i = 0; i < overskrifter.length; i++) {
+        const o = String(overskrifter[i] ?? '').trim();
+        if (!o) continue;
+        const overstyrt = overstyringer[o] || overstyringer[normaliser(o)];
+        const felt = overstyrt ? påNokkel.get(String(overstyrt)) : påEtikett.get(normaliser(o));
+        if (felt) kobling.push({ kolonne: i, overskrift: o, felt });
+        else ukoblede.push(o);
+    }
+    return { kobling, ukoblede };
+}
+
+// ==================== verdier ====================
+
+/**
+ * Verdien slik den skal lagres, eller en feil.
+ *
+ * For et valgfelt må cella gjenkjennes i `Valg` — enten som verdien eller som
+ * visningsteksten. Regnearket er fylt ut av et menneske som så teksten, så
+ * det er den som står der: «Kan offentliggjøres», ikke «OFFENTLIG». Lagret
+ * blir alltid VERDIEN.
+ *
+ * Store og små bokstaver godtas, men den kanoniske formen fra definisjonen er
+ * den som skrives. Ellers havner vi tilbake i «verdien finnes ikke i lista» —
+ * og den feilen viser seg først når noen redigerer raden et halvår senere.
+ */
+function tolkVerdi(rå, felt) {
+    const tekst = String(rå ?? '').trim();
+    if (!tekst) return { verdi: null };
+    if (!felt.valg) return { verdi: tekst };
+
+    const treff = felt.valg.find(v => v.verdi === tekst || v.tekst === tekst)
+        ?? felt.valg.find(v => normaliser(v.verdi) === normaliser(tekst) || normaliser(v.tekst) === normaliser(tekst));
+    if (!treff) {
+        const gyldige = felt.valg.map(v => v.verdi === v.tekst ? v.verdi : `${v.tekst} (${v.verdi})`).join(', ');
+        return { feil: `"${tekst}" finnes ikke i valglista for «${felt.etikett}». Gyldige: ${gyldige}` };
+    }
+    return { verdi: treff.verdi };
+}
+
+/** Bygg skjemaets Seksjoner i fullt format — samme form som frontend sender. */
+function byggSeksjoner(def, svarPåNokkel) {
+    return (def?.Seksjoner || []).map(s => ({
+        Seksjon_nummer: s.Seksjon_nummer ?? s.Nummer,
+        Nummer: s.Seksjon_nummer ?? s.Nummer,
+        Felter: (s.Felter || []).map(f => {
+            const nokkel = `${String(s.Seksjon_nummer ?? s.Nummer ?? '')}-${String(f.Nummer ?? '').padStart(2, '0')}`;
+            const svar = f.Type === 'Informasjon' ? [] : (svarPåNokkel.get(nokkel) || []);
+            return { Id: f.Id, Nummer: f.Nummer, Type: f.Type, Svar: svar };
+        })
+    }));
+}
+
+/** Verdien av nøkkelfeltet på et eksisterende skjema — for idempotens. */
+function nokkelverdi(skjema, nokkel) {
+    for (const s of (skjema?.Seksjoner || [])) {
+        for (const f of (s.Felter || [])) {
+            const n = `${String(s.Seksjon_nummer ?? s.Nummer ?? '')}-${String(f.Nummer ?? '').padStart(2, '0')}`;
+            if (n === nokkel) return String((f.Svar || [])[0] ?? '').trim();
+        }
+    }
+    return '';
+}
+
+// ==================== hovedløp ====================
+
+async function main() {
+    const args = lesArgumenter(process.argv.slice(2));
+    const fil = krev(args, 'fil');
+    const skjematypeId = String(krev(args, 'skjematype'));
+    const innsender = krev(args, 'innsender');
+    const overstyringer = args.kolonner ? JSON.parse(fs.readFileSync(args.kolonner, 'utf8')) : {};
+
+    const st = await skjemaStorage.hentSkjematype(skjematypeId);
+    if (!st?.JSON) throw new Error(`Fant ingen skjematype ${skjematypeId}`);
+    const def = st.JSON;
+    const katalog = feltKatalog(def);
+    if (katalog.length === 0) throw new Error(`Skjematype ${skjematypeId} har ingen felt som kan ta imot svar`);
+
+    const matrise = lesMatrise(fil);
+    const etiketter = new Set(katalog.map(f => normaliser(f.etikett)).filter(Boolean));
+    const linje = finnOverskrift(matrise, etiketter);
+    if (linje < 0) {
+        throw new Error('Fant ingen overskriftsrad der minst to kolonner matcher et feltnavn. '
+            + `Feltnavnene i skjematypen er: ${katalog.map(f => f.etikett).filter(Boolean).join(', ')}`);
+    }
+    const { kobling, ukoblede } = koble(matrise[linje], katalog, overstyringer);
+    if (kobling.length === 0) throw new Error('Ingen kolonner lot seg koble til felt.');
+
+    console.log(`Skjematype ${skjematypeId}: ${def.Skjema_navn || '(uten navn)'}`);
+    console.log(`Overskrifter på rad ${linje + 1}. Koblet ${kobling.length} kolonne(r):`);
+    for (const k of kobling) console.log(`  ${k.overskrift}  →  ${k.felt.nokkel} «${k.felt.etikett}» (${k.felt.Type})`);
+    if (ukoblede.length > 0) console.log(`Hoppet over ${ukoblede.length} kolonne(r): ${ukoblede.join(', ')}`);
+
+    // Nøkkelfeltet, for idempotens
+    let nokkelFelt = null;
+    if (args.nokkelfelt) {
+        const treff = kobling.find(k => normaliser(k.overskrift) === normaliser(args.nokkelfelt))
+            || katalog.find(f => normaliser(f.etikett) === normaliser(args.nokkelfelt) || f.nokkel === args.nokkelfelt);
+        nokkelFelt = treff?.felt || treff || null;
+        if (!nokkelFelt) throw new Error(`Fant ikke nøkkelfeltet "${args.nokkelfelt}"`);
+        console.log(`Nøkkelfelt: ${nokkelFelt.nokkel} «${nokkelFelt.etikett}» — rader med en verdi som finnes fra før hoppes over.`);
+    } else {
+        console.log('Uten --nokkelfelt: en ny kjøring vil lage dubletter.');
+    }
+
+    const finnes = new Set();
+    if (nokkelFelt) {
+        for (const s of await forekomstStorage.hentAlleSkjemaerForType(skjematypeId)) {
+            const v = nokkelverdi(s, nokkelFelt.nokkel);
+            if (v) finnes.add(normaliser(v));
+        }
+        console.log(`${finnes.size} rad(er) finnes fra før i skjematypen.`);
+    }
+
+    // ---- les radene ----
+    const nye = [];
+    const feil = [];
+    const hoppet = [];
+    for (let i = linje + 1; i < matrise.length; i++) {
+        const rad = matrise[i] || [];
+        const radNr = i + 1;
+        const svarPåNokkel = new Map();
+        let tom = true;
+        for (const k of kobling) {
+            const { verdi, feil: f } = tolkVerdi(rad[k.kolonne], k.felt);
+            if (f) { feil.push({ radNr, kolonne: k.overskrift, melding: f }); continue; }
+            if (verdi === null) continue;
+            tom = false;
+            svarPåNokkel.set(k.felt.nokkel, [verdi]);
+        }
+        if (tom) continue;
+        if (nokkelFelt) {
+            const n = (svarPåNokkel.get(nokkelFelt.nokkel) || [])[0];
+            if (!n) { feil.push({ radNr, kolonne: nokkelFelt.etikett, melding: 'Nøkkelfeltet er tomt' }); continue; }
+            if (finnes.has(normaliser(n))) { hoppet.push({ radNr, n }); continue; }
+            // Dubletter INNE i fila teller også — ellers lager én kjøring dem selv.
+            finnes.add(normaliser(n));
+        }
+        nye.push({ radNr, svarPåNokkel });
+    }
+
+    console.log(`\n${nye.length} rad(er) klar til import, ${hoppet.length} finnes fra før, ${feil.length} feil.`);
+    if (hoppet.length > 0) {
+        console.log(`Finnes fra før: ${hoppet.slice(0, 10).map(h => h.n).join(', ')}${hoppet.length > 10 ? ` …og ${hoppet.length - 10} til` : ''}`);
+    }
+    if (feil.length > 0) {
+        console.log('\nFEIL — ingenting importeres før disse er rettet:');
+        for (const f of feil.slice(0, 40)) console.log(`  rad ${f.radNr}, «${f.kolonne}»: ${f.melding}`);
+        if (feil.length > 40) console.log(`  …og ${feil.length - 40} til`);
+        process.exit(1);
+    }
+    if (nye.length === 0) { console.log('Ingenting å gjøre.'); return; }
+
+    if (!args.utfor) {
+        const p = nye[0];
+        console.log('\nFørste rad slik den vil bli lagret:');
+        console.log(JSON.stringify(byggSeksjoner(def, p.svarPåNokkel), null, 1));
+        console.log(`\nTørrkjøring — ingenting er lagret. Kjør på nytt med --utfor for å skrive ${nye.length} skjema(er).`);
+        return;
+    }
+
+    // ---- skriv ----
+    // Behandlingsstrukturen arves bare når radene skal gjennom behandling.
+    // Status 5 betyr at vurderingen alt er gjort utenfor systemet.
+    const arvBehandling = args.status === 2 && Array.isArray(def.Behandling);
+    let skrevet = 0;
+    for (const p of nye) {
+        const skjemaId = await genererSkjemaId(skjematypeId);
+        const skjema = {
+            Skjema_id: skjemaId,
+            Skjematype_id: skjematypeId,
+            Skjema_navn: def.Skjema_navn || '',
+            Innsender_Epost: innsender,
+            Innsender_Navn: '',
+            Skjema_status: args.status,
+            Seksjoner: byggSeksjoner(def, p.svarPåNokkel),
+            // Si høyt hvor radene kom fra. Uten dette er «importert» og
+            // «sendt inn av et menneske» umulig å skille i ettertid.
+            Importert: { Fra: path.basename(fil), Rad: p.radNr, Tidspunkt: new Date().toISOString(), Av: innsender }
+        };
+        if (arvBehandling) {
+            skjema.Behandling = JSON.parse(JSON.stringify(def.Behandling)).map(steg => ({ ...steg, Beslutning: 0 }));
+        }
+        await forekomstStorage.lagreSkjema(skjema, true);
+        skrevet++;
+        if (skrevet % 25 === 0) console.log(`  ${skrevet}/${nye.length} …`);
+    }
+    console.log(`\n✓ Importerte ${skrevet} skjema(er) til skjematype ${skjematypeId} med status ${args.status}.`);
+}
+
+if (require.main === module) {
+    main().catch(e => { console.error('FEIL:', e.message); process.exit(1); });
+}
+
+module.exports = { lesArgumenter, normaliser, finnOverskrift, feltKatalog, koble, tolkVerdi, byggSeksjoner, nokkelverdi };
