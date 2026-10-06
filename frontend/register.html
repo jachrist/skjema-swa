@@ -400,13 +400,16 @@
         <div class="to-spalter">
             <div class="venstre">
                 <div class="venstre-filtre">
-                    <input type="text" id="sok" placeholder="🔍 Søk innsender eller ID…" oninput="filtrer()">
+                    <input type="text" id="sok" placeholder="🔍 Søk…" oninput="filtrer()">
                     <select id="statusFilter" onchange="filtrer()">
                         <option value="">Alle statuser</option>
                         <option value="1">Utkast</option>
                         <option value="2">Innsendt / under behandling</option>
                         <option value="3">Til revidering</option>
                         <option value="5">Avsluttet</option>
+                    </select>
+                    <select id="utfallFilter" onchange="filtrer()" style="display: none;">
+                        <option value="">Alle utfall</option>
                     </select>
                     <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary);">
                         <input type="checkbox" id="mineFilter" onchange="filtrer()">
@@ -509,6 +512,7 @@
                 document.getElementById('undertittel').textContent =
                     `${state.alle.length} skjema${state.alle.length === 1 ? '' : 'er'} totalt.`;
                 bygFeltFiltre();
+                byggUtfallFilter();
                 filtrer();
             } catch (e) {
                 visListeMelding('Kunne ikke hente skjemaer: ' + e.message);
@@ -602,11 +606,13 @@
             const sok = document.getElementById('sok').value.trim().toLowerCase();
             const status = document.getElementById('statusFilter').value;
             const kunMineAktive = document.getElementById('mineFilter')?.checked;
+            const utfall = document.getElementById('utfallFilter')?.value || '';
+            const kolonner = listekolonner(state.skjematype);
             state.filtrert = state.alle.filter(s => {
                 if (status !== '' && String(s.Skjema_status || 0) !== status) return false;
+                if (utfall !== '' && utfallFor(s) !== utfall) return false;
                 if (sok) {
-                    const t = ((s.Innsender_Epost || '') + ' ' + (s.Skjema_id || '')).toLowerCase();
-                    if (!t.includes(sok)) return false;
+                    if (!sokeTekst(s, kolonner).includes(sok)) return false;
                 }
                 if (kunMineAktive) {
                     if (!state.mineIder || !state.mineIder.has(s.Skjema_id)) return false;
@@ -627,6 +633,55 @@
             });
             renderListe();
         };
+
+        /**
+         * Utfallet på siste avgjorte steg, som tekst.
+         *
+         * Serveren sender det ferdig utledet (`sisteBeslutning` i
+         * datauttrekk.js) — registeret skal ikke ha sin egen tolkning av
+         * `Beslutning`-tallet ved siden av den i uttrekket og PDF-en.
+         */
+        const IKKE_BEHANDLET = 'Ikke behandlet';
+        function utfallFor(s) {
+            return s?.Beslutning?.tekst || IKKE_BEHANDLET;
+        }
+
+        /**
+         * Hva søket leter i.
+         *
+         * Innsender og ID som før, pluss verdiene som faktisk STÅR i
+         * oversiktskolonna. Et treff man ikke kan se i lista er verre enn
+         * ingen treff: raden dukker opp uten at noe på den matcher det du
+         * skrev. Derfor søkes det ikke i alle filtrerbare felt — bare i dem
+         * som vises.
+         */
+        function sokeTekst(s, kolonner) {
+            const deler = [s.Innsender_Epost || '', s.Skjema_id || ''];
+            for (const k of kolonner) deler.push(...(s.FilterSvar?.[k.nokkel] || []));
+            return deler.join(' ').toLowerCase();
+        }
+
+        /**
+         * Fyll utfallsfilteret med de utfallene som faktisk finnes.
+         *
+         * Utledet av dataene, ikke av en fast liste: beslutningsvalgene heter
+         * det skjemaskaperen har kalt dem, og «Godkjent / Avslått / Ompuss» på
+         * én skjematype er noe annet på neste. Samme mønster som
+         * felt-filtrene.
+         */
+        function byggUtfallFilter() {
+            const el = document.getElementById('utfallFilter');
+            if (!el) return;
+            const harBehandling = Array.isArray(state.skjematype?.Behandling)
+                && state.skjematype.Behandling.length > 0;
+            if (!harBehandling) { el.style.display = 'none'; return; }
+
+            const utfall = [...new Set(state.alle.map(utfallFor))]
+                .sort((a, b) => a === IKKE_BEHANDLET ? 1 : b === IKKE_BEHANDLET ? -1 : a.localeCompare(b, 'no'));
+            el.innerHTML = '<option value="">Alle utfall</option>'
+                + utfall.map(u => `<option value="${escapeAttr(u)}">${escHtml(u)}</option>`).join('');
+            el.style.display = '';
+        }
 
         /**
          * Teksten i oversiktskolonna.

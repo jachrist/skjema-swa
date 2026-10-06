@@ -20,6 +20,7 @@ const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg } = require('../lib/behandling');
 const { listekolonner } = require('../lib/listekolonne');
+const { sisteBeslutning } = require('../lib/datauttrekk');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const feltperson = require('../lib/feltperson');
 const varsling = require('../lib/varsling');
@@ -1074,9 +1075,23 @@ app.http('listSkjemaer', {
                 filterFelt.push({ sekNr: k.sekNr, feltNrPadded: k.feltNrPadded });
             }
 
-            // Rask sti: ingen filtrerbare felt → hopp over JSON-parse + ekspandering
-            // + dekryptering. Returnerer bare metadata-kolonner fra tabellen.
-            if (filterFelt.length === 0) {
+            // Rask sti: hopper over JSON-parse + ekspandering + dekryptering og
+            // returnerer bare metadata-kolonnene fra tabellen.
+            //
+            // Den kan BARE brukes når lista ikke trenger noe som ligger i
+            // JSON-en. Behandlingssteg gjør at den gjør det: både
+            // «under behandling» og utfallet på siste steg utledes av
+            // `Behandling`, som metadata-raden ikke har. Til 06.10.2026 ble den
+            // raske stien brukt likevel, og `UnderBehandling` kom aldri med —
+            // et skjema midt i behandling sto som «Innsendt» i registeret, uten
+            // at noe sa fra.
+            //
+            // Prisen er at skjematyper MED behandling alltid leser JSON for
+            // lista. Det er en reell kostnad på en stor skjematype, og den tas
+            // med vitende vilje: en status som er stille feil er verre enn en
+            // liste som er tregere.
+            const harBehandling = Array.isArray(st?.JSON?.Behandling) && st.JSON.Behandling.length > 0;
+            if (filterFelt.length === 0 && !harBehandling) {
                 const raskListe = await forekomstStorage.hentMetadataForType(skjematypeId);
                 raskListe.sort((a, b) => (b.Sist_endret || '').localeCompare(a.Sist_endret || ''));
                 return { jsonBody: raskListe };
@@ -1135,6 +1150,17 @@ app.http('listSkjemaer', {
                     // skal kunne skille «innsendt» fra «under behandling» — og
                     // det er nettopp i en oversikt den forskjellen betyr noe.
                     UnderBehandling: noenStegErBehandlet(s),
+                    // Utfallet på siste avgjorte steg — det registeret filtrerer
+                    // på. Samme funksjon som datauttrekket bruker; den kjenner
+                    // både standardmodus og «alle må avgjøre», og leser teksten
+                    // ut av Beslutningsvalg i stedet for å vise tallet.
+                    //
+                    // Bare tekst og stegnavn: `av`, `dato` og `kommentar` hører
+                    // hjemme i detaljpanelet, og 270 rader skal ikke bære dem.
+                    Beslutning: (() => {
+                        const sb = sisteBeslutning(s);
+                        return sb ? { tekst: sb.tekst, steg: sb.steg } : null;
+                    })(),
                     Opprettet: s.Opprettet || s.OpprettetDato || '',
                     Sist_endret: s.Sist_endret || s.Oppdatert || '',
                     FilterSvar: filterFelt.length > 0 ? hentFilterSvar(s) : undefined
