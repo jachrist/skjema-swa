@@ -77,6 +77,34 @@ alle er gjennomsiktige for kallerne:
 `sikrFulltFormat(skjema, defCache)` tar en valgfri `Map` for løkker som
 ekspanderer mange skjemaer av samme type (se `mine-behandlinger`).
 
+### Kjent begrensning: siste skriving vinner
+
+Skriving til Table Storage skjer uten samtidighetskontroll. `lagreSkjematype`
+kjører `upsertEntity(entity, 'Replace')` og `lagreSkjema` `upsertEntity(entity,
+'Merge')` — ingen av dem sjekker ETag. To som lagrer samme rad etter hverandre
+gir derfor at den siste overskriver den første, uten at noen får vite det.
+
+Det er ikke teoretisk. 06.10.2026 hadde en eier samme skjematype åpen i to
+faner, rettet og lagret i den ene, og lagret deretter den urettede tilbake fra
+den andre. Rettelsen var borte, og ingenting i grensesnittet sa fra. To ulike
+eiere som redigerer samtidig gir samme utfall — og da er det ikke engang den
+samme personen som kan oppdage det.
+
+Editorens `beforeunload`-vakt dekker ikke dette: den kjenner bare dine egne
+ulagrede endringer, ikke at raden er endret under beina på deg.
+
+Verdt å merke seg særskilt: `lagreBeslutning` leser hele skjemaet, endrer det
+og skriver det tilbake. To behandlere som avgjør samtidig på et «alle må
+avgjøre»-steg kan i prinsippet miste den ene beslutningen. Vinduet er smalt, og
+det er ikke observert — men mekanismen er den samme, og konsekvensen større enn
+en tapt skjemadefinisjon.
+
+Rettelsen er optimistisk samtidighetskontroll med ETag, samme mønster som
+`lib/skjema-id.js` alt bruker mot Teller-tabellen: `hentSkjematype` returnerer
+raden sin ETag, klienten sender den tilbake, `updateEntity` med `ifMatch` gir
+412 på en endret rad, og API-et svarer 409 så grensesnittet kan si «noen har
+lagret denne siden du åpnet den». Bevisst utsatt 06.10.2026.
+
 ## Konfigurasjon
 
 - `config/env.development.json` og `config/env.production.json` er sannhetskilden.
