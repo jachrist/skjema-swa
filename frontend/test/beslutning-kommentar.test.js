@@ -7,9 +7,14 @@
  * eller plass til å vise den — den som ga en kommentar kunne altså bare se den
  * igjen i en PDF.
  *
- * `kommentarerFor` bygger HTML som settes med `innerHTML`. Derfor er
+ * `kommentarerSomHtml` bygger HTML som settes med `innerHTML`. Derfor er
  * escaping-testen her ikke kosmetikk: en kommentar er fritekst skrevet av en
  * behandler, og den vises for alle som har tilgang til saken.
+ *
+ * Funksjonen lå i `evaluering.html` fram til 06.10.2026. Nå er den i
+ * `js/behandling-kommentar.js`, og registeret og visningen bruker den samme —
+ * sammen med stilen, som ikke lenger er en klasse ingen side hadde en regel
+ * for. Testen kjører derfor den delte funksjonen direkte.
  *
  * Kjøres med:  node frontend/test/beslutning-kommentar.test.js
  */
@@ -23,27 +28,19 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
-// ---------- klipp funksjonen ut av evaluering.html ----------
-const kilde = fs.readFileSync(path.join(__dirname, '..', 'evaluering.html'), 'utf8');
-const start = kilde.indexOf('function kommentarerFor(');
-if (start === -1) throw new Error('Fant ikke kommentarerFor i evaluering.html');
-const slutt = kilde.indexOf('\n        }', start) + '\n        }'.length;
+// ---------- den ekte funksjonen, med den ekte escapingen ----------
+const { kommentarerSomHtml } = require('../js/behandling-kommentar.js');
 
-// Samme escapeHtml som siden importerer fra felt-render.js.
+// Samme escapeHtml som sidene sender inn, klipt ut av felt-render.js. En
+// escape-funksjon oppfunnet her ville testet testen, ikke koden.
 const felt = fs.readFileSync(path.join(__dirname, '..', 'js', 'felt-render.js'), 'utf8');
 const eStart = felt.indexOf('export function escapeHtml(');
+if (eStart === -1) throw new Error('Fant ikke escapeHtml i felt-render.js');
 const eSlutt = felt.indexOf('\n}', eStart) + 2;
-const escapeKilde = felt.slice(eStart, eSlutt).replace('export function', 'function');
+const escapeHtml = new Function(
+    `${felt.slice(eStart, eSlutt).replace('export function', 'function')}\nreturn escapeHtml;`)();
 
-// `kommentarerFor` i evaluering.html tegner HTML-en, men regelen for HVILKE
-// kommentarer som finnes ligger i js/behandling-kommentar.js. Den injiseres
-// her under navnet siden importerer den som.
-const { kommentarerFor: kommentarer } = require('../js/behandling-kommentar.js');
-
-const kommentarerFor = new Function(
-    'escapeHtml', 'kommentarer',
-    `${kilde.slice(start, slutt)}\nreturn kommentarerFor;`
-)(new Function(`${escapeKilde}\nreturn escapeHtml;`)(), kommentarer);
+const kommentarerFor = (steg) => kommentarerSomHtml(steg, escapeHtml);
 
 // ---------- ingenting å vise ----------
 {
@@ -83,6 +80,17 @@ const kommentarerFor = new Function(
     sjekk('ingen rå tagg fra kommentaren', ut.includes('<img'), false);
     sjekk('ingen rå tagg fra aktøren', ut.includes('<b>'), false);
     sjekk('innholdet er beholdt, bare escapet', ut.includes('&lt;img'), true);
+}
+
+// ---------- kommentaren får en linje for seg selv ----------
+{
+    // Stegraden er en flex-boks på alle tre sidene. Uten bredde ble
+    // kommentaren klemt inn ved siden av stegnavnet — den sto i markupen, men
+    // var ikke til å se. Det var slik den manglet i registeret.
+    const ut = kommentarerFor({ Beslutninger: [{ Aktor: 'kari@fhs.no', Kommentar: 'Ja' }] });
+    sjekk('stilen følger med', ut.includes('style="'), true);
+    sjekk('og gir full bredde', /width:\s*100%/.test(ut), true);
+    sjekk('ingen klasse uten regel', ut.includes('beh-kommentar'), false);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

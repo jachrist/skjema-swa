@@ -2172,7 +2172,10 @@
                 tittel: `Tilbakemelding til innsender — beslutning: ${valgtekst}`,
                 forslag: {
                     Emne: `Skjemaet "$skjemanavn" er behandlet`,
-                    Tekst: `<p>Hei,</p>\n<p>Skjemaet "<b>$skjemanavn</b>" ($skjema_id) er behandlet på steg $stegnavn.</p>\n<p>Beslutning: <b>$beslutning</b></p>\n<p><a href="$lenke">Åpne skjemaet</a></p>`
+                    // Samme tekst som standardTilBehandler/standardFraBehandler i
+                    // api/src/lib/varsling.js. Avviker de, viser editoren noe annet enn
+                    // det som faktisk sendes — api/test/standardmaler.test.js krever likhet.
+                    Tekst: `<p>Hei,</p>\n<p>Skjemaet "<b>$skjemanavn</b>" ($skjema_id) er behandlet på steg $stegnavn.</p>\n<p>Beslutning: <b>$beslutning</b></p>\n<p>$kommentar</p>\n<p><a href="$lenke">Åpne skjemaet</a></p>`
                 },
                 feltreferanser: samleFeltreferanser(data)
             });
@@ -2462,7 +2465,7 @@
                 tittel: 'Innsenderkvittering',
                 forslag: {
                     Emne: 'Kvittering: "$skjemanavn" er sendt inn',
-                    Tekst: '<p>Hei,</p>\n<p>Vi har mottatt skjemaet "<b>$skjemanavn</b>" ($skjema_id).</p>\n<p><a href="$lenke">Åpne skjemaet</a></p>'
+                    Tekst: '<p>Hei,</p>\n<p>Vi har mottatt skjemaet "<b>$skjemanavn</b>" ($skjema_id).</p>\n<p><a href="$lenke">Åpne skjemaet</a></p>\n<p>Med vennlig hilsen<br>FHS</p>'
                 },
                 feltreferanser: samleFeltreferanser(data)
             });

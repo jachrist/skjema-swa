@@ -31,6 +31,22 @@ export function kommentarerFor(steg) {
 }
 
 /**
+ * Stilen på en kommentarlinje under et behandlingssteg.
+ *
+ * Inline, ikke en klasse. Stegraden er en flex-boks på alle de tre sidene, og
+ * `width: 100%` er det som gjør at kommentaren får en linje for seg selv i
+ * stedet for å bli klemt inn ved siden av stegnavnet.
+ *
+ * `kommentarerSomHtml` satte klassen `beh-kommentar`, og den klassen hadde
+ * ingen regel på noen side. I registeret ble kommentaren derfor et navnløst
+ * flex-element uten bredde — den sto i markupen, men var i praksis ikke til å
+ * se. Visning og evaluering hadde hver sin kopi av stilen under, og de var
+ * like fordi noen hadde klippet dem; ingenting holdt dem like.
+ */
+export const KOMMENTAR_STIL = 'width: 100%; font-size: 11px; color: var(--text-secondary);'
+    + ' border-left: 2px solid var(--border-color); padding-left: 8px; margin-top: 4px;';
+
+/**
  * Kommentarene som HTML, til bruk under et behandlingssteg.
  *
  * `escape` sendes inn i stedet for å importeres: `felt-render.js` er tung, og
@@ -39,8 +55,8 @@ export function kommentarerFor(steg) {
 export function kommentarerSomHtml(steg, escape) {
     const k = kommentarerFor(steg);
     if (k.length === 0) return '';
-    const rader = k.map(x => x.aktor
-        ? `<div class="beh-kommentar"><em>${escape(x.aktor)}:</em> ${escape(x.kommentar)}</div>`
-        : `<div class="beh-kommentar">${escape(x.kommentar)}</div>`);
+    const rader = k.map(x => `<div style="${KOMMENTAR_STIL}">`
+        + (x.aktor ? `<em>${escape(x.aktor)}:</em> ` : '')
+        + `${escape(x.kommentar)}</div>`);
     return rader.join('');
 }

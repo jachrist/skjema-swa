@@ -125,7 +125,7 @@ const TILFELLER = {
         ['api/src/lib/datauttrekk.js', /kommentarLinje\(/],
         ['frontend/visning.html', /kommentarerFor\(steg\)/],
         ['frontend/register.html', /kommentarerSomHtml\(steg/],
-        ['frontend/evaluering.html', /kommentarer\(steg\)/]
+        ['frontend/evaluering.html', /kommentarerSomHtml\(steg/]
     ]) {
         const kode = les(fil).replace(/^\s*import .*$/gm, '').replace(/^\s*const \{[^}]*\} = require\(.*$/gm, '');
         sjekk(`${fil}: kaller den delte regelen`, kall.test(kode), true);
@@ -147,6 +147,43 @@ async function parity() {
     for (const [navn, steg] of Object.entries(TILFELLER)) {
         sjekk(`kopiene er enige: ${navn}`,
             front.kommentarerFor(steg), kommentarerFor(steg));
+    }
+
+    // ---------- kommentaren får en linje å stå på ----------
+    //
+    // Den sto i markupen i registeret hele tiden, men med klassen
+    // `beh-kommentar` — og den klassen hadde ingen regel på noen side.
+    // Stegraden er en flex-boks, så uten `width: 100%` ble kommentaren et
+    // navnløst flex-element klemt inn ved siden av stegnavnet. Markup uten
+    // stil er den stilleste formen for «mangler»: ingenting i koden sier at
+    // noe er galt.
+    {
+        const les2 = (f) => fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8');
+        const sider = ['frontend/register.html', 'frontend/visning.html', 'frontend/evaluering.html'];
+
+        sjekk('stilen gir kommentaren en egen linje',
+            /width:\s*100%/.test(front.KOMMENTAR_STIL), true);
+        // Uten kommentarstripping ville forklaringen i modulen — som NEVNER
+        // klassen — fått testen til å feile på sin egen dokumentasjon.
+        sjekk('den regelløse klassen er borte',
+            [...sider, 'frontend/js/behandling-kommentar.js']
+                .filter(f => /beh-kommentar/.test(utenKommentarer(les2(f)))), []);
+
+        // Stilen bor i modulen. Visning og evaluering hadde hver sin kopi, og
+        // de var like fordi noen hadde klippet dem — ikke fordi noe holdt dem
+        // like.
+        for (const fil of sider) {
+            const kode = utenKommentarer(les2(fil));
+            sjekk(`${fil}: ingen egen kopi av kommentarstilen`,
+                /border-left: 2px solid var\(--border-color\); padding-left: 8px/.test(kode), false);
+        }
+        // Og alle tre skal faktisk få den — enten via HTML-funksjonen eller
+        // via konstanten.
+        for (const fil of sider) {
+            const kode = les2(fil);
+            sjekk(`${fil}: bruker den delte stilen`,
+                /kommentarerSomHtml\(|KOMMENTAR_STIL/.test(kode), true);
+        }
     }
 
     console.log(`\n${ok} OK, ${feil} feil  (${Object.keys(TILFELLER).length} tilfeller)`);

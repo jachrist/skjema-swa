@@ -323,7 +323,7 @@
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
-        import { kommentarerFor } from './js/behandling-kommentar.js';
+        import { kommentarerFor, KOMMENTAR_STIL } from './js/behandling-kommentar.js';
         import { behandlerlinje } from './js/behandler-visning.js';
         import { statusTekst, statusKlasse } from './js/skjemastatus.js';
         import { GRUNN_PARAM, grunnTekst } from './js/visningsgrunn.js';
@@ -583,7 +583,7 @@
                 // tilfeldigvis brukte $kommentar.
                 for (const k of kommentarerFor(steg)) {
                     const kom = document.createElement('div');
-                    kom.style.cssText = 'width: 100%; font-size: 11px; color: var(--text-secondary); border-left: 2px solid var(--border-color); padding-left: 8px; margin-top: 4px;';
+                    kom.style.cssText = KOMMENTAR_STIL;
                     kom.textContent = k.aktor ? `${k.aktor}: ${k.kommentar}` : k.kommentar;
                     rad.appendChild(kom);
                 }
