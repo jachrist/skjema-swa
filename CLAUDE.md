@@ -60,6 +60,12 @@ python-ankre som treffer feil forekomst gir en no-op som ser ut som et hull i
 testdekningen. Det har skjedd tre ganger og ført til gale konklusjoner begge
 veier. Sjekk at endringen står i fila før du tolker resultatet.
 
+**Gjenopprett fra kopi, aldri med `git checkout`.** Under mutasjonstesting er
+det fristende å rulle tilbake med `git checkout -- fil`. Den kommandoen kjenner
+ikke forskjell på mutasjonen og arbeidet som ikke er committet ennå, og tar
+begge. Det har skjedd tre ganger i samme økt. Ta en kopi av fila FØR
+mutasjonen, og legg den tilbake derfra.
+
 **Test mot den ekte formen.** Flere feil har overlevd fordi testen brukte et
 feltnavn eller en returform som ble funnet opp i testen. Les navnet ut av
 modulen som produserer det, eller kjør den ekte funksjonen.

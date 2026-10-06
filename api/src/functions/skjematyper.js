@@ -74,7 +74,7 @@ async function harEierPåType(skjematypeId, upn) {
  * ErEier og KanFylle indikerer hvilke handlingsknapper som skal vises.
  * Ekstra felter kommer etter hvert (mellomlagrede, behandle-antall, m.m.).
  */
-function tilKortformat(st, erEier, kanFylle) {
+function tilKortformat(st, erEier, kanFylle, erOppfortSomEier = erEier) {
     const data = st.JSON || {};
     const iPeriode = erTilgjengeligNaa(data.Tilgjengelighetsperioder);
     return {
@@ -86,6 +86,13 @@ function tilKortformat(st, erEier, kanFylle) {
         Logo_url: data.Logo_url || '',
         Fase: data.Fase || 'Produksjon',
         ErEier: erEier,
+        // Står UPN-en faktisk i `Eiere` på denne skjematypen?
+        //
+        // `ErEier` svarer ikke på det: den er true for admin på ALT, fordi den
+        // styrer hvilke knapper kortet får. Skjemaoversikten har en bryter for
+        // «bare der jeg er eier», og med `ErEier` ville den vært uten virkning
+        // for nettopp den som har flest kort å se gjennom.
+        ErOppfortSomEier: erOppfortSomEier,
         // Utfylling blokkeres utenfor tilgjengelighetsperioden — eier ser kortet uansett
         KanFylle: kanFylle && iPeriode,
         ErIPeriode: iPeriode,
@@ -106,21 +113,33 @@ app.http('mineSkjematyper', {
             const alle = await skjemaStorage.hentAlleSkjematyper();
 
             // For admin: se alt som både eier og publikum. Ellers: filtrer på Eier/Publikum.
-            let eierIder, publikumsIder, aktuelle;
+            //
+            // `oppfortSomEier` er noe annet enn `eierIder`, og bare for admin:
+            // admin SER alt, men er ikke dermed eier av noe. Oversikten har en
+            // bryter for «bare der jeg er eier», og den spørsmålsstillingen kan
+            // ikke besvares av et sett som inneholder alt.
+            let eierIder, publikumsIder, aktuelle, oppfortSomEier;
+            // Samme cache i alle passeringene — rollene går igjen på tvers av
+            // skjematypene, og hver av dem koster en Table-spørring.
+            const cache = lagTilgangsCache();
             if (erAdmin(upn)) {
                 aktuelle = alle;
                 eierIder = new Set(alle.map(t => String(t.id)));
                 publikumsIder = new Set(alle.map(t => String(t.id)));
+                // Ett ekstra oppslag for admin. Publikum trengs ikke — admin er
+                // publikum på alt uansett.
+                oppfortSomEier = new Set(
+                    (await filtrerTyperPåTilgang(alle, upn, 'Eiere', cache)).map(t => String(t.id)));
             } else {
-                // Samme cache i begge passeringene — rollene går igjen på tvers
-                // av skjematypene, og hver av dem koster en Table-spørring.
-                const cache = lagTilgangsCache();
                 const [eiere, publikum] = await Promise.all([
                     filtrerTyperPåTilgang(alle, upn, 'Eiere', cache),
                     filtrerTyperPåTilgang(alle, upn, 'Publikum', cache)
                 ]);
                 eierIder = new Set(eiere.map(t => String(t.id)));
                 publikumsIder = new Set(publikum.map(t => String(t.id)));
+                // For alle andre enn admin er «ser som eier» og «er eier» det
+                // samme.
+                oppfortSomEier = eierIder;
                 const map = new Map();
                 [...eiere, ...publikum].forEach(t => map.set(String(t.id), t));
                 aktuelle = [...map.values()];
@@ -139,7 +158,8 @@ app.http('mineSkjematyper', {
             });
 
             const resultat = filtrertPåFase
-                .map(t => tilKortformat(t, eierIder.has(String(t.id)), publikumsIder.has(String(t.id))))
+                .map(t => tilKortformat(t, eierIder.has(String(t.id)), publikumsIder.has(String(t.id)),
+                    oppfortSomEier.has(String(t.id))))
                 .sort((a, b) => (a.Skjema_navn || '').localeCompare(b.Skjema_navn || '', 'nb'));
 
             return { jsonBody: resultat };

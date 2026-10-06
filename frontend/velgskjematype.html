@@ -188,6 +188,12 @@
             transition: background 0.15s, border-color 0.15s;
         }
         .fase-toggle input[type="checkbox"] { margin: 0; cursor: pointer; }
+        /* Eierbryteren filtrerer på noe annet enn fasene. Uten et skille leses
+           alle fire som ett sett avkrysningsbokser med samme betydning. */
+        .filter-skille {
+            width: 1px; align-self: stretch; min-height: 20px;
+            background: var(--border-color); margin: 0 4px;
+        }
         .fase-toggle:hover { border-color: var(--accent); }
         .fase-toggle.aktiv {
             background: var(--accent-light);
@@ -389,6 +395,11 @@
             <label class="fase-toggle" data-fase="Utvikling" id="fase-toggle-Utvikling" style="display: none;">
                 <input type="checkbox" value="Utvikling" onchange="onFaseEndret()"> Utvikling
             </label>
+            <span class="filter-skille" id="eier-skille" style="display: none;"></span>
+            <label class="fase-toggle" id="eier-toggle" style="display: none;"
+                title="Skjul skjematyper du bare er publikum på">
+                <input type="checkbox" onchange="onEierEndret()"> Bare der jeg er eier
+            </label>
         </div>
 
         <div class="sokefelt-rad">
@@ -525,6 +536,9 @@
                                 Logo_url: data.Logo_url || '',
                                 Fase: data.Fase || 'Produksjon',
                                 ErEier: false,
+                                // Lagt til fordi bruker er BEHANDLER. Da er hen
+                                // verken eier eller publikum.
+                                ErOppfortSomEier: false,
                                 KanFylle: false,
                                 ErIPeriode: true,
                                 Tilgjengelighetsperioder: data.Tilgjengelighetsperioder || [],
@@ -542,18 +556,33 @@
 
         function oppdaterFaseFilter() {
             // Vis kun toggler for faser bruker faktisk har skjematyper i.
-            // Skjul hele raden hvis bare Produksjon finnes.
             const faserSomFinnes = new Set(alle.map(t => t.Fase || 'Produksjon'));
             const harFlereFaser = faserSomFinnes.size > 1 || faserSomFinnes.has('Utvikling');
-            if (!harFlereFaser) {
+
+            // Eierbryteren vises bare til den som faktisk eier noe. For alle
+            // andre ville den bare kunnet tømme lista, og en bryter som bare
+            // har én nyttig stilling er en bryter folk prøver én gang.
+            //
+            // `ErOppfortSomEier`, ikke `ErEier`: den siste er true for admin på
+            // alt, og bryteren ville vært uten virkning for nettopp den som har
+            // flest kort å se gjennom.
+            const eierNoe = alle.some(t => t.ErOppfortSomEier === true);
+            const eierToggle = document.getElementById('eier-toggle');
+            const eierSkille = document.getElementById('eier-skille');
+            if (eierToggle) eierToggle.style.display = eierNoe ? '' : 'none';
+            if (eierSkille) eierSkille.style.display = eierNoe && harFlereFaser ? '' : 'none';
+
+            // Raden skjules bare når den ville vært tom.
+            if (!harFlereFaser && !eierNoe) {
                 document.getElementById('fase-filter-rad').style.display = 'none';
                 return;
             }
             document.getElementById('fase-filter-rad').style.display = '';
             ['Produksjon', 'Utvikling'].forEach(fase => {
                 const t = document.getElementById(`fase-toggle-${fase}`);
-                if (t) t.style.display = faserSomFinnes.has(fase) ? '' : 'none';
+                if (t) t.style.display = harFlereFaser && faserSomFinnes.has(fase) ? '' : 'none';
             });
+            gjenopprettEierValg(eierNoe);
             // Gjenopprett lagret valg — men bare for faser som faktisk finnes
             try {
                 const raw = localStorage.getItem(FASER_LS_NOKKEL);
@@ -585,6 +614,42 @@
         }
 
         const FASER_LS_NOKKEL = 'velgskjema-faser';
+        const KUN_EIER_LS_NOKKEL = 'velgskjema-kun-eier';
+
+        /**
+         * Er bryteren på?
+         *
+         * Leses fra avkrysningsboksen, ikke fra en variabel ved siden av —
+         * da kan de to ikke bli uenige. Er bryteren skjult (brukeren eier
+         * ingenting), er svaret nei uansett hva som måtte ligge lagret: ellers
+         * ville en gammel verdi i localStorage gitt en tom liste uten noe
+         * synlig å slå av.
+         */
+        function kunEierValgt() {
+            const toggle = document.getElementById('eier-toggle');
+            if (!toggle || toggle.style.display === 'none') return false;
+            const cb = toggle.querySelector('input[type="checkbox"]');
+            return !!(cb && cb.checked);
+        }
+
+        function gjenopprettEierValg(eierNoe) {
+            const toggle = document.getElementById('eier-toggle');
+            if (!toggle) return;
+            const cb = toggle.querySelector('input[type="checkbox"]');
+            if (!cb) return;
+            let lagret = false;
+            try { lagret = localStorage.getItem(KUN_EIER_LS_NOKKEL) === 'ja'; } catch { /* privat modus */ }
+            cb.checked = eierNoe && lagret;
+            toggle.classList.toggle('aktiv', cb.checked);
+        }
+
+        window.onEierEndret = () => {
+            const toggle = document.getElementById('eier-toggle');
+            const cb = toggle?.querySelector('input[type="checkbox"]');
+            toggle?.classList.toggle('aktiv', !!cb?.checked);
+            try { localStorage.setItem(KUN_EIER_LS_NOKKEL, cb?.checked ? 'ja' : 'nei'); } catch { /* privat modus */ }
+            filtrer();
+        };
 
         function lesValgteFaser() {
             const valgte = [...document.querySelectorAll('#fase-filter-rad input[type="checkbox"]:checked')].map(cb => cb.value);
@@ -606,27 +671,44 @@
             filtrer();
         };
 
+        /**
+         * Skal dette kortet vises?
+         *
+         * Skilt ut fra `filtrer()` for å kunne prøves uten DOM — samme grunn
+         * som `bannerTekst` i admin.html. Tre uavhengige kriterier, og det er
+         * nettopp sammenstillingen av dem som er verdt å teste: et søk som
+         * treffer skal ikke overstyre eierbryteren.
+         *
+         * `ErOppfortSomEier`, ikke `ErEier`: den siste er true for admin på alt
+         * (den styrer knappene på kortet), og bryteren ville vært uten virkning
+         * for den som har flest kort å se gjennom.
+         */
+        function skalVises(t, { faser, kunEier, ord }) {
+            if (!faser.includes(t.Fase || 'Produksjon')) return false;
+            if (kunEier && t.ErOppfortSomEier !== true) return false;
+            if (ord.length === 0) return true;
+            // Hvert ord må treffe noe, så «evaluering 14» finner skjema 14
+            // og ikke alle som har ordet «evaluering» i seg.
+            const navn = (t.Skjema_navn || '').toLowerCase();
+            const forklaring = (t.Skjema_forklaring?.Verdi || '').toLowerCase();
+            const id = String(t.Skjematype_id || '');
+            return ord.every(o =>
+                navn.includes(o)
+                || forklaring.includes(o)
+                // ID-en matches fra starten, ikke som delstreng: søk på «14»
+                // skal ikke dra med seg 114 og 214.
+                || id.startsWith(o)
+            );
+        }
+
         window.filtrer = () => {
             const q = document.getElementById('sok').value.trim().toLowerCase();
-            const valgteFaser = lesValgteFaser();
-            const filtrert = alle.filter(t => {
-                const fase = t.Fase || 'Produksjon';
-                if (!valgteFaser.includes(fase)) return false;
-                if (q === '') return true;
-                // Hvert ord må treffe noe, så «evaluering 14» finner skjema 14
-                // og ikke alle som har ordet «evaluering» i seg.
-                const navn = (t.Skjema_navn || '').toLowerCase();
-                const forklaring = (t.Skjema_forklaring?.Verdi || '').toLowerCase();
-                const id = String(t.Skjematype_id || '');
-                return q.split(/\s+/).filter(Boolean).every(ord =>
-                    navn.includes(ord)
-                    || forklaring.includes(ord)
-                    // ID-en matches fra starten, ikke som delstreng: søk på «14»
-                    // skal ikke dra med seg 114 og 214.
-                    || id.startsWith(ord)
-                );
-            });
-            render(filtrert);
+            const kriterier = {
+                faser: lesValgteFaser(),
+                kunEier: kunEierValgt(),
+                ord: q.split(/\s+/).filter(Boolean)
+            };
+            render(alle.filter(t => skalVises(t, kriterier)));
         };
 
         function render(liste) {

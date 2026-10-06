@@ -2303,8 +2303,51 @@
                 </div>
                 <div class="panel">
                     <h2>Skjematyper <small style="font-weight: 400; text-transform: none;">— mest brukt først</small></h2>
+                    <div class="knapp-rad" style="margin-bottom: 12px;">
+                        <button class="knapp" onclick="eksporterSkjematyper()" id="skjematyper-eksport">📊 Eksporter til Excel</button>
+                        <span id="skjematyper-eksport-status" style="font-size: 12px; color: var(--text-secondary);"></span>
+                    </div>
                     <div class="oversikt-ramme">${byggOversiktTabell(data.rader || [])}</div>
                 </div>`;
+        }
+
+        /**
+         * Last ned oversikten som regneark.
+         *
+         * Serveren bygger fila av den SAMME sammenstillingen som tabellen over
+         * er tegnet fra. Et regneark laget av radene denne siden tilfeldigvis
+         * har i minnet, ville sluttet å stemme den dagen visningen filtrerer
+         * eller kutter noe.
+         */
+        window.eksporterSkjematyper = async () => {
+            const knapp = document.getElementById('skjematyper-eksport');
+            const status = document.getElementById('skjematyper-eksport-status');
+            knapp.disabled = true;
+            status.textContent = 'Bygger regneark…';
+            try {
+                const fil = await api.get('/api/skjematype-oversikt?format=excel');
+                lastNedBase64(fil.filnavn, fil.innhold, fil.contentType);
+                status.textContent = `✓ ${fil.filnavn}`;
+            } catch (e) {
+                status.textContent = 'Feil: ' + e.message;
+            } finally {
+                knapp.disabled = false;
+            }
+        };
+
+        /** Base64 fra API-et → nedlastet fil. Samme mønster som datauttrekket. */
+        function lastNedBase64(filnavn, base64, contentType) {
+            const bin = atob(base64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            const url = URL.createObjectURL(new Blob([bytes], { type: contentType }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filnavn;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 10000);
         }
 
         function byggOversiktTabell(rader) {

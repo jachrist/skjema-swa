@@ -1,8 +1,13 @@
 /**
- * GET /api/skjematype-oversikt
+ * GET /api/skjematype-oversikt[?format=excel]
  *
  * Én rad per skjematype: eiere, fase, antall skjemaer og siste aktivitet.
  * Til administrasjonssiden.
+ *
+ * `format=excel` gir den SAMME sammenstillingen som regneark, bygget av
+ * samme `byggOversikt`-kall. Det er hele poenget med å legge eksporten her og
+ * ikke i nettleseren: en eksport bygget av det tabellen tilfeldigvis hadde
+ * tegnet, ville sluttet å stemme den dagen visningen filtrerer noe bort.
  *
  * Bare for admin. Oversikten viser eierskap og bruksmengde på tvers av hele
  * installasjonen, og det er ikke noe en vanlig skjemaeier skal kunne lese ut.
@@ -15,7 +20,8 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
-const { byggOversikt } = require('../lib/skjematype-oversikt');
+const { byggOversikt, tilEksportRader } = require('../lib/skjematype-oversikt');
+const { genererExcel } = require('../lib/datauttrekk');
 
 app.http('skjematypeOversikt', {
     methods: ['GET'],
@@ -33,6 +39,15 @@ app.http('skjematypeOversikt', {
                 forekomstStorage.hentAntallPerType()
             ]);
             const rader = byggOversikt(skjematyper, antall);
+
+            if (String(request.query.get('format') || '').toLowerCase() === 'excel') {
+                // Samme generator som datauttrekket. Den kan auto-kolonnebredde
+                // og tom-tilfellet fra før, og en kopi her ville vært en kopi
+                // til å vedlikeholde.
+                const fil = genererExcel(tilEksportRader(rader), 'Skjematyper');
+                return { jsonBody: fil };
+            }
+
             return {
                 jsonBody: {
                     rader,
