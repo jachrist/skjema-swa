@@ -273,5 +273,101 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
         kilde.indexOf('byggFerdigBehandling(def, args.beslutning, innsender') < kilde.indexOf('const matrise = lesMatrise(fil);'), true);
 }
 
+// ---------- diagnostikken når en kolonne ikke treffer ----------
+{
+    // Meldt fra første kjøring: «Hoppet over 1 kolonne(r): Datapunkt (navn)»
+    // etterfulgt av «Fant ikke nøkkelfeltet». Begge var sanne, og ingen av dem
+    // sa hva feltet i skjematypen HETER — den som leser må tilbake til
+    // editoren for å gjette. Svaret finnes i katalogen og er gratis å skrive.
+    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+
+    sjekk('ledige felt regnes ut',
+        /const ledige = katalog\.filter\(f => !brukte\.has\(f\.nokkel\)\);/.test(kilde), true);
+    sjekk('og skrives ut med nøkkel, etikett og type',
+        /Felt uten kolonne \(\$\{ledige\.length\}\)/.test(kilde), true);
+    // Et ferdig eksempel å lime inn er forskjellen på «nå vet jeg hva som er
+    // galt» og «nå vet jeg hva jeg skal gjøre».
+    sjekk('med et ferdig --kolonner-eksempel', /Koble dem med --kolonner/.test(kilde), true);
+
+    sjekk('nøkkelfeil lister koblede kolonner',
+        /Det må være en kolonne som er koblet\. Koblede kolonner:/.test(kilde), true);
+    sjekk('og skiller «finnes ikke i fila» fra «traff ingen felt»',
+        /ER i fila, men traff ingen felt/.test(kilde), true);
+}
+
+// ---------- flere verdier i én celle, og skrivefeil ----------
+{
+    // Oppdaget i det ekte arket: vurderingskolonnene har «TJENSTLIG/AVSKJERMET»,
+    // og noen celler er skrevet feil. Begge deler må håndteres uten å rette
+    // 270 celler i Excel.
+    const lagFelt = (over) => imp.feltKatalog({ Seksjoner: [{ Seksjon_nummer: 2, Felter: [{
+        Nummer: '01', Type: 'Flervalg-knapper', Tekst: 'Datapunkt',
+        Valg: [{ Tekst: 'TJENSTLIG' }, { Tekst: 'AVSKJERMET' }, { Tekst: 'KAN OFFENTLIGGJØRES' }],
+        ...over
+    }] }] })[0];
+
+    // Hvor mange verdier feltet tar — samme regel som felt-render.js.
+    sjekk('uten Max_valg tar feltet én', lagFelt({}).maksValg, 1);
+    sjekk('Max_valg leses', lagFelt({ Max_valg: 3 }).maksValg, 3);
+    sjekk('MerkAlle opphever taket', lagFelt({ MerkAlle: true }).maksValg, Infinity);
+
+    const flere = lagFelt({ Max_valg: 3 });
+    sjekk('én verdi er fortsatt én', imp.tolkVerdi('TJENSTLIG', flere), { verdi: 'TJENSTLIG' });
+    sjekk('to verdier deles', imp.tolkVerdi('TJENSTLIG/AVSKJERMET', flere), { verdi: ['TJENSTLIG', 'AVSKJERMET'] });
+    sjekk('luft rundt skilletegnet', imp.tolkVerdi(' TJENSTLIG / AVSKJERMET ', flere), { verdi: ['TJENSTLIG', 'AVSKJERMET'] });
+    sjekk('samme verdi to ganger blir én', imp.tolkVerdi('TJENSTLIG/TJENSTLIG', flere), { verdi: ['TJENSTLIG'] });
+    sjekk('annet skilletegn', imp.tolkVerdi('TJENSTLIG;AVSKJERMET', flere, { skilletegn: ';' }),
+        { verdi: ['TJENSTLIG', 'AVSKJERMET'] });
+
+    // Hele cella prøves FØRST. Et valg som selv inneholder en skråstrek skal
+    // ikke deles i to deler som ingen av dem finnes.
+    const medSkrå = lagFelt({ Max_valg: 3, Valg: [{ Tekst: 'TJENSTLIG/AVSKJERMET' }, { Tekst: 'TJENSTLIG' }] });
+    sjekk('hele cella vinner over delingen',
+        imp.tolkVerdi('TJENSTLIG/AVSKJERMET', medSkrå), { verdi: 'TJENSTLIG/AVSKJERMET' });
+
+    // Ukjent del: feilen må peke på DELEN, ikke på hele cella — det er den
+    // som skal rettes.
+    const u = imp.tolkVerdi('TJENESTLIG/AVSKJERMET', flere);
+    sjekk('ukjent del stopper', !!u.feil, true);
+    sjekk('og peker på delen', u.ukjent, 'TJENESTLIG');
+
+    // Rettefila, med og uten kasus.
+    sjekk('retting treffer eksakt',
+        imp.tolkVerdi('TJENESTLIG/AVSKJERMET', flere, { aliaser: { TJENESTLIG: 'TJENSTLIG' } }),
+        { verdi: ['TJENSTLIG', 'AVSKJERMET'] });
+    sjekk('retting treffer normalisert',
+        imp.tolkVerdi('Tjenestlig', flere, { aliaser: { tjenestlig: 'TJENSTLIG' } }), { verdi: 'TJENSTLIG' });
+
+    // Et felt som bare tar én verdi skal ikke få to. Det er en
+    // modelleringsavgjørelse, ikke noe skriptet gjetter på.
+    const en = lagFelt({});
+    const f = imp.tolkVerdi('TJENSTLIG/AVSKJERMET', en);
+    sjekk('enkeltvalgfelt avviser to verdier', !!f.feil, true);
+    sjekk('og sier begge utveiene',
+        /Øk Max_valg på feltet, eller legg inn "TJENSTLIG\/AVSKJERMET" som et eget valg/.test(f.feil), true);
+
+    // Fritekst røres ikke av delingen — en sti eller en dato med skråstrek er
+    // ikke to verdier.
+    const fritekst = imp.feltKatalog({ Seksjoner: [{ Seksjon_nummer: 1, Felter: [
+        { Nummer: '01', Type: 'Tekst', Tekst: 'Vurdering' }] }] })[0];
+    sjekk('fritekst deles ikke', imp.tolkVerdi('EK_PERSON/EK_ANSATT', fritekst), { verdi: 'EK_PERSON/EK_ANSATT' });
+}
+
+// ---------- feilrapporten er en arbeidsliste ----------
+{
+    // 270 rader med fire skrivefeil gir 300 enkeltfeil. Den lista er ikke til
+    // å jobbe med; gruppert på verdi er den fire ting å rette.
+    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    sjekk('feilene grupperes', /const grupper = new Map\(\);/.test(kilde), true);
+    sjekk('på kolonne og verdi, ikke på rad',
+        /const n = `\$\{f\.kolonne\}\\u0000\$\{f\.ukjent \?\? f\.melding\}`;/.test(kilde), true);
+    sjekk('med antall', /g\.antall\+\+;/.test(kilde), true);
+    // Noen radnumre å slå opp i arket, men ikke alle 270.
+    sjekk('og noen radnumre', /if \(g\.rader\.length < 5\) g\.rader\.push\(f\.radNr\);/.test(kilde), true);
+    sjekk('de vanligste først', /sort\(\(a, b\) => b\.antall - a\.antall\)/.test(kilde), true);
+    // Et ferdig utkast til rettefila sparer en avskrift.
+    sjekk('foreslår rettefila', /Er det skrivefeil i arket, rett dem med --verdier/.test(kilde), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

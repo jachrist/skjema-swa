@@ -29,6 +29,22 @@
  * alternativer som finnes. Store og små bokstaver godtas — verdien som
  * LAGRES er alltid den kanoniske fra definisjonen.
  *
+ * ## Flere verdier i én celle, og skrivefeil
+ *
+ * «TJENSTLIG/AVSKJERMET» er to verdier. Hele cella prøves først — et valg som
+ * selv inneholder en skråstrek skal ikke deles i to som ingen av dem finnes —
+ * og først når den ikke treffer, deles den på `/` (`--skilletegn` endrer
+ * tegnet). Tar feltet bare én verdi, stopper importen: da er det enten
+ * `Max_valg` som skal opp, eller den sammensatte verdien som skal inn som et
+ * eget valg, og det er en modelleringsavgjørelse.
+ *
+ * Skrivefeil i arket rettes med en fil, ikke i 270 celler:
+ *
+ *   --verdier rettinger.json   →  { "TJENESTLIG": "TJENSTLIG" }
+ *
+ * Feilrapporten er gruppert på verdi, ikke på rad, og foreslår fila ferdig
+ * utfylt. Fire skrivefeil i 270 rader gir ellers 300 enkeltfeil å lese.
+ *
  * ## Kobling kolonne → felt
  *
  * Automatisk på etiketten: kolonneoverskriften matches mot `Tekst` på
@@ -156,6 +172,11 @@ function feltKatalog(def) {
                 Id: f.Id || null,
                 Type: f.Type,
                 etikett: typeof f.Tekst === 'object' && f.Tekst ? String(f.Tekst.Verdi ?? '') : String(f.Tekst ?? ''),
+                // Hvor mange verdier feltet tar. Samme regel som felt-render.js:
+                // MerkAlle opphever taket, ellers Max_valg med 1 som standard.
+                // En celle med to verdier i et felt som bare tar én, er ikke
+                // noe skriptet skal skrive seg ut av.
+                maksValg: f.MerkAlle ? Infinity : Math.max(1, Number(f.Max_valg) || 1),
                 // Verdien som LAGRES er `Verdi ?? Tekst` — samme regel som
                 // felt-render.js bruker når widgeten tegnes. Men regnearket
                 // inneholder det et menneske har sett på skjermen, altså
@@ -208,18 +229,69 @@ function koble(overskrifter, katalog, overstyringer) {
  * den som skrives. Ellers havner vi tilbake i «verdien finnes ikke i lista» —
  * og den feilen viser seg først når noen redigerer raden et halvår senere.
  */
-function tolkVerdi(rå, felt) {
+/** Slå opp én enkeltverdi i valglista. Null når den ikke finnes. */
+function slaOppValg(felt, tekst, aliaser = {}) {
+    // Rettinger først: regnearket har skrivefeil som ikke er verdt å rette i
+    // 270 celler, og en rettefil er lettere å etterprøve enn en ryddejobb i
+    // Excel.
+    const rettet = aliaser[tekst] ?? aliaser[normaliser(tekst)] ?? tekst;
+    return felt.valg.find(v => v.verdi === rettet || v.tekst === rettet)
+        ?? felt.valg.find(v => normaliser(v.verdi) === normaliser(rettet) || normaliser(v.tekst) === normaliser(rettet))
+        ?? null;
+}
+
+/**
+ * Verdiene i én celle, slik de skal lagres — eller en feil.
+ *
+ * To ting cella kan inneholde som ikke er én ren verdi:
+ *
+ *   **Flere verdier,** skilt med `/`: «TJENSTLIG/AVSKJERMET». Hele cella
+ *   prøves FØRST, så et valg som selv inneholder en skråstrek ikke blir
+ *   splittet i to som ingen av dem finnes. Først når hele cella ikke treffer,
+ *   deles den.
+ *
+ *   **Skrivefeil.** Rettingene kommer fra `--verdier`, og brukes før
+ *   oppslaget. Å rette 270 celler i Excel er både mer arbeid og vanskeligere
+ *   å etterprøve enn en fil med fire linjer.
+ *
+ * Et felt som bare tar én verdi får ikke to. Da er det enten `Max_valg` som
+ * skal opp, eller «TJENSTLIG/AVSKJERMET» som skal inn som et eget valg — og
+ * det er en modelleringsavgjørelse, ikke noe skriptet skal gjette.
+ */
+function tolkVerdi(rå, felt, { aliaser = {}, skilletegn = '/' } = {}) {
     const tekst = String(rå ?? '').trim();
     if (!tekst) return { verdi: null };
     if (!felt.valg) return { verdi: tekst };
 
-    const treff = felt.valg.find(v => v.verdi === tekst || v.tekst === tekst)
-        ?? felt.valg.find(v => normaliser(v.verdi) === normaliser(tekst) || normaliser(v.tekst) === normaliser(tekst));
-    if (!treff) {
-        const gyldige = felt.valg.map(v => v.verdi === v.tekst ? v.verdi : `${v.tekst} (${v.verdi})`).join(', ');
-        return { feil: `"${tekst}" finnes ikke i valglista for «${felt.etikett}». Gyldige: ${gyldige}` };
+    const gyldige = () => felt.valg.map(v => v.verdi === v.tekst ? v.verdi : `${v.tekst} (${v.verdi})`).join(', ');
+
+    // Hele cella først.
+    const helt = slaOppValg(felt, tekst, aliaser);
+    if (helt) return { verdi: helt.verdi };
+
+    // Så som flere verdier.
+    const deler = tekst.split(skilletegn).map(d => d.trim()).filter(Boolean);
+    if (deler.length > 1) {
+        const verdier = [];
+        const ukjente = [];
+        for (const d of deler) {
+            const t = slaOppValg(felt, d, aliaser);
+            if (t) { if (!verdier.includes(t.verdi)) verdier.push(t.verdi); }
+            else ukjente.push(d);
+        }
+        if (ukjente.length > 0) {
+            return { feil: `${ukjente.map(u => `"${u}"`).join(' og ')} finnes ikke i valglista for «${felt.etikett}». Gyldige: ${gyldige()}`,
+                ukjent: ukjente[0] };
+        }
+        if (verdier.length > felt.maksValg) {
+            return { feil: `«${felt.etikett}» tar ${felt.maksValg} verdi(er), men cella har ${verdier.length} `
+                + `(${verdier.join(', ')}). Øk Max_valg på feltet, eller legg inn "${tekst}" som et eget valg.`,
+                ukjent: tekst };
+        }
+        return { verdi: verdier };
     }
-    return { verdi: treff.verdi };
+
+    return { feil: `"${tekst}" finnes ikke i valglista for «${felt.etikett}». Gyldige: ${gyldige()}`, ukjent: tekst };
 }
 
 /**
@@ -300,6 +372,15 @@ async function main() {
     const skjematypeId = String(krev(args, 'skjematype'));
     const innsender = krev(args, 'innsender');
     const overstyringer = args.kolonner ? JSON.parse(fs.readFileSync(args.kolonner, 'utf8')) : {};
+    // Rettinger for skrivefeil i regnearket: { "TJENESTLIG": "TJENSTLIG" }.
+    // Nøklene normaliseres, så kasus i fila ikke avgjør om rettingen treffer.
+    const aliasFil = args.verdier ? JSON.parse(fs.readFileSync(args.verdier, 'utf8')) : {};
+    const aliaser = {};
+    for (const [fra, til] of Object.entries(aliasFil)) {
+        aliaser[fra] = til;
+        aliaser[normaliser(fra)] = til;
+    }
+    const skilletegn = args.skilletegn || '/';
 
     const st = await skjemaStorage.hentSkjematype(skjematypeId);
     if (!st?.JSON) throw new Error(`Fant ingen skjematype ${skjematypeId}`);
@@ -339,7 +420,23 @@ async function main() {
     console.log(`Skjematype ${skjematypeId}: ${def.Skjema_navn || '(uten navn)'}`);
     console.log(`Overskrifter på rad ${linje + 1}. Koblet ${kobling.length} kolonne(r):`);
     for (const k of kobling) console.log(`  ${k.overskrift}  →  ${k.felt.nokkel} «${k.felt.etikett}» (${k.felt.Type})`);
-    if (ukoblede.length > 0) console.log(`Hoppet over ${ukoblede.length} kolonne(r): ${ukoblede.join(', ')}`);
+    if (ukoblede.length > 0) {
+        console.log(`Hoppet over ${ukoblede.length} kolonne(r): ${ukoblede.join(', ')}`);
+        // Og — like viktig — hvilke FELT som står igjen uten kolonne.
+        //
+        // Uten denne lista sier skriptet bare at en kolonne ikke traff, og
+        // den som leser må gjette hva feltet heter i skjematypen. Skal
+        // «Datapunkt (navn)» kobles, må man vite at feltet heter noe annet,
+        // og hva. Svaret finnes her, og det er gratis å skrive det ut.
+        const brukte = new Set(kobling.map(k => k.felt.nokkel));
+        const ledige = katalog.filter(f => !brukte.has(f.nokkel));
+        if (ledige.length > 0) {
+            console.log(`Felt uten kolonne (${ledige.length}):`);
+            for (const f of ledige) console.log(`  ${f.nokkel} «${f.etikett}» (${f.Type})`);
+            console.log('Koble dem med --kolonner, f.eks.  { "'
+                + ukoblede[0] + '": "' + ledige[0].nokkel + '" }');
+        }
+    }
 
     // Nøkkelfeltet, for idempotens
     let nokkelFelt = null;
@@ -347,7 +444,19 @@ async function main() {
         const treff = kobling.find(k => normaliser(k.overskrift) === normaliser(args.nokkelfelt))
             || katalog.find(f => normaliser(f.etikett) === normaliser(args.nokkelfelt) || f.nokkel === args.nokkelfelt);
         nokkelFelt = treff?.felt || treff || null;
-        if (!nokkelFelt) throw new Error(`Fant ikke nøkkelfeltet "${args.nokkelfelt}"`);
+        if (!nokkelFelt) {
+            // «Fant ikke» uten å si hva som FINNES, sender den som leser
+            // tilbake til skjematypen for å gjette. Nøkkelfeltet må være et
+            // felt som faktisk har en kolonne — ellers er det tomt på hver
+            // eneste rad, og idempotensen virker ikke uansett.
+            throw new Error(`Fant ikke nøkkelfeltet "${args.nokkelfelt}".\n`
+                + 'Det må være en kolonne som er koblet. Koblede kolonner:\n'
+                + kobling.map(k => `  "${k.overskrift}"  (${k.felt.nokkel} «${k.felt.etikett}»)`).join('\n')
+                + (ukoblede.length > 0
+                    ? `\nKolonnen "${args.nokkelfelt}" ${ukoblede.includes(args.nokkelfelt) ? 'ER i fila, men traff ingen felt' : 'finnes ikke i fila'}`
+                        + ' — se «Felt uten kolonne» over og koble den med --kolonner.'
+                    : ''));
+        }
         console.log(`Nøkkelfelt: ${nokkelFelt.nokkel} «${nokkelFelt.etikett}» — rader med en verdi som finnes fra før hoppes over.`);
     } else {
         console.log('Uten --nokkelfelt: en ny kjøring vil lage dubletter.');
@@ -381,11 +490,11 @@ async function main() {
         const svarPåNokkel = new Map();
         let tom = true;
         for (const k of kobling) {
-            const { verdi, feil: f } = tolkVerdi(rad[k.kolonne], k.felt);
-            if (f) { feil.push({ radNr, kolonne: k.overskrift, melding: f }); continue; }
+            const { verdi, feil: f, ukjent } = tolkVerdi(rad[k.kolonne], k.felt, { aliaser, skilletegn });
+            if (f) { feil.push({ radNr, kolonne: k.overskrift, melding: f, ukjent }); continue; }
             if (verdi === null) continue;
             tom = false;
-            svarPåNokkel.set(k.felt.nokkel, [verdi]);
+            svarPåNokkel.set(k.felt.nokkel, Array.isArray(verdi) ? verdi : [verdi]);
         }
         if (tom) continue;
         if (nokkelFelt) {
@@ -403,9 +512,30 @@ async function main() {
         console.log(`Finnes fra før: ${hoppet.slice(0, 10).map(h => h.n).join(', ')}${hoppet.length > 10 ? ` …og ${hoppet.length - 10} til` : ''}`);
     }
     if (feil.length > 0) {
-        console.log('\nFEIL — ingenting importeres før disse er rettet:');
-        for (const f of feil.slice(0, 40)) console.log(`  rad ${f.radNr}, «${f.kolonne}»: ${f.melding}`);
-        if (feil.length > 40) console.log(`  …og ${feil.length - 40} til`);
+        // Gruppert på verdien, ikke listet per rad.
+        //
+        // 270 rader med fire skrivefeil gir fort 300 enkeltfeil, og den lista
+        // er ikke til å jobbe med. Gruppert blir den en arbeidsliste: fire
+        // verdier å rette, med antall og et radnummer å slå opp.
+        const grupper = new Map();
+        for (const f of feil) {
+            const n = `${f.kolonne}\u0000${f.ukjent ?? f.melding}`;
+            if (!grupper.has(n)) grupper.set(n, { ...f, antall: 0, rader: [] });
+            const g = grupper.get(n);
+            g.antall++;
+            if (g.rader.length < 5) g.rader.push(f.radNr);
+        }
+        console.log(`\nFEIL — ${grupper.size} ulik(e) verdi(er) i ${feil.length} celle(r). Ingenting importeres før de er rettet:`);
+        for (const g of [...grupper.values()].sort((a, b) => b.antall - a.antall)) {
+            console.log(`  «${g.kolonne}» × ${g.antall} (rad ${g.rader.join(', ')}${g.antall > g.rader.length ? ', …' : ''})`);
+            console.log(`    ${g.melding}`);
+        }
+        // Et ferdig utkast til rettefila sparer en avskrift.
+        const ukjente = [...new Set([...grupper.values()].map(g => g.ukjent).filter(Boolean))];
+        if (ukjente.length > 0) {
+            console.log('\nEr det skrivefeil i arket, rett dem med --verdier:');
+            console.log('  {' + ukjente.map(u => `\n    ${JSON.stringify(u)}: ""`).join(',') + '\n  }');
+        }
         process.exit(1);
     }
     if (nye.length === 0) { console.log('Ingenting å gjøre.'); return; }
