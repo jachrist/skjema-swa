@@ -167,6 +167,18 @@ function erstattPlassholdere(streng, kontekst = {}) {
             return svar == null ? '' : visningsverdi(f, svar);
         });
     }
+
+    // Et avsnitt som bare inneholdt en plassholder, og plassholderen ble tom,
+    // er ikke et avsnitt — det er en blank linje mottakeren ikke kan forklare.
+    //
+    // Standardmalen til innsender har `<p>$kommentar</p>`, og behandleren
+    // skriver ikke alltid noe. Uten dette ville annenhver beslutnings-e-post
+    // hatt et hull mellom beslutningen og lenka.
+    //
+    // Bare helt tomme avsnitt. `<p>&nbsp;</p>` er noen som ville ha luft, og
+    // det skal stå.
+    s = s.replace(/<p>\s*<\/p>/gi, '');
+
     return s;
 }
 

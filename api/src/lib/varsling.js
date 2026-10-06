@@ -49,6 +49,12 @@ function standardFraBehandler() {
             '<p>Hei,</p>' +
             '<p>Skjemaet "<b>$skjemanavn</b>" ($skjema_id) er behandlet på steg $stegnavn.</p>' +
             '<p>Beslutning: <b>$beslutning</b></p>' +
+            // Behandlerens begrunnelse, på linja under beslutningen. Den sto
+            // ikke i standardmalen før 06.10.2026, så den som ikke redigerte
+            // teksten sendte en beslutning uten begrunnelse — og kommentaren
+            // var skrevet, bare ikke sendt. Tomt avsnitt fjernes av
+            // erstattPlassholdere når ingen skrev noe.
+            '<p>$kommentar</p>' +
             '<p><a href="$lenke">Åpne skjemaet</a></p>'
     };
 }
@@ -1051,6 +1057,10 @@ module.exports = {
     _skjemaLenke: skjemaLenke,
     // Diagnosen trenger å kunne stille de samme spørsmålene som utsendingen.
     aktiveKanaler, samleBehandlerMottakere,
+    // Standardmalene. Editoren viser de samme tekstene som forslag, og
+    // api/test/standardmaler.test.js krever at de er identiske — ellers viser
+    // editoren én tekst og utsendingen bruker en annen.
+    standardKvittering, standardTilBehandler, standardFraBehandler, standardFerdigVarsling,
     // Kanaloppsett — rene funksjoner, testet i api/test/varsling-kanaler.test.js
     somPlannerOppgave, somTeamskanal, somTeamsMelding,
     løsForfallsdato, byggSjekkliste, sjekklisteTilGraph, byggPlanner, byggTeamskanal, byggTeamsMelding,
