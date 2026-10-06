@@ -353,6 +353,23 @@ function byggSeksjoner(def, svarPåNokkel) {
     }));
 }
 
+/**
+ * Feltet slik SKRIPTET leser det — type, tak på antall verdier, valgliste.
+ *
+ * Står det «maks 1» her mens editoren viser 5, er spørsmålet besvart med én
+ * gang: skriptet leser en annen definisjon enn den du redigerte, eller
+ * endringen er ikke lagret. Uten tallet i utskriften blir det en runde med
+ * gjetting, og den rundet vi 06.10.2026.
+ */
+function beskrivFelt(felt) {
+    const deler = [felt.Type];
+    if (felt.valg) {
+        deler.push(felt.maksValg === Infinity ? 'maks: alle' : `maks ${felt.maksValg}`);
+        deler.push(`${felt.valg.length} valg`);
+    }
+    return deler.join(', ');
+}
+
 /** Verdien av nøkkelfeltet på et eksisterende skjema — for idempotens. */
 function nokkelverdi(skjema, nokkel) {
     for (const s of (skjema?.Seksjoner || [])) {
@@ -419,7 +436,7 @@ async function main() {
 
     console.log(`Skjematype ${skjematypeId}: ${def.Skjema_navn || '(uten navn)'}`);
     console.log(`Overskrifter på rad ${linje + 1}. Koblet ${kobling.length} kolonne(r):`);
-    for (const k of kobling) console.log(`  ${k.overskrift}  →  ${k.felt.nokkel} «${k.felt.etikett}» (${k.felt.Type})`);
+    for (const k of kobling) console.log(`  ${k.overskrift}  →  ${k.felt.nokkel} «${k.felt.etikett}» (${beskrivFelt(k.felt)})`);
     if (ukoblede.length > 0) {
         console.log(`Hoppet over ${ukoblede.length} kolonne(r): ${ukoblede.join(', ')}`);
         // Og — like viktig — hvilke FELT som står igjen uten kolonne.
@@ -587,4 +604,4 @@ if (require.main === module) {
 }
 
 module.exports = { lesArgumenter, normaliser, finnOverskrift, feltKatalog, koble, tolkVerdi,
-    byggSeksjoner, nokkelverdi, finnValg, byggFerdigBehandling };
+    byggSeksjoner, nokkelverdi, finnValg, byggFerdigBehandling, beskrivFelt };

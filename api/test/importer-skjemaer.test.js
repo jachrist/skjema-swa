@@ -369,5 +369,30 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
     sjekk('foreslår rettefila', /Er det skrivefeil i arket, rett dem med --verdier/.test(kilde), true);
 }
 
+// ---------- koblingslista viser hva skriptet faktisk leser ----------
+{
+    // «Får feil på antall verdier selv om de er satt til 5» — og utskriften
+    // viste bare felttypen, så det fantes ingen måte å se om skriptet leste 5
+    // eller 1. Står taket i lista, er spørsmålet besvart uten en runde med
+    // gjetting.
+    const f = (over) => imp.feltKatalog({ Seksjoner: [{ Seksjon_nummer: 2, Felter: [
+        { Nummer: '01', Type: 'Flervalg-knapper', Tekst: 'Datapunkt',
+          Valg: [{ Tekst: 'TJENSTLIG' }, { Tekst: 'AVSKJERMET' }], ...over }] }] })[0];
+
+    sjekk('taket vises', imp.beskrivFelt(f({ Max_valg: 5 })), 'Flervalg-knapper, maks 5, 2 valg');
+    sjekk('uten tak vises 1', imp.beskrivFelt(f({})), 'Flervalg-knapper, maks 1, 2 valg');
+    sjekk('MerkAlle sier «alle», ikke Infinity',
+        imp.beskrivFelt(f({ MerkAlle: true })), 'Flervalg-dropdown, maks: alle, 2 valg'.replace('dropdown', 'knapper'));
+
+    // Fritekst har hverken tak eller valgliste — da skal det ikke stå noe om
+    // dem heller.
+    const fri = imp.feltKatalog({ Seksjoner: [{ Seksjon_nummer: 1, Felter: [
+        { Nummer: '01', Type: 'Tekst', Tekst: 'Vurdering' }] }] })[0];
+    sjekk('fritekst viser bare typen', imp.beskrivFelt(fri), 'Tekst');
+
+    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    sjekk('koblingslista bruker den', /\$\{beskrivFelt\(k\.felt\)\}/.test(kilde), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
