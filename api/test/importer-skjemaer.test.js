@@ -194,5 +194,84 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
     sjekk('status er et tall', typeof imp.lesArgumenter(['--status', '2']).status, 'number');
 }
 
+// ---------- behandlingen de importerte radene får ----------
+{
+    const MED_STEG = {
+        ...DEF,
+        Behandling: [{
+            Steg: 1, Stegnavn: 'Vurdering', Personer: ['dsl@mil.no'],
+            Beslutningsvalg: [
+                { Nummer: 1, Tekst: 'Godkjent' },
+                { Nummer: 2, Tekst: 'Avslått' },
+                { Nummer: 3, Tekst: 'Ompuss', Handling: 'ompuss' }
+            ]
+        }]
+    };
+    const steg = MED_STEG.Behandling[0];
+
+    // Teksten er det man ser i editoren og i registerfilteret — den er det man
+    // oppgir. Tallet godtas også, for to valg kan hete det samme.
+    sjekk('valg på tekst', imp.finnValg(steg, 'Godkjent').Nummer, 1);
+    sjekk('valg på nummer', imp.finnValg(steg, '2').Tekst, 'Avslått');
+    sjekk('kasus spiller ingen rolle', imp.finnValg(steg, 'godkjent').Nummer, 1);
+    sjekk('ukjent valg', imp.finnValg(steg, 'Innvilget'), null);
+    sjekk('tomt valg', imp.finnValg(steg, ''), null);
+
+    const b = imp.byggFerdigBehandling(MED_STEG, 'Godkjent', 'dsl@mil.no', '2026-10-06T10:00:00.000Z', 'Vurdert i regneark');
+    sjekk('ett steg', b.length, 1);
+    sjekk('beslutningen er nummeret', b[0].Beslutning, 1);
+    sjekk('behandler er satt', b[0].BehandletAv, 'dsl@mil.no');
+    sjekk('dato er satt', b[0].BehandletDato, '2026-10-06T10:00:00.000Z');
+    sjekk('kommentaren følger med', b[0].Kommentar, 'Vurdert i regneark');
+    // Definisjonen skal ikke endres av å bygge behandlingen.
+    sjekk('definisjonen er urørt', MED_STEG.Behandling[0].Beslutning, undefined);
+
+    // Det som betyr noe er at de EKTE leserne forstår formen. En egen form
+    // ville lagret seg fint og vært usynlig i registerfilteret.
+    const { sisteBeslutning } = require('../src/lib/datauttrekk');
+    // `?.` med vilje: svarer leseren null fordi formen er feil, skal testen
+    // melde det som en feil — ikke krasje og ta med seg sjekkene under.
+    sjekk('sisteBeslutning leser utfallet', sisteBeslutning({ Behandling: b })?.tekst, 'Godkjent');
+    sjekk('og stegnavnet', sisteBeslutning({ Behandling: b })?.steg, 'Vurdering');
+    // Status 5 og «alle steg ferdig» må være enige, ellers står et avsluttet
+    // skjema med et steg som venter.
+    const { alleStegFerdig } = require('../src/lib/behandling');
+    sjekk('alle steg er ferdige', alleStegFerdig({ Behandling: b }), true);
+
+    // Et navn som ikke finnes skal stoppe importen, ikke skrive 270 rader med
+    // et beslutningstall ingen kjenner igjen.
+    let kastet = null;
+    try { imp.byggFerdigBehandling(MED_STEG, 'Innvilget', 'x', 'y', ''); } catch (e) { kastet = e.message; }
+    sjekk('ukjent beslutning stopper', !!kastet, true);
+    sjekk('og sier hvilke som finnes', /Godkjent \(1\), Avslått \(2\), Ompuss \(3\)/.test(kastet || ''), true);
+
+    // Flere steg: alle får samme utfall. Regnearket sier ingenting om at det
+    // ene skulle vært godkjent og det neste avslått.
+    const toSteg = { Behandling: [steg, { ...steg, Steg: 2, Stegnavn: 'Kontroll' }] };
+    const b2 = imp.byggFerdigBehandling(toSteg, 'Avslått', 'a@b.no', 'd', '');
+    sjekk('begge steg avgjort', b2.map(x => x.Beslutning), [2, 2]);
+    sjekk('og skjemaet er ferdig', alleStegFerdig({ Behandling: b2 }), true);
+}
+
+// ---------- importen stopper når utfallet ikke er oppgitt ----------
+{
+    // Uten dette ville 270 rader landet som «Ikke behandlet» i registerets
+    // utfallsfilter — og det oppdages først når noen filtrerer og ikke finner
+    // dem. Et valg man ikke tar bevisst, skal ikke tas stille.
+    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    sjekk('vakten finnes',
+        /if \(harBehandling && args\.status === 5 && !args\.beslutning && !args\['uten-behandling'\]\)/.test(kilde), true);
+    // Feilmeldingen må si hva man KAN gjøre, ikke bare at noe mangler.
+    for (const utvei of ['--beslutning', '--uten-behandling', '--status 2']) {
+        sjekk(`feilmeldingen nevner ${utvei}`, kilde.includes(utvei), true);
+    }
+    // Og den må komme før fila leses — ikke etter at 270 rader er validert.
+    sjekk('vakten står før lesingen',
+        kilde.indexOf("!args['uten-behandling']") < kilde.indexOf('const matrise = lesMatrise(fil);'), true);
+    // Beslutningsnavnet valideres like tidlig.
+    sjekk('navnet valideres før lesingen',
+        kilde.indexOf('byggFerdigBehandling(def, args.beslutning, innsender') < kilde.indexOf('const matrise = lesMatrise(fil);'), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
