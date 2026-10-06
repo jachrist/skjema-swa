@@ -207,6 +207,29 @@
         .status-badge.status-avsluttet { background: var(--status-avsluttet); }
         .status-badge.status-ukjent { background: var(--text-secondary); }
 
+        .panel-import {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            background: var(--bg-container);
+            padding: 16px 18px;
+            margin-bottom: 14px;
+        }
+        .import-hjelp { font-size: 12px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 10px; }
+        .import-rad { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .import-valg { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+        .import-valg > label, .import-valg > details { font-size: 12px; font-weight: 600; flex: 1 1 220px; }
+        .import-valg small { font-weight: 400; color: var(--text-secondary); display: block; margin: 2px 0 4px 0; }
+        .import-valg details { flex-basis: 100%; }
+        .import-valg details summary { cursor: pointer; color: var(--accent); margin-bottom: 8px; }
+        .import-valg textarea { font-family: 'SF Mono', Menlo, monospace; font-size: 11px; min-height: 0; }
+        .imp-boks {
+            margin-top: 10px; padding: 10px 12px; border-radius: var(--radius-sm);
+            background: var(--bg-svar); font-size: 12px; line-height: 1.6;
+        }
+        .imp-boks.feil { background: rgba(255, 59, 48, 0.08); }
+        .imp-boks code { font-size: 11px; }
+        .imp-liste { margin: 4px 0 0 0; padding-left: 18px; }
+
         .tom-melding {
             color: var(--text-secondary);
             text-align: center;
@@ -387,6 +410,7 @@
         <div class="topprad">
             <a href="/velgskjematype.html" class="tilbake-lenke" data-oversiktslenke>← Til skjemaoversikten</a>
             <div class="brukerinfo">
+                <a id="lenke-import" class="tilbake-lenke" style="margin-right: 12px; cursor: pointer;" onclick="visImport()">📥 Importer</a>
                 <a id="lenke-datauttrekk" class="tilbake-lenke" style="margin-right: 12px; display: none;" href="#">Datauttrekk →</a>
                 <span class="upn" id="upn">…</span>
             </div>
@@ -396,6 +420,49 @@
             <div id="systemmerke-plass"></div>
         </div>
         <p class="undertittel" id="undertittel">Laster…</p>
+
+        <div class="panel-import" id="import-panel" style="display: none;">
+            <h2 style="margin: 0 0 8px 0; font-size: 16px;">Importer skjemaer fra regneark</h2>
+            <div class="import-hjelp">
+                Én rad blir ett skjema. Kolonnene kobles til felt på etiketten; overskriftsraden
+                finnes automatisk, også under en tittelrad. Verdier i valgfelt må finnes i
+                valglista — flere verdier i samme celle skilles med <code>/</code>.
+                <strong>Ingenting lagres før du bekrefter.</strong>
+            </div>
+            <div class="import-rad">
+                <input type="file" id="imp-fil" accept=".xlsx,.xlsm,.xls,.csv,.txt" onchange="importForhandsvis()">
+                <button class="knapp sekundær mini" onclick="skjulImport()">Lukk</button>
+            </div>
+            <div class="import-valg">
+                <label>Nøkkelfelt
+                    <small>(kolonnen som identifiserer raden — rader som finnes fra før hoppes over)</small>
+                    <input type="text" id="imp-nokkelfelt" placeholder="f.eks. Datapunkt (navn)" oninput="importForhandsvis()">
+                </label>
+                <label id="imp-beslutning-rad" style="display: none;">Utfall på behandlingsstegene
+                    <small>(radene er alt vurdert — uten et utfall blir de «Ikke behandlet» i filteret)</small>
+                    <select id="imp-beslutning" onchange="importForhandsvis()"></select>
+                </label>
+                <label>Status
+                    <select id="imp-status" onchange="importForhandsvis()">
+                        <option value="5">Avsluttet — ferdig vurdert</option>
+                        <option value="2">Til behandling</option>
+                    </select>
+                </label>
+                <details>
+                    <summary>Avansert — kolonnekobling, retting av verdier</summary>
+                    <label>Kolonnekobling <small>(JSON: kolonneoverskrift → feltnøkkel)</small>
+                        <textarea id="imp-kolonner" rows="3" placeholder='{ "Datapunkt (navn)": "1-03" }' oninput="importForhandsvis()"></textarea>
+                    </label>
+                    <label>Retting av verdier <small>(JSON: verdien i arket → verdien i valglista)</small>
+                        <textarea id="imp-verdier" rows="3" placeholder='{ "TJENESTLIG": "TJENSTLIG" }' oninput="importForhandsvis()"></textarea>
+                    </label>
+                    <label>Skilletegn for flere verdier i én celle
+                        <input type="text" id="imp-skilletegn" value="/" maxlength="3" oninput="importForhandsvis()">
+                    </label>
+                </details>
+            </div>
+            <div id="imp-resultat" style="margin-top: 12px;"></div>
+        </div>
 
         <div class="to-spalter">
             <div class="venstre">
@@ -518,6 +585,143 @@
                 visListeMelding('Kunne ikke hente skjemaer: ' + e.message);
             }
         }
+
+        // ==================== IMPORT FRA REGNEARK ====================
+        //
+        // Panelet sender fila to ganger: først som tørrkjøring for å vise
+        // planen, så med bekreft=true for å utføre den. Serveren kjører samme
+        // kode begge ganger — og den samme som `scripts/importer-skjemaer.js`
+        // — så det som vises er det som skjer.
+
+        window.visImport = () => {
+            document.getElementById('import-panel').style.display = '';
+            byggBeslutningsvalg();
+        };
+        window.skjulImport = () => {
+            document.getElementById('import-panel').style.display = 'none';
+            document.getElementById('imp-fil').value = '';
+            document.getElementById('imp-resultat').innerHTML = '';
+        };
+
+        /**
+         * Utfallsvalget fylles fra skjematypens egne beslutningsvalg.
+         *
+         * Har skjematypen ingen behandlingssteg, skjules raden helt — et tomt
+         * nedtrekk er bare i veien, og serveren krever da ikke noe utfall.
+         */
+        function byggBeslutningsvalg() {
+            const rad = document.getElementById('imp-beslutning-rad');
+            const velger = document.getElementById('imp-beslutning');
+            const steg = (state.skjematype?.Behandling || [])[0];
+            const valg = (steg?.Beslutningsvalg || []).map(v => v.Tekst).filter(Boolean);
+            if (valg.length === 0) { rad.style.display = 'none'; return; }
+            rad.style.display = '';
+            velger.innerHTML = valg.map(v => `<option value="${escapeAttr(v)}">${escHtml(v)}</option>`).join('')
+                + '<option value="">(uten behandling — blir «Ikke behandlet»)</option>';
+        }
+
+        function importSkjema(bekreft) {
+            const fil = document.getElementById('imp-fil').files[0];
+            if (!fil) return null;
+            const beslutning = document.getElementById('imp-beslutning').value;
+            const fd = new FormData();
+            fd.append('fil', fil);
+            if (bekreft) fd.append('bekreft', 'true');
+            fd.append('status', document.getElementById('imp-status').value);
+            fd.append('nokkelfelt', document.getElementById('imp-nokkelfelt').value.trim());
+            fd.append('kolonner', document.getElementById('imp-kolonner').value.trim());
+            fd.append('verdier', document.getElementById('imp-verdier').value.trim());
+            fd.append('skilletegn', document.getElementById('imp-skilletegn').value || '/');
+            if (beslutning) fd.append('beslutning', beslutning);
+            // Tomt valg i nedtrekket er et BEVISST valg om å stå uten
+            // behandling. Uten dette flagget ville serveren stoppet oss.
+            else if (document.getElementById('imp-beslutning-rad').style.display !== 'none') {
+                fd.append('utenBehandling', 'true');
+            }
+            return fetch(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/import`, { method: 'POST', body: fd })
+                .then(async res => {
+                    const data = await res.json().catch(() => ({ melding: `${res.status} ${res.statusText}` }));
+                    if (!res.ok) { const e = new Error(data.melding || 'Import feilet'); e.data = data; throw e; }
+                    return data;
+                });
+        }
+
+        window.importForhandsvis = async () => {
+            const el = document.getElementById('imp-resultat');
+            if (!document.getElementById('imp-fil').files[0]) { el.innerHTML = ''; return; }
+            el.innerHTML = '<div class="imp-boks">Leser fila…</div>';
+            try {
+                el.innerHTML = tegnImportPlan(await importSkjema(false));
+            } catch (e) {
+                el.innerHTML = `<div class="imp-boks feil">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        function tegnImportPlan(r) {
+            const s = r.sammendrag;
+            const kobling = r.kobling.map(k =>
+                `<li>${escHtml(k.overskrift)} → <code>${escHtml(k.nokkel)}</code> «${escHtml(k.etikett)}» (${escHtml(k.beskrivelse)})</li>`).join('');
+            // Kolonner uten felt OG felt uten kolonne. Den andre halvdelen er
+            // den som sier hva som må kobles — uten den må man gjette hva
+            // feltet heter.
+            const ukoblet = r.ukoblede.length === 0 ? '' : `
+                <div class="imp-boks">
+                    <strong>Hoppet over ${r.ukoblede.length} kolonne(r):</strong> ${escHtml(r.ukoblede.join(', '))}
+                    ${r.ledige.length > 0 ? `<br><strong>Felt uten kolonne:</strong>
+                        <ul class="imp-liste">${r.ledige.map(f =>
+                            `<li><code>${escHtml(f.nokkel)}</code> «${escHtml(f.etikett)}» (${escHtml(f.beskrivelse)})</li>`).join('')}</ul>
+                        Koble dem under «Avansert», f.eks.
+                        <code>{ "${escHtml(r.ukoblede[0])}": "${escHtml(r.ledige[0].nokkel)}" }</code>` : ''}
+                </div>`;
+            const feil = r.grupper.length === 0 ? '' : `
+                <div class="imp-boks feil">
+                    <strong>${r.grupper.length} verdi(er) må rettes i ${s.feil} celle(r):</strong>
+                    <ul class="imp-liste">${r.grupper.map(g =>
+                        `<li>«${escHtml(g.kolonne)}» × ${g.antall} (rad ${escHtml(g.rader.join(', '))}${g.antall > g.rader.length ? ', …' : ''})<br>${escHtml(g.melding)}</li>`).join('')}</ul>
+                    ${r.grupper.some(g => g.ukjent) ? `Er det skrivefeil i arket, rett dem under «Avansert»:
+                        <code>{ ${r.grupper.filter(g => g.ukjent).map(g => `"${escHtml(g.ukjent)}": ""`).join(', ')} }</code>` : ''}
+                </div>`;
+            const klar = s.feil === 0 && s.nye > 0;
+            return `
+                <div class="imp-boks">
+                    <strong>${escHtml(r.filnavn)}</strong> — overskrifter på rad ${r.overskriftsrad}.
+                    Koblet ${r.kobling.length} kolonne(r):
+                    <ul class="imp-liste">${kobling}</ul>
+                    ${r.nokkelfelt
+                        ? `Nøkkelfelt: <code>${escHtml(r.nokkelfelt.nokkel)}</code> «${escHtml(r.nokkelfelt.etikett)}»`
+                        : '<em>Uten nøkkelfelt vil en ny kjøring lage dubletter.</em>'}
+                </div>
+                ${ukoblet}
+                ${feil}
+                <div class="imp-boks">
+                    <strong>${s.nye}</strong> rad(er) klar til import,
+                    <strong>${s.finnesFraFor}</strong> finnes fra før,
+                    <strong>${s.feil}</strong> feil.
+                </div>
+                ${klar ? `<div class="knapp-rad" style="margin-top: 10px;">
+                    <button class="knapp primær" onclick="importUtfor()">Importer ${s.nye} skjema</button>
+                </div>` : ''}`;
+        }
+
+        window.importUtfor = async () => {
+            const el = document.getElementById('imp-resultat');
+            if (!confirm('Importer radene nå? De skrives direkte, uten varsling.')) return;
+            el.innerHTML = '<div class="imp-boks">Importerer…</div>';
+            try {
+                const r = await importSkjema(true);
+                el.innerHTML = `<div class="imp-boks">✓ Importerte <strong>${r.skrevet || 0}</strong> skjema fra ${escHtml(r.filnavn)}.</div>`;
+                // Lista må hentes på nytt — radene er der nå.
+                const alle = await api.get(`/api/skjema-liste/${encodeURIComponent(skjematypeId)}`);
+                state.alle = alle;
+                document.getElementById('undertittel').textContent =
+                    `${state.alle.length} skjema${state.alle.length === 1 ? '' : 'er'} totalt.`;
+                bygFeltFiltre();
+                byggUtfallFilter();
+                filtrer();
+            } catch (e) {
+                el.innerHTML = `<div class="imp-boks feil">${escHtml(e.message)}</div>`;
+            }
+        };
 
         function visListeMelding(tekst) {
             document.getElementById('liste').innerHTML = `<div class="tom-melding">${escHtml(tekst)}</div>`;

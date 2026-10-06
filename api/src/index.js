@@ -9,6 +9,7 @@ require('./functions/skjematyper');
 require('./functions/roller-swa');
 require('./functions/tilgang-avvist');
 require('./functions/skjemaer');
+require('./functions/skjema-import');
 require('./functions/vedlegg');
 require('./functions/seed-eksempel');
 require('./functions/postnumre');
