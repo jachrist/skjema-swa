@@ -29,11 +29,11 @@
  *   `byggSeksjoner` skrev, ellers hopper ikke en ny kjøring over radene som
  *   finnes — den lager dubletter av alle 270.
  *
- * Kjøres med:  node api/test/importer-skjemaer.test.js
+ * Kjøres med:  node api/test/skjema-import.test.js
  */
 const fs = require('fs');
 const path = require('path');
-const imp = require('../../scripts/importer-skjemaer.js');
+const imp = require('../src/lib/skjema-import');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -180,8 +180,10 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
     sjekk('uten skjema gir tomt', imp.nokkelverdi(null, '1-02'), '');
 }
 
-// ---------- argumenter ----------
+// ---------- argumenter (kommandolinja) ----------
 {
+    const cli = require('../../scripts/importer-skjemaer.js');
+    const imp = cli; // bare lesArgumenter hentes herfra
     const a = imp.lesArgumenter(['--fil', 'x.xlsx', '--skjematype', '130', '--innsender', 'a@b.no']);
     sjekk('argumenter leses', [a.fil, a.skjematype, a.innsender], ['x.xlsx', '130', 'a@b.no']);
     // Tørrkjøring er standard. En import som skriver med mindre du ber om
@@ -258,19 +260,30 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
     // Uten dette ville 270 rader landet som «Ikke behandlet» i registerets
     // utfallsfilter — og det oppdages først når noen filtrerer og ikke finner
     // dem. Et valg man ikke tar bevisst, skal ikke tas stille.
-    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
-    sjekk('vakten finnes',
-        /if \(harBehandling && args\.status === 5 && !args\.beslutning && !args\['uten-behandling'\]\)/.test(kilde), true);
-    // Feilmeldingen må si hva man KAN gjøre, ikke bare at noe mangler.
-    for (const utvei of ['--beslutning', '--uten-behandling', '--status 2']) {
-        sjekk(`feilmeldingen nevner ${utvei}`, kilde.includes(utvei), true);
-    }
-    // Og den må komme før fila leses — ikke etter at 270 rader er validert.
-    sjekk('vakten står før lesingen',
-        kilde.indexOf("!args['uten-behandling']") < kilde.indexOf('const matrise = lesMatrise(fil);'), true);
-    // Beslutningsnavnet valideres like tidlig.
-    sjekk('navnet valideres før lesingen',
-        kilde.indexOf('byggFerdigBehandling(def, args.beslutning, innsender') < kilde.indexOf('const matrise = lesMatrise(fil);'), true);
+    const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'skjema-import.js'), 'utf8');
+    const DEF = { Behandling: [{ Steg: 1, Stegnavn: 'Vurdering',
+        Beslutningsvalg: [{ Nummer: 1, Tekst: 'Godkjent' }, { Nummer: 2, Tekst: 'Avslått' }] }] };
+
+    let m = null;
+    try { imp.krevBeslutning(DEF, { status: 5 }); } catch (e) { m = e.message; }
+    sjekk('vakten slår til', !!m, true);
+    sjekk('og nevner valgene', /Godkjent, Avslått/.test(m || ''), true);
+
+    // Kallerens egne ord for utveiene — kommandolinja snakker om flagg,
+    // grensesnittet om knapper. Regelen er den samme.
+    let h = null;
+    try { imp.krevBeslutning(DEF, { status: 5, hjelp: '  --beslutning "Godkjent"' }); } catch (e) { h = e.message; }
+    sjekk('hjelpeteksten følger med', /--beslutning "Godkjent"/.test(h || ''), true);
+
+    // De tre utveiene slipper gjennom.
+    const gaarGjennom = (o) => { try { imp.krevBeslutning(DEF, o); return true; } catch { return false; } };
+    sjekk('med beslutning', gaarGjennom({ status: 5, beslutning: 'Godkjent' }), true);
+    sjekk('uten behandling, bevisst', gaarGjennom({ status: 5, utenBehandling: true }), true);
+    sjekk('til behandling', gaarGjennom({ status: 2 }), true);
+    sjekk('uten behandlingssteg', gaarGjennom.call(null, { status: 5 }) || imp.krevBeslutning({}, { status: 5 }) === undefined, true);
+
+    // Et navn som ikke finnes stoppes HER, ikke etter at 270 rader er lest.
+    sjekk('ukjent beslutning stoppes av vakten', gaarGjennom({ status: 5, beslutning: 'Innvilget' }), false);
 }
 
 // ---------- diagnostikken når en kolonne ikke treffer ----------
@@ -279,20 +292,19 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
     // etterfulgt av «Fant ikke nøkkelfeltet». Begge var sanne, og ingen av dem
     // sa hva feltet i skjematypen HETER — den som leser må tilbake til
     // editoren for å gjette. Svaret finnes i katalogen og er gratis å skrive.
-    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'skjema-import.js'), 'utf8');
 
     sjekk('ledige felt regnes ut',
         /const ledige = katalog\.filter\(f => !brukte\.has\(f\.nokkel\)\);/.test(kilde), true);
-    sjekk('og skrives ut med nøkkel, etikett og type',
-        /Felt uten kolonne \(\$\{ledige\.length\}\)/.test(kilde), true);
-    // Et ferdig eksempel å lime inn er forskjellen på «nå vet jeg hva som er
-    // galt» og «nå vet jeg hva jeg skal gjøre».
-    sjekk('med et ferdig --kolonner-eksempel', /Koble dem med --kolonner/.test(kilde), true);
-
     sjekk('nøkkelfeil lister koblede kolonner',
-        /Det må være en kolonne som er koblet\. Koblede kolonner:/.test(kilde), true);
-    sjekk('og skiller «finnes ikke i fila» fra «traff ingen felt»',
-        /ER i fila, men traff ingen felt/.test(kilde), true);
+        /Det må være en kolonne som er koblet\./.test(kilde), true);
+
+    // Begge overflatene skriver dem ut — kommandolinja og registeret.
+    const cli = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    sjekk('kommandolinja viser ledige felt', /Felt uten kolonne \(\$\{plan\.ledige\.length\}\)/.test(cli), true);
+    sjekk('med et ferdig --kolonner-eksempel', /Koble dem med --kolonner/.test(cli), true);
+    const reg = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'register.html'), 'utf8');
+    sjekk('registeret viser ledige felt', /Felt uten kolonne:/.test(reg), true);
 }
 
 // ---------- flere verdier i én celle, og skrivefeil ----------
@@ -357,16 +369,30 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
 {
     // 270 rader med fire skrivefeil gir 300 enkeltfeil. Den lista er ikke til
     // å jobbe med; gruppert på verdi er den fire ting å rette.
-    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
-    sjekk('feilene grupperes', /const grupper = new Map\(\);/.test(kilde), true);
-    sjekk('på kolonne og verdi, ikke på rad',
-        /const n = `\$\{f\.kolonne\}\\u0000\$\{f\.ukjent \?\? f\.melding\}`;/.test(kilde), true);
-    sjekk('med antall', /g\.antall\+\+;/.test(kilde), true);
+    const kilde = fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'skjema-import.js'), 'utf8');
+    // Kjør den ekte grupperingen i stedet for å lese etter den.
+    const feilListe = [
+        { radNr: 3, kolonne: 'Datapunkt', ukjent: 'TJENESTLIG', melding: 'a' },
+        { radNr: 9, kolonne: 'Datapunkt', ukjent: 'TJENESTLIG', melding: 'a' },
+        { radNr: 4, kolonne: 'Datapunkt', ukjent: 'AVSKJERMA', melding: 'b' },
+        { radNr: 5, kolonne: 'Kategori', ukjent: 'TJENESTLIG', melding: 'c' }
+    ];
+    const g = imp.grupperFeil(feilListe);
+    sjekk('tre grupper, ikke fire feil', g.length, 3);
+    sjekk('de vanligste først', g[0].antall, 2);
+    sjekk('gruppert på kolonne OG verdi',
+        g.map(x => `${x.kolonne}/${x.ukjent}`), ['Datapunkt/TJENESTLIG', 'Datapunkt/AVSKJERMA', 'Kategori/TJENESTLIG']);
+    sjekk('radnumrene følger med', g[0].rader, [3, 9]);
     // Noen radnumre å slå opp i arket, men ikke alle 270.
-    sjekk('og noen radnumre', /if \(g\.rader\.length < 5\) g\.rader\.push\(f\.radNr\);/.test(kilde), true);
-    sjekk('de vanligste først', /sort\(\(a, b\) => b\.antall - a\.antall\)/.test(kilde), true);
-    // Et ferdig utkast til rettefila sparer en avskrift.
-    sjekk('foreslår rettefila', /Er det skrivefeil i arket, rett dem med --verdier/.test(kilde), true);
+    const mange = imp.grupperFeil(Array.from({ length: 30 }, (_, i) => ({ radNr: i + 2, kolonne: 'K', ukjent: 'X', melding: 'm' })));
+    sjekk('maks fem radnumre', mange[0].rader.length, 5);
+    sjekk('men antallet er riktig', mange[0].antall, 30);
+
+    // Et ferdig utkast til rettefila sparer en avskrift — begge overflater.
+    const cli2 = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    sjekk('kommandolinja foreslår rettefila', /Er det skrivefeil i arket, rett dem med --verdier/.test(cli2), true);
+    const reg2 = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'register.html'), 'utf8');
+    sjekk('registeret foreslår den også', /Er det skrivefeil i arket, rett dem under «Avansert»/.test(reg2), true);
 }
 
 // ---------- koblingslista viser hva skriptet faktisk leser ----------
@@ -390,8 +416,138 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
         { Nummer: '01', Type: 'Tekst', Tekst: 'Vurdering' }] }] })[0];
     sjekk('fritekst viser bare typen', imp.beskrivFelt(fri), 'Tekst');
 
-    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
-    sjekk('koblingslista bruker den', /\$\{beskrivFelt\(k\.felt\)\}/.test(kilde), true);
+    // Begge overflatene viser beskrivelsen — kommandolinja i teksten,
+    // registeret i koblingslista fra serveren.
+    const cli3 = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+    sjekk('kommandolinja bruker den', /\$\{beskrivFelt\(k\.felt\)\}/.test(cli3), true);
+    const ep = fs.readFileSync(path.join(__dirname, '..', 'src', 'functions', 'skjema-import.js'), 'utf8');
+    sjekk('endepunktet sender den', /beskrivelse: imp\.beskrivFelt\(k\.felt\)/.test(ep), true);
+}
+
+// ---------- hele planen, som begge overflatene kaller den ----------
+{
+    // `lagPlan` er delt mellom kommandolinja og endepunktet. Delte
+    // småfunksjoner hadde ikke vært nok: REKKEFØLGEN — finn overskriften,
+    // koble, tolk, grupper, hopp over det som finnes — er selve regelen, og
+    // to kopier av den ville før eller siden gitt to svar på samme fil.
+    const DEF = { Skjema_navn: 'Verdivurdering', Seksjoner: [{ Seksjon_nummer: 1, Felter: [
+        { Nummer: '01', Type: 'Tekst', Tekst: 'Datapunkt navn' },
+        { Nummer: '02', Type: 'Flervalg-knapper', Tekst: 'Datapunkt', Max_valg: 5,
+          Valg: [{ Tekst: 'TJENSTLIG' }, { Tekst: 'AVSKJERMET' }] }
+    ] }] };
+    const MATRISE = [
+        ['VERKTØY FOR KARTLEGGING AV INFORMASJONSVERDI', '', ''],
+        ['Datapunkt (navn)', 'Datapunkt', 'Ubrukt kolonne'],
+        ['epost_privat', 'TJENSTLIG/AVSKJERMET', 'x'],
+        ['sap_brukernavn', 'TJENESTLIG', 'y'],
+        ['', '', '']
+    ];
+    const kolonner = { 'Datapunkt (navn)': '1-01' };
+    // Kaster planen fordi en regel er brutt, skal testen MELDE det — ikke dø
+    // og ta med seg sjekkene under.
+    const TOM = { linje: -1, kobling: [], ukoblede: [], ledige: [], nokkelFelt: null,
+        rader: [], feil: [], hoppet: [], grupper: [] };
+    const planTrygt = (navn, o) => {
+        try { return imp.lagPlan(o); }
+        catch (e) { sjekk(`${navn}: planen lot seg lage`, e.message, null); return TOM; }
+    };
+
+    const plan = planTrygt('grunntilfellet',
+        { matrise: MATRISE, def: DEF, opsjoner: { kolonner, nokkelfelt: 'Datapunkt (navn)' } });
+
+    // Overskriftsraden finnes under tittelraden — og en kolonne som bare
+    // kobles manuelt teller med. Uten den regelen kunne et ark med to slike
+    // ikke finne raden i det hele tatt, og feilmeldingen pekte da på
+    // feltnavnene, som var helt riktige.
+    sjekk('overskriftsraden', plan.linje, 1);
+    sjekk('koblet begge', plan.kobling.map(k => k.felt.nokkel), ['1-01', '1-02']);
+    sjekk('ukoblet kolonne meldes', plan.ukoblede, ['Ubrukt kolonne']);
+    sjekk('ingen ledige felt igjen', plan.ledige, []);
+    sjekk('nøkkelfeltet er koblet', plan.nokkelFelt?.nokkel, '1-01');
+
+    // Tomme rader hoppes over uten å telle som feil.
+    sjekk('én rad klar, én med feil', [plan.rader.length, plan.feil.length], [1, 1]);
+    sjekk('flere verdier i samme celle', plan.rader[0]?.svar['1-02'], ['TJENSTLIG', 'AVSKJERMET']);
+    sjekk('feilen er gruppert', plan.grupper.map(g => g.ukjent), ['TJENESTLIG']);
+
+    // Med rettefila går begge gjennom.
+    const rettet = planTrygt('med retting', { matrise: MATRISE, def: DEF,
+        opsjoner: { kolonner, verdier: { TJENESTLIG: 'TJENSTLIG' }, nokkelfelt: 'Datapunkt (navn)' } });
+    sjekk('retting fjerner feilen', [rettet.rader.length, rettet.feil.length], [2, 0]);
+
+    // Idempotens: en rad som finnes fra før hoppes over.
+    const fraFor = [{ Seksjoner: imp.byggSeksjoner(DEF, new Map([['1-01', ['epost_privat']]])) }];
+    const andre = planTrygt('andre kjøring', { matrise: MATRISE, def: DEF, eksisterende: fraFor,
+        opsjoner: { kolonner, verdier: { TJENESTLIG: 'TJENSTLIG' }, nokkelfelt: 'Datapunkt (navn)' } });
+    sjekk('kjent rad hoppes over', andre.hoppet.map(h => h.verdi), ['epost_privat']);
+    sjekk('resten importeres', andre.rader.length, 1);
+
+    // Nøkkelfeltet må være en KOBLET kolonne — ellers er det tomt på hver rad,
+    // og idempotensen virker ikke uansett.
+    let m = null;
+    try { imp.lagPlan({ matrise: MATRISE, def: DEF, opsjoner: { kolonner, nokkelfelt: 'Finnes ikke' } }); }
+    catch (e) { m = e.message; }
+    sjekk('ukjent nøkkelfelt stoppes', !!m, true);
+    sjekk('og de koblede listes', /"Datapunkt \(navn\)", "Datapunkt"/.test(m || ''), true);
+
+    // Uten koblingsfila treffer bare én kolonne et feltnavn — og da er det
+    // ikke nok til å kjenne igjen overskriftsraden.
+    let u = null;
+    try { imp.lagPlan({ matrise: MATRISE, def: DEF, opsjoner: {} }); } catch (e) { u = e.message; }
+    sjekk('for få kjente navn gir forklaring', /Fant ingen overskriftsrad/.test(u || ''), true);
+    sjekk('og peker på koblingsfila', /koble dem med en koblingsfil/i.test(u || ''), true);
+}
+
+// ---------- endepunktet og panelet kaller den samme planen ----------
+{
+    const les = (...p) => fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8');
+    const ep = les('api', 'src', 'functions', 'skjema-import.js');
+    const cli = les('scripts', 'importer-skjemaer.js');
+    const reg = les('frontend', 'register.html');
+
+    // Begge overflatene kaller lagPlan. Det er hele poenget med modulen: en
+    // import fra nettleseren og en fra terminalen skal gi samme resultat.
+    sjekk('endepunktet kaller lagPlan', /imp\.lagPlan\(\{/.test(ep), true);
+    sjekk('kommandolinja kaller lagPlan', /lagPlan\(\{ matrise:/.test(cli), true);
+    // Og ingen av dem har sin egen kopi av lesingen.
+    for (const [navn, kode] of [['endepunktet', ep], ['kommandolinja', cli]]) {
+        sjekk(`${navn} har ingen egen radløkke`, /for \(let i = linje \+ 1;/.test(kode), false);
+        sjekk(`${navn} har ingen egen kobling`, /function koble\(/.test(kode), false);
+    }
+
+    // Tørrkjøring er standard. En import som skriver med mindre du ber om det
+    // er feil vei rundt — og her er det 270 rader som står på spill.
+    sjekk('bekreft kreves for å skrive', /const bekreft = String\(formData\.get\('bekreft'\) \|\| ''\) === 'true';/.test(ep), true);
+    // `indexOf` gir -1 når linja mangler, og -1 er mindre enn alt — en
+    // sammenligning alene ville bestått på en fjernet retur. Finn den først.
+    const iRetur = ep.indexOf('if (!bekreft) return { jsonBody: forhåndsvisning };');
+    const iSkriv = ep.indexOf('await forekomstStorage.lagreSkjema');
+    sjekk('tørrkjøringen returnerer', iRetur > -1, true);
+    sjekk('og gjør det før skrivingen', iRetur > -1 && iSkriv > -1 && iRetur < iSkriv, true);
+    // Feil stopper utførelsen også når noen bekrefter likevel.
+    sjekk('feil stopper utførelsen', /if \(plan\.feil\.length > 0\) \{\s*\n\s*return \{ status: 400/.test(ep), true);
+
+    // Eier, ikke bare admin: den som forvalter et register er eier av
+    // skjematypen og skal kunne fylle det uten å gå via noen andre.
+    sjekk('eier eller admin', /harEierTilgang\(skjematypeId, upn\)/.test(ep), true);
+    sjekk('admin alene er ikke nok', /if \(!erAdmin\(upn\)\) return \{ status: 403/.test(ep), false);
+
+    // Importen går forbi lagreSkjema-endepunktet nettopp for å unngå 270
+    // varslinger. Det skal stå i koden, ikke bare i hodet på den som skrev den.
+    sjekk('ingen varsling fra importen', /sendBehandlerVarsling|sendBeslutningVarsling/.test(ep), false);
+    sjekk('radene merkes som importert', /Importert: \{ Fra: fil\.name, Rad: r\.radNr/.test(ep), true);
+    sjekk('og havner i hendelsesloggen', /Type: 'skjema\.import'/.test(ep), true);
+
+    // Panelet
+    sjekk('registeret har importknappen', /onclick="visImport\(\)"/.test(reg), true);
+    sjekk('og sender til endepunktet', /\/import`, \{ method: 'POST', body: fd \}/.test(reg), true);
+    sjekk('tørrkjøring først', /importSkjema\(false\)/.test(reg), true);
+    sjekk('så bekreftelse', /importSkjema\(true\)/.test(reg), true);
+    // Utfallsvalget fylles fra skjematypen, ikke fra en fast liste.
+    sjekk('utfallene kommer fra skjematypen',
+        /\(steg\?\.Beslutningsvalg \|\| \[\]\)\.map\(v => v\.Tekst\)/.test(reg), true);
+    // Lista hentes på nytt etter import — ellers ser det ut som ingenting skjedde.
+    sjekk('lista oppdateres etterpå', /api\.get\(`\/api\/skjema-liste/.test(reg.split('importUtfor').pop()), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);
