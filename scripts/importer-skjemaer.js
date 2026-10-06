@@ -339,7 +339,23 @@ async function main() {
     console.log(`Skjematype ${skjematypeId}: ${def.Skjema_navn || '(uten navn)'}`);
     console.log(`Overskrifter på rad ${linje + 1}. Koblet ${kobling.length} kolonne(r):`);
     for (const k of kobling) console.log(`  ${k.overskrift}  →  ${k.felt.nokkel} «${k.felt.etikett}» (${k.felt.Type})`);
-    if (ukoblede.length > 0) console.log(`Hoppet over ${ukoblede.length} kolonne(r): ${ukoblede.join(', ')}`);
+    if (ukoblede.length > 0) {
+        console.log(`Hoppet over ${ukoblede.length} kolonne(r): ${ukoblede.join(', ')}`);
+        // Og — like viktig — hvilke FELT som står igjen uten kolonne.
+        //
+        // Uten denne lista sier skriptet bare at en kolonne ikke traff, og
+        // den som leser må gjette hva feltet heter i skjematypen. Skal
+        // «Datapunkt (navn)» kobles, må man vite at feltet heter noe annet,
+        // og hva. Svaret finnes her, og det er gratis å skrive det ut.
+        const brukte = new Set(kobling.map(k => k.felt.nokkel));
+        const ledige = katalog.filter(f => !brukte.has(f.nokkel));
+        if (ledige.length > 0) {
+            console.log(`Felt uten kolonne (${ledige.length}):`);
+            for (const f of ledige) console.log(`  ${f.nokkel} «${f.etikett}» (${f.Type})`);
+            console.log('Koble dem med --kolonner, f.eks.  { "'
+                + ukoblede[0] + '": "' + ledige[0].nokkel + '" }');
+        }
+    }
 
     // Nøkkelfeltet, for idempotens
     let nokkelFelt = null;
@@ -347,7 +363,19 @@ async function main() {
         const treff = kobling.find(k => normaliser(k.overskrift) === normaliser(args.nokkelfelt))
             || katalog.find(f => normaliser(f.etikett) === normaliser(args.nokkelfelt) || f.nokkel === args.nokkelfelt);
         nokkelFelt = treff?.felt || treff || null;
-        if (!nokkelFelt) throw new Error(`Fant ikke nøkkelfeltet "${args.nokkelfelt}"`);
+        if (!nokkelFelt) {
+            // «Fant ikke» uten å si hva som FINNES, sender den som leser
+            // tilbake til skjematypen for å gjette. Nøkkelfeltet må være et
+            // felt som faktisk har en kolonne — ellers er det tomt på hver
+            // eneste rad, og idempotensen virker ikke uansett.
+            throw new Error(`Fant ikke nøkkelfeltet "${args.nokkelfelt}".\n`
+                + 'Det må være en kolonne som er koblet. Koblede kolonner:\n'
+                + kobling.map(k => `  "${k.overskrift}"  (${k.felt.nokkel} «${k.felt.etikett}»)`).join('\n')
+                + (ukoblede.length > 0
+                    ? `\nKolonnen "${args.nokkelfelt}" ${ukoblede.includes(args.nokkelfelt) ? 'ER i fila, men traff ingen felt' : 'finnes ikke i fila'}`
+                        + ' — se «Felt uten kolonne» over og koble den med --kolonner.'
+                    : ''));
+        }
         console.log(`Nøkkelfelt: ${nokkelFelt.nokkel} «${nokkelFelt.etikett}» — rader med en verdi som finnes fra før hoppes over.`);
     } else {
         console.log('Uten --nokkelfelt: en ny kjøring vil lage dubletter.');

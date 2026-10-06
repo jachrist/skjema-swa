@@ -273,5 +273,27 @@ const felt = (etikett) => KATALOG.find(f => f.etikett === etikett);
         kilde.indexOf('byggFerdigBehandling(def, args.beslutning, innsender') < kilde.indexOf('const matrise = lesMatrise(fil);'), true);
 }
 
+// ---------- diagnostikken når en kolonne ikke treffer ----------
+{
+    // Meldt fra første kjøring: «Hoppet over 1 kolonne(r): Datapunkt (navn)»
+    // etterfulgt av «Fant ikke nøkkelfeltet». Begge var sanne, og ingen av dem
+    // sa hva feltet i skjematypen HETER — den som leser må tilbake til
+    // editoren for å gjette. Svaret finnes i katalogen og er gratis å skrive.
+    const kilde = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'importer-skjemaer.js'), 'utf8');
+
+    sjekk('ledige felt regnes ut',
+        /const ledige = katalog\.filter\(f => !brukte\.has\(f\.nokkel\)\);/.test(kilde), true);
+    sjekk('og skrives ut med nøkkel, etikett og type',
+        /Felt uten kolonne \(\$\{ledige\.length\}\)/.test(kilde), true);
+    // Et ferdig eksempel å lime inn er forskjellen på «nå vet jeg hva som er
+    // galt» og «nå vet jeg hva jeg skal gjøre».
+    sjekk('med et ferdig --kolonner-eksempel', /Koble dem med --kolonner/.test(kilde), true);
+
+    sjekk('nøkkelfeil lister koblede kolonner',
+        /Det må være en kolonne som er koblet\. Koblede kolonner:/.test(kilde), true);
+    sjekk('og skiller «finnes ikke i fila» fra «traff ingen felt»',
+        /ER i fila, men traff ingen felt/.test(kilde), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
