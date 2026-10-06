@@ -45,12 +45,22 @@
  * Ett skjema per rad, i fullt format — samme form som `samleSeksjonerFraDom`
  * i frontend produserer: `Seksjoner[].Felter[] = { Id, Nummer, Type, Svar }`.
  *
- * Standard status er 5 (Avsluttet) UTEN behandlingssteg: radene er alt
- * vurdert, og å sende 270 av dem gjennom behandling ville sendt 270
- * varslinger til datasikkerhetsleder. `--status 2` arver i stedet
- * behandlingsstrukturen fra skjematypen med Beslutning 0, slik en vanlig
- * innsending gjør — men heller ikke da varsles noen, for skriptet går utenom
- * API-et.
+ * Standard status er 5 (Avsluttet): radene er alt vurdert, og å sende 270 av
+ * dem gjennom behandling ville sendt 270 varslinger til datasikkerhetsleder.
+ * Skriptet går uansett utenom API-et, så ingen varsling går ut.
+ *
+ * Har skjematypen behandlingssteg, må `--beslutning` si HVA utfallet ble:
+ *
+ *   --beslutning Godkjent
+ *
+ * Da skrives et ferdig avgjort steg — `Beslutning`, `BehandletAv`,
+ * `BehandletDato`, som `lagreBeslutning` gjør det — og radene kommer fram når
+ * registeret filtreres på utfall. Uten den ville alle 270 stått som «Ikke
+ * behandlet», og det er ikke et valg man tar ved et uhell: skriptet stopper og
+ * ber om enten `--beslutning` eller `--uten-behandling`.
+ *
+ * `--status 2` arver i stedet behandlingsstrukturen med Beslutning 0, slik en
+ * vanlig innsending gjør — altså til behandling.
  *
  * `--nokkelfelt` gjør kjøringen idempotent: rader der nøkkelverdien allerede
  * finnes blant skjemaene, hoppes over. Uten den vil en ny kjøring lage
@@ -212,6 +222,52 @@ function tolkVerdi(rå, felt) {
     return { verdi: treff.verdi };
 }
 
+/**
+ * Finn beslutningsvalget på et steg, fra tekst eller nummer.
+ *
+ * Teksten er det man ser i editoren og i registerfilteret, så det er den man
+ * oppgir. Tallet godtas også — en skjematype kan ha to valg med samme tekst,
+ * og da må man kunne peke entydig.
+ */
+function finnValg(steg, oppgitt) {
+    const valg = Array.isArray(steg?.Beslutningsvalg) ? steg.Beslutningsvalg : [];
+    const t = String(oppgitt ?? '').trim();
+    if (!t) return null;
+    return valg.find(v => String(v.Nummer) === t)
+        ?? valg.find(v => String(v.Tekst ?? '') === t)
+        ?? valg.find(v => normaliser(v.Tekst) === normaliser(t))
+        ?? null;
+}
+
+/**
+ * Behandlingen slik den ser ut når alt er avgjort.
+ *
+ * Formen er kopiert fra `lagreBeslutning` i api/src/functions/skjemaer.js —
+ * `Beslutning`, `BehandletAv`, `BehandletDato`, `Kommentar` — ikke funnet opp
+ * her. Et steg med en annen form ville lagret seg fint og vært usynlig for
+ * `sisteBeslutning`, som er den registeret filtrerer på.
+ *
+ * Alle steg får samme beslutning. Radene er vurdert utenfor systemet; at det
+ * ene steget skulle vært godkjent og det neste avslått, finnes det ingen
+ * opplysning om i regnearket.
+ */
+function byggFerdigBehandling(def, beslutning, behandletAv, dato, kommentar) {
+    const steg = JSON.parse(JSON.stringify(def.Behandling || []));
+    for (const s of steg) {
+        const valg = finnValg(s, beslutning);
+        if (!valg) {
+            const alternativer = (s.Beslutningsvalg || []).map(v => `${v.Tekst} (${v.Nummer})`).join(', ');
+            throw new Error(`Steg ${s.Steg} «${s.Stegnavn || ''}» har ingen beslutning som heter "${beslutning}". `
+                + `Alternativer: ${alternativer || '(ingen beslutningsvalg definert)'}`);
+        }
+        s.Beslutning = Number(valg.Nummer);
+        s.BehandletAv = behandletAv;
+        s.BehandletDato = dato;
+        s.Kommentar = kommentar || '';
+    }
+    return steg;
+}
+
 /** Bygg skjemaets Seksjoner i fullt format — samme form som frontend sender. */
 function byggSeksjoner(def, svarPåNokkel) {
     return (def?.Seksjoner || []).map(s => ({
@@ -251,6 +307,25 @@ async function main() {
     const katalog = feltKatalog(def);
     if (katalog.length === 0) throw new Error(`Skjematype ${skjematypeId} har ingen felt som kan ta imot svar`);
 
+    // Har skjematypen behandlingssteg, må importen si hva utfallet ble.
+    // Uten det står alle radene som «Ikke behandlet» i registerets
+    // utfallsfilter — og det oppdages først når noen filtrerer og ikke finner
+    // dem. Et valg man ikke tar bevisst, skal ikke tas stille.
+    const harBehandling = Array.isArray(def.Behandling) && def.Behandling.length > 0;
+    if (harBehandling && args.status === 5 && !args.beslutning && !args['uten-behandling']) {
+        const valg = (def.Behandling[0].Beslutningsvalg || []).map(v => v.Tekst).filter(Boolean);
+        throw new Error(
+            `Skjematype ${skjematypeId} har ${def.Behandling.length} behandlingssteg, men du har ikke sagt hva utfallet ble.\n`
+            + `  --beslutning "${valg[0] || 'Godkjent'}"   skriver et ferdig avgjort steg${valg.length ? ` (valg: ${valg.join(', ')})` : ''}\n`
+            + '  --uten-behandling             lar radene stå uten behandling — de blir «Ikke behandlet» i registerfilteret\n'
+            + '  --status 2                    sender dem til behandling i stedet');
+    }
+    // Feil i beslutningsnavnet skal komme FØR fila leses, ikke etter at 270
+    // rader er validert.
+    if (harBehandling && args.beslutning) {
+        byggFerdigBehandling(def, args.beslutning, innsender, new Date().toISOString(), '');
+    }
+
     const matrise = lesMatrise(fil);
     const etiketter = new Set(katalog.map(f => normaliser(f.etikett)).filter(Boolean));
     const linje = finnOverskrift(matrise, etiketter);
@@ -276,6 +351,15 @@ async function main() {
         console.log(`Nøkkelfelt: ${nokkelFelt.nokkel} «${nokkelFelt.etikett}» — rader med en verdi som finnes fra før hoppes over.`);
     } else {
         console.log('Uten --nokkelfelt: en ny kjøring vil lage dubletter.');
+    }
+
+    if (harBehandling && args.beslutning) {
+        const valg = finnValg(def.Behandling[0], args.beslutning);
+        console.log(`Behandling: alle ${def.Behandling.length} steg settes til «${valg.Tekst}» (${valg.Nummer}), behandlet av ${innsender}.`);
+    } else if (harBehandling && args.status === 2) {
+        console.log(`Behandling: ${def.Behandling.length} steg arves ubehandlet — radene går til behandling.`);
+    } else if (harBehandling) {
+        console.log('Behandling: ingen — radene blir stående som «Ikke behandlet» i registerfilteret.');
     }
 
     const finnes = new Set();
@@ -335,9 +419,12 @@ async function main() {
     }
 
     // ---- skriv ----
-    // Behandlingsstrukturen arves bare når radene skal gjennom behandling.
-    // Status 5 betyr at vurderingen alt er gjort utenfor systemet.
-    const arvBehandling = args.status === 2 && Array.isArray(def.Behandling);
+    // Tre utfall, og de er ulike nok til å stå hver for seg:
+    //   --status 2        strukturen arves ubehandlet — til behandling
+    //   --beslutning X    strukturen arves ferdig avgjort — ut av behandling
+    //   ellers            ingen behandling i det hele tatt
+    const arvBehandling = args.status === 2 && harBehandling;
+    const ferdigDato = new Date().toISOString();
     let skrevet = 0;
     for (const p of nye) {
         const skjemaId = await genererSkjemaId(skjematypeId);
@@ -355,6 +442,8 @@ async function main() {
         };
         if (arvBehandling) {
             skjema.Behandling = JSON.parse(JSON.stringify(def.Behandling)).map(steg => ({ ...steg, Beslutning: 0 }));
+        } else if (harBehandling && args.beslutning) {
+            skjema.Behandling = byggFerdigBehandling(def, args.beslutning, innsender, ferdigDato, args.kommentar || '');
         }
         await forekomstStorage.lagreSkjema(skjema, true);
         skrevet++;
@@ -367,4 +456,5 @@ if (require.main === module) {
     main().catch(e => { console.error('FEIL:', e.message); process.exit(1); });
 }
 
-module.exports = { lesArgumenter, normaliser, finnOverskrift, feltKatalog, koble, tolkVerdi, byggSeksjoner, nokkelverdi };
+module.exports = { lesArgumenter, normaliser, finnOverskrift, feltKatalog, koble, tolkVerdi,
+    byggSeksjoner, nokkelverdi, finnValg, byggFerdigBehandling };
