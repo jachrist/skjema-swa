@@ -2940,6 +2940,12 @@
                         onchange="setFeltProp(${sIdx}, ${fIdx}, 'Filtrerbar', this.checked)">
                     Filtrerbar i register/datauttrekk
                 </label>
+                <label class="checkbox-rad" style="margin-top: 4px;"
+                    title="Uten avkrysning viser lista «#123 — innsender», som før">
+                    <input type="checkbox" ${felt.Listekolonne === true ? 'checked' : ''}
+                        onchange="setFeltProp(${sIdx}, ${fIdx}, 'Listekolonne', this.checked)">
+                    Vis i registerlista
+                </label>
             `;
 
             let typeConfig = '';
