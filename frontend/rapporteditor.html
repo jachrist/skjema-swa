@@ -263,8 +263,10 @@
                 <input type="text" id="navn" placeholder="F.eks. Emneevaluering pr. semester">
             </div>
             <div class="rad">
-                <label for="beskrivelse">Beskrivelse</label>
-                <textarea id="beskrivelse" placeholder="Vises på rapportportalen"></textarea>
+                <label for="beskrivelse-editor">Beskrivelse
+                    <small style="font-weight: 400; color: var(--text-secondary);">— Markdown. Lenker og bilder støttes.</small>
+                </label>
+                <div id="beskrivelse-editor"></div>
             </div>
             <div class="rad">
                 <label for="fase">Fase</label>
@@ -430,6 +432,7 @@
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, logUt as authLogUt } from './js/auth.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn } from './js/tilgang-editor.js';
+        import { byggMdEditor } from './js/md-editor.js';
 
         const params = new URLSearchParams(location.search);
         const rapporttypeId = params.get('rapporttype_id') || '';
@@ -459,6 +462,7 @@
             { verdi: 'Skjema_navn', tekst: 'Skjema-navn' },
             { verdi: 'Innsender_Epost', tekst: 'Innsender (e-post)' },
             { verdi: 'Skjema_status', tekst: 'Status (kode)' },
+            { verdi: 'Behandlingsresultat', tekst: 'Behandlingsresultat' },
             { verdi: 'Opprettet', tekst: 'Opprettet' },
             { verdi: 'Sist_endret', tekst: 'Sist endret' }
         ];
@@ -915,7 +919,10 @@
 
         window.lagre = async () => {
             data.Rapport_navn = document.getElementById('navn').value.trim();
-            data.Beskrivelse = document.getElementById('beskrivelse').value;
+            // Beskrivelsen holdes i `data` av Markdown-editoren (onEndring),
+            // ikke lest ut av et tekstfelt her. Den gamle linja leste et
+            // element som ikke lenger finnes.
+            data.Beskrivelse = data.Beskrivelse || '';
             data.Fase = document.getElementById('fase').value;
             data.Kildeskjematype_id = document.getElementById('kildeskjematype').value;
             if (!data.Rapport_navn) { visStatus('Rapport-navn er påkrevd', 'feil'); return; }
@@ -1083,6 +1090,10 @@
             rolleSel.innerHTML = '<option value="">— velg rolle —</option>' +
                 rolleNavn.map(r => `<option value="${escapeHtml(r)}">${escapeHtml(r)}</option>`).join('');
 
+            // Bygges før lastingen, så en NY rapporttype også får editoren.
+            // Lastes en eksisterende, bygges den på nytt med verdien.
+            byggBeskrivelseEditor();
+
             if (rapporttypeId) {
                 try {
                     const eksisterende = await api.get(`/api/rapporttyper/${encodeURIComponent(rapporttypeId)}`);
@@ -1093,7 +1104,7 @@
                         Eiere: { Personer: [], Roller: [], Team: [], ...(eksisterende.Eiere || {}) }
                     };
                     document.getElementById('navn').value = data.Rapport_navn || '';
-                    document.getElementById('beskrivelse').value = data.Beskrivelse || '';
+                    byggBeskrivelseEditor();
                     document.getElementById('fase').value = data.Fase || 'Produksjon';
                     document.getElementById('kildeskjematype').value = data.Kildeskjematype_id || '';
                     document.getElementById('tittel').textContent = data.Rapport_navn || 'Rapporttype';
@@ -1132,6 +1143,29 @@
                     visStatus(`Kunne ikke laste rapporttype: ${e.message}`, 'feil');
                 }
             }
+        }
+
+        /**
+         * Beskrivelsen som Markdown.
+         *
+         * Den sto som et vanlig tekstfelt og ble vist som ren tekst på
+         * rapportsiden. Oppdragsgiver ville ha lenker og bilder — og da må
+         * BEGGE ender endres: editoren her, og visningen i rapport.html.
+         * Lagres som ren Markdown-tekst i `Beskrivelse`, uten eget
+         * format-felt: det finnes ingen eldre beskrivelser som ville blitt
+         * tolket feil, for ren tekst er gyldig Markdown.
+         */
+        function byggBeskrivelseEditor() {
+            const vert = document.getElementById('beskrivelse-editor');
+            if (!vert) return;
+            vert.innerHTML = '';
+            byggMdEditor(vert, {
+                verdi: data.Beskrivelse || '',
+                plassholder: 'Vises på rapportportalen og øverst i rapporten…',
+                verktoy: ['fet', 'kursiv', 'overskrift', 'punktliste', 'lenke', 'bilde'],
+                minHoyde: 90,
+                onEndring: (v) => { data.Beskrivelse = v; }
+            });
         }
 
         init();

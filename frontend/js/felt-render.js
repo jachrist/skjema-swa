@@ -1470,6 +1470,15 @@ export function parseMarkdown(tekst) {
     s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Bilder: ![alt](url) — MÅ komme før lenkeregelen. Ellers treffer den
+    // `[alt](url)` inne i bildet og lar utropstegnet stå igjen alene.
+    //
+    // Samme skjema-godkjenning som lenker: http(s), relativ (/) eller
+    // fragment. `javascript:` og `data:` slipper ikke gjennom. Teksten er alt
+    // escapet øverst, så alt-teksten kan ikke bære markup.
+    s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^)]+|\/[^)]*)\)/g,
+        '<img class="md-bilde" src="$2" alt="$1" loading="lazy">');
+
     // Lenker: [tekst](url) — aksepterer http(s), relative (/), og fragmenter (#).
     // Blokkerer javascript:/data: for XSS. Egen class md-lenke for lenkestil.
     s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+|\/[^)]*|#[^)]*)\)/g,

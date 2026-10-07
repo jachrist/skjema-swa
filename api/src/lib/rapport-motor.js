@@ -37,8 +37,16 @@ const STATUS_TEKST = {
 
 const META_KILDER = new Set([
     'Skjema_id', 'Skjematype_id', 'Innsender_Epost', 'Skjema_status',
-    'Opprettet', 'Sist_endret', 'Skjema_navn'
+    'Opprettet', 'Sist_endret', 'Skjema_navn',
+    // Utledet, ikke en egenskap på raden: teksten på beslutningen som ble
+    // tatt sist. Se hentMetaVerdi.
+    'Behandlingsresultat'
 ]);
+
+// Utledningen bor i datauttrekk.js og brukes av uttrekket, PDF-en og
+// registerets utfallsfilter. Rapporten skal ikke ha en fjerde tolkning av
+// `Beslutning`-tallet ved siden av dem.
+const { sisteBeslutning } = require('./datauttrekk');
 
 // ---- Utpakking av verdier ----
 
@@ -70,6 +78,12 @@ function hentFeltSvar(skjema, sekNr, feltNr) {
 function hentMetaVerdi(skjema, kilde) {
     if (!META_KILDER.has(kilde)) return null;
     if (kilde === 'Innsender_Epost') return skjema.Innsender_Epost || skjema.Innsender_epost || '';
+    if (kilde === 'Behandlingsresultat') {
+        // Tom streng når ingenting er avgjort — ikke en oppfunnet tekst som
+        // «Ikke behandlet». Da treffer operatorene `tomt` og `ikkeTomt`, som
+        // alt finnes, og en eksport inneholder ikke en verdi ingen har skrevet.
+        return sisteBeslutning(skjema)?.tekst || '';
+    }
     return skjema[kilde] ?? '';
 }
 
