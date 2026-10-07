@@ -411,7 +411,11 @@
             <button class="knapp sekundær" style="padding: 4px 12px; font-size: 12px;" onclick="apneAlleKort()">▾ Vis alle</button>
             <button class="knapp sekundær" style="padding: 4px 12px; font-size: 12px;" onclick="skjulAlleKort()">▸ Skjul alle</button>
             <a id="knapp-ny-skjematype" class="knapp primær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/editor.html">+ Ny skjematype</a>
-            <a id="knapp-rapporter" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/velgrapporttype.html" title="Gå til rapportene">📊 Rapporter</a>
+            <!-- «Alle rapporter», ikke «Rapporter»: kortene har hver sin
+                 Rapporter-knapp som bare viser rapportene for DEN
+                 skjematypen. To knapper med samme navn, ett klikk fra
+                 hverandre, gjorde at den øverste ble tatt for den andre. -->
+            <a id="knapp-rapporter" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/velgrapporttype.html" title="Alle rapporter du har tilgang til, uansett skjematype">📊 Alle rapporter</a>
             <a id="knapp-admin-panel" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none; margin-left: auto;" href="/admin.html">🔧 Admin-panel</a>
         </div>
 

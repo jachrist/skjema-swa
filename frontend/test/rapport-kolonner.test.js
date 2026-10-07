@@ -198,9 +198,27 @@ function hentFunksjon(kilde, navn) {
     const oversikt = utenKommentarer(les('velgrapporttype.html'));
     const editor = utenKommentarer(les('rapporteditor.html'));
 
-    sjekk('knappen heter Rapporter', /📊 Rapporter<\/a>/.test(velg), true);
-    sjekk('og peker på rapportoversikten',
-        /href="\/velgrapporttype\.html\?skjematype_id=\$\{encodeURIComponent\(t\.Skjematype_id\)\}"/.test(velg), true);
+    // To knapper på samme side pekte på rapportoversikten, og de het BEGGE
+    // «📊 Rapporter»: verktøylinja øverst (alle rapporter) og den nye på hvert
+    // kort (bare denne skjematypen). Brukeren klikket den øverste og fikk alle
+    // rapportene — og testen var grønn, fordi den bare spurte om teksten
+    // fantes et sted i fila.
+    //
+    // Nå sjekkes LENKENE hver for seg, og at ingen to av dem heter det samme.
+    const rapportLenker = [...velg.matchAll(/<a[^>]*href="\/velgrapporttype\.html([^"]*)"[^>]*>([^<]*)<\/a>/g)]
+        .map(m => ({ spm: m[1], tekst: m[2].trim() }));
+    sjekk('to veier til rapportene', rapportLenker.length, 2);
+    sjekk('og de heter ikke det samme',
+        new Set(rapportLenker.map(l => l.tekst)).size, rapportLenker.length);
+
+    const medFilter = rapportLenker.filter(l => l.spm.includes('skjematype_id='));
+    const utenFilter = rapportLenker.filter(l => !l.spm.includes('skjematype_id='));
+    sjekk('én bærer skjematypen', medFilter.length, 1);
+    sjekk('og én gjør det ikke', utenFilter.length, 1);
+    sjekk('kortknappen heter Rapporter', medFilter[0]?.tekst, '📊 Rapporter');
+    sjekk('og den generelle sier at den tar alle', utenFilter[0]?.tekst, '📊 Alle rapporter');
+    sjekk('kortknappen tar skjematypen med seg',
+        medFilter[0]?.spm, '?skjematype_id=${encodeURIComponent(t.Skjematype_id)}');
     // Den gamle veien skal være borte — to knapper til samme sted forvirrer.
     sjekk('ikke rett til editoren lenger',
         /📊 Ny rapport/.test(velg), false);
