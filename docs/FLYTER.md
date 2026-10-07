@@ -129,6 +129,52 @@ fra 14.09.2026 har resten det også, med samme feltnavn.
 
 Verdien kommer fra `MILJO`, som settes i SWA Configuration per miljø.
 
+## `kopi[]` — kopimottakere, VENTER PÅ FLYTEN
+
+Fra 07.10.2026 har alle utgående varslingskall feltet `kopi[]` ved siden av
+`mottakere[]`, med samme form (`{ epost, navn }`).
+
+Ønsket det kommer fra: kvitteringen for et innsendt skjema kan ha
+kopimottakere, og i dag får innsenderen og hver av dem **sin egen** e-post.
+Brukeren opplever det som tre kvitteringer på samme skjema, uten at den ene
+viser at de andre fikk den samme. Det skal være ÉN e-post, med kopimottakerne
+i kopi-feltet.
+
+**Koden er ute, flyten er ikke.** Det er derfor dette avsnittet står her:
+
+```jsonc
+{
+  "handling": "sendInnsenderKvittering",
+  "mottakere": [ { "epost": "innsender@…" }, { "epost": "leder@…" } ],
+  "kopi":      [ { "epost": "leder@…" } ]
+}
+```
+
+Legg merke til at `leder@…` står i BEGGE. Det er med vilje, og det er
+overgangsformen:
+
+* En **uendret** flyt løkker over `mottakere` som før og oppfører seg nøyaktig
+  som i dag — tre e-poster, men ingenting går tapt mens flyten venter på en
+  ALM-runde mellom tenantene (`docs/FLYT-DEPLOY.md`, fire manuelle steg).
+* En **oppdatert** flyt skal: lese `kopi`, sende ÉN e-post til `mottakere[0]`
+  med adressene i `kopi` i Cc-feltet, og hoppe over resten av `mottakere`.
+  Er `kopi` tom, er `mottakere` uendret fra før og løkka kan kjøre som nå.
+
+`mottakere[0]` er alltid den som skal i til-feltet: innsenderen når vi har
+adressen hans, ellers første kopimottaker (skjemaer uten innsender-adresse
+finnes — importerte rader). Ingen adresse står i både `mottakere[0]` og `kopi`;
+`kopi` regnes ut som `mottakere.slice(1)` nettopp for at det ikke skal kunne
+skje.
+
+`kopi` er **alltid med**, også som tom liste. En nøkkel som kan forsvinne kan
+ikke feilsøkes: «flyten fikk ingen kopimottakere» og «koden som setter dem er
+ikke deployet» ville sett helt likt ut i payloaden. Loggen sier det samme —
+`kopi=N` står i `flyt payload:`-linja.
+
+**Når flyten er ute i prod** kan duplikatet i `mottakere` fjernes. Testen
+`api/test/varsling-kvittering-kopi.test.js` holder på begge halvdeler, så en
+opprydding før den tid blir rød.
+
 ## Flyter kan skrive i loggen
 
 `POST /api/hendelser/logg` — for en flyt som vil si fra om hva den gjorde.

@@ -168,6 +168,19 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
         // Lar én flyt forgrene på miljø i stedet for én kopi per miljø.
         miljø: miljo(),
         mottakere: mottakere.map(m => ({ epost: m.epost, navn: m.navn || '' })),
+        // Kopimottakere — skal i KOPI-feltet på én e-post, ikke få hver sin.
+        //
+        // Overgangsform, med vilje: de samme adressene ligger FORTSATT i
+        // `mottakere`. En uendret flyt løkker over mottakere og oppfører seg
+        // nøyaktig som før, så ingenting går tapt mens flyten venter på en
+        // ALM-runde mellom tenantene. En oppdatert flyt leser `kopi`, sender
+        // ÉN e-post til `mottakere[0]` med disse i kopi, og hopper over resten
+        // av løkka — de står der bare for den gamle veien.
+        //
+        // Når flyten er ute i prod kan duplikatet fjernes herfra. Står det
+        // igjen til da, er det fordi alternativet var en periode der
+        // kopimottakerne ikke fikk noe.
+        kopi: (args.kopi || []).filter(m => m && m.epost).map(m => ({ epost: m.epost, navn: m.navn || '' })),
         varslinger,
         skjema_id: args.skjemaId || '',
         skjematype_id: args.skjematypeId || '',
@@ -200,7 +213,8 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
         teamskanal: args.teamskanal || null,
         teams: args.teams || null
     };
-    log(`flyt payload: kanaler=[${varslinger.join(',')}] base_url=${base || '(TOM!)'} mottakere=${payload.mottakere.length}`);
+    log(`flyt payload: kanaler=[${varslinger.join(',')}] base_url=${base || '(TOM!)'} `
+        + `mottakere=${payload.mottakere.length} kopi=${payload.kopi.length}`);
     return await kallVarslingFlyt(payload, log);
 }
 

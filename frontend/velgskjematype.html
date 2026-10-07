@@ -744,7 +744,11 @@
                 knapper.push(`<a class="knapp sekundær" href="/datauttrekk.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}">Datauttrekk</a>`);
                 knapper.push(`<a class="knapp sekundær" href="/editor.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}">Rediger</a>`);
                 if (kanLageRapport) {
-                    knapper.push(`<a class="knapp sekundær" href="/rapporteditor.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}" title="Ny rapporttype med denne skjematypen som kilde">📊 Ny rapport</a>`);
+                    // «Rapporter», ikke «Ny rapport»: den som har laget én
+                    // rapport på skjematypen vil som regel åpne den igjen, ikke
+                    // lage en til. Finnes ingen, sender rapportsiden deg rett
+                    // videre til en ny.
+                    knapper.push(`<a class="knapp sekundær" href="/velgrapporttype.html?skjematype_id=${encodeURIComponent(t.Skjematype_id)}" title="Rapporter med denne skjematypen som kilde">📊 Rapporter</a>`);
                 }
             }
             const knapperadHtml = knapper.length

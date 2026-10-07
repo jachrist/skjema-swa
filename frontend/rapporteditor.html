@@ -286,6 +286,12 @@
 
         <section>
             <h2>Kolonner</h2>
+            <p style="font-size:12px;color:var(--text-secondary);margin:0 0 8px;">
+                Lange kolonnenavn deles over flere linjer i tabellen. Sett
+                <code>_</code> der navnet kan brytes — understreken vises ikke,
+                den sier bare hvor delingen er greit. En vanlig bindestrek
+                <code>-</code> står alltid, og kan brytes etter.
+            </p>
             <div id="kolonner-liste"></div>
             <div class="legg-til" id="legg-til-kolonne-rad" style="display:none;">
                 <select id="ny-kolonne-type">
@@ -293,7 +299,7 @@
                     <option value="svar">Svar på felt</option>
                 </select>
                 <select id="ny-kolonne-kilde"></select>
-                <input type="text" id="ny-kolonne-navn" placeholder="Vist navn (valgfritt)">
+                <input type="text" id="ny-kolonne-navn" placeholder="Vist navn (valgfritt) — _ deler">
                 <button class="knapp primær liten" onclick="leggTilKolonne()">Legg til</button>
             </div>
         </section>
@@ -827,7 +833,10 @@
         window.endreKolonneNavn = (i) => {
             const kol = data.Kolonner[i];
             if (!kol) return;
-            const nytt = prompt('Vist navn for kolonnen:', kol.navn || '');
+            // `_` er delepunktet, og det må stå i spørsmålet — det er her
+            // navnet faktisk skrives, og hjelpeteksten over lista er lett å
+            // ha scrollet forbi.
+            const nytt = prompt('Vist navn for kolonnen.\nBruk _ der navnet kan deles over to linjer:', kol.navn || '');
             if (nytt === null) return; // avbrutt
             kol.navn = nytt.trim() || (kol.type === 'meta' ? metaNavn(kol.kilde) : svarKildeNavn(kol.seksjon, kol.felt));
             renderKolonner();

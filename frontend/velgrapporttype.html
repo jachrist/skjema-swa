@@ -177,7 +177,7 @@
             </div>
         </div>
         <div class="topp">
-            <div class="tittelrad"><h1>Velg rapport</h1></div>
+            <div class="tittelrad"><h1 id="tittel">Velg rapport</h1></div>
             <div id="systemmerke-plass"></div>
         </div>
 
@@ -195,6 +195,7 @@
 
         <div style="margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
             <a id="knapp-ny-rapporttype" class="knapp primær" style="display: none; padding: 4px 12px; font-size: 12px;" href="/rapporteditor.html">+ Ny rapporttype</a>
+            <a id="knapp-ny-for-skjematype" class="knapp primær" style="display: none; padding: 4px 12px; font-size: 12px;" href="#">+ Ny rapport</a>
         </div>
 
         <div id="status" class="status-melding">Laster…</div>
@@ -272,15 +273,49 @@
             container.innerHTML = liste.map(t => kortHtml(t)).join('');
         }
 
+        // ?skjematype_id=N viser bare rapportene som har DEN skjematypen som
+        // kilde. Kommer man hit fra «Rapporter»-knappen i skjemaoversikten, er
+        // det de rapportene man er ute etter — ikke alle i installasjonen.
+        const skjematypeFilter = new URLSearchParams(window.location.search).get('skjematype_id');
+
+        function forSkjematype(liste) {
+            if (!skjematypeFilter) return liste;
+            return liste.filter(t => String(t.Kildeskjematype_id || '') === String(skjematypeFilter));
+        }
+
         window.filtrer = () => {
             const q = document.getElementById('sok').value.trim().toLowerCase();
-            const filtrert = alle.filter(t => {
+            const filtrert = forSkjematype(alle).filter(t => {
                 if (q === '') return true;
                 return (t.Rapport_navn || '').toLowerCase().includes(q)
                     || (t.Beskrivelse || '').toLowerCase().includes(q);
             });
             render(filtrert);
         };
+
+        let kanLage = false;
+
+        /**
+         * Tittelen når siden er filtrert på én skjematype.
+         *
+         * Navnet må slås opp — `/api/rapporttyper` kjenner bare ID-en. ID-en
+         * settes FØRST, så tittelen er riktig selv om oppslaget feiler: en
+         * tittel som faller tilbake til «Velg rapport» ville sett ut som om
+         * filteret ikke virket.
+         */
+        async function settTittel() {
+            const t = document.getElementById('tittel');
+            const sett = (navn) => {
+                document.title = `Rapporter — ${navn}`;
+                if (t) t.textContent = `Rapporter — ${navn}`;
+            };
+            sett(`skjematype ${skjematypeFilter}`);
+            try {
+                const alle = await api.get('/api/skjematyper');
+                const type = alle.find(x => String(x.Skjematype_id) === String(skjematypeFilter));
+                if (type?.Skjema_navn) sett(type.Skjema_navn);
+            } catch (_) { /* ID-en står alt i tittelen */ }
+        }
 
         async function init() {
             const bruker = await hentInnloggetBruker();
@@ -293,13 +328,31 @@
 
             try {
                 const meg = await api.get('/api/whoami');
-                if (meg.erAdmin || meg.kanOppretteSkjematype) {
-                    document.getElementById('knapp-ny-rapporttype').style.display = 'inline-flex';
+                kanLage = !!(meg.erAdmin || meg.kanOppretteSkjematype);
+                if (kanLage) {
+                    // Med en skjematype i URL-en er «Ny rapport» den som gir
+                    // mening — den tar kilden med seg. Den generelle knappen
+                    // ville startet på bar bakke.
+                    const id = skjematypeFilter
+                        ? 'knapp-ny-for-skjematype' : 'knapp-ny-rapporttype';
+                    const knapp = document.getElementById(id);
+                    if (skjematypeFilter) {
+                        knapp.href = `/rapporteditor.html?skjematype_id=${encodeURIComponent(skjematypeFilter)}`;
+                    }
+                    knapp.style.display = 'inline-flex';
                 }
             } catch (_) { /* ikke kritisk */ }
 
             try {
                 alle = await api.get('/api/rapporttyper');
+                // Ingen rapporter for denne skjematypen ennå: send den som kan
+                // lage dem rett til editoren, med kilden satt. Å vise en tom
+                // liste og la brukeren finne knappen selv er et unødig steg.
+                if (skjematypeFilter && forSkjematype(alle).length === 0 && kanLage) {
+                    window.location.replace(`/rapporteditor.html?skjematype_id=${encodeURIComponent(skjematypeFilter)}`);
+                    return;
+                }
+                if (skjematypeFilter) await settTittel();
                 filtrer();
             } catch (e) {
                 if (e.status === 403) {

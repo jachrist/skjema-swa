@@ -733,7 +733,8 @@ async function forklarMottakere(oppsett, skjema) {
 /**
  * Send innsender-kvittering. Kalles ved innsending.
  *
- * `Innsenderkvittering.Kopi` ({ Personer, Roller }) får samme melding. Det er
+ * `Innsenderkvittering.Kopi` ({ Personer, Roller }) får samme melding, i
+ * kopi-feltet på én e-post og ikke som en e-post hver. Det er
  * veien til «varsle en rolle når skjemaet er ferdig» for skjematyper uten
  * behandlingssteg: de er ferdige i det de sendes inn, så en egen ferdigvarsling
  * ville bare vært den samme e-posten en gang til.
@@ -767,6 +768,15 @@ async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
     return await sendEpostViaFlyt({
         handling: 'sendInnsenderKvittering',
         mottakere,
+        // Kopimottakerne sendes også for seg, så flyten kan sette dem i
+        // KOPI-feltet på én e-post i stedet for å gi hver sin. De ligger
+        // fortsatt i `mottakere` — se flyt-kaller.js for hvorfor.
+        //
+        // `mottakere.slice(1)` og ikke `kopi`: mottakere[0] er den som skal
+        // stå i TIL-feltet, og det er innsenderen når vi har adressen hans,
+        // ellers første kopimottaker. Å regne kopi ut fra lista vi faktisk
+        // sender gjør at samme adresse ikke kan ende både i TIL og i KOPI.
+        kopi: mottakere.slice(1),
         emne, html, lenke,
         skjemaId: skjema.Skjema_id,
         skjematypeId: skjema.Skjematype_id,
