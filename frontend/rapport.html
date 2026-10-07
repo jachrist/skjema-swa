@@ -159,6 +159,30 @@
         }
         .totaler strong { color: var(--text-primary); }
 
+        .resultat-verktoy {
+            display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+            margin: 0 0 8px; font-size: 13px;
+        }
+        .knapp.mini { padding: 4px 10px; font-size: 12px; }
+        .valgt-teller { color: var(--text-secondary); font-size: 12px; }
+        .retningsvalg { margin-left: auto; color: var(--text-secondary); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+        .retningsvalg select {
+            padding: 4px 8px; border: 1px solid var(--border-color); border-radius: 8px;
+            background: var(--bg-input); color: var(--text-primary); font-family: inherit; font-size: 12px;
+        }
+        table.rapport th.velgkol, table.rapport td.velgkol {
+            width: 1%; padding-right: 0; text-align: center; color: var(--text-secondary);
+        }
+        /* En utelatt rad skal være lett å se, men fortsatt lesbar — den skal
+           kunne hentes tilbake, og da må man kunne se hva man henter. */
+        table.rapport tr.utelatt td { opacity: 0.4; text-decoration: line-through; }
+        table.rapport tr.utelatt td.velgkol { opacity: 1; text-decoration: none; }
+
+        /* Lange verdier skal brytes, ikke skyve tabellen utenfor arket.
+           «SÆRLIG KATEGORI PERSONOPPLYSNING» er én celle, ikke én linje. */
+        table.rapport th, table.rapport td { overflow-wrap: anywhere; }
+        table.rapport thead th { white-space: normal; }
+
         /* Print-optimering — PDF via nettleserens Skriv ut */
         @media print {
             body { background: white; color: black; padding: 12mm; }
@@ -181,7 +205,18 @@
             table.rapport tbody tr { page-break-inside: avoid; }
             .gruppe-innhold.kollapset { display: block !important; }
             .gruppe-header { background: #f4f4f4 !important; }
-            @page { size: A4 landscape; margin: 12mm; }
+            .resultat-verktoy { display: none !important; }
+            /* Avkryssingen er et valg om hva som skal på papiret. Både
+               kolonnen og de fravalgte radene hører hjemme på skjermen, ikke
+               i utskriften. */
+            table.rapport th.velgkol, table.rapport td.velgkol { display: none !important; }
+            table.rapport tr.utelatt { display: none !important; }
+            /* Mange kolonner på et ark: mindre skrift og luft, og celler som
+               bryter. Uten dette falt de siste kolonnene utenfor papiret —
+               samme sted de ble borte på skjermen. */
+            table.rapport { font-size: 10px; }
+            table.rapport th, table.rapport td { padding: 4px 6px; }
+            @page { margin: 12mm; }
         }
         /* `hidden` er bare en UA-regel (`display: none`), og enhver author-regel
            med `display` slår den. `.knapp` setter `display: inline-block`, så
@@ -216,6 +251,18 @@
             <div class="filter-grid" id="filter-grid"></div>
         </div>
 
+        <div id="resultat-verktoy" class="resultat-verktoy" hidden>
+            <button class="knapp sekundær mini" onclick="settAlleRader(true)">✓ Vis alle</button>
+            <button class="knapp sekundær mini" onclick="settAlleRader(false)">✗ Skjul alle</button>
+            <span id="valgt-teller" class="valgt-teller"></span>
+            <label class="retningsvalg">Utskrift:
+                <select id="utskriftsretning" onchange="settUtskriftsretning(this.value)">
+                    <option value="landscape">Liggende</option>
+                    <option value="portrait">Stående</option>
+                </select>
+            </label>
+        </div>
+
         <div id="status" class="status-melding">Laster…</div>
         <div id="resultat"></div>
         <div id="totaler-boks" class="totaler" style="display:none;"></div>
@@ -225,6 +272,7 @@
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker } from './js/auth.js';
         import { statusTekstFraKode } from './js/skjemastatus.js';
+        import { parseMarkdown } from './js/felt-render.js';
 
         const params = new URLSearchParams(location.search);
         const rapporttypeId = params.get('rapporttype_id') || '';
@@ -287,13 +335,76 @@
             document.getElementById('filter-panel').style.display = '';
             grid.innerHTML = filtre.map(f => {
                 const forhaandsverdi = params.get(`bf_${f.id}`) || '';
+                // «inneholder» er et søk, ikke et filter man fyller ut og
+                // bekrefter. Da skal det oppføre seg som en søkelinje.
+                const sok = erSokefilter(f);
                 return `
                 <div class="filter-felt">
-                    <label for="bf-${escapeHtml(f.id)}">${escapeHtml(f.navn)}</label>
-                    <input type="text" id="bf-${escapeHtml(f.id)}" data-filter-id="${escapeHtml(f.id)}"
-                        placeholder="${escapeHtml(hintTekst(f))}" value="${escapeHtml(forhaandsverdi)}">
+                    <label for="bf-${escapeHtml(f.id)}">${escapeHtml(f.navn)}${sok ? ' <span style="opacity:.6">— søker mens du skriver</span>' : ''}</label>
+                    <input type="${sok ? 'search' : 'text'}" id="bf-${escapeHtml(f.id)}" data-filter-id="${escapeHtml(f.id)}"
+                        ${sok ? 'data-sok="1"' : ''}
+                        placeholder="${escapeHtml(sok ? 'Søk…' : hintTekst(f))}" value="${escapeHtml(forhaandsverdi)}">
                 </div>
             `;}).join('');
+
+            // Hvert tastetrykk kjører rapporten på nytt — men ikke før det har
+            // vært stille en kort stund. Filtreringen skjer på serveren, i den
+            // samme motoren som alt annet; en kopi av «inneholder» i
+            // nettleseren ville vært en regel til som kunne svare annerledes.
+            for (const el of grid.querySelectorAll('input[data-sok]')) {
+                el.addEventListener('input', () => {
+                    clearTimeout(sokTimer);
+                    sokTimer = setTimeout(() => { if (harKjort) kjor({ stille: true }); }, 300);
+                });
+            }
+        }
+
+        let sokTimer = null;
+        let harKjort = false;
+
+        const RETNING_LS = 'rapport-utskriftsretning';
+
+        /**
+         * Papirretningen for utskrift og PDF.
+         *
+         * `@page { size: ... }` kan ikke settes med inline style — den må
+         * stå i et stilark. Derfor skrives regelen inn i et eget
+         * `<style>`-element i stedet for på et element.
+         *
+         * Liggende er standard, for en rapport er bredere enn den er høy. Men
+         * en rapport med fire kolonner ser rar ut liggende, og da skal man
+         * kunne velge.
+         */
+        window.settUtskriftsretning = (retning) => {
+            const gyldig = retning === 'portrait' ? 'portrait' : 'landscape';
+            let stil = document.getElementById('utskrift-retning');
+            if (!stil) {
+                stil = document.createElement('style');
+                stil.id = 'utskrift-retning';
+                document.head.appendChild(stil);
+            }
+            stil.textContent = `@media print { @page { size: A4 ${gyldig}; } }`;
+            try { localStorage.setItem(RETNING_LS, gyldig); } catch { /* privat modus */ }
+        };
+
+        function gjenopprettUtskriftsretning() {
+            let lagret = 'landscape';
+            try { lagret = localStorage.getItem(RETNING_LS) || 'landscape'; } catch { /* privat modus */ }
+            const velger = document.getElementById('utskriftsretning');
+            if (velger) velger.value = lagret;
+            settUtskriftsretning(lagret);
+        }
+
+        /**
+         * Er dette filteret et søk?
+         *
+         * «inneholder» på et tekstfelt er det eneste tilfellet der man skriver
+         * et fragment og vil se treffene vokse fram. De andre operatorene
+         * («er lik», «mellom», datoer) gir ikke mening halvveis inntastet, og
+         * ville kjørt rapporten på hvert tegn uten at noe nyttig skjedde.
+         */
+        function erSokefilter(f) {
+            return f?.operator === 'contains';
         }
         function hintTekst(f) {
             const op = f.operator;
@@ -314,10 +425,45 @@
         }
 
         function radHtml(rad, kolonner) {
-            return `<tr>${kolonner.map(k => {
-                const cls = erTallKolonne(k) ? ' class="tall"' : '';
-                return `<td${cls}>${escapeHtml(formaterVerdi(rad.verdier[k.id], k))}</td>`;
-            }).join('')}</tr>`;
+            // Avkrysset = tas med. Fjerner man krysset, dempes raden på
+            // skjermen og faller bort i utskriften — den forsvinner IKKE fra
+            // visningen, for da ville den ikke kunne hentes tilbake.
+            return `<tr>
+                <td class="velgkol"><input type="checkbox" checked onchange="radValgt(this)" title="Ta med i utskrift"></td>
+                ${kolonner.map(k => {
+                    const cls = erTallKolonne(k) ? ' class="tall"' : '';
+                    return `<td${cls}>${escapeHtml(formaterVerdi(rad.verdier[k.id], k))}</td>`;
+                }).join('')}</tr>`;
+        }
+
+        window.radValgt = (boks) => {
+            boks.closest('tr')?.classList.toggle('utelatt', !boks.checked);
+            oppdaterValgtTeller();
+        };
+
+        /**
+         * Vis alle / Skjul alle for radene i hele rapporten.
+         *
+         * Gjelder på tvers av grupper. Den som trykker «Skjul alle» vil ha et
+         * blankt ark å krysse av i, ikke én gruppe om gangen.
+         */
+        window.settAlleRader = (på) => {
+            for (const boks of document.querySelectorAll('#resultat input[type="checkbox"]')) {
+                boks.checked = på;
+                boks.closest('tr')?.classList.toggle('utelatt', !på);
+            }
+            oppdaterValgtTeller();
+        };
+
+        function oppdaterValgtTeller() {
+            const alle = document.querySelectorAll('#resultat input[type="checkbox"]');
+            const valgte = document.querySelectorAll('#resultat input[type="checkbox"]:checked');
+            const el = document.getElementById('valgt-teller');
+            if (!el) return;
+            // Teksten sier noe bare når den sier noe annet enn «alt».
+            el.textContent = alle.length === valgte.length
+                ? ''
+                : `${valgte.length} av ${alle.length} rader tas med i utskriften`;
         }
 
         function tabellHtml(rader, kolonner) {
@@ -325,11 +471,13 @@
                 <div class="resultat-tabell-omslutt">
                     <table class="rapport">
                         <thead>
-                            <tr>${kolonner.map(k => `<th${erTallKolonne(k) ? ' class="tall"' : ''}>${escapeHtml(k.navn)}</th>`).join('')}</tr>
+                            <tr>
+                                <th class="velgkol" title="Ta med i utskrift">✓</th>
+                                ${kolonner.map(k => `<th${erTallKolonne(k) ? ' class="tall"' : ''}>${escapeHtml(k.navn)}</th>`).join('')}</tr>
                         </thead>
                         <tbody>
                             ${rader.length === 0
-                                ? `<tr><td colspan="${kolonner.length}" style="text-align:center;color:var(--text-secondary);padding:20px;">Ingen data</td></tr>`
+                                ? `<tr><td colspan="${kolonner.length + 1}" style="text-align:center;color:var(--text-secondary);padding:20px;">Ingen data</td></tr>`
                                 : rader.map(r => radHtml(r, kolonner)).join('')}
                         </tbody>
                     </table>
@@ -392,16 +540,27 @@
             document.getElementById('meta-info').textContent =
                 `Kjørt ${formaterDato(resultat.meta.kjørtDato)} · kilde: ${resultat.rapport?.Kildeskjematype_navn || ''}`;
             document.getElementById('skriv-ut-knapp').style.display = '';
+            // Verktøylinja gir bare mening når det står noe å krysse av.
+            document.getElementById('resultat-verktoy').hidden = false;
+            oppdaterValgtTeller();
         }
 
-        window.kjor = async () => {
-            visStatus('Kjører rapport…');
-            document.getElementById('resultat').innerHTML = '';
-            document.getElementById('totaler-boks').style.display = 'none';
+        /**
+         * `stille` brukes av søkefeltene: da blankes ikke resultatet ut mellom
+         * tastetrykkene. Et bord som blinker bort og tilbake for hvert tegn er
+         * verre å lese enn et som står et halvsekund for lenge.
+         */
+        window.kjor = async (opts = {}) => {
+            if (!opts.stille) {
+                visStatus('Kjører rapport…');
+                document.getElementById('resultat').innerHTML = '';
+                document.getElementById('totaler-boks').style.display = 'none';
+            }
             try {
                 const brukerVerdier = lesBrukerVerdier();
                 const res = await api.post('/api/rapport/kjor', { Rapporttype_id: rapporttypeId, brukerVerdier });
                 visStatus('');
+                harKjort = true;
                 render(res);
             } catch (e) {
                 visStatus('Kunne ikke kjøre: ' + e.message, 'feil');
@@ -422,7 +581,10 @@
                 rapporttype = await api.get(`/api/rapporttyper/${encodeURIComponent(rapporttypeId)}`);
                 document.getElementById('tittel').textContent = rapporttype.Rapport_navn || 'Rapport';
                 document.title = `${rapporttype.Rapport_navn || 'Rapport'} — Rapport`;
-                document.getElementById('beskrivelse').textContent = rapporttype.Beskrivelse || '';
+                // Markdown, ikke ren tekst: beskrivelsen kan ha lenker og
+                // bilder. `parseMarkdown` escaper teksten først og slipper bare
+                // http(s)- og relative adresser gjennom.
+                document.getElementById('beskrivelse').innerHTML = parseMarkdown(rapporttype.Beskrivelse || '');
 
                 // Rediger-knapp — vises hvis bruker er eier (sjekkes via whoami + finn eier)
                 try {
@@ -437,6 +599,7 @@
                 } catch (_) { /* ikke kritisk */ }
 
                 byggFilterPanel();
+                gjenopprettUtskriftsretning();
                 document.getElementById('kjor-knapp').style.display = '';
 
                 // Auto-kjør hvis kjør=1 i URL (typisk fra bokmerket lenke)

@@ -35,6 +35,7 @@ const VERKTOY = [
     { id: 'punktliste', navn: '•',    tittel: 'Punktliste (- tekst)',       type: 'linje',   prefiks: '- ' },
     { id: 'nummerliste',navn: '1.',   tittel: 'Nummerert liste (1. tekst)', type: 'nummer' },
     { id: 'lenke',      navn: '🔗',   tittel: 'Lenke ([tekst](url))',       type: 'lenke' },
+    { id: 'bilde',      navn: '🖼',   tittel: 'Bilde (![alt](url))',        type: 'bilde' },
     { id: 'kode',       navn: '‹›',   tittel: 'Kode (`tekst`)',             type: 'omslutt', for: '`',  etter: '`' }
 ];
 
@@ -132,6 +133,7 @@ export function byggMdEditor(container, opsjoner = {}) {
                 else if (v.type === 'linje') linjePrefiks(tekstfelt, v.prefiks);
                 else if (v.type === 'nummer') nummerliste(tekstfelt);
                 else if (v.type === 'lenke') settInnLenke(tekstfelt);
+                else if (v.type === 'bilde') settInnBilde(tekstfelt);
                 endret();
             });
             linje.appendChild(b);
@@ -218,6 +220,25 @@ function nummerliste(ta) {
     ta.value = value.slice(0, start) + ny + value.slice(slutt);
     ta.selectionStart = start;
     ta.selectionEnd = start + ny.length;
+    ta.focus();
+}
+
+/**
+ * Bilde: `![alt](url)`.
+ *
+ * Alt-teksten er ikke pynt — den er det som står der når bildet ikke lastes,
+ * og det eneste en skjermleser har. Derfor forhåndsutfylles den i stedet for
+ * å stå tom.
+ */
+function settInnBilde(ta) {
+    const { selectionStart: a, selectionEnd: b, value } = ta;
+    const valgt = value.slice(a, b);
+    const alt = valgt || 'bildetekst';
+    const bit = `![${alt}](https://)`;
+    ta.value = value.slice(0, a) + bit + value.slice(b);
+    // Marker url-en så brukeren kan skrive rett over den
+    ta.selectionStart = a + alt.length + 4;
+    ta.selectionEnd = a + bit.length - 1;
     ta.focus();
 }
 
