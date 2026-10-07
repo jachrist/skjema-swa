@@ -134,6 +134,12 @@
             background: var(--bg-container); font-weight: 600;
             font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
             color: var(--text-secondary); position: sticky; top: 0;
+            /* Overskriftene brytes helst ved de myke bindestrekene forfatteren
+               har satt (understrek i kolonnenavnet). `anywhere` ville delt midt
+               i ordet uansett og gjort delepunktene virkningsløse — det var
+               nettopp de ulogiske delingene. `break-word` deler bare når ordet
+               ellers ikke får plass. */
+            white-space: normal; overflow-wrap: break-word; hyphens: manual;
         }
         table.rapport tbody tr:last-child td { border-bottom: 0; }
         table.rapport td.tall, table.rapport th.tall { text-align: right; }
@@ -177,11 +183,16 @@
            kunne hentes tilbake, og da må man kunne se hva man henter. */
         table.rapport tr.utelatt td { opacity: 0.4; text-decoration: line-through; }
         table.rapport tr.utelatt td.velgkol { opacity: 1; text-decoration: none; }
+        .gruppe.gruppe-tom { opacity: 0.45; }
 
         /* Lange verdier skal brytes, ikke skyve tabellen utenfor arket.
-           «SÆRLIG KATEGORI PERSONOPPLYSNING» er én celle, ikke én linje. */
-        table.rapport th, table.rapport td { overflow-wrap: anywhere; }
-        table.rapport thead th { white-space: normal; }
+           «SÆRLIG KATEGORI PERSONOPPLYSNING» er én celle, ikke én linje.
+           Overskriftene er unntaket og styres der de ellers settes. */
+        table.rapport td { overflow-wrap: anywhere; }
+
+        /* Første kolonne bærer gjerne nøkkelbegrepet. Den skal slippe å bli
+           delt i tre når de andre kolonnene tar plassen. */
+        table.rapport th.nokkelkol, table.rapport td.nokkelkol { min-width: 11em; }
 
         /* Print-optimering — PDF via nettleserens Skriv ut */
         @media print {
@@ -211,6 +222,9 @@
                i utskriften. */
             table.rapport th.velgkol, table.rapport td.velgkol { display: none !important; }
             table.rapport tr.utelatt { display: none !important; }
+            /* En gruppe der alt er krysset bort har ingenting å vise, og en
+               overskrift uten innhold under seg er verre enn ingen gruppe. */
+            .gruppe.gruppe-tom { display: none !important; }
             /* Mange kolonner på et ark: mindre skrift og luft, og celler som
                bryter. Uten dette falt de siste kolonnene utenfor papiret —
                samme sted de ble borte på skjermen. */
@@ -321,6 +335,25 @@
         }
         function erTallKolonne(kol) { return kol?.format === 'nummer'; }
 
+        /**
+         * Kolonneoverskriften, med delepunktene forfatteren har bestemt.
+         *
+         * Lange kolonnenavn ble delt der det tilfeldigvis var plass —
+         * «SÆRLIG KATEGORI PERSONOPP-LYSNING». Nå styrer den som lager
+         * rapporten hvor det kan brytes:
+         *
+         *   _  myk bindestrek — brytes HER ved behov, og vises bare da
+         *   -  vanlig bindestrek — står alltid, og kan brytes etter
+         *
+         * Understreken forsvinner altså fra visningen; den er en instruksjon,
+         * ikke et tegn. Teksten escapes før tegnet settes inn, så et
+         * kolonnenavn ikke kan bære markup.
+         */
+        const MYK_BINDESTREK = '\u00AD';
+        function kolonneNavnHtml(navn) {
+            return escapeHtml(navn).replace(/_/g, MYK_BINDESTREK);
+        }
+
         function escapeHtml(s) {
             return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
@@ -430,16 +463,30 @@
             // visningen, for da ville den ikke kunne hentes tilbake.
             return `<tr>
                 <td class="velgkol"><input type="checkbox" checked onchange="radValgt(this)" title="Ta med i utskrift"></td>
-                ${kolonner.map(k => {
-                    const cls = erTallKolonne(k) ? ' class="tall"' : '';
-                    return `<td${cls}>${escapeHtml(formaterVerdi(rad.verdier[k.id], k))}</td>`;
+                ${kolonner.map((k, i) => {
+                    const klasser = [erTallKolonne(k) ? 'tall' : '', i === 0 ? 'nokkelkol' : ''].filter(Boolean);
+                    return `<td${klasser.length ? ` class="${klasser.join(' ')}"` : ''}>${escapeHtml(formaterVerdi(rad.verdier[k.id], k))}</td>`;
                 }).join('')}</tr>`;
         }
 
         window.radValgt = (boks) => {
             boks.closest('tr')?.classList.toggle('utelatt', !boks.checked);
+            oppdaterTommeGrupper();
             oppdaterValgtTeller();
         };
+
+        /**
+         * En gruppe uten valgte rader skal ikke stå i utskriften.
+         *
+         * På skjermen dempes den i stedet for å forsvinne — samme begrunnelse
+         * som for radene: en gruppe man ikke ser, kan man ikke hente tilbake.
+         */
+        function oppdaterTommeGrupper() {
+            for (const gruppe of document.querySelectorAll('#resultat .gruppe')) {
+                const valgte = gruppe.querySelectorAll('input[type="checkbox"]:checked').length;
+                gruppe.classList.toggle('gruppe-tom', valgte === 0);
+            }
+        }
 
         /**
          * Vis alle / Skjul alle for radene i hele rapporten.
@@ -452,6 +499,7 @@
                 boks.checked = på;
                 boks.closest('tr')?.classList.toggle('utelatt', !på);
             }
+            oppdaterTommeGrupper();
             oppdaterValgtTeller();
         };
 
@@ -473,7 +521,10 @@
                         <thead>
                             <tr>
                                 <th class="velgkol" title="Ta med i utskrift">✓</th>
-                                ${kolonner.map(k => `<th${erTallKolonne(k) ? ' class="tall"' : ''}>${escapeHtml(k.navn)}</th>`).join('')}</tr>
+                                ${kolonner.map((k, i) => {
+                                    const klasser = [erTallKolonne(k) ? 'tall' : '', i === 0 ? 'nokkelkol' : ''].filter(Boolean);
+                                    return `<th${klasser.length ? ` class="${klasser.join(' ')}"` : ''}>${kolonneNavnHtml(k.navn)}</th>`;
+                                }).join('')}</tr>
                         </thead>
                         <tbody>
                             ${rader.length === 0
