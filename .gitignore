@@ -24,5 +24,14 @@ frontend/staticwebapp.config.json
 # en annen fil er duplisering, ikke dokumentasjon.
 /staticwebapp.config.json
 
-# Byggstempel — skrives av scripts/build-config.js ved deploy.
+# Byggstempel — skrives av scripts/build-config.js ved deploy. Begge
+# filene genereres av samme skript, og begge skal ignoreres: lå den ene
+# sjekket inn, ble den stående igjen som et gammelt øyeblikksbilde den
+# gangen Oryx hoppet over byggetrinnet i stillhet — pilot serverte
+# MILJO=production i hver deploy uten at noe sa fra. Mangler fila i
+# stedet, sier frontend fra med én gang.
+#
+# Etter en fersk klone: `node scripts/build-config.js pilot` (eller
+# `npm test` fra api/, som gjør det samme underveis).
 api/src/versjon.json
+frontend/js/config.js
