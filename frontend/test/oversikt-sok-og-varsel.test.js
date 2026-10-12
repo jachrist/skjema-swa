@@ -40,13 +40,27 @@ const les = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8');
 const oversikt = les('velgskjematype.html');
 const editor = les('editor.html');
 
-/** Klipper ut en funksjon fra en HTML-fil og gjør den kjørbar. */
+/**
+ * Klipper ut en funksjon fra en HTML-fil.
+ *
+ * Tar både `function navn(` og `window.navn = (` — filas to former. Et
+ * bomskudd gir ÉN rød linje og tom streng, ikke et kast: en manglende
+ * funksjon skal ikke ta resten av fila med seg, for da ser et hull ut som om
+ * testene ikke finnes.
+ */
 function hentFunksjon(kilde, navn) {
-    const i = kilde.indexOf(`function ${navn}(`);
-    if (i === -1) throw new Error(`Fant ikke ${navn}`);
-    const slutt = kilde.indexOf('\n        }', i);
-    if (slutt === -1) throw new Error(`Fant ikke slutten på ${navn}`);
-    return kilde.slice(i, slutt + 10);
+    const former = [`function ${navn}(`, `window.${navn} = (`, `const ${navn} = (`];
+    const i = former.map(f => kilde.indexOf(f)).find(x => x > -1);
+    if (i === undefined) {
+        feil++;
+        console.log(`FEIL  fant ikke funksjonen ${navn}`);
+        return '';
+    }
+    // Arrow-funksjonene avsluttes med «};», de vanlige med «}».
+    const slutt = Math.min(
+        ...[kilde.indexOf('\n        }', i), kilde.indexOf('\n        };', i)]
+            .filter(x => x > -1).concat(kilde.length));
+    return kilde.slice(i, slutt + 11);
 }
 
 // ---------- søket huskes, for ekte ----------
@@ -134,6 +148,68 @@ function hentFunksjon(kilde, navn) {
     }
 }
 
+// ---------- selve kappestriden, kjørt ----------
+{
+    // Rekkefølgen som ødela det: brukeren hadde søkt, navigerer tilbake, og
+    // et bakgrunnskall rekker å filtrere FØR feltet er gjenopprettet.
+    //
+    // Her kjøres den EKTE filtrer-kroppen mot et stubbet DOM. En test som
+    // bare leste at «lagreSok» ikke står i filtrer, ville bestått på en
+    // filtrer som kalte noe annet som lagret.
+    const lager = new Map();
+    const felt = { value: '' };
+    const sessionStorageStubb = {
+        getItem: (k) => (lager.has(k) ? lager.get(k) : null),
+        setItem: (k, v) => lager.set(k, String(v)),
+        removeItem: (k) => lager.delete(k)
+    };
+    const kode2 = utenKommentarer(oversikt);
+    const biter = [
+        oversikt.match(/const SOK_SS_NOKKEL = '[^']+';/)[0],
+        hentFunksjon(oversikt, 'lesLagretSok'),
+        hentFunksjon(oversikt, 'lagreSok'),
+        hentFunksjon(oversikt, 'gjenopprettSok'),
+        hentFunksjon(kode2, 'filtrer'),
+        hentFunksjon(kode2, 'sokEndret')
+    ];
+    const fabrikk = new Function('sessionStorage', 'document', 'window', 'alle',
+        'lesValgteFaser', 'kunEierValgt', 'skalVises', 'render',
+        // `sokEndret` kaller `filtrer()` som en global. I nettleseren ER den
+        // det (`window.filtrer = …`); i sandkassen må bindingen lages. `var`
+        // hoistes, så navnet finnes allerede når funksjonene defineres.
+        `${biter.join('\n')}\n`
+        + 'var filtrer = window.filtrer;\n'
+        + 'return { gjenopprettSok, sokEndret: window.sokEndret, filtrer: window.filtrer };');
+    const api = fabrikk(
+        sessionStorageStubb,
+        { getElementById: () => felt },
+        {},                      // window — filtrer/sokEndret settes på denne
+        [],                      // alle
+        () => ['Produksjon'],    // lesValgteFaser
+        () => false,             // kunEierValgt
+        () => true,              // skalVises
+        () => {}                 // render
+    );
+
+    // 1. Brukeren søker.
+    felt.value = 'ikt';
+    api.sokEndret();
+    sjekk('brukerens søk er lagret', lager.get('velgskjema-sok'), 'ikt');
+
+    // 2. Navigerer bort og tilbake: nytt, tomt felt.
+    felt.value = '';
+
+    // 3. Bakgrunnskallet kommer tilbake FØR gjenopprettingen og filtrerer.
+    //    Det er dette som tømte lageret før rettelsen.
+    api.filtrer();
+    sjekk('en programmatisk filtrering rører ikke lageret',
+        lager.get('velgskjema-sok'), 'ikt');
+
+    // 4. Gjenopprettingen finner det den skal.
+    api.gjenopprettSok();
+    sjekk('og søket står i feltet etterpå', felt.value, 'ikt');
+}
+
 // ---------- søket er knyttet til økta, ikke til maskinen ----------
 {
     const kode = utenKommentarer(oversikt);
@@ -150,16 +226,44 @@ function hentFunksjon(kilde, navn) {
     sjekk('og eierbryteren også',
         /localStorage\.setItem\(KUN_EIER_LS_NOKKEL/.test(kode), true);
 
-    // Gjenopprettingen må skje FØR første filtrering, ellers vises hele lista
-    // et øyeblikk og hopper så til utvalget.
-    const last = kode.slice(kode.indexOf('async function lastListe'));
-    sjekk('gjenopprettes før første filtrering',
-        last.indexOf('gjenopprettSok()') < last.indexOf('filtrer()'), true);
-    sjekk('og begge ble funnet',
-        [last.indexOf('gjenopprettSok()'), last.indexOf('filtrer()')].every(i => i > -1), true);
-    // Hver tastetrykk-filtrering skal lagre. Uten det huskes bare det man
-    // skrev før forrige last.
-    sjekk('filtrer lagrer søket', /window\.filtrer = \(\) => \{\s*const raa[\s\S]{0,120}lagreSok\(raa\)/.test(kode), true);
+    // Gjenopprettingen skal skje ÉTT sted, og det er øverst i `init()` —
+    // ikke i `lastListe()`, som ligger bak et api-kall. To steder ville
+    // dessuten gitt to svar på «er feltet fylt ut ennå».
+    sjekk('lastListe gjenoppretter ikke',
+        /gjenopprettSok\(\)/.test(hentFunksjon(kode, 'lastListe') || ''), false);
+    sjekk('det er bare én gjenoppretting i fila',
+        (kode.match(/gjenopprettSok\(\);/g) || []).length, 1);
+    // ---- kappestriden som gjorde at søket likevel forsvant ----
+    //
+    // Lagringen hang på `filtrer()`, som kalles programmatisk fra seks
+    // steder. `init()` starter nullpunkt-kallet FØR `await lastListe()`:
+    //
+    //     api.get('/api/gevinst/nullpunkt-status').then(() => filtrer());
+    //     await lastListe();          // ← gjenopprettSok() ligger her inne
+    //
+    // Rakk det svaret først, kjørte `filtrer()` mens feltet ennå var tomt, og
+    // lagret tom streng OVER det lagrede søket. Gjenopprettingen fant da
+    // ingenting. Feilen var tidsavhengig, så den så ut som om lagringen aldri
+    // virket.
+    //
+    // Rettelsen er ikke en ny rekkefølge — den ville bare flyttet vinduet.
+    // Bare BRUKERENS endring skal skrive til lageret.
+    sjekk('filtrer skriver ikke til lageret',
+        /lagreSok\(/.test(hentFunksjon(kode, 'filtrer') || ''), false);
+    sjekk('det gjør inndata-håndtereren',
+        /lagreSok\(/.test(hentFunksjon(kode, 'sokEndret') || ''), true);
+    sjekk('og feltet er koblet til den',
+        /oninput="sokEndret\(\)"/.test(oversikt), true);
+    sjekk('ikke lenger rett til filtrer',
+        /oninput="filtrer\(\)"/.test(oversikt), false);
+
+    // Gjenopprettingen må skje før noe asynkront i det hele tatt kan filtrere.
+    // Den trenger ingen data — bare feltet — så den hører øverst i init().
+    const init = hentFunksjon(kode, 'init') || kode.slice(kode.indexOf('async function init'));
+    sjekk('gjenopprettes før første api-kall i init',
+        init.indexOf('gjenopprettSok()') < init.indexOf('api.get'), true);
+    sjekk('og begge ble funnet i init',
+        [init.indexOf('gjenopprettSok()'), init.indexOf('api.get')].every(i => i > -1), true);
 }
 
 // ---------- advarslene har ett uttrykk ----------
