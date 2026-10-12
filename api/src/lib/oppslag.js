@@ -45,6 +45,27 @@ const IKKE_IMPLEMENTERT = new Set([
 ]);
 
 /**
+ * Datakilder dispatcheren fortsatt svarer på, men som editoren ikke lenger
+ * TILBYR i nedtrekket for FasteData.
+ *
+ * `Postnumre` er en egen felttype (`Type: 'Postnummer'`) med egen widget og
+ * eget søkeendepunkt — med egne regler for format og validering. Den samme
+ * dataen som en generisk valgliste er en dårligere vei til det samme, og
+ * verdiene blir ikke validert som postnumre.
+ *
+ * Case-en blir likevel STÅENDE. Fjernes den, får en skjematype som allerede
+ * har `FasteData: Postnumre{...}` et tomt nedtrekk — uten at noe sier fra, og
+ * uten at noen har rørt definisjonen. Et oppsett som virker skal ikke slutte
+ * å virke fordi vi sluttet å anbefale det.
+ *
+ * `datakilder-paritet.test.js` leser dette settet: en kilde som BARE finnes i
+ * dispatcheren må stå her, med en grunn.
+ */
+const IKKE_TILBUDT = new Set([
+    'Postnumre'
+]);
+
+/**
  * Hovedinngang for dropdown-oppslag. Signaturen matcher referanse-appens
  * hentDropdownVerdier så FasteData-modul kan brukes uendret.
  */
@@ -382,4 +403,5 @@ async function _hentSkjematyper(filterbegrep, filterverdi) {
     return filtrerte.map(t => ({ Tekst: t.navn || t.id, Verdi: t.id }));
 }
 
-module.exports = { hentDropdownVerdier };
+module.exports = {
+    IKKE_TILBUDT, hentDropdownVerdier };

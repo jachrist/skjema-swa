@@ -491,21 +491,12 @@
             display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px;
         }
 
-        /* ===== Påminnelse om manglende nullpunkt ===== */
-        .nullpunkt-advarsel {
-            display: flex;
-            gap: 14px;
-            align-items: flex-start;
-            justify-content: space-between;
-            margin: 0 0 16px;
-            padding: 12px 16px;
-            font-size: 13px;
-            line-height: 1.5;
-            background: var(--danger-light);
-            border: 1px solid var(--danger);
-            border-radius: var(--radius-md);
-        }
-        .nullpunkt-advarsel strong { color: var(--danger); }
+        /* Påminnelsene om manglende nullpunkt og om feltreferanser uten felt
+           hadde sin egen røde boks ved siden av diagnoseboksen. To uttrykk for
+           samme sak — «noe du bør se på» — og den røde så ut som en feil som
+           stoppet noe. Begge gjør ingenting av den typen: skjemaet er lagret.
+           De bruker nå diagnoseboksens klasser, så det finnes ÉN definisjon av
+           hvordan en advarsel ser ut, og den er oransje. */
 
         /* ===== Diagnose av oppsettet ===== */
         .diagnose {
@@ -684,15 +675,14 @@
         // Kolonner (filter-navn) matcher det oppslag-dispatcheren støtter.
         // Beskrivelser vises som tooltip (title) i editorens FasteData-bygger,
         // og filter-beskrivelse settes som placeholder på verdi-input.
+        //
+        // `Postnumre` står IKKE her. Postnummer er en egen felttype
+        // (`Type: 'Postnummer'`) med egen widget, eget søkeendepunkt og egne
+        // regler for format — den samme dataen som en generisk valgliste er
+        // en dårligere vei til det samme. Dispatcheren svarer fortsatt på
+        // den, slik at skjematyper som alt bruker den ikke mister nedtrekket
+        // sitt; se IKKE_TILBUDT i api/src/lib/oppslag.js.
         const DATAKILDER = [
-            {
-                navn: 'Postnumre',
-                beskrivelse: 'Norske postnumre (importert fra Bring 2×/år)',
-                filtre: [
-                    { navn: 'Kommune', beskrivelse: 'Postnumre i én kommune. Verdi: kommunenavn (f.eks. "Oslo").' },
-                    { navn: 'Poststed', beskrivelse: 'Postnumre i ett poststed. Verdi: poststedsnavn (f.eks. "OSLO").' }
-                ]
-            },
             {
                 navn: 'Skjematyper',
                 beskrivelse: 'Skjematyper i systemet',
@@ -883,15 +873,19 @@
                 .join('<br>');
             const el = document.createElement('div');
             el.id = 'feltref-advarsel';
-            el.className = 'nullpunkt-advarsel';
+            el.className = 'diagnose';
             el.innerHTML = `
-                <div>
-                    <strong>Feltreferanser uten felt</strong><br>
-                    <span>Disse peker på et felt som ikke finnes, og blir stående tomme ved utsending.
-                    Sett dem inn på nytt fra feltreferanse-lista i meldingen det gjelder.</span><br>
-                    <span>${linjer}</span>
+                <div class="diagnose-topp">
+                    <span class="diagnose-tittel">Feltreferanser uten felt</span>
+                    <button class="knapp mini sekundær" title="Lukk">✕</button>
                 </div>
-                <button class="knapp mini sekundær" title="Lukk">✕</button>
+                <div class="diagnose-funn">
+                    <div class="diagnose-linje advarsel">
+                        <span>Disse peker på et felt som ikke finnes, og blir stående tomme ved
+                        utsending. Sett dem inn på nytt fra feltreferanse-lista i meldingen det
+                        gjelder.<br>${linjer}</span>
+                    </div>
+                </div>
             `;
             el.querySelector('button').addEventListener('click', () => el.remove());
             const innhold = document.getElementById('innhold');
@@ -1723,13 +1717,15 @@
             document.getElementById('nullpunkt-advarsel')?.remove();
             const el = document.createElement('div');
             el.id = 'nullpunkt-advarsel';
-            el.className = 'nullpunkt-advarsel';
+            el.className = 'diagnose';
             el.innerHTML = `
-                <div>
-                    <strong>Nullpunkt mangler</strong><br>
-                    <span>${escapeHtml(melding)}</span>
+                <div class="diagnose-topp">
+                    <span class="diagnose-tittel">Nullpunkt mangler</span>
+                    <button class="knapp mini sekundær" title="Lukk">✕</button>
                 </div>
-                <button class="knapp mini sekundær" title="Lukk">✕</button>
+                <div class="diagnose-funn">
+                    <div class="diagnose-linje advarsel"><span>${escapeHtml(melding)}</span></div>
+                </div>
             `;
             el.querySelector('button').addEventListener('click', () => el.remove());
             const innhold = document.getElementById('innhold');

@@ -163,6 +163,21 @@ export function byggDNFEditor(container, initial, options) {
                 if (dk.navn === state.Datakilde) o.selected = true;
                 sel.appendChild(o);
             }
+            // En lagret datakilde som ikke lenger tilbys skal LIKEVEL vises.
+            // Uten dette står selecten på «— velg —», som ser ut som om
+            // ingenting er satt opp, og første klikk nullstiller filtrene
+            // som faktisk ligger der. Oppsettet blir ikke borte av at vi
+            // sluttet å anbefale kilden.
+            const kjentKilde = datakilder.some(d => d.navn === state.Datakilde);
+            if (state.Datakilde && !kjentKilde) {
+                const o = document.createElement('option');
+                o.value = state.Datakilde;
+                o.textContent = `${state.Datakilde} (tilbys ikke lenger)`;
+                o.selected = true;
+                o.title = 'Oppsettet virker fortsatt. Velger du noe annet, nullstilles filtrene.';
+                sel.appendChild(o);
+            }
+
             sel.addEventListener('change', () => {
                 state.Datakilde = sel.value;
                 state.EllerAv = []; // nullstill filtre når datakilde byttes
@@ -183,7 +198,31 @@ export function byggDNFEditor(container, initial, options) {
                 return;
             }
             const dkValgt = datakilder.find(d => d.navn === state.Datakilde);
-            if (!dkValgt || !(dkValgt.filtre || []).length) {
+
+            // En ukjent kilde er IKKE det samme som en kilde uten filtre.
+            // Begge falt tidligere hit og fikk teksten «ingen filtre — henter
+            // alle rader». For et lagret oppsett med filtre var det en ren
+            // løgn: filtrene lå der, de ble bare ikke vist, og den som leste
+            // skjermen fikk vite det motsatte av hva som ville skje.
+            if (!dkValgt) {
+                const t = document.createElement('div');
+                t.style.cssText = 'color: var(--warning, #b86e00); font-size: 12px; line-height: 1.5;';
+                const vilkar = (state.EllerAv || [])
+                    .map(g => (g.OgAv || [])
+                        .map(b => `${b.Kolonne || '?'} ${b.Operator || '='} ${b.Verdi || ''}`.trim())
+                        .join(' OG '))
+                    .filter(Boolean)
+                    .join('  ELLER  ');
+                t.textContent = `Datakilden «${state.Datakilde}» tilbys ikke lenger i editoren, men `
+                    + 'oppsettet virker som før.'
+                    + (vilkar ? ` Lagret filter: ${vilkar}.` : ' Ingen filtre — henter alle rader.')
+                    + ' Bytter du datakilde, nullstilles filtrene.';
+                wrap.appendChild(t);
+                container.appendChild(wrap);
+                return;
+            }
+
+            if (!(dkValgt.filtre || []).length) {
                 // Datakilde uten filtre — vis hint og avslutt
                 const t = document.createElement('div');
                 t.style.cssText = 'color: var(--text-secondary, #666); font-size: 12px; font-style: italic;';
