@@ -13,8 +13,27 @@ const OFFENTLIGE_ENV = [
     'FS_API_URL', 'FS_EIER_ORG_KODE', 'ADMIN_UPNS',
     // Hvor backupen lastes opp. Ikke hemmelig, og det som oftest er feil
     // konfigurert når kopien ikke dukker opp der noen leter etter den.
-    'BACKUP_SHAREPOINT_SITE', 'BACKUP_SHAREPOINT_BIBLIOTEK', 'BACKUP_SHAREPOINT_MAPPE'
+    'BACKUP_SHAREPOINT_SITE', 'BACKUP_SHAREPOINT_BIBLIOTEK', 'BACKUP_SHAREPOINT_MAPPE',
+    // Knapper med default i koden. De er ikke hemmelige, og de forklarer
+    // oppførsel som ellers ser ut som en feil: et miljø der ingen varsler
+    // sendes, eller der purringen har sluttet.
+    'VARSLING_DEAKTIVERT', 'ANTHROPIC_MODELL', 'BACKUP_DEL_MAKS_MB',
+    'PURRE_MAKS_DAGER', 'PURRE_MIN_DAGER_MELLOM'
 ];
+/**
+ * Vist i helsesjekken, men IKKE lest av api/src.
+ *
+ * De brukes av PLATTFORMEN, ikke av koden vår: auth-innstillingene leses av
+ * `staticwebapp.config.<miljø>.json`, og lagringskontonavnet står for
+ * orienteringens skyld. Uten dem ville helsesjekken tiet om at innloggingen
+ * er feilkonfigurert — og det er det verste tilfellet å ikke få vite om.
+ *
+ * Lista er erklært fordi `api/test/env-inventar.test.js` ellers krever at alt
+ * helsesjekken viser også leses av koden. Et unntak uten begrunnelse er et
+ * hull; et unntak med begrunnelse er en beslutning.
+ */
+const VIST_UTEN_AT_KODEN_LESER = ['AAD_CLIENT_ID', 'AAD_CLIENT_SECRET', 'STORAGE_ACCOUNT_NAME'];
+
 const HEMMELIGE_ENV = [
     'STORAGE_CONNECTION_STRING', 'TODO_STORAGE_CONNECTION_STRING',
     'AAD_CLIENT_ID', 'AAD_CLIENT_SECRET',
@@ -25,8 +44,16 @@ const HEMMELIGE_ENV = [
     // dem var satt i noe miljø, så helsesjekken meldte en mangel hver gang
     // uten at noen handlet på den — og en alarm ingen handler på slutter å
     // virke. Utsending og purring går nå gjennom VARSLING_FLOW_URL.
+    // BACKUP_PASSPHRASE sto IKKE her til 12.10.2026, og det var den dyreste
+    // utelatelsen: er den ikke satt, er hver backup ulesbar — og
+    // helsesjekken sa ingenting. Den er nettopp en man vil oppdage før man
+    // trenger backupen.
+    'BACKUP_PASSPHRASE', 'ANTHROPIC_API_KEY',
     'VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL',
-    'BACKUP_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL'
+    'BACKUP_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL',
+    // Samme to som manglet i inventaret og i keyvault-secrets.md. Tre lister,
+    // samme hull — se api/test/env-inventar.test.js.
+    'DIAGNOSE_FLOW_URL', 'TEAM_FLOW_URL'
 ];
 
 /**
@@ -102,11 +129,21 @@ function medForventning(navn, info) {
 function maskLengde(verdi) {
     if (!verdi) return { satt: false };
     const s = String(verdi);
-    // En Key Vault-referanse som ikke ble løst står igjen som selve
-    // referansestrengen. Da er varen «satt», men verdien er ubrukelig — og
-    // symptomet er en 401 langt unna årsaken. Si det heller her.
+    // En Key Vault-referanse står igjen som selve referansestrengen. Da er
+    // varen «satt», men verdien er ubrukelig — og symptomet er en 401 langt
+    // unna årsaken.
+    //
+    // Meldingen ba tidligere om å «sjekke at SWA-ens managed identity har
+    // Key Vault Secrets User». Det er en blindvei: SWA Managed Functions
+    // løser IKKE @Microsoft.KeyVault-referanser i app settings, uansett
+    // rolletildeling. Prøvd i pilot 12.10.2026 på TEAM_SOK_EKSTERNT_FLOW_URL:
+    // appen fikk referansestrengen på 109 tegn.
     if (/^@Microsoft\.KeyVault\(/i.test(s.trim())) {
-        return { satt: true, lengde: s.length, feil: 'uløst Key Vault-referanse — sjekk at SWA-ens managed identity har «Key Vault Secrets User», og at hemmelighetsnavnet stemmer' };
+        return {
+            satt: true, lengde: s.length,
+            feil: 'Key Vault-referanse i en app-setting — SWA Managed Functions løser dem ikke. '
+                + 'Lim inn verdien som klartekst i SWA Configuration. Rolletildeling hjelper ikke.'
+        };
     }
     return { satt: true, lengde: s.length };
 }

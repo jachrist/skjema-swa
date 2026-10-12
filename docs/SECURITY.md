@@ -32,16 +32,54 @@
   - `Key Vault Secrets User` på Key Vault
 - Ingen andre tildelinger (least privilege)
 
-**Merk:** MI-en brukes i praksis bare av SWA-hosten, til å løse
-`@Microsoft.KeyVault(...)`-referanser ved oppstart. SWA Managed Functions
-eksponerer ikke identity-endepunktet til koden, så `DefaultAzureCredential`
-kan ikke hente token derfra — derfor går all lagring via connection string
-fra Key Vault, og `api/src/lib/keyvault.js` er ubrukt. Storage-rolletildelingene
-over er dermed uten praktisk effekt i dag; de står igjen fra da MI-veien ble forsøkt.
+**Merk: MI-en brukes ikke til app settings i det hele tatt.**
+
+Her sto det tidligere at hosten løser `@Microsoft.KeyVault(...)`-referanser ved
+oppstart. Det er feil, og feilen var dyr: den motsa
+`config/keyvault-secrets.md`, og den fikk det til å se ut som hemmelighetene
+bare ligger som pekere i SWA Configuration. De ligger i klartekst.
+
+Prøvd i pilot 12.10.2026: `TEAM_SOK_EKSTERNT_FLOW_URL` ble satt til en
+`@Microsoft.KeyVault(SecretUri=…)`-referanse, og `/api/system/info` meldte
+«ikke en gyldig URL» med lengde 109 — altså selve referansestrengen. SWA
+Managed Functions løser dem ikke, uansett rolletildeling.
+
+To ting følger, og de blandes lett:
+
+- **Koden** kan ikke hente token fra MI — identity-endepunktet eksponeres ikke
+  til funksjonskoden. Derfor går all lagring via connection string, og
+  `api/src/lib/keyvault.js` er ubrukt.
+- **Hosten** løser ikke referanser i app settings. Verdien må limes inn som
+  klartekst.
+
+Den ene MI-bruken som faktisk virker, er auth-sertifikatet i
+`staticwebapp.config.prod.json` — den leses av SWA-plattformens
+auth-komponent, ikke av app-settings-laget.
+
+Storage-rolletildelingene over er dermed uten praktisk effekt; de står igjen
+fra da MI-veien ble forsøkt.
+
+### Konsekvens som må være kjent
+
+Hemmelighetene står i klartekst i SWA Configuration. Den som kan **lese app
+settings** på SWA-ressursen, ser dem — inkludert `sig=`-signaturene i
+flyt-URLene og `STORAGE_CONNECTION_STRING`.
+
+Å liste app settings er en privilegert ARM-operasjon
+(`Microsoft.Web/staticSites/listAppSettings/action`); en ren *Reader* får dem
+ikke. Eksponeringen går altså til dem som allerede kan endre appen. Det er
+likevel svakere enn en ekte referanse, og det er **plattformvalget** som
+bestemmer det — ikke en beslutning vi har tatt. Blir SWA Managed Functions
+en dag i stand til å løse referanser, er dette første sted å se igjen.
+
+Appen lekker dem ikke selv: `/api/system/info` viser bare lengde, og for
+flyt-URLer bare vertsnavn og sti — aldri query-strengen der signaturen ligger.
 
 ## Key Vault
 
-- Alle hemmeligheter i `kv-fhsskjema-pilot` (dev) / `kv-fhsskjema-pilot-prod` (prod)
+- Alle hemmeligheter i `kv-fhsskjema-pilot` (pilot) / `fhs-kv-01` (prod)
+  — navnene er lest ut av pilots `KEYVAULT_NAME` og av
+  `staticwebapp.config.prod.json`, ikke av hukommelsen
 - Se `config/keyvault-secrets.md` for oversikt og rotasjonspolicy
 - Verdiene når appen som env-vars via `@Microsoft.KeyVault(...)`-referanser,
   løst av SWA-hosten ved oppstart. En rotert hemmelighet får derfor effekt først

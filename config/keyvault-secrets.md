@@ -1,12 +1,31 @@
 # Key Vault-secrets
 
-Hemmeligheter som hører hjemme i Key Vault (`kv-fhsskjema-pilot-prod` for pilot,
-prod-tenantens vault for prod). `config/env.*.json` viser hvilken secret hver
+Hemmeligheter som hører hjemme i Key Vault: **`kv-fhsskjema-pilot`** for pilot,
+**`fhs-kv-01`** for prod. `config/env.*.json` viser hvilken secret hver
 app-setting henter verdien sin fra.
+
+> Navnene sto feil her og i `docs/SECURITY.md` til 12.10.2026 («-prod»-suffiks
+> på pilot). De er nå lest ut av pilots levende `KEYVAULT_NAME` og av
+> `staticwebapp.config.prod.json`.
 
 > **Key Vault er kilden og rotasjonspunktet — ikke en referanse appen følger.**
 > Verdien må limes inn som klartekst i SWA Configuration. Se «Rotasjon» nederst;
 > dette er det punktet som oftest misforstås.
+>
+> **Prøvd og avgjort 12.10.2026.** `TEAM_SOK_EKSTERNT_FLOW_URL` ble satt i
+> pilot til `@Microsoft.KeyVault(SecretUri=…)`. `/api/system/info` svarte
+> «ikke en gyldig URL» med lengde 109 — altså selve referansestrengen. SWA
+> Managed Functions løser dem ikke, uansett rolletildeling på SWA-ens managed
+> identity. `docs/SECURITY.md` påsto det motsatte fram til da.
+>
+> Konsekvensen må være kjent: hemmelighetene står i KLARTEKST i SWA
+> Configuration, og den som kan lese app settings ser dem — inkludert
+> `sig=`-signaturene. Å liste dem er en privilegert ARM-operasjon, så en ren
+> *Reader* får dem ikke; eksponeringen går til dem som allerede kan endre
+> appen. Det er plattformvalget som bestemmer dette, ikke en beslutning vi har
+> tatt. Blir SWA en dag i stand til å løse referanser, er dette første sted å
+> se igjen — testen over tar ti minutter og reverseres ved å lime tilbake
+> verdien.
 
 ## Hemmeligheter
 
