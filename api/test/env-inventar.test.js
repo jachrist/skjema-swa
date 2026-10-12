@@ -55,12 +55,17 @@ const rot = path.join(__dirname, '..', '..');
 const MILJOER = ['pilot', 'prod'];
 
 /**
- * Hver `process.env.X` i api/src.
+ * Hver app-setting api/src leser.
  *
- * Bare `api/src`: det er API-et som kjører i SWA og som leser app settings.
- * `scripts/` leser også env-variabler, men de er lokale verktøy
- * (`scripts/migrer/*`) eller settes av GitHub Actions (`GITHUB_SHA`), og
- * hører ikke hjemme i et inventar over SWA Configuration.
+ * Bare `api/src`: det er API-et som kjører i SWA. `scripts/` leser også
+ * env-variabler, men de er lokale verktøy (`scripts/migrer/*`) eller settes
+ * av GitHub Actions (`GITHUB_SHA`), og hører ikke hjemme i et inventar over
+ * SWA Configuration.
+ *
+ * TO former må leses, ikke én. Den første versjonen av denne testen tok bare
+ * `process.env.NAVN`, og var derfor blind for seks app settings:
+ * `graph-opplast.js:46` leser via `process.env[n]` gjennom en `les()`-hjelper.
+ * Testen så komplett ut og var det ikke — nøyaktig feilen den skal hindre.
  */
 function lestAvKoden() {
     const funnet = new Set();
@@ -69,19 +74,81 @@ function lestAvKoden() {
             const p = path.join(katalog, n.name);
             if (n.isDirectory()) { gå(p); continue; }
             if (!n.name.endsWith('.js')) continue;
-            for (const m of fs.readFileSync(p, 'utf8').matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)) {
-                funnet.add(m[1]);
-            }
+            const t = fs.readFileSync(p, 'utf8');
+            for (const m of t.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)) funnet.add(m[1]);
+            for (const m of t.matchAll(/\bles\('([A-Z][A-Z0-9_]*)'\)/g)) funnet.add(m[1]);
         }
     };
     gå(path.join(rot, 'api', 'src'));
     return funnet;
 }
 
+/**
+ * Navnene helsesjekken viser på `/api/system/info`.
+ *
+ * Dette er den TREDJE lista over de samme variablene, og den drev som de to
+ * andre: 12.10.2026 manglet den ni av dem, blant dem `BACKUP_PASSPHRASE` —
+ * er den ikke satt, er hver backup ulesbar, og helsesjekken sa ingenting.
+ */
+function vistIHelsesjekken() {
+    const s = fs.readFileSync(path.join(rot, 'api', 'src', 'functions', 'system.js'), 'utf8');
+    const ut = new Set();
+    for (const navn of ['OFFENTLIGE_ENV', 'HEMMELIGE_ENV']) {
+        const m = new RegExp(`${navn} = \\[([\\s\\S]*?)\\];`).exec(s);
+        if (!m) { feil++; console.log(`FEIL  fant ikke ${navn} i system.js`); continue; }
+        for (const t of m[1].matchAll(/'([A-Z][A-Z0-9_]*)'/g)) ut.add(t[1]);
+    }
+    return ut;
+}
+
+/**
+ * Variabler som leses med et navn koden ikke kjenner på forhånd.
+ *
+ * `nokkelkalender-storage.js:117` gjør `process.env[rad.EnvVar]` — navnet
+ * kommer fra en tabellrad. Den kan ikke finnes statisk, og skal ikke kreves
+ * i inventaret.
+ */
+const DATASTYRTE_OPPSLAG = ['process.env[rad.EnvVar]'];
+
 const lest = lestAvKoden();
+const vist = vistIHelsesjekken();
 const kvKart = fs.readFileSync(path.join(rot, 'config', 'keyvault-secrets.md'), 'utf8');
 
 sjekk('koden leser env-variabler i det hele tatt', lest.size > 10, true);
+sjekk('helsesjekken viser noen', vist.size > 10, true);
+
+// Den dynamiske formen MÅ fortsatt finnes et sted, ellers har noen skrevet
+// om graph-opplast.js og testen ble blind igjen uten å si fra.
+{
+    const graph = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'graph-opplast.js'), 'utf8');
+    sjekk('den dynamiske les()-formen leses fortsatt', /les\('GRAPH_TENANT_ID'\)/.test(graph), true);
+    sjekk('og scanneren fant den', lest.has('GRAPH_TENANT_ID'), true);
+    // Det datastyrte oppslaget er erklært, ikke oversett.
+    const nk = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'nokkelkalender-storage.js'), 'utf8');
+    sjekk('det datastyrte oppslaget står der det er erklært',
+        DATASTYRTE_OPPSLAG.every(f => nk.includes(f)), true);
+}
+
+// ---------- tre lister, ett svar ----------
+{
+    // Koden, helsesjekken og inventaret har hver sin håndholdte liste over de
+    // samme variablene. De drev fra hverandre i alle tre retninger, og hver
+    // uenighet var taus.
+    sjekk('alt koden leser vises i helsesjekken',
+        [...lest].filter(n => !vist.has(n)).sort(), []);
+    // Noen vises med vilje uten at koden leser dem — auth-innstillingene
+    // brukes av plattformen. Unntaket er ERKLÆRT i system.js, ikke her: en
+    // liste i testen ville vært en fjerde kopi av den samme regelen.
+    const systemKilde = fs.readFileSync(path.join(rot, 'api', 'src', 'functions', 'system.js'), 'utf8');
+    const unntak = new Set([...(/VIST_UTEN_AT_KODEN_LESER = \[([^\]]*)\]/.exec(systemKilde)?.[1] || '')
+        .matchAll(/'([A-Z][A-Z0-9_]*)'/g)].map(m => m[1]));
+    sjekk('alt helsesjekken viser leses av koden, eller er erklært unntak',
+        [...vist].filter(n => !lest.has(n) && !unntak.has(n)).sort(), []);
+    // Og unntakslista skal ikke samle støv: et navn der som koden faktisk
+    // leser, eller som helsesjekken ikke viser, er en rest.
+    sjekk('ingen rest i unntakslista',
+        [...unntak].filter(n => lest.has(n) || !vist.has(n)).sort(), []);
+}
 
 for (const miljo of MILJOER) {
     const fil = path.join(rot, 'config', `env.${miljo}.json`);
@@ -94,13 +161,15 @@ for (const miljo of MILJOER) {
 
     const nokler = Object.keys(d).filter(n => !n.startsWith('_'));
 
-    // ---- 1. ingenting koden leser mangler ----
+    // ---- 1. ingenting koden leser eller helsesjekken viser mangler ----
     sjekk(`${miljo}: alt koden leser er deklarert`,
         [...lest].filter(n => !nokler.includes(n)).sort(), []);
+    sjekk(`${miljo}: alt helsesjekken viser er deklarert`,
+        [...vist].filter(n => !nokler.includes(n)).sort(), []);
 
     // ---- 2. ingenting står der uten grunn ----
     const uforklart = nokler.filter(n => {
-        if (lest.has(n)) return false;
+        if (lest.has(n) || vist.has(n)) return false;
         const e = d[n] || {};
         return e.public !== true && e.kun_dokumentasjon !== true;
     });
