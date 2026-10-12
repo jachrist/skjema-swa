@@ -27,6 +27,9 @@ app-setting henter verdien sin fra.
 | `aad-client-secret` | `AAD_CLIENT_SECRET` | Kun pilot. Prod bruker sertifikat, se under | Ved utløp |
 | `graph-client-secret` | `GRAPH_CLIENT_SECRET` | Graph-app for direkte SharePoint-opplasting av backup | Ved utløp |
 
+| `diagnose-flow-url` | `DIAGNOSE_FLOW_URL` | Slår opp eksterne referanser for varslingsdiagnosen | Ved lekkasje |
+| `team-flow-url` | `TEAM_FLOW_URL` | Team-oppslag mot Graph | Ved lekkasje |
+
 ### Flyt-URLer er også hemmeligheter
 
 Signaturen ligger i query-strengen, så URL-en **er** legitimasjonen: hvem som
@@ -142,3 +145,46 @@ satt, men ikke om de er *ferske*; det må følges i nøkkelkalenderen
 
 Unntaket er auth-sertifikatet i prod, som plattformen henter direkte fra Key
 Vault. Der er én rotasjon nok.
+
+## Gjenoppretting av et miljø
+
+Blir app settings i SWA Configuration slettet eller overskrevet, er
+gjenopprettingen:
+
+1. `config/env.<miljø>.json` sier hvilke nøkler som skal finnes, og hvor hver
+   verdi kommer fra. `api/test/env-inventar.test.js` holder den lista
+   fullstendig, så den kan brukes som sjekkliste.
+2. Hemmelige verdier hentes fra Key Vault (`kv-fhsskjema-pilot` for pilot,
+   `fhs-kv-01` for prod) og limes inn som klartekst.
+3. `{"value"}`-verdiene står i inventarfila.
+4. `{"settes_i_swa"}`-verdiene er miljøspesifikke og står hverken her eller i
+   Key Vault — de må leses av miljøet selv (lagringskonto-navn, admin-UPN-er,
+   SWA-URL).
+
+### Et øyeblikksbilde av hele konfigurasjonen
+
+Vil du ha SWA-ens egen JSON som ett gjenopprettbart objekt — altså punkt 3 og
+4 dekket også — hører det **i Key Vault**, ikke i repoet:
+
+```bash
+az staticwebapp appsettings list --name <swa-navn> --resource-group <rg> -o json > /tmp/appsettings.json
+az keyvault secret set --vault-name <vault> --name swa-appsettings-<miljø> --file /tmp/appsettings.json
+shred -u /tmp/appsettings.json
+```
+
+Key Vault tar 25 KB per secret, og gir versjonshistorikk, tilgangsstyring og
+revisjonslogg på kjøpet. Gjenta etter hver endring i Configuration.
+
+> **Den utdataen skal aldri innom et commit, en e-post, en sak eller et
+> chatvindu.** Den inneholder flyt-URLer med SAS-signatur,
+> `STORAGE_CONNECTION_STRING` med full tilgang til lagringskontoen,
+> `backup-passphrase` som låser opp alle backupene, og `hash-salt` som
+> reverserer pseudonymene.
+>
+> Et privat repo er ikke kryptering — det er færre øyne. Git-historikk er
+> permanent, og den klones til CI-runnere og hver utviklermaskin. Lekker noe
+> dit, er rotasjon av ALT som lå der eneste utvei.
+>
+> `api/test/env-inventar.test.js` blir rød hvis en SAS-signatur, en
+> `AccountKey=`, en `logic.azure.com`-adresse eller en privat nøkkel havner i
+> en inventarfil.

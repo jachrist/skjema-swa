@@ -25,7 +25,7 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 > Pilot-SWA-en har storage-roller på sin MI. De er levninger fra det
 > opprinnelige designet og brukes ikke; ikke kopier dem til nye miljøer.
 - **Auth:** Static Web Apps innebygd Entra ID — UPN leses fra `x-ms-client-principal`-header via `api/src/lib/auth.js`.
-- **Deploy:** GitHub Actions → SWA, med Environments (`development`, `production`).
+- **Deploy:** GitHub Actions → SWA, med Environments (`pilot`, `prod`).
 
 ## Viktige konvensjoner
 
@@ -88,8 +88,19 @@ brukeren merger, blir liggende igjen.
 
 ## Miljøer
 
-- **development** — SWA i egen tenant, `env.development.json` + Key Vault `kv-fhsskjema-pilot`.
-- **production** — samme SWA under pilot, senere separert. Deploy krever Environment approval.
+- **pilot** — `config/env.pilot.json` + Key Vault `kv-fhsskjema-pilot`.
+- **prod** — `config/env.prod.json` + Key Vault `fhs-kv-01`. Deploy krever Environment approval.
+
+Det finnes ikke noe tredje miljø. Navnene `development` og `production` er
+gamle; `env.development.json` og `env.production.json` er fjernet, og begge
+navnene rutes til pilot av `build-config.js` slik at en gammel kommando ikke
+brekker.
+
+`config/env.*.json` er en **inventarliste**, ikke en kilde: ingenting der
+settes automatisk. Hemmelige verdier bor i Key Vault og limes manuelt inn i
+SWA Configuration. `api/test/env-inventar.test.js` krever at hver
+`process.env` i `api/src` står i begge filene — ellers driver lista, og en
+oversikt som ser komplett ut og ikke er det, er verre enn ingen.
 
 ## Referanse-app
 

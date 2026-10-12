@@ -11,16 +11,23 @@ const path = require('path');
 
 const miljo = process.argv[2];
 if (!['development', 'production', 'pilot', 'prod', 'lokal'].includes(miljo)) {
-    console.error('Bruk: node scripts/build-config.js <pilot|prod|development|lokal>');
-    console.error('(production er alias for pilot — beholdt for bakoverkompatibilitet)');
+    console.error('Bruk: node scripts/build-config.js <pilot|prod|lokal>');
+    console.error('(development og production er aliaser for pilot — bakoverkompatibilitet)');
     process.exit(1);
 }
 
-// Bakoverkompatibilitet: production → pilot hvis env.pilot.json finnes
+// `development` og `production` er de gamle miljønavnene. Begge filene er
+// fjernet: `env.production.json` ble aldri lest (aliaset nedenfor rutet den
+// til pilot), og `development` hadde ingen deploy-workflow — den var bare
+// input til en røyktest i CI. To miljøfiler ingen ruller ut, vedlikeholdes
+// ikke, og de så like autoritative ut som de to ekte.
+//
+// Navnene godtas fortsatt, så en gammel kommando eller workflow ikke brekker.
+// De rutes til pilot, og sier fra om det.
 let effektivtMiljo = miljo;
-if (miljo === 'production' && fs.existsSync(path.join(__dirname, '..', 'config', 'env.pilot.json'))) {
+if (['production', 'development'].includes(miljo)) {
     effektivtMiljo = 'pilot';
-    console.log('(alias production → pilot)');
+    console.log(`(${miljo} er et gammelt miljønavn — bruker pilot)`);
 }
 
 const envFil = path.join(__dirname, '..', 'config', `env.${effektivtMiljo}.json`);
