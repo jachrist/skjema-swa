@@ -145,6 +145,74 @@ User** på `fhs-kv-01` — ingen storage-roller.
 
 Du som forvalter secretsene trenger **Key Vault Secrets Officer**.
 
+> **Legg rollen på en gruppe med minst to personer, ikke på en enkeltbruker.**
+> Vaulten er den eneste kopien av verdiene (se under). Har bare én person
+> rollen, er backupen uopprettelig den dagen vedkommende ikke er tilgjengelig
+> — og det er nettopp slike dager man trenger den.
+
+## Hvorfor vaulten fortsatt har en jobb
+
+Spørsmålet kommer før eller siden, og det er et godt et: når verdiene uansett
+står i klartekst i SWA Configuration, og ingenting i koden leser Key Vault, er
+ikke vaulten da bare en ekstra kopi?
+
+**Den gir ikke konfidensialitet.** Det skal sies rett ut. Den som har
+Contributor på SWA-ressursen ser alle verdiene i Configuration, med eller uten
+kopi i vaulten. Vaulten låser ingenting.
+
+Den har fire jobber likevel:
+
+**1. Gjenoppretting.** SWA Configuration er ett enkelt punkt. Blir ressursen
+slettet, gjenskapt eller feilkonfigurert, er verdiene borte. Vaulten er da den
+eneste kopien.
+
+**2. Versjonshistorikk — den viktigste.** Tabellen over sier om
+`backup-passphrase`: «Aldri [roter] uten å ta vare på den gamle — eldre
+backuper blir ulesbare.» Backupene krypteres med AES-256-GCM og en nøkkel
+utledet med PBKDF2 fra nettopp den verdien (`lib/backup-krypto.js`).
+Overskriver du den i SWA Configuration, er den gamle borte for alltid, og hver
+backup eldre enn byttet kan ikke åpnes igjen. Key Vault tar vare på gamle
+versjoner av seg selv. Det ER «ta vare på den gamle», mekanisk. Samme gjelder
+`hash-salt`: uten den gamle kan ingen eldre pseudonymer kobles.
+
+**3. Revisjon.** Key Vault logger hvert oppslag, per secret. Azure Activity Log
+sier bare at noen listet *alle* app settings — ikke hvem som hentet
+backup-passordet.
+
+**4. Skille mellom roller.** Den autoritative kopien ligger bak en annen
+tildeling enn den som trengs for å rulle ut. Det reduserer ikke eksponeringen i
+Configuration, men «hvem eier sannheten» og «hvem kan deploye» blir ikke samme
+svar.
+
+### Risikoen ved en kopi ingen leser
+
+Siden ingenting leser vaulten under drift, er det **ingenting som oppdager at
+kopien har drevet**. Endrer noen en verdi direkte i Configuration uten å
+oppdatere vaulten, er backupen stille feil — og det oppdages den dagen den
+trengs.
+
+To ting demper det:
+
+**Rekkefølgen er en regel:** ny verdi i Key Vault FØRST, så lim inn i SWA
+Configuration. Aldri motsatt. Se «Rotasjon» under.
+
+**Lengdesjekk uten å eksponere noe.** `/api/system/info` rapporterer lengden på
+hver hemmelighet (`maskLengde()` i `api/src/functions/system.js`):
+
+```jsonc
+"STORAGE_CONNECTION_STRING": { "satt": true, "lengde": 191 },
+"HASH_SALT":                 { "satt": true, "lengde": 14 }
+```
+
+Key Vault viser lengden til den som har Secrets Officer. Stemmer ikke
+lengdene, har kopiene drevet. Du har da sammenlignet uten å hente fram en
+eneste verdi — og uten å lime noe inn i en logg, en e-post eller et
+chatvindu.
+
+Lengde er ikke et sterkt bevis: to ulike verdier kan være like lange. Den
+fanger det som faktisk skjer i praksis — en verdi som ble byttet ett sted og
+ikke det andre — ikke en målrettet forfalskning.
+
 ## Rotasjon
 
 **En ny verdi i Key Vault slår ikke gjennom av seg selv.** Det finnes ingen
