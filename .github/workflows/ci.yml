@@ -25,5 +25,9 @@ jobs:
       # en npm-pakke her, i stedet for at utrullingen stopper på det.
       - name: Kjør tester uten node_modules (som deploy)
         run: node scripts/kjor-tester.js --uten-pakker
-      - name: Bygg config for development
-        run: node scripts/build-config.js development
+      # Bygger PILOT, ikke «development». Det fantes ingen deploy-workflow
+      # for development — fila var bare input til denne røyktesten, og en
+      # miljøfil ingen ruller ut, vedlikeholdes ikke. Nå testes et miljø som
+      # faktisk finnes.
+      - name: Bygg config for pilot
+        run: node scripts/build-config.js pilot
