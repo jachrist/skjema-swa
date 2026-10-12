@@ -188,7 +188,99 @@ function genererNokkel() {
     return crypto.randomBytes(32).toString('base64');
 }
 
+/**
+ * Ser verdien ut som chiffertekst fra `krypterStreng`?
+ *
+ * Formen er `iv:tag:chiffer` — 24 heksetegn, 32 heksetegn, så base64.
+ *
+ * Finnes for å avsløre en stille feil som IKKE er innført her:
+ * `dekrypterFulltSvar` fanger feil PER FELT og lar chifferteksten stå
+ * («la stå kryptert hvis dekryptering feiler»), men sletter likevel
+ * `Kryptert`-flagget på skjemaet. Med feil eller rotert nøkkel kommer
+ * skjemaet derfor ut som om det var dekryptert, med «fa04…:d2c9…:q8Hq…» i
+ * hver celle — i rapporter, datauttrekk, Power BI og PDF. Ingenting kaster,
+ * og ingenting logges.
+ *
+ * Den dypere feilen hører i dekrypterFulltSvar/dekrypterKompaktSvar og er
+ * ikke rettet her. Dette gjør den i det minste hørbar.
+ */
+const CHIFFER_FORM = /^[0-9a-f]{24}:[0-9a-f]{32}:/;
+
+function serKryptertUt(skjema) {
+    const sjekk = (v) => typeof v === 'string' && CHIFFER_FORM.test(v);
+    for (const seksjon of (skjema?.Seksjoner || [])) {
+        for (const felt of (seksjon?.Felter || [])) {
+            if (sjekk(felt?.Svar) || sjekk(felt?.SvarTekst)) return true;
+        }
+    }
+    for (const svar of (Array.isArray(skjema?.Svar) ? skjema.Svar : [])) {
+        if (sjekk(svar?.sva) || sjekk(svar?.svt)) return true;
+    }
+    return false;
+}
+
+/**
+ * Dekrypter ET HELT SETT skjemaer for én skjematype.
+ *
+ * Kryptering er på skjematype-nivå, så én nøkkel dekker alle forekomstene.
+ * Nøkkelen hentes bare hvis noen av dem faktisk er krypterte.
+ *
+ * Denne fantes i tre eksemplarer — `power-bi.js`, `datauttrekk.js` og
+ * `rapport-kjor.js` — med samme løkke og nesten samme logglinje. Tre kopier av
+ * samme regel er den tilbakevendende feilklassen i dette repoet: de svarer
+ * ulikt så snart den ene rettes. Her betydde det at én av dem allerede manglet
+ * advarselen om at nøkkelen var borte, og et uttrekk kunne komme ut med
+ * «[Kryptert]» i hver celle uten at loggen sa hvorfor.
+ *
+ * Et skjema som ikke lar seg dekryptere returneres URØRT, ikke utelatt. En
+ * rad som forsvinner er verre enn en rad man ser er kryptert: den første kan
+ * ikke skilles fra «skjemaet finnes ikke».
+ *
+ * @param {Array} skjemaer
+ * @param {string} skjematypeId
+ * @param {{hentNokkel: Function}} nokkelStorage — injiseres, slik at
+ *        kryptering.js ikke drar inn lagringslaget (og testene slipper det).
+ * @param {Function} log
+ * @param {{nokkel?: string}} opts — `nokkel` brukes i stedet for oppslag.
+ *        Datauttrekket lar brukeren oppgi nøkkelen i forespørselen, og en
+ *        hjelper som alltid slo opp selv ville tatt den veien bort i stillhet.
+ */
+async function dekrypterAlle(skjemaer, skjematypeId, nokkelStorage, log = () => {}, opts = {}) {
+    const liste = Array.isArray(skjemaer) ? skjemaer : [];
+    if (!liste.some(s => s?.Kryptert)) return liste;
+
+    const oppgitt = opts.nokkel ? String(opts.nokkel).trim() : '';
+    const nokkel = oppgitt || await nokkelStorage.hentNokkel(skjematypeId);
+    if (!nokkel) {
+        log(`dekrypterAlle: krypterte skjemaer, men nøkkel mangler for skjematype ${skjematypeId}`
+            + ' — verdier vises som [Kryptert]');
+        return liste;
+    }
+    let feilet = 0;
+    const ut = liste.map(s => {
+        if (!s?.Kryptert) return s;
+        try { return dekrypterSkjema(s, nokkel); }
+        catch (_) { feilet++; return s; }
+    });
+    // Et stille catch gjør «det gikk galt» umulig å skille fra «skjemaet var
+    // ikke kryptert». Tallet skal stå i loggen.
+    if (feilet > 0) log(`dekrypterAlle: ${feilet} av ${liste.length} skjemaer kastet under dekryptering`);
+
+    // Og det som IKKE kaster: feil nøkkel gir ingen feil, bare chiffertekst
+    // der verdien skulle stått. Uten denne linja er «gal nøkkel» og «dette er
+    // teksten brukeren skrev» umulig å skille fra hverandre i utdataene.
+    const sertKryptert = ut.filter(serKryptertUt).length;
+    if (sertKryptert > 0) {
+        log(`dekrypterAlle: ${sertKryptert} av ${liste.length} skjemaer har fortsatt `
+            + `chiffertekst i svarene etter dekryptering for skjematype ${skjematypeId} `
+            + '— nøkkelen passer ikke (rotert?)');
+    }
+    return ut;
+}
+
 module.exports = {
+    dekrypterAlle,
+    serKryptertUt,
     krypterStreng,
     dekrypterStreng,
     krypterSkjema,

@@ -88,8 +88,16 @@ const configFil = path.join(rot, 'frontend', 'js', 'config.js');
 
 // ---------- den genererte fila er ikke sjekket inn ----------
 {
+    // Begge filene skrives av build-config. Bare versjon.json var ignorert;
+    // config.js lå sporet og dukket opp som endret etter hver testkjøring,
+    // med et tidsstempel som ikke betyr noe i repoet. Verre: en innsjekket
+    // kopi er nettopp det som kan bli servert hvis byggetrinnet ikke kjører,
+    // og da svarer den selvsikkert og feil. Kommentaren over testen har
+    // påstått at fila ikke er sjekket inn siden den ble skrevet — uten at noe
+    // håndhevet det.
     const ignore = fs.readFileSync(path.join(rot, '.gitignore'), 'utf8');
     sjekk('versjon.json er ignorert', /^api\/src\/versjon\.json$/m.test(ignore), true);
+    sjekk('config.js er ignorert', /^frontend\/js\/config\.js$/m.test(ignore), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

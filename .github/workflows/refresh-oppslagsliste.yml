@@ -1,0 +1,53 @@
+name: Oppdater oppslagslister
+
+# SWA Managed Functions støtter ikke timer-triggere.
+# Denne workflowen kaller /api/oppslaglister/oppdater på schedule i stedet.
+# Samme mønster og samme hemmeligheter som refresh-fs.yml.
+#
+# 05:00 UTC — etter FS-refreshen (04:00), som tar 2-4 min. Rekkefølgen betyr
+# ingenting i dag, men to tunge jobber i samme minutt gjør det vanskelig å se
+# hvilken som brukte tiden hvis noe blir tregt.
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # 05:00 UTC daglig
+  workflow_dispatch:
+
+jobs:
+  oppdater:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - env: pilot
+            url_var: SWA_URL
+            key_secret: SCHEDULER_KEY
+          - env: prod
+            url_var: SWA_URL_PROD
+            key_secret: SCHEDULER_KEY_PROD
+    name: oppdater (${{ matrix.env }})
+    steps:
+      - name: Kall oppslaglister/oppdater (${{ matrix.env }})
+        env:
+          SWA_URL: ${{ vars[matrix.url_var] }}
+          SCHEDULER_KEY: ${{ secrets[matrix.key_secret] }}
+        run: |
+          if [ -z "$SWA_URL" ] || [ -z "$SCHEDULER_KEY" ]; then
+            echo "::notice::${{ matrix.env }} — ${{ matrix.url_var }} eller ${{ matrix.key_secret }} mangler, hopper over."
+            exit 0
+          fi
+          echo "Kaller $SWA_URL/api/oppslaglister/oppdater (${{ matrix.env }}) …"
+          RESP=$(curl -sS -o response.json -w "%{http_code}" -X POST "$SWA_URL/api/oppslaglister/oppdater" \
+            -H "x-scheduler-key: $SCHEDULER_KEY" \
+            -H "Content-Type: application/json")
+          echo "HTTP $RESP"
+          cat response.json
+          echo ""
+          # 207 = noen lister feilet, andre gikk. Jobben skal bli GUL, ikke
+          # grønn: en død liste gir et tomt nedtrekk, og det er ikke «ok».
+          if [ "$RESP" = "207" ]; then
+            echo "::warning::Minst én oppslagsliste feilet — se svaret over."
+            exit 0
+          fi
+          if [ "$RESP" != "200" ]; then exit 1; fi

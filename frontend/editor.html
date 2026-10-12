@@ -756,6 +756,16 @@
                 navn: 'Studieprogrammer',
                 beskrivelse: 'Distinkte studieprogrammer (utledet fra Emner)',
                 filtre: []
+            },
+            {
+                navn: 'Skjemasvar',
+                beskrivelse: 'Verdier bygget av innsendte skjemaer — f.eks. de ferdige '
+                    + 'verdivurderingene. Lista settes opp av admin (Administrasjon → '
+                    + 'Oppslagslister) og oppdateres én gang i døgnet. Bare forekomster '
+                    + 'som er BÅDE avsluttet OG godkjent kommer med.',
+                filtre: [
+                    { navn: 'Liste', beskrivelse: 'PÅKREVD. Navnet på oppslagslista, slik admin har satt det opp (f.eks. "Verdivurderinger").' }
+                ]
             }
             // Team kommer med Graph API (fase 8)
         ];

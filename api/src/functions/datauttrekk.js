@@ -138,19 +138,10 @@ app.http('datauttrekkBygg', {
             //   - Brukers manuelt oppgitte Nokkel har prioritet
             //   - Ellers hentes nøkkelen automatisk fra Kryptonokler-tabellen
             //   - Uten nøkkel: krypterte verdier vises som [Kryptert] i output
-            let nokkel = body.Nokkel ? String(body.Nokkel).trim() : null;
-            const noenKryptert = skjemaer.some(s => s?.Kryptert);
-            if (noenKryptert && !nokkel) {
-                nokkel = await nokkelStorage.hentNokkel(skjematypeId);
-                if (!nokkel) context.log(`datauttrekk: krypterte skjemaer men nøkkel mangler for type ${skjematypeId}`);
-            }
-            const dekrypterte = nokkel
-                ? skjemaer.map(s => {
-                    if (!s?.Kryptert) return s;
-                    try { return kryptering.dekrypterSkjema(s, nokkel); }
-                    catch (_) { return s; }
-                })
-                : skjemaer;
+            const nokkel = body.Nokkel ? String(body.Nokkel).trim() : null;
+            const dekrypterte = await kryptering.dekrypterAlle(
+                skjemaer, skjematypeId, nokkelStorage,
+                (m) => context.log(`datauttrekk: ${m}`), { nokkel });
 
             const fil = datauttrekk.bygg(dekrypterte, definisjon, filtere, type);
 

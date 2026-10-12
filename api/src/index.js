@@ -32,6 +32,7 @@ require('./functions/backup');
 require('./functions/team');
 require('./functions/ai-analyser');
 require('./functions/oppslag');
+require('./functions/oppslagsliste');
 require('./functions/rapporttyper');
 require('./functions/rapport-kjor');
 require('./functions/todo');
