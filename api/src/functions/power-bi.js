@@ -47,18 +47,8 @@ app.http('powerBi', {
             const skjemaer = await forekomstStorage.hentAlleSkjemaerForType(skjematypeId, { fulltFormat: true });
 
             // Auto-dekryptering: hent nøkkel én gang, dekrypter alle krypterte skjemaer
-            let nokkel = null;
-            if (skjemaer.some(s => s?.Kryptert)) {
-                nokkel = await nokkelStorage.hentNokkel(skjematypeId);
-                if (!nokkel) context.log(`power-bi: krypterte skjemaer men nøkkel mangler — verdier vises som [Kryptert]`);
-            }
-            const dekrypterte = nokkel
-                ? skjemaer.map(s => {
-                    if (!s?.Kryptert) return s;
-                    try { return kryptering.dekrypterSkjema(s, nokkel); }
-                    catch (_) { return s; }
-                })
-                : skjemaer;
+            const dekrypterte = await kryptering.dekrypterAlle(
+                skjemaer, skjematypeId, nokkelStorage, (m) => context.log(`power-bi: ${m}`));
 
             const dataRader = dekrypterte.map(s => trekkUtSvar(s, definisjon));
 

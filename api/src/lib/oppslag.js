@@ -10,6 +10,21 @@
  *   - Roller, Personer (roller-storage + team-storage)
  *   - Team             (team-storage)
  *   - Emner, Studenter, Klasser, Kull, Studieprogrammer (emner-storage / FS)
+ *   - Skjemasvar      (oppslagsliste-storage) — svar fra innsendte skjemaer
+ *
+ * `Skjemasvar` leser en FERDIGBYGGET liste, ikke skjemaforekomstene. To
+ * grunner, begge i `faste-data.js`:
+ *
+ *   FasteData løses opp ved hver `GET /api/skjematyper/{id}`, altså hver gang
+ *   noen åpner skjemaet. En direkte kilde ville skannet og dekryptert alle
+ *   forekomstene av kildeskjematypen på den kritiske veien inn i et skjema.
+ *
+ *   `hentForOgGruppe` (faste-data.js:195) kaller oppslaget ÉN GANG PER
+ *   betingelse i en OG-gruppe og snitter på `Verdi`. En kilde som trenger to
+ *   parametre samtidig — hvilken skjematype OG hvilket felt — ville fått dem i
+ *   to kall, hvert uten den andre, og snittet ville gitt en tom liste uten en
+ *   feilmelding. En ferdigbygget liste trenger bare ETT filter (`Liste`), så
+ *   den formen kan ikke oppstå.
  *
  * Datakilder som ikke er implementert — returnerer tom liste + log:
  *   - Avdelinger
@@ -55,6 +70,8 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
             return await _hentKull();
         case 'Studieprogrammer':
             return await _hentStudieprogrammer();
+        case 'Skjemasvar':
+            return await _hentSkjemasvar(filterbegrep, filterverdi, log);
         default:
             if (IKKE_IMPLEMENTERT.has(datakilde)) {
                 log(`oppslag: datakilde "${datakilde}" kommer med masterdata-modul (fase 5)`);
@@ -83,6 +100,40 @@ async function hentInnehavereForRolle(rolleStreng) {
         if (innehavere.length > 0) return innehavere;
     }
     return [];
+}
+
+/**
+ * Verdier fra en ferdigbygget oppslagsliste.
+ *
+ * `Liste=<navn>` er PÅKREVD. Uten den vet vi ikke hvilken liste det er, og en
+ * tom liste i nedtrekket er umulig å skille fra «ingen vurderinger er
+ * godkjent ennå». Loggen sier derfor hva som manglet OG hvilke lister som
+ * finnes — samme diagnostikk som importskriptet, av samme grunn: feilmeldingen
+ * skal peke på rettelsen, ikke bare på at noe er galt.
+ */
+async function _hentSkjemasvar(filterbegrep, filterverdi, log = () => {}) {
+    const oppslagsliste = require('./oppslagsliste-storage');
+    const navn = String(filterverdi || '').trim();
+
+    if (filterbegrep !== 'Liste' || !navn) {
+        const definerte = await oppslagsliste.hentOppsett(log).catch(() => []);
+        log(`oppslag: Skjemasvar krever filteret Liste=<navn>`
+            + (filterbegrep ? ` (fikk "${filterbegrep}")` : ' (fikk ingen filter)')
+            + `. Definerte lister: ${definerte.map(l => `"${l.Navn}"`).join(', ') || '(ingen)'}`);
+        return [];
+    }
+
+    const rader = await oppslagsliste.hentListe(navn);
+    if (rader.length === 0) {
+        // Tom liste har to helt ulike årsaker, og de skal kunne skilles.
+        const definerte = await oppslagsliste.hentOppsett(log).catch(() => []);
+        const finnes = definerte.some(l => String(l.Navn).trim().toLowerCase() === navn.toLowerCase());
+        log(finnes
+            ? `oppslag: oppslagslista "${navn}" er definert men tom — har døgnjobben kjørt? Se /api/oppslaglister`
+            : `oppslag: ingen oppslagsliste heter "${navn}". Definerte: `
+                + (definerte.map(l => `"${l.Navn}"`).join(', ') || '(ingen)'));
+    }
+    return rader.map(r => ({ Tekst: r.Tekst, Verdi: r.Verdi }));
 }
 
 async function _hentRolleGrupper(filterbegrep, filterverdi) {

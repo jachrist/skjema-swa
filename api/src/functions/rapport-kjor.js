@@ -79,16 +79,9 @@ app.http('kjorRapport', {
 
             // Dekrypter krypterte skjemaer hvis nøkkel finnes. Kryptering er
             // på skjematype-nivå, så én nøkkel dekker alle skjemaer i settet.
-            const trengerDekrypt = skjemaer.some(s => s?.Kryptert);
-            let nokkel = null;
-            if (trengerDekrypt) {
-                nokkel = await nokkelStorage.hentNokkel(kildeId);
-            }
-            const dekryptert = skjemaer.map(s => {
-                if (!s?.Kryptert || !nokkel) return s;
-                try { return kryptering.dekrypterSkjema(s, nokkel); }
-                catch (_) { return s; }
-            });
+            // Løkka lå i tre eksemplarer; den bor nå i kryptering.js alene.
+            const dekryptert = await kryptering.dekrypterAlle(
+                skjemaer, kildeId, nokkelStorage, (m) => context.log(`rapport: ${m}`));
 
             // Rollebaserte innebygde filtre løses opp mot den innloggede
             // brukeren rett før kjøring. Admin slipper dem og ser alt.

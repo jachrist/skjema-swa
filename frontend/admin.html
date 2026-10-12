@@ -344,6 +344,7 @@
                 <a class="fane" data-fane="utsendinger" href="#utsendinger">✉️ Utsendinger</a>
                 <a class="fane" data-fane="gevinst" href="#gevinst">📈 Gevinstoppfølging</a>
                 <a class="fane" data-fane="postnumre-fs" href="#postnumre-fs">🌐 Postnumre / FS</a>
+                <a class="fane" data-fane="oppslaglister" href="#oppslaglister">🗂 Oppslagslister</a>
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup</a>
                 <a class="fane" data-fane="arkiv" href="#arkiv">🗄 Arkivering</a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
@@ -446,6 +447,7 @@
                 case 'utsendinger': rendrUtsendinger(); break;
                 case 'gevinst':     rendrGevinst(); break;
                 case 'postnumre-fs':rendrPostnumreFs(); break;
+                case 'oppslaglister': rendrOppslagslister(); break;
                 case 'backup':      rendrBackup(); break;
                 case 'arkiv':       rendrArkiv(); break;
                 case 'logoer':      rendrLogoer(); break;
@@ -2023,6 +2025,253 @@
         }
 
         // ==================== POSTNUMRE / FS-FANE ====================
+
+
+        // ---------------- Oppslagslister ----------------
+        //
+        // Verdier til nedtrekk, bygget av innsendte skjemaer. Feltene oppgis
+        // med MERKELAPP og ikke feltnummer: oppsettet skal kunne skrives av en
+        // som ser skjemaet, og en skjematype defineres i prod, der
+        // feltnumrene ikke er kjent når oppsettet lages. Jobben slår merkelapp
+        // → feltnummer opp mot den levende definisjonen ved hver kjøring.
+        //
+        // «Forhåndsvis» er ikke pynt: uten den må man lagre og kjøre for å se
+        // om formatet ble riktig, og da er det alt skrevet til tabellen.
+        let oppslagState = { lister: [], kjoringer: [] };
+
+        async function rendrOppslagslister() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Oppslagslister</h2>
+                    <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.5;">
+                        Verdier til nedtrekksmenyer, bygget av innsendte skjemaer. En liste peker på
+                        én skjematype og setter sammen svarene fra noen av feltene til én tekst per
+                        forekomst. Bare forekomster som er <strong>både avsluttet og
+                        godkjent</strong> kommer med — begge deler, ikke én av dem.
+                        <br>
+                        Brukes i skjemaeditoren som datakilden <code>Skjemasvar</code> med filteret
+                        <code>Liste=&lt;navn&gt;</code>. Lista oppdateres én gang i døgnet (05:00 UTC),
+                        og kan oppdateres manuelt her.
+                    </div>
+                    <div id="oppslag-lister" style="margin-top: 14px;"><div class="laster">Laster…</div></div>
+                    <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp" onclick="oppslagNyListe()">+ Ny liste</button>
+                        <button class="knapp primær" onclick="oppslagLagre()">💾 Lagre oppsett</button>
+                        <button class="knapp" onclick="oppslagOppdaterAlle()">🔄 Oppdater alle nå</button>
+                        <button class="knapp mini" onclick="rendrOppslagslister()">Last på nytt</button>
+                    </div>
+                    <div id="oppslag-melding" style="margin-top: 10px;"></div>
+                    <div id="oppslag-resultat" style="margin-top: 10px;"></div>
+                </div>
+            `;
+            try {
+                const d = await api.get('/api/oppslaglister');
+                oppslagState = { lister: d.lister || [], kjoringer: d.kjoringer || [] };
+                tegnOppslagLister();
+            } catch (e) {
+                document.getElementById('oppslag-lister').innerHTML =
+                    `<div class="banner feil">Kunne ikke laste oppsettet: ${escHtml(e.message)}</div>`;
+            }
+        }
+
+        function oppslagKjoring(navn) {
+            return oppslagState.kjoringer.find(k =>
+                String(k.Navn).toLowerCase() === String(navn).trim().toLowerCase()) || null;
+        }
+
+        function tegnOppslagLister() {
+            const vert = document.getElementById('oppslag-lister');
+            if (!vert) return;
+            if (oppslagState.lister.length === 0) {
+                vert.innerHTML = '<div style="color: var(--text-secondary); font-size: 13px;">'
+                    + 'Ingen lister satt opp ennå. Trykk «+ Ny liste».</div>';
+                return;
+            }
+            vert.innerHTML = oppslagState.lister.map((l, i) => {
+                const k = oppslagKjoring(l.Navn);
+                // Statusen skal si BÅDE hva som skjedde og når. «ok» alene
+                // kunne vært fra forrige uke.
+                const status = !k ? '<em style="color: var(--text-secondary);">aldri kjørt</em>'
+                    : k.Status === 'feil'
+                        ? `<span style="color: var(--danger);">feilet: ${escHtml(k.Melding || '')}</span>`
+                        : `${k.Antall ?? '?'} rader`
+                            + (Number(k.Hoppet) > 0 ? `, ${k.Hoppet} hoppet over` : '')
+                            + ` — ${escHtml(String(k.SistKjort || '').slice(0, 16).replace('T', ' '))}`;
+                return `
+                <div class="panel" style="margin: 0 0 12px; padding: 12px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+                        <label style="flex: 1 1 180px;">Listenavn
+                            <input type="text" value="${escHtml(l.Navn || '')}"
+                                   oninput="oppslagSett(${i}, 'Navn', this.value)"
+                                   placeholder="Verdivurderinger">
+                        </label>
+                        <label style="flex: 0 1 140px;">Skjematype-ID
+                            <input type="text" value="${escHtml(l.Skjematype_id || '')}"
+                                   oninput="oppslagSett(${i}, 'Skjematype_id', this.value)"
+                                   placeholder="59">
+                        </label>
+                        <button class="knapp mini" onclick="oppslagForhandsvis(${i})">👁 Forhåndsvis</button>
+                        <button class="knapp mini" onclick="oppslagOppdaterEn(${i})">🔄 Oppdater</button>
+                        <button class="knapp mini danger" onclick="oppslagFjernListe(${i})">Slett</button>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">
+                        Status: ${status}
+                    </div>
+                    <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary);">
+                        Feltene i rekkefølge. <strong>Merkelapp</strong> er feltets tekst i skjemaet
+                        (feltnummer som «2-01» godtas også). <strong>Tekst foran</strong> settes rett
+                        før verdien — skriv «Personopplysning: » med kolon og mellomrom. Delene
+                        skilles med « - ».
+                    </div>
+                    ${(l.Felter || []).map((f, j) => `
+                        <div style="display: flex; gap: 8px; margin-top: 6px; align-items: center;">
+                            <input type="text" style="flex: 1 1 200px;" value="${escHtml(f.Merkelapp || '')}"
+                                   oninput="oppslagSettFelt(${i}, ${j}, 'Merkelapp', this.value)"
+                                   placeholder="Datapunkt (navn)">
+                            <input type="text" style="flex: 1 1 200px;" value="${escHtml(f.Prefiks || '')}"
+                                   oninput="oppslagSettFelt(${i}, ${j}, 'Prefiks', this.value)"
+                                   placeholder="Tekst foran (valgfritt)">
+                            <button class="knapp mini" onclick="oppslagFlyttFelt(${i}, ${j}, -1)" ${j === 0 ? 'disabled' : ''}>↑</button>
+                            <button class="knapp mini" onclick="oppslagFlyttFelt(${i}, ${j}, 1)" ${j === (l.Felter.length - 1) ? 'disabled' : ''}>↓</button>
+                            <button class="knapp mini danger" onclick="oppslagFjernFelt(${i}, ${j})">×</button>
+                        </div>
+                    `).join('')}
+                    <button class="knapp mini" style="margin-top: 8px;" onclick="oppslagNyttFelt(${i})">+ Felt</button>
+                </div>`;
+            }).join('');
+        }
+
+        // Skriver bare i state — ingen re-tegning, ellers mister input-feltet
+        // fokus mens man skriver.
+        window.oppslagSett = (i, n, v) => { if (oppslagState.lister[i]) oppslagState.lister[i][n] = v; };
+        window.oppslagSettFelt = (i, j, n, v) => {
+            const f = oppslagState.lister[i]?.Felter?.[j];
+            if (f) f[n] = v;
+        };
+        window.oppslagNyListe = () => {
+            oppslagState.lister.push({ Navn: '', Skjematype_id: '', Felter: [{ Merkelapp: '', Prefiks: '' }] });
+            tegnOppslagLister();
+        };
+        window.oppslagFjernListe = (i) => {
+            const navn = oppslagState.lister[i]?.Navn || '(uten navn)';
+            if (!confirm(`Slette oppsettet for "${navn}"?\n\nRadene i tabellen blir stående til neste `
+                + 'oppdatering. Et skjemafelt som peker på lista får da en tom nedtrekksliste.')) return;
+            oppslagState.lister.splice(i, 1);
+            tegnOppslagLister();
+        };
+        window.oppslagNyttFelt = (i) => {
+            (oppslagState.lister[i].Felter ||= []).push({ Merkelapp: '', Prefiks: '' });
+            tegnOppslagLister();
+        };
+        window.oppslagFjernFelt = (i, j) => { oppslagState.lister[i].Felter.splice(j, 1); tegnOppslagLister(); };
+        window.oppslagFlyttFelt = (i, j, d) => {
+            const f = oppslagState.lister[i].Felter;
+            const ny = j + d;
+            if (ny < 0 || ny >= f.length) return;
+            [f[j], f[ny]] = [f[ny], f[j]];
+            tegnOppslagLister();
+        };
+
+        function oppslagMelding(tekst, klasse) {
+            const el = document.getElementById('oppslag-melding');
+            if (el) el.innerHTML = tekst ? `<div class="banner ${klasse || ''}">${escHtml(tekst)}</div>` : '';
+        }
+
+        window.oppslagLagre = async () => {
+            oppslagMelding('Lagrer…', '');
+            try {
+                const d = await api.put('/api/oppslaglister', { Lister: oppslagState.lister });
+                oppslagState.lister = d.lister || [];
+                oppslagMelding(`Lagret ${oppslagState.lister.length} liste(r). `
+                    + 'Oppsettet er lagret — trykk «Oppdater» for å bygge radene.', 'suksess');
+                tegnOppslagLister();
+            } catch (e) {
+                oppslagMelding(`Ikke lagret: ${e.message}`, 'feil');
+            }
+        };
+
+        /**
+         * Tørr kjøring: bygger uten å skrive, og viser de første radene.
+         *
+         * Oppsettet må være lagret først — jobben leser det fra tabellen, ikke
+         * fra skjermen. Sies det ikke, ser en forhåndsvisning av forrige
+         * lagrede oppsett ut som en forhåndsvisning av det man nettopp skrev.
+         */
+        window.oppslagForhandsvis = async (i) => {
+            const navn = String(oppslagState.lister[i]?.Navn || '').trim();
+            if (!navn) return oppslagMelding('Lista mangler navn.', 'feil');
+            oppslagMelding(`Forhåndsviser "${navn}" (bygger uten å skrive)…`, '');
+            await oppslagKjor(`/api/oppslaglister/oppdater?tort=1&liste=${encodeURIComponent(navn)}`, true);
+        };
+        window.oppslagOppdaterEn = async (i) => {
+            const navn = String(oppslagState.lister[i]?.Navn || '').trim();
+            if (!navn) return oppslagMelding('Lista mangler navn.', 'feil');
+            oppslagMelding(`Oppdaterer "${navn}"…`, '');
+            await oppslagKjor(`/api/oppslaglister/oppdater?liste=${encodeURIComponent(navn)}`, false);
+        };
+        window.oppslagOppdaterAlle = async () => {
+            oppslagMelding('Oppdaterer alle listene…', '');
+            await oppslagKjor('/api/oppslaglister/oppdater', false);
+        };
+
+        async function oppslagKjor(url, tørr) {
+            const ut = document.getElementById('oppslag-resultat');
+            try {
+                const d = await api.post(url, {});
+                oppslagMelding(tørr
+                    ? 'Forhåndsvisning — ingenting er skrevet.'
+                    : `Ferdig: ${(d.resultater || []).length} liste(r) oppdatert`
+                        + ((d.feil || []).length ? `, ${d.feil.length} feilet` : '.'),
+                    (d.feil || []).length ? 'advarsel' : 'suksess');
+                if (ut) ut.innerHTML = oppslagResultatHtml(d);
+                if (!tørr) {
+                    try { oppslagState.kjoringer = (await api.get('/api/oppslaglister')).kjoringer || []; }
+                    catch (_) { /* statusen er pynt her; resultatet står over */ }
+                    tegnOppslagLister();
+                }
+            } catch (e) {
+                oppslagMelding(`Feilet: ${e.message}`, 'feil');
+                if (ut) ut.innerHTML = '';
+            }
+        }
+
+        function oppslagResultatHtml(d) {
+            const biter = [];
+            for (const f of (d.feil || [])) {
+                biter.push(`<div class="banner feil">${escHtml(f.navn)}: ${escHtml(f.melding)}</div>`);
+            }
+            for (const r of (d.resultater || [])) {
+                biter.push(`
+                    <div class="panel" style="margin: 0 0 10px; padding: 12px;">
+                        <strong>${escHtml(r.navn)}</strong>
+                        <span style="color: var(--text-secondary); font-size: 12px;">
+                            — skjematype ${escHtml(String(r.skjematypeId))}
+                            ${r.kildeNavn ? `(${escHtml(r.kildeNavn)})` : ''},
+                            ${r.antall} av ${r.antallForekomster} forekomster,
+                            ${r.antallHoppet} hoppet over
+                            ${r.skrevet ? '' : ' — <em>ikke skrevet</em>'}
+                        </span>
+                        <div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">
+                            Felter: ${(r.felter || []).map(f =>
+                                `${escHtml(f.merkelapp)} (${escHtml(f.nokkel)})`).join(' · ')}
+                        </div>
+                        ${(r.forhandsvisning || []).length ? `
+                            <div style="margin-top: 8px; font-family: monospace; font-size: 12px;
+                                        white-space: pre-wrap; word-break: break-word; line-height: 1.6;">
+${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
+                            </div>` : '<div style="margin-top: 8px; font-size: 12px;"><em>Ingen rader.</em></div>'}
+                        ${(r.hoppet || []).length ? `
+                            <details style="margin-top: 8px; font-size: 12px;">
+                                <summary>Hoppet over (${r.antallHoppet} i alt, viser ${r.hoppet.length})</summary>
+                                <div style="margin-top: 6px; color: var(--text-secondary);">
+                                    ${r.hoppet.map(h =>
+                                        `skjema ${escHtml(String(h.skjemaId || '?'))}: ${escHtml(h.grunn)}`).join('<br>')}
+                                </div>
+                            </details>` : ''}
+                    </div>`);
+            }
+            return biter.join('');
+        }
 
         function rendrPostnumreFs() {
             document.getElementById('innhold').innerHTML = `
