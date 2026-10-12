@@ -511,6 +511,7 @@
                 // Vis skjematypene så snart de er hentet — ikke vent på tilleggs-info
                 alle = await api.get('/api/skjematyper');
                 oppdaterFaseFilter();
+                gjenopprettSok();
                 filtrer();
                 // Hent tilleggs-info i bakgrunnen og re-render når klart
                 api.get('/api/mine-mellomlagrede').catch(() => ({})).then(m => {
@@ -621,6 +622,46 @@
         const KUN_EIER_LS_NOKKEL = 'velgskjema-kun-eier';
 
         /**
+         * Søketeksten huskes — men bare for økta.
+         *
+         * Under utvikling av en skjematype går man fram og tilbake mellom
+         * oversikten, utfylling og editoren. Hver retur tømte søkefeltet, og
+         * man måtte skrive seg fram til det samme kortet på nytt.
+         *
+         * `sessionStorage`, ikke `localStorage` som fasene og eierbryteren:
+         * de to er innstillinger man har valgt, mens et søk er arbeidsstate.
+         * Å åpne oversikten i morgen og få ei liste som er filtrert av noe man
+         * skrev i går, ser ut som om skjematyper har forsvunnet — og det er
+         * en verre feil enn å måtte skrive søket på nytt.
+         */
+        const SOK_SS_NOKKEL = 'velgskjema-sok';
+
+        function lesLagretSok() {
+            try { return sessionStorage.getItem(SOK_SS_NOKKEL) || ''; }
+            catch { return ''; }  // privat modus
+        }
+
+        function lagreSok(tekst) {
+            try {
+                if (tekst) sessionStorage.setItem(SOK_SS_NOKKEL, tekst);
+                else sessionStorage.removeItem(SOK_SS_NOKKEL);
+            } catch { /* privat modus — søket virker, det huskes bare ikke */ }
+        }
+
+        /**
+         * Legg den lagrede teksten tilbake i feltet.
+         *
+         * Kalles FØR første `filtrer()`, ellers rendres hele lista først og
+         * hopper til det filtrerte utvalget et øyeblikk etter.
+         */
+        function gjenopprettSok() {
+            const el = document.getElementById('sok');
+            if (!el || el.value) return;
+            const lagret = lesLagretSok();
+            if (lagret) el.value = lagret;
+        }
+
+        /**
          * Er bryteren på?
          *
          * Leses fra avkrysningsboksen, ikke fra en variabel ved siden av —
@@ -706,7 +747,11 @@
         }
 
         window.filtrer = () => {
-            const q = document.getElementById('sok').value.trim().toLowerCase();
+            const raa = document.getElementById('sok').value;
+            // Lagres rått, ikke normalisert: feltet skal se ut nøyaktig som
+            // man forlot det.
+            lagreSok(raa);
+            const q = raa.trim().toLowerCase();
             const kriterier = {
                 faser: lesValgteFaser(),
                 kunEier: kunEierValgt(),

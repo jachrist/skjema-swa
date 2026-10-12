@@ -95,6 +95,25 @@ Oppsettet ligger i `SystemInnstillinger` under nøkkelen `Oppslagslister`, ikke
 i `Oppslagsliste`-tabellen. Holdes de samme sted, kan en full erstatning av en
 liste ta oppsettet med seg.
 
+## Postnumre er ikke lenger en valgbar datakilde
+
+`Postnummer` er en egen felttype med egen widget, eget søkeendepunkt og egne
+regler for format. Den samme dataen som en generisk valgliste er en dårligere
+vei til det samme, og verdiene blir ikke validert som postnumre. Kilden er
+derfor tatt ut av nedtrekket i editoren.
+
+Dispatcheren svarer fortsatt på den. Fjernes `case 'Postnumre'`, får en
+skjematype som allerede har `FasteData: Postnumre{...}` et tomt nedtrekk —
+uten at noe sier fra, og uten at noen har rørt definisjonen. Settet
+`IKKE_TILBUDT` i `api/src/lib/oppslag.js` erklærer dette, og
+`datakilder-paritet.test.js` krever at enhver kilde som bare finnes i
+dispatcheren står der.
+
+Åpner man en slik skjematype i editoren, står kilden i nedtrekket som
+«Postnumre (tilbys ikke lenger)», med det lagrede filteret skrevet ut. Før
+dette viste editoren «— velg —» og teksten «datakilden har ingen filtre —
+henter alle rader», mens filteret lå der i definisjonen.
+
 ## I skjemaeditoren
 
 Datakilde `Skjemasvar`, filter `Liste=<navn>`. Filteret er **påkrevd** — uten
