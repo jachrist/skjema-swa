@@ -404,7 +404,7 @@
 
         <div class="sokefelt-rad">
             <span class="sokefelt-ikon">🔍</span>
-            <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="filtrer()">
+            <input type="text" class="sokefelt" id="sok" placeholder="Søk etter skjematype…" oninput="sokEndret()">
         </div>
 
         <div style="margin-bottom: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
@@ -464,6 +464,12 @@
         window.logUt = () => authLogUt('/');
 
         async function init() {
+            // Aller først, før noe asynkront: søkefeltet trenger ingen data,
+            // bare seg selv. Lå gjenopprettingen lenger ned, kunne et
+            // bakgrunnskall rekke å filtrere på et tomt felt først — og
+            // brukeren så hele lista et øyeblikk før den hoppet til utvalget.
+            gjenopprettSok();
+
             const bruker = await hentInnloggetBruker();
             if (!bruker) {
                 window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname);
@@ -493,6 +499,8 @@
 
             // Nullpunktstatus hentes bare for dem merkingen gjelder, og aldri
             // slik at et treigt eller feilende kall holder lista tilbake.
+            // MERK: denne kan kalle `filtrer()` før `lastListe()` er ferdig.
+            // Derfor må søkefeltet være gjenopprettet allerede (se init).
             if (erAdminBruker || kanLageRapport) {
                 api.get('/api/gevinst/nullpunkt-status')
                     .then(res => { nullpunkt = res || nullpunkt; filtrer(); })
@@ -511,7 +519,6 @@
                 // Vis skjematypene så snart de er hentet — ikke vent på tilleggs-info
                 alle = await api.get('/api/skjematyper');
                 oppdaterFaseFilter();
-                gjenopprettSok();
                 filtrer();
                 // Hent tilleggs-info i bakgrunnen og re-render når klart
                 api.get('/api/mine-mellomlagrede').catch(() => ({})).then(m => {
@@ -746,12 +753,29 @@
             );
         }
 
+        /**
+         * Brukeren endret søkefeltet.
+         *
+         * Lagringen ligger HER og ikke i `filtrer()`, som kalles
+         * programmatisk fra seks steder. Lå den der, kunne et bakgrunnskall
+         * som kom tilbake før gjenopprettingen kjøre `filtrer()` med tomt
+         * felt og skrive tom streng OVER det lagrede søket — og det var
+         * nøyaktig det som skjedde: `init()` starter nullpunkt-kallet før
+         * `await lastListe()`, der gjenopprettingen lå.
+         *
+         * Feilen var tidsavhengig, så den så ut som om lagringen aldri
+         * virket. Å flytte rekkefølgen ville bare flyttet vinduet; bare
+         * brukerens egen endring skal skrive til lageret.
+         */
+        window.sokEndret = () => {
+            // Rått, ikke normalisert: feltet skal se ut nøyaktig som man
+            // forlot det.
+            lagreSok(document.getElementById('sok').value);
+            filtrer();
+        };
+
         window.filtrer = () => {
-            const raa = document.getElementById('sok').value;
-            // Lagres rått, ikke normalisert: feltet skal se ut nøyaktig som
-            // man forlot det.
-            lagreSok(raa);
-            const q = raa.trim().toLowerCase();
+            const q = document.getElementById('sok').value.trim().toLowerCase();
             const kriterier = {
                 faser: lesValgteFaser(),
                 kunEier: kunEierValgt(),
