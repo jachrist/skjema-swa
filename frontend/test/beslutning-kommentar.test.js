@@ -31,14 +31,11 @@ function sjekk(navn, faktisk, forventet) {
 // ---------- den ekte funksjonen, med den ekte escapingen ----------
 const { kommentarerSomHtml } = require('../js/behandling-kommentar.js');
 
-// Samme escapeHtml som sidene sender inn, klipt ut av felt-render.js. En
+// Samme escapeHtml som sidene sender inn, hentet fra escape.js. En
 // escape-funksjon oppfunnet her ville testet testen, ikke koden.
-const felt = fs.readFileSync(path.join(__dirname, '..', 'js', 'felt-render.js'), 'utf8');
-const eStart = felt.indexOf('export function escapeHtml(');
-if (eStart === -1) throw new Error('Fant ikke escapeHtml i felt-render.js');
-const eSlutt = felt.indexOf('\n}', eStart) + 2;
-const escapeHtml = new Function(
-    `${felt.slice(eStart, eSlutt).replace('export function', 'function')}\nreturn escapeHtml;`)();
+const { hentEksport } = require('../../scripts/test-kilde.js');
+const escapeHtml = hentEksport(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'escape.js'), 'utf8'), 'escapeHtml');
 
 const kommentarerFor = (steg) => kommentarerSomHtml(steg, escapeHtml);
 

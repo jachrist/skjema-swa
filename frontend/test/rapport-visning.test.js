@@ -26,7 +26,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { utenKommentarer } = require('../../scripts/test-kilde.js');
+const { hentEksport, utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -42,13 +42,11 @@ const editor = les('rapporteditor.html');
 // ---------- Markdown med bilder ----------
 {
     // Den ekte parseren, klipt ut av felt-render.js.
-    const fr = les('js', 'felt-render.js');
-    const biter = ['escapeHtml', 'parseMarkdown'].map(navn => {
-        const i = fr.indexOf(`export function ${navn}(`);
-        if (i === -1) throw new Error(`Fant ikke ${navn} i felt-render.js`);
-        return fr.slice(i, fr.indexOf('\n}', i) + 2).replace('export function', 'function');
-    });
-    const parseMarkdown = new Function(`${biter.join('\n')}\nreturn parseMarkdown;`)();
+    // escapeHtml bor i escape.js, parseMarkdown i felt-render.js. Begge
+    // hentes som de står — ikke som kopier skrevet her.
+    const parseMarkdown = hentEksport(
+        les('js', 'escape.js') + '\n' + les('js', 'felt-render.js'),
+        'parseMarkdown', ['escapeHtml']);
 
     sjekk('relativt bilde',
         parseMarkdown('![Logo](/bilder/logo.png)'),

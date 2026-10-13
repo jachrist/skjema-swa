@@ -663,6 +663,7 @@
         import { apneMeldingModal, samleFeltreferanser, EPOST_IKON } from './js/melding-editor.js';
         import { migrerFeltreferanser } from './js/feltref-migrering.js';
         import { byggMdEditor } from './js/md-editor.js';
+        import { escapeHtml, escapeJsIAttributt } from './js/escape.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -927,7 +928,7 @@
                     <h2 onclick="togglePanel('grunnleggende')"><span class="kollaps-pil">▼</span>Grunnleggende <small style="font-weight: 400; text-transform: none;">— navn, fase og forklaringen utfylleren møter</small></h2>
                     <div class="rad">
                         <label>Skjema-navn <small>(vises i portalen)</small></label>
-                        <input type="text" id="f-navn" value="${escapeAttr(data.Skjema_navn || '')}" oninput="setNavn(this.value)">
+                        <input type="text" id="f-navn" value="${escapeHtml(data.Skjema_navn || '')}" oninput="setNavn(this.value)">
                     </div>
                     <div class="rad">
                         <label>Fase</label>
@@ -939,7 +940,7 @@
                     <div class="rad">
                         <label>Ikon <small>(vises til venstre for tittelen på utfyllingssiden — administreres i <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>. Plassen til høyre er reservert for systemmerkingen.)</small></label>
                         <div style="display: flex; gap: 8px; align-items: center;">
-                            <img id="f-logo-preview" src="${escapeAttr(data.Logo_url || '')}" alt=""
+                            <img id="f-logo-preview" src="${escapeHtml(data.Logo_url || '')}" alt=""
                                 style="height: 40px; max-width: 120px; object-fit: contain; background: var(--bg-input); border: 1px solid var(--input-border); border-radius: 4px; padding: 2px; ${data.Logo_url ? '' : 'display: none;'}">
                             <span id="f-logo-navn" style="font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${data.Logo_url ? escapeHtml(data.Logo_url.split('/').pop()) : '(ingen valgt)'}</span>
                             <button class="knapp sekundær" style="font-size: 12px; padding: 4px 10px;" onclick="velgLogoModal('Logo_url')">Velg logo…</button>
@@ -1077,12 +1078,12 @@
                     <div class="rad">
                         <label>Liste-adresse (site-URL) <small>(tom = SP-integrasjon deaktivert)</small></label>
                         <input type="url" id="sp-listeadresse" placeholder="https://tenant.sharepoint.com/sites/mittsite"
-                            value="${escapeAttr(data.SPListeadresse || '')}" oninput="setSPListeadresse(this.value)">
+                            value="${escapeHtml(data.SPListeadresse || '')}" oninput="setSPListeadresse(this.value)">
                     </div>
                     <div class="rad">
                         <label>Liste-navn</label>
                         <input type="text" id="sp-listenavn" placeholder="Mitt listenavn"
-                            value="${escapeAttr(data.SPListenavn || '')}" oninput="setSPListenavn(this.value)">
+                            value="${escapeHtml(data.SPListenavn || '')}" oninput="setSPListenavn(this.value)">
                     </div>
                     <div class="rad" id="sp-metadata-rad">
                         <label>Metadata-kolonner <small>(plassholder → SP-kolonne)</small></label>
@@ -1446,7 +1447,7 @@
                 <div class="valg-rad">
                     <input type="number" value="${v.Nummer ?? vIdx + 1}" min="1" style="width: 60px;"
                         oninput="setBeslutningsvalgNr(${idx}, ${vIdx}, this.value)">
-                    <input type="text" placeholder="Tekst (Godkjent, Avslått, ...)" value="${escapeAttr(v.Tekst || '')}"
+                    <input type="text" placeholder="Tekst (Godkjent, Avslått, ...)" value="${escapeHtml(v.Tekst || '')}"
                         oninput="setBeslutningsvalgTekst(${idx}, ${vIdx}, this.value)">
                     <select onchange="setBeslutningsvalgHandling(${idx}, ${vIdx}, this.value)" style="width: 130px;" title="Spesialhandling">
                         <option value="" ${!v.Handling ? 'selected' : ''}>Vanlig</option>
@@ -1471,7 +1472,7 @@
                 <div class="rad flyt-boks">
                     <label>Ekstern PA-flyt <small>(om satt, kalles i stedet for at behandler tar beslutning)</small></label>
                     <input type="url" placeholder="https://prod-XX.westeurope.logic.azure.com/workflows/..."
-                        value="${escapeAttr(steg.Flyt_url || '')}"
+                        value="${escapeHtml(steg.Flyt_url || '')}"
                         oninput="setStegFlytUrl(${idx}, this.value)">
                     <label style="margin-top: 6px;">Notat om flytens parametere <small>(kun for admin — sendes ikke)</small></label>
                     <textarea style="min-height: 40px;" placeholder="Beskriv hva flyten forventer og hvordan den svarer"
@@ -1492,7 +1493,7 @@
                 reserveValg.unshift({ verdi: steg.Reserverolle, tekst: `${steg.Reserverolle} (uten innehavere)` });
             }
             const reserveOptions = reserveValg.map(o =>
-                `<option value="${escapeAttr(o.verdi)}" ${steg.Reserverolle === o.verdi ? 'selected' : ''}>${escapeHtml(o.tekst)}</option>`
+                `<option value="${escapeHtml(o.verdi)}" ${steg.Reserverolle === o.verdi ? 'selected' : ''}>${escapeHtml(o.tekst)}</option>`
             ).join('');
 
             const varsling = Array.isArray(steg.Varsling) ? steg.Varsling : ['epost'];
@@ -1545,9 +1546,9 @@
 
             div.innerHTML = `
                 <div class="seksjon-topp">
-                    <span class="seksjon-nr">${steg.Steg}</span>
+                    <span class="seksjon-nr">${escapeHtml(steg.Steg)}</span>
                     <input type="text" placeholder="Steg-navn (Godkjenning, Verifisering, ...)"
-                        value="${escapeAttr(steg.Stegnavn || '')}"
+                        value="${escapeHtml(steg.Stegnavn || '')}"
                         oninput="setStegNavn(${idx}, this.value)">
                     <button class="knapp mini sekundær" onclick="flyttSteg(${idx}, -1)" ${idx === 0 ? 'disabled' : ''}>↑</button>
                     <button class="knapp mini sekundær" onclick="flyttSteg(${idx}, 1)" ${idx === antall - 1 ? 'disabled' : ''}>↓</button>
@@ -1878,9 +1879,7 @@
          */
         function notatForhandsvisning(raaTekst) {
             const L = NOTAT_EKSEMPELLENKE;
-            const esc = (t) => String(t || '')
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const esc = escapeHtml;
 
             const MD = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/;
             const NAKEN = /https?:\/\/[^\s<>"')]+/;
@@ -2259,9 +2258,9 @@
             }
             el.innerHTML = perioder.map((p, i) => `
                 <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
-                    <input type="date" value="${escapeAttr(p.Fra || '')}" oninput="setPeriode(${i}, 'Fra', this.value)" style="max-width: 160px;">
+                    <input type="date" value="${escapeHtml(p.Fra || '')}" oninput="setPeriode(${i}, 'Fra', this.value)" style="max-width: 160px;">
                     <span>–</span>
-                    <input type="date" value="${escapeAttr(p.Til || '')}" oninput="setPeriode(${i}, 'Til', this.value)" style="max-width: 160px;">
+                    <input type="date" value="${escapeHtml(p.Til || '')}" oninput="setPeriode(${i}, 'Til', this.value)" style="max-width: 160px;">
                     <button class="knapp mini danger" onclick="fjernPeriode(${i})">Fjern</button>
                 </div>
             `).join('');
@@ -2425,7 +2424,7 @@
                         <td style="padding: 4px 6px;"><select style="width: 100%;">
                             <option value="">— velg —</option>${plassOptions}
                         </select></td>
-                        <td style="padding: 4px 6px;"><input type="text" placeholder="SP-kolonnenavn" value="${escapeAttr(r.SPKolonne || '')}" style="width: 100%;"></td>
+                        <td style="padding: 4px 6px;"><input type="text" placeholder="SP-kolonnenavn" value="${escapeHtml(r.SPKolonne || '')}" style="width: 100%;"></td>
                         <td><button class="knapp mini danger">✕</button></td>
                     `;
                     const sel = tr.querySelector('select');
@@ -2834,7 +2833,7 @@
                         <button class="seksjon-kollaps-btn" onclick="toggleSeksjon(${seksjonNr})" title="Kollaps/ekspander seksjon"><span class="kollaps-pil">▼</span></button>
                         <span class="seksjon-nr">${seksjonNr}</span>
                         <input type="text" placeholder="Overskrift…"
-                            value="${escapeAttr(seksjon.Seksjon_overskrift || '')}"
+                            value="${escapeHtml(seksjon.Seksjon_overskrift || '')}"
                             oninput="setSeksjonOverskrift(${sIdx}, this.value)">
                         <button class="knapp mini sekundær" data-action="sett-inn-seksjon-for" data-seksjon="${sIdx}" title="Sett inn ny seksjon før denne">＋↑</button>
                         <button class="knapp mini sekundær" data-action="sett-inn-seksjon-etter" data-seksjon="${sIdx}" title="Sett inn ny seksjon etter denne">＋↓</button>
@@ -2870,7 +2869,7 @@
                             <span class="felt-nr">${felt.Nummer || (fIdx + 1)}</span>
                         </div>
                         <input type="text" placeholder="Spørsmål / label…" data-felt-tekst="${sIdx}-${fIdx}"
-                            value="${escapeAttr(felt.Tekst?.Verdi || '')}"
+                            value="${escapeHtml(felt.Tekst?.Verdi || '')}"
                             oninput="setFeltTekst(${sIdx}, ${fIdx}, this.value)">
                         <select onchange="setFeltType(${sIdx}, ${fIdx}, this.value)">
                             ${typeOpts}
@@ -2891,7 +2890,7 @@
                     ${data.SPListeadresse && felt.Type !== 'Informasjon' ? `
                         <div class="rad" style="margin-top: 8px;">
                             <label style="font-size: 11px;">SP-kolonne <small>(tom = ikke send til SP)</small></label>
-                            <input type="text" placeholder="SP-kolonnenavn" value="${escapeAttr(felt.SPListefelt || '')}"
+                            <input type="text" placeholder="SP-kolonnenavn" value="${escapeHtml(felt.SPListefelt || '')}"
                                 oninput="setFeltSPListefelt(${sIdx}, ${fIdx}, this.value)" style="font-size: 12px;">
                         </div>
                     ` : ''}
@@ -2923,7 +2922,7 @@
                     <label>Undertittel <small>(vises under spørsmålet — valgfritt)</small></label>
                     ${undertittelFormat === 'Markdown'
                         ? `<div class="md-slot" data-md="und-${sIdx}-${fIdx}"></div>`
-                        : `<input type="text" value="${escapeAttr(felt.Undertittel?.Verdi || '')}"
+                        : `<input type="text" value="${escapeHtml(felt.Undertittel?.Verdi || '')}"
                         placeholder="Hjelpetekst / presisering"
                         oninput="setUndertittel(${sIdx}, ${fIdx}, this.value)">`}
                     <div style="display: flex; gap: 12px; font-size: 12px; align-items: center; margin-top: 4px;">
@@ -3014,7 +3013,7 @@
                                 <div class="valg-rad">
                                     ${skalaHar ? `<input type="number" value="${v.Valg_nr ?? vIdx + 1}" style="width: 60px;"
                                         oninput="setValgNr(${sIdx}, ${fIdx}, ${vIdx}, this.value)">` : ''}
-                                    <input type="text" placeholder="Tekst" value="${escapeAttr(v.Tekst || '')}"
+                                    <input type="text" placeholder="Tekst" value="${escapeHtml(v.Tekst || '')}"
                                         oninput="setValgTekst(${sIdx}, ${fIdx}, ${vIdx}, this.value)">
                                     <button class="knapp mini danger" data-action="slett-valg" data-seksjon="${sIdx}" data-felt="${fIdx}" data-valg="${vIdx}">✕</button>
                                 </div>
@@ -3200,14 +3199,14 @@
             const griddHtml = logoer.length === 0
                 ? '<div style="text-align: center; color: var(--text-secondary); padding: 30px;">Ingen logoer lastet opp. Se <a href="/admin.html#logoer" target="_blank">Admin-panelet</a>.</div>'
                 : logoer.map(l => `
-                    <div class="logo-valg" data-url="${escapeAttr(l.url)}" title="${escapeAttr(l.navn)}"
+                    <div class="logo-valg" data-url="${escapeHtml(l.url)}" title="${escapeHtml(l.navn)}"
                         style="border: 2px solid ${l.url === gjeldende ? 'var(--accent)' : 'var(--border-color)'};
                                border-radius: 8px; padding: 10px; cursor: pointer; background: var(--bg-container);
                                display: flex; flex-direction: column; gap: 6px; transition: transform 0.1s;">
                         <div style="height: 70px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border-radius: 4px; padding: 4px;">
-                            <img src="${escapeAttr(l.url)}" alt="${escapeAttr(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                            <img src="${escapeHtml(l.url)}" alt="${escapeHtml(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                         </div>
-                        <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeAttr(l.navn)}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(l.navn)}</div>
                     </div>
                 `).join('');
             bakgrunn.innerHTML = `
@@ -4039,12 +4038,6 @@
             setTimeout(() => el.classList.remove('vis'), 2500);
         }
 
-        function escapeHtml(s) {
-            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-        function escapeAttr(s) {
-            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
-        }
 
         init();
     </script>

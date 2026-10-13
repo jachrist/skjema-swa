@@ -242,6 +242,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
+        import { escapeHtml, escapeJsIAttributt } from './js/escape.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -335,7 +336,7 @@
                         </div>
                     `;
                 }
-                const options = verdier.map(v => `<option value="${escapeAttr(v)}">${escapeHtml(v)}</option>`).join('');
+                const options = verdier.map(v => `<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('');
                 return `
                     <div class="rad">
                         <label>${escapeHtml(f.Navn)} <small>(${verdier.length} verdi${verdier.length === 1 ? '' : 'er'} i innsendte skjemaer)</small></label>
@@ -451,10 +452,6 @@
             el.style.display = '';
         }
 
-        function escapeHtml(s) {
-            return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
-        }
-        function escapeAttr(s) { return escapeHtml(s); }
 
         init();
     </script>

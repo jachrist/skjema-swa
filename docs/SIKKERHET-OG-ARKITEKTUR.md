@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Versjon | 1.0 |
+| Versjon | 1.1 |
 | Dato | 13.10.2026 |
 | Løsning | FHS Skjema, Azure Static Web Apps-versjonen (`skjema-swa`) |
 | Miljøer dokumentet dekker | `pilot` og `prod` |
@@ -471,8 +471,47 @@ Globale svarheadere:
 | `X-Frame-Options` | `DENY` |
 | `Referrer-Policy` | `strict-origin-when-cross-origin` |
 
-**Det er ingen `Content-Security-Policy`.** Den mangler, og en tidligere
-versjon av `docs/SECURITY.md` påsto at den fantes. Se kapittel 10.
+### Content-Security-Policy
+
+Innført 13.10.2026. Fram til da fantes den ikke, samtidig som
+`docs/SECURITY.md` påsto at den gjorde det og at den var tiltaket mot en
+ondsinnet skjemadefinisjon.
+
+```
+default-src 'self'; script-src 'self' 'unsafe-inline';
+style-src 'self' 'unsafe-inline'; img-src 'self' blob:;
+font-src 'self'; connect-src 'self'; object-src 'none';
+base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+Verifisert i Chromium mot de ekte svarheaderne: `eval()`, et skript fra et
+annet opphav, `<object>` og `<base href>` mot et fremmed domene blir alle
+blokkert, mens alt appen selv gjør — inline `<script>`, ES-moduler, inline
+event-handlere, inline `style`, `blob:`-bilder og `fetch` mot eget opphav —
+fortsatt virker.
+
+**`script-src` har fortsatt `'unsafe-inline'`.** Det er ikke en forglemmelse.
+Sidene har 275 inline event-handlere (`onclick`, `onchange`, `oninput`) og 13
+inline `<style>`-blokker, etter samme mønster som referanse-appen. Hverken
+nonce eller hash dekker inline event-handlere, og å fjerne dem er en
+omskriving av alle 13 sidene.
+
+Det CSP-en gir likevel, og som ikke fantes før:
+
+| Blokkert nå | Hva det stopper |
+|---|---|
+| `script-src 'self'` | Et injisert `<script src="https://…">`. Den vanligste nyttelasten |
+| ingen `'unsafe-eval'` | `eval()` og `new Function()` fra injisert kode. Appen bruker ingen av delene |
+| `connect-src 'self'` | Utsending av data til en annen vert — selve gevinsten i et XSS-angrep |
+| `object-src 'none'` | Plugin-innhold |
+| `base-uri 'self'` | En injisert `<base>` som omdirigerer alle relative URLer |
+| `form-action 'self'` | Et injisert skjema som poster til en annen vert |
+| `frame-ancestors 'none'` | Clickjacking. Erstatter `X-Frame-Options` i moderne nettlesere |
+
+`api/test/escaping.test.js` krever at CSP-en finnes i begge miljøene, at de er
+like, og at frontend ikke laster noe fra et annet opphav — for da ville
+`default-src 'self'` sluttet å stemme, og det skal oppdages her og ikke i en
+nettleser hos en bruker.
 
 ---
 
@@ -569,7 +608,7 @@ Unntaket er SAS-strenger, som bærer utløpet i seg selv (`se=`).
 | **OTP** | Brute-force en kode | 6 sifre, 5 forsøk, 15 min, 60 s rate-limit, kode lagret kun som hash |
 | **Rolle- og eiertilgang** | Lese en skjematype man ikke eier | Vakt i handleren på alle endepunkter som leverer data; rolleoppslag feiler lukket |
 | **Teamcachen** | Skrive seg inn i et team | `POST /api/cache/teammedlemskap` tar `FLOW_CALLBACK_KEY`. Se 9.3 |
-| **Ondsinnet skjemadefinisjon** | Lagre HTML/JS som kjører hos utfylleren | Escaping finnes (`escapeHtml` i `felt-render.js`), men ingen CSP, og `innerHTML` brukes på flere steder. **Ikke systematisk gjennomgått — se kapittel 10** |
+| **Ondsinnet skjemadefinisjon** | Lagre HTML/JS som kjører hos utfylleren | Gjennomgått 13.10.2026: 301 HTML-sinker lest, 6 uescapede verdier fra skjematype-definisjonen rettet, escape-funksjonen samlet ett sted og et hull i den tettet. CSP innført. `scripts/html-injeksjon.js` + test holder det (6.4 og 10) |
 | **Deploy-pipeline** | Kompromittert GitHub-konto → egen kode i prod | Branch protection på `main`: PR, 1+ review, signerte commits, «include administrators». CODEOWNERS på `.github/`, `config/`, `staticwebapp.config.*`. Secret scanning og push protection. Prod-deploy krever Environment approval |
 | **Storage** | Få kontostrengen | Da er alt tapt, inkludert krypteringsnøklene (6.2). Dette er den mest verdifulle enkeltverdien i løsningen |
 | **Power BI-feeden** | Få URL-en | GUID bundet til UPN, skjematype og utløp — men den som har URL-en, har hvert svar på skjematypen i klartekst. Se 9.1 |
@@ -688,11 +727,32 @@ vurderer dem.
 
 ### Applikasjon
 
-11. **Ingen `Content-Security-Policy`** (6.4). Escaping finnes i
-    `felt-render.js`, men `innerHTML` brukes på flere steder i
-    frontend-modulene, og det er **ikke gjort en systematisk gjennomgang** av
-    om en ondsinnet skjemadefinisjon kan få JS til å kjøre hos en utfyller.
-    Dette er den posten vi helst ser at testingen begynner med.
+11. **XSS-gjennomgangen er gjort, men `script-src` har fortsatt
+    `'unsafe-inline'`** (6.4). Gjennomgangen 13.10.2026 leste alle 301
+    HTML-sinker i frontend. Den fant og rettet:
+
+    * **Et hull i escapingen av verdier som går inn i en `onclick`.**
+      Funksjonen escapet `'` men ikke `\`, så `\');angrep();//` brøt ut av
+      JS-strengen og kjørte. Åtte filer hadde hver sin kopi av funksjonen
+      under fire ulike navn, og kopiene svarte ikke likt. Det er nå én
+      funksjon (`frontend/js/escape.js`), og `escaping.test.js` kjører det
+      gamle angrepet mot både den gamle og den nye for å vise forskjellen.
+    * **Seks verdier fra skjematype-definisjonen som gikk uescapet til HTML**
+      — blant dem `steg.Steg`, som en skjemaeier setter og som rendres hos
+      hver som åpner registeret eller evalueringen.
+    * **To verdier fra Bring-registeret** i postnummer-nedtrekket.
+
+    Det som står igjen: `'unsafe-inline'` i `script-src`, fordi sidene har
+    275 inline event-handlere og hverken nonce eller hash dekker dem. En
+    injeksjon som slipper gjennom escapingen kan derfor fortsatt kjøre kode,
+    men ikke laste den utenfra og ikke sende noe ut (`connect-src 'self'`).
+    Å fjerne `'unsafe-inline'` krever at alle 13 sidene legges om fra
+    `onclick`-attributter til `addEventListener`, og det bør være en egen,
+    avtalt runde.
+
+    `scripts/html-injeksjon.js` holder gjennomgangen ved like: hver uescapet
+    verdi må enten escapes eller stå på en erklært liste med begrunnelse, og
+    testen feiler på den første som ikke gjør det.
 12. **Siste skriving vinner.** Skriving til Table Storage skjer uten
     samtidighetskontroll; verken `lagreSkjematype` (`Replace`) eller
     `lagreSkjema` (`Merge`) sjekker ETag. To som lagrer samme rad etter
@@ -770,6 +830,8 @@ del av innholdet.
 | Tema | Fil |
 |---|---|
 | Fullstendig endepunktsoversikt (generert) | `docs/API-OVERSIKT.md` |
+| Escaping, og hullet som ble tettet | `frontend/js/escape.js` |
+| Gjennomgangen av HTML-sinker | `scripts/html-injeksjon.js` |
 | Arkitektur i detalj, ytelsesvalg | `docs/ARCHITECTURE.md` |
 | Repo- og pipelinesikkerhet, nøkkelkalender | `docs/SECURITY.md` |
 | Datamodell, tabeller og felter | `docs/DATA-MODELL.md` |

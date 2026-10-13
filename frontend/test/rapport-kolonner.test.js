@@ -53,10 +53,15 @@ function hentFunksjon(kilde, navn) {
 // ---------- delepunkter i kolonnenavn ----------
 {
     // Den EKTE funksjonen, med den EKTE escapeHtml — ikke en kopi skrevet her.
+    // escapeHtml ligger ikke lenger i rapport.html — den importeres fra
+    // escape.js, og hentes derfra. Poenget står: den EKTE funksjonen.
+    const escapeKilde = fs.readFileSync(path.join(__dirname, '..', 'js', 'escape.js'), 'utf8');
     const biter = [
         rapport.match(/const MYK_BINDESTREK = '[^']+';/)[0],
         hentFunksjon(rapport, 'kolonneNavnHtml'),
-        hentFunksjon(rapport, 'escapeHtml')
+        escapeKilde.slice(escapeKilde.indexOf('export function escapeHtml('))
+            .slice(0, escapeKilde.slice(escapeKilde.indexOf('export function escapeHtml(')).indexOf('\n}') + 2)
+            .replace('export function', 'function')
     ];
     const kolonneNavnHtml = new Function(`${biter.join('\n')}\nreturn kolonneNavnHtml;`)();
 
