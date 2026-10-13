@@ -224,6 +224,11 @@ module.exports = {
     // som sjekker ville før eller siden sagt noe annet enn den som henter.
     finnFeltViaRef,
     finnFeltViaId,
+    // Samme begrunnelse: `utsending-oppsett.js` må avgjøre om et mottakerfelt
+    // er et flervalgsfelt. Er det ikke det, leser `alleSvarIFelt` bare FØRSTE
+    // svar — og en masseutsending ville gått til én av to hundre, i stillhet.
+    // Kopieres settet dit, svarer de to før eller siden ulikt.
+    FLERVALGSTYPER,
     // Eksportert av samme grunn, for feltperson.js: den må se felttypen FØR
     // den leser svarene, og skal lese dem etter nøyaktig samme regel som alle
     // andre — inkludert at bare flervalgstyper gir mer enn én verdi.
