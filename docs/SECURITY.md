@@ -1,5 +1,10 @@
 # Sikkerhet
 
+> Denne fila er repo- og driftsnær: branch protection, deploy-identitet,
+> nøkkelkalender, rotasjon. **Overleveringsdokumentet til
+> sikkerhetsevalueringen er `docs/SIKKERHET-OG-ARKITEKTUR.md`**, og det er den
+> som gjelder der de to overlapper.
+
 ## Repo-nivå
 
 - **Branch protection** på `main`:
@@ -26,11 +31,12 @@
 ## Managed Identity
 
 - SWA har system-assigned managed identity slått på
-- MI har følgende rolletildelinger:
-  - `Storage Table Data Contributor` på storage-kontoen
-  - `Storage Blob Data Contributor` på storage-kontoen
-  - `Key Vault Secrets User` på Key Vault
-- Ingen andre tildelinger (least privilege)
+- **Prod** trenger bare `Key Vault Secrets User` og `Key Vault Certificate
+  User` på `fhs-kv-01` — det er auth-sertifikatet plattformen henter. Ingen
+  storage-roller
+- **Pilot** har i tillegg `Storage Table Data Contributor` og `Storage Blob
+  Data Contributor`. De er levninger fra det opprinnelige designet, har ingen
+  praktisk effekt, og skal ikke kopieres til nye miljøer
 
 **Merk: MI-en brukes ikke til app settings i det hele tatt.**
 
@@ -56,9 +62,6 @@ Den ene MI-bruken som faktisk virker, er auth-sertifikatet i
 `staticwebapp.config.prod.json` — den leses av SWA-plattformens
 auth-komponent, ikke av app-settings-laget.
 
-Storage-rolletildelingene over er dermed uten praktisk effekt; de står igjen
-fra da MI-veien ble forsøkt.
-
 ### Konsekvens som må være kjent
 
 Hemmelighetene står i klartekst i SWA Configuration. Den som kan **lese app
@@ -81,9 +84,11 @@ flyt-URLer bare vertsnavn og sti — aldri query-strengen der signaturen ligger.
   — navnene er lest ut av pilots `KEYVAULT_NAME` og av
   `staticwebapp.config.prod.json`, ikke av hukommelsen
 - Se `config/keyvault-secrets.md` for oversikt og rotasjonspolicy
-- Verdiene når appen som env-vars via `@Microsoft.KeyVault(...)`-referanser,
-  løst av SWA-hosten ved oppstart. En rotert hemmelighet får derfor effekt først
-  når appen restartes — ikke automatisk.
+- **Verdiene når IKKE appen via Key Vault-referanser.** Det sto her til
+  13.10.2026, og motsa seksjonen rett over i samme fil. Referansene løses ikke
+  (se Managed Identity), så verdien må limes inn i SWA Configuration som
+  klartekst. En rotert hemmelighet får effekt når den er limt inn og appen har
+  restartet.
 
 ## Nøkkelkalender
 
@@ -121,9 +126,17 @@ Praktiske detaljer:
 ## Auth-modell
 
 - SWA gjør Entra ID-innlogging via `/.auth/login/aad`
-- Alle `/api/*`-ruter krever autentisering (bortsett fra `/api/ping` og `/api/refresh-fs`)
+- `/api/*` krever `authenticated` som siste regel, men **39 endepunkter er
+  anonyme i gatewayen** — scheduler-jobber, flyt-callbacks, OTP og
+  utsendingslenker kan ikke ha en Entra-identitet. Her sto det tidligere at
+  bare `/api/ping` og `/api/refresh-fs` var unntatt. Den fullstendige og
+  genererte lista er `docs/API-OVERSIKT.md`; alle unntatt fem har en vakt i
+  handleren, og `api/test/api-oversikt.test.js` feiler på et sjette
 - Fininnstilt admin-sjekk i handler via `erAdmin(upn)` mot `ADMIN_UPNS`-env-var
-- Admin-sider (`admin.html`, `nokkeladmin.html`, `rolleadmin.html`, `migrer.html`) krever `admin`-rolle på ruten
+- `admin.html` krever `admin`-rolle på ruten. Nøkkel- og rolleadministrasjon er
+  faner i den (`#nokler`, `#roller`) — `nokkeladmin.html` og `rolleadmin.html`
+  finnes ikke lenger som egne sider. `/migrer.html` har fortsatt en ruteregel,
+  men fila er borte
 
 ## Roller i SWA
 
@@ -138,9 +151,9 @@ Krever SWA Standard-plan.
 Se `docs/ARCHITECTURE.md` for komponenter. Hovedangrepsflater:
 
 - **Deploy-pipeline**: kompromittert GitHub-konto → uautorisert deploy. Mitigert av branch protection, review-krav, OIDC (planlagt).
-- **Storage**: MI med bred tilgang. Mitigert av least-privilege roller på storage-konto-nivå (ikke subscription-nivå).
-- **Key Vault**: MI med Secrets User. Kan lese alle secrets. Aksepteres siden MI kun eksisterer i SWA-runtime.
-- **Ondsinnet skjemadefinisjon**: en admin kan i teorien lagre HTML som injiseres i utfyller. Mitigert av CSP-headers og escape ved rendering.
+- **Storage**: tilgang skjer med `STORAGE_CONNECTION_STRING`, ikke med MI. Den som har strengen, har både krypterte skjemaer og krypteringsnøklene — de ligger i samme konto. Strengen er den mest verdifulle enkeltverdien i løsningen.
+- **App settings**: hemmelighetene står i klartekst. Å liste dem er en privilegert ARM-operasjon, så eksponeringen går til dem som alt kan endre appen. Se Managed Identity over.
+- **Ondsinnet skjemadefinisjon**: en admin eller skjemaeier kan i teorien lagre HTML som injiseres hos utfylleren. `escapeHtml` finnes i `felt-render.js`, men **det er ingen `Content-Security-Policy`** — det sto her at den fantes, og det var feil — og `innerHTML` brukes flere steder i frontend-modulene. Ikke systematisk gjennomgått.
 - **`FLOW_CALLBACK_KEY` er én delt verdi for fem inngangspunkter.** Se under.
 
 ## Teknisk gjeld: nøkkelen stegflytene bærer

@@ -21,6 +21,7 @@
  *   node scripts/api-oversikt.js --markdown # til dokumentasjonen
  *   node scripts/api-oversikt.js --json
  *   node scripts/api-oversikt.js --miljo=pilot
+ *   node scripts/api-oversikt.js --skriv     # oppdater docs/
  */
 const fs = require('fs');
 const path = require('path');
@@ -208,35 +209,116 @@ function bygg(miljo = 'prod') {
     });
 }
 
-function cli(arg) {
-    const miljo = (/^--miljo=(\w+)$/.exec(arg) || [])[1];
+/**
+ * Oversikten som markdown, til `docs/API-OVERSIKT.md`.
+ *
+ * Rendringen bor HER og ikke i testen. Skrev testen sin egen versjon av
+ * tabellen, ville den sammenlignet to kilder som kan drifte fra hverandre —
+ * og da er det igjen to sannheter, som er nøyaktig feilen dette repoet lager
+ * oftest.
+ */
+function markdown(rader) {
+    const l = [];
+    const anon = rader.filter(r => r.swaRoller.includes('anonymous'));
+    l.push('<!-- GENERERT av scripts/api-oversikt.js — ikke rediger for hånd. -->');
+    l.push('<!-- Oppdater med: node scripts/api-oversikt.js --skriv -->');
+    l.push('');
+    l.push('# API-oversikt');
+    l.push('');
+    l.push('Alle HTTP-endepunkter i løsningen, med hvem som slipper inn.');
+    l.push('');
+    l.push('Tilgangen avgjøres i to lag, og tabellene under viser begge:');
+    l.push('');
+    l.push('* **SWA-gatewayen** (`staticwebapp.config.<miljø>.json`) avgjør hvem som');
+    l.push('  kommer fram til funksjonen. `anonymous` betyr hvem som helst.');
+    l.push('* **Handleren** avgjør resten. Hvert endepunkt har minst én vakt her; se');
+    l.push('  `docs/SIKKERHET-OG-ARKITEKTUR.md` for hva hver vakt innebærer.');
+    l.push('');
+    l.push(`${rader.length} endepunkter, hvorav ${anon.length} er anonyme i gatewayen.`);
+    l.push('');
+    l.push('## Anonyme i gatewayen');
+    l.push('');
+    l.push('SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.');
+    l.push('');
+    l.push('| Rute | Metoder | Vakt i handleren |');
+    l.push('|---|---|---|');
+    for (const r of [...anon].sort((a, b) => a.rute.localeCompare(b.rute))) {
+        // Begrunnelsen skal vises også når ruta HAR en vakt. Det er den som
+        // forklarer hvorfor den er anonym i det hele tatt, og det er nettopp
+        // det spørsmålet en evaluator stiller.
+        const v = r.vakter.length
+            ? r.vakter.join(', ') + (r.begrunnelse ? ` — ${r.begrunnelse}` : '')
+            : (r.åpenMedVilje ? `_åpent med vilje:_ ${r.begrunnelse}` : '**INGEN — uerklært**');
+        l.push(`| \`${r.rute}\` | ${r.metoder.join(', ')} | ${v} |`);
+    }
+    l.push('');
+    l.push('## Krever innlogging');
+    l.push('');
+    l.push('| Rute | Metoder | SWA | Vakt i handleren |');
+    l.push('|---|---|---|---|');
+    for (const r of rader.filter(x => !x.swaRoller.includes('anonymous'))
+        .sort((a, b) => a.rute.localeCompare(b.rute))) {
+        l.push(`| \`${r.rute}\` | ${r.metoder.join(', ')} | ${r.swaRoller.join(', ')} | ${r.vakter.join(', ') || '—'} |`);
+    }
+    l.push('');
+    return l.join('\n');
+}
+
+/** Nøkkeltallene, til blokka i overleveringsdokumentet. */
+function nokkeltall(rader) {
+    const anon = rader.filter(r => r.swaRoller.includes('anonymous'));
+    const åpne = rader.filter(r => r.åpenForVerden);
+    const bevisst = rader.filter(r => r.åpenMedVilje);
+    return [
+        '| | |',
+        '|---|---|',
+        `| Endepunkter i alt | ${rader.length} |`,
+        `| Anonyme i SWA-gatewayen | ${anon.length} |`,
+        `| — av dem med vakt i handleren | ${anon.length - bevisst.length} |`,
+        `| — av dem åpne med vilje, erklært og begrunnet | ${bevisst.length} |`,
+        `| — av dem åpne UTEN forklaring | ${åpne.length} |`,
+        `| Endepunkter uten noen vakt i handleren | ${rader.filter(r => r.vakter.length === 0).length} — alle erklærte |`
+    ].join('\n');
+}
+
+const START = '<!-- GENERERT:api-nøkkeltall -->';
+const SLUTT = '<!-- /GENERERT:api-nøkkeltall -->';
+
+/** Blokka slik den skal stå i `docs/SIKKERHET-OG-ARKITEKTUR.md`. */
+function nokkeltallBlokk(rader) {
+    return `${START}\n${nokkeltall(rader)}\n${SLUTT}`;
+}
+
+/** Bytt ut blokka i et dokument. Returnerer null hvis markørene mangler. */
+function medNyBlokk(dokument, rader) {
+    const a = dokument.indexOf(START), b = dokument.indexOf(SLUTT);
+    if (a === -1 || b === -1 || b < a) return null;
+    return dokument.slice(0, a) + nokkeltallBlokk(rader) + dokument.slice(b + SLUTT.length);
+}
+
+const API_DOK = path.join(ROT, 'docs', 'API-OVERSIKT.md');
+const SIKKERHET_DOK = path.join(ROT, 'docs', 'SIKKERHET-OG-ARKITEKTUR.md');
+
+function skriv(rader) {
+    fs.writeFileSync(API_DOK, markdown(rader) + '\n');
+    const dok = fs.readFileSync(SIKKERHET_DOK, 'utf8');
+    const ny = medNyBlokk(dok, rader);
+    if (ny === null) throw new Error(`${SIKKERHET_DOK}: fant ikke markørene ${START} / ${SLUTT}`);
+    fs.writeFileSync(SIKKERHET_DOK, ny);
+    console.log(`Skrev docs/API-OVERSIKT.md og nøkkeltallblokka i docs/SIKKERHET-OG-ARKITEKTUR.md (${rader.length} endepunkter)`);
+}
+
+function cli(argv) {
+    const miljo = (/^--miljo=(\w+)$/.exec(argv[0] || '') || [])[1];
+    const arg = miljo ? (argv[1] || '') : (argv[0] || '');
     const rader = bygg(miljo || 'prod');
-    if (miljo) arg = process.argv[3] || '';
+
     if (arg === '--json') {
         console.log(JSON.stringify(rader, null, 2));
     } else if (arg === '--markdown') {
-        const anon = rader.filter(r => r.swaRoller.includes('anonymous'));
-        console.log(`<!-- GENERERT av scripts/api-oversikt.js — ikke rediger for hånd -->`);
-        console.log(`\n${rader.length} endepunkter, hvorav ${anon.length} er anonyme i SWA-gatewayen.\n`);
-        console.log('### Anonyme i gatewayen\n');
-        console.log('SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.\n');
-        console.log('| Rute | Metoder | Vakt i handleren |');
-        console.log('|---|---|---|');
-        for (const r of anon.sort((a, b) => a.rute.localeCompare(b.rute))) {
-            // Begrunnelsen skal vises også når ruta HAR en vakt. Det er den
-            // som forklarer hvorfor den er anonym i det hele tatt, og det er
-            // nettopp det spørsmålet en evaluator stiller.
-            const v = r.vakter.length
-                ? r.vakter.join(', ') + (r.begrunnelse ? ` — ${r.begrunnelse}` : '')
-                : (r.åpenMedVilje ? `_åpent med vilje:_ ${r.begrunnelse}` : '**INGEN — uerklært**');
-            console.log(`| \`${r.rute}\` | ${r.metoder.join(', ')} | ${v} |`);
-        }
-        console.log('\n### Krever innlogging\n');
-        console.log('| Rute | Metoder | SWA | Vakt i handleren |');
-        console.log('|---|---|---|---|');
-        for (const r of rader.filter(x => !x.swaRoller.includes('anonymous')).sort((a, b) => a.rute.localeCompare(b.rute))) {
-            console.log(`| \`${r.rute}\` | ${r.metoder.join(', ')} | ${r.swaRoller.join(', ')} | ${r.vakter.join(', ') || '—'} |`);
-        }
+        console.log(markdown(rader));
+    } else if (arg === '--skriv') {
+        skriv(rader);
     } else {
         const anon = rader.filter(r => r.swaRoller.includes('anonymous'));
         const åpne = rader.filter(r => r.åpenForVerden);
@@ -251,13 +333,16 @@ function cli(arg) {
             for (const r of åpne) console.log(`  ${r.metoder.join(',')} ${r.rute}  (${r.fil})`);
             process.exitCode = 1;
         }
-}
+    }
 }
 
 // Kalles bare når fila kjøres direkte. Testen `require`-er modulen, og en
 // `process.exitCode = 1` satt under require ville gjort at testen feilet før
 // den hadde sjekket noe — eller, verre, at en test som sjekket ingenting
 // feilet og lot det se ut som om regelen var dekket.
-if (require.main === module) cli(process.argv[2] || '');
+if (require.main === module) cli(process.argv.slice(2));
 
-module.exports = { bygg, lesEndepunkter, lesRegler, swaRegelFor, VAKTER, ÅPNE_MED_VILJE };
+module.exports = {
+    bygg, lesEndepunkter, lesRegler, swaRegelFor, markdown, nokkeltallBlokk, medNyBlokk,
+    API_DOK, SIKKERHET_DOK, VAKTER, ÅPNE_MED_VILJE
+};

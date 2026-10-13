@@ -1,5 +1,10 @@
 # Arkitektur
 
+> Dette er utviklerdokumentet: hvordan det er bygget og hvorfor.
+> Overleveringsdokumentet til sikkerhetsevalueringen er
+> `docs/SIKKERHET-OG-ARKITEKTUR.md`, og det er den som gjelder der de to
+> overlapper.
+
 ## Overordnet
 
 ```
@@ -33,12 +38,16 @@
 Hvilke Power Automate-flyter løsningen faktisk trenger, hva som utløser hver
 av dem, og hva som kjører på klokke: `docs/FLYTER.md`.
 
-Koden snakker ikke med Key Vault. Hemmelighetene når appen som app settings,
-der SWA-hosten har løst `@Microsoft.KeyVault(...)`-referansene ved oppstart —
-`STORAGE_CONNECTION_STRING` er en av dem. SWA Managed Functions eksponerer
-ingen MI-token til koden, så `DefaultAzureCredential` har ingenting å hente;
-`api/src/lib/keyvault.js` er død kode og importeres ingen steder. Se
-`docs/SECURITY.md` for hvilken identitet som faktisk brukes, og til hva.
+Koden snakker ikke med Key Vault, og **hosten gjør det heller ikke**.
+Hemmelighetene står i klartekst som app settings i SWA Configuration;
+`@Microsoft.KeyVault(...)`-referanser blir ikke løst av SWA Managed Functions.
+Prøvd i pilot 12.10.2026 — se `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 7.
+
+SWA Managed Functions eksponerer heller ingen MI-token til koden, så
+`DefaultAzureCredential` har ingenting å hente; `api/src/lib/keyvault.js` er
+død kode og importeres ingen steder. Den ene Key Vault-referansen som faktisk
+virker, er auth-sertifikatet i `staticwebapp.config.prod.json` — den leses av
+SWA-plattformens auth-komponent, ikke av app-settings-laget.
 
 ## Frontend
 
@@ -107,19 +116,19 @@ lagret denne siden du åpnet den». Bevisst utsatt 06.10.2026.
 
 ## Konfigurasjon
 
-- `config/env.development.json` og `config/env.production.json` er sannhetskilden.
+- `config/env.pilot.json` og `config/env.prod.json` er en **inventarliste**, ikke en kilde: ingenting der settes automatisk.
 - Hver oppføring er enten:
   - `{ "value": "...", "public": true|false }` — direkte verdi
-  - `{ "keyvault": "secret-navn" }` — referanse til Key Vault
+  - `{ "keyvault": "secret-navn" }` — markerer at verdien er hemmelig og har en kopi i Key Vault
 - Ikke-hemmelige `public: true`-verdier eksponeres til frontend via `config.js`.
-- Ikke-hemmelige `public: false`-verdier settes som App Settings på SWA under deploy.
-- `keyvault`-referanser settes som app settings på SWA med `@Microsoft.KeyVault(...)`-syntaks, og løses av hosten ved oppstart. Koden leser dem som vanlige env-vars, og en rotert hemmelighet får derfor effekt først ved restart.
+- Hemmelige verdier limes **manuelt** inn i SWA Configuration, som klartekst. Hosten løser ikke referanser (se over).
+- `api/test/env-inventar.test.js` krever at hver `process.env` i `api/src` står i begge filene. Uten den driver lista, og en oversikt som ser komplett ut og ikke er det, er verre enn ingen.
 
 ## CI/CD
 
 - **CI (`ci.yml`)**: kjører på PR mot `main`. `npm ci` + `npm test` + `build-config.js`.
-- **Deploy (`deploy.yml`)**: kjører på push til `main`. Environment `production` → required reviewer.
-- **Refresh-FS (`refresh-fs.yml`)**: schedule cron daglig 04:00 UTC → HTTP-kall mot `/api/refresh-fs`.
+- **Deploy**: `deploy-pilot.yml` og `deploy-prod.yml`. Prod krever Environment approval.
+- **Åtte jobber på klokke**, fordi SWA Managed Functions ikke støtter timer-triggere: backup, refresh-FS, team-synk, postnumre, send-utsendinger, oppslagslister, purring og nøkkelsjekk. Alle kaller et HTTP-endepunkt med `x-scheduler-key`. Tidene står samlet i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 2.
 
 ## Logging
 
@@ -133,12 +142,17 @@ linjene det er verdt å kjenne igjen.
 
 ## Miljøer
 
-- **development**: SWA-slot for utvikling og test. Ikke bak review, deployes automatisk fra feature-branches (planlagt utvidelse).
-- **production**: Push til `main` → deploy krever manual approval av en reviewer i `production`-environment.
+- **pilot**: `config/env.pilot.json` + Key Vault `kv-fhsskjema-pilot`.
+- **prod**: `config/env.prod.json` + Key Vault `fhs-kv-01`. Deploy krever Environment approval.
+
+Det finnes ikke noe tredje miljø. Navnene `development` og `production` er
+gamle; `env.development.json` og `env.production.json` er fjernet, og begge
+navnene rutes til pilot av `build-config.js` slik at en gammel kommando ikke
+brekker.
 
 ## Sikkerhetsprinsipper
 
-- Hemmeligheter bare i Key Vault, aldri i kode eller env-JSON. Koden får dem som app settings, løst av SWA-hosten.
+- Aldri hemmeligheter i kode eller i env-JSON. Verdiene bor i Key Vault og limes manuelt inn i SWA Configuration, der de står i klartekst — se `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 7 for hva det betyr og hvem det eksponerer dem for.
 - Env-JSON committes, secrets ikke.
 - Branch protection på `main`: PR påkrevd, 1+ review, signerte commits, "include administrators".
 - CODEOWNERS på `.github/`, `config/`, `staticwebapp.config.*.json`.

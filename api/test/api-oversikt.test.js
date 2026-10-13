@@ -183,5 +183,37 @@ for (const miljo of MILJØER) {
     }
 }
 
+// ---------- de genererte dokumentene må være oppdaterte ----------
+//
+// `docs/API-OVERSIKT.md` og nøkkeltallsblokka i
+// `docs/SIKKERHET-OG-ARKITEKTUR.md` skrives av generatoren. Et
+// overleveringsdokument med tall som ikke stemmer med koden er verre enn
+// ingen tall: evaluatoren som finner avviket, leser resten med nye øyne.
+//
+// Rendringen hentes fra generatoren, ikke skrevet opp på nytt her. En egen
+// kopi av tabellformatet i testen ville vært to kilder som kan drifte — altså
+// nøyaktig feilen testen finnes for å hindre.
+{
+    const rader = oversikt.bygg('prod');
+
+    const påDisk = fs.existsSync(oversikt.API_DOK) ? fs.readFileSync(oversikt.API_DOK, 'utf8') : null;
+    sjekk('docs/API-OVERSIKT.md finnes', påDisk !== null, true);
+    sjekk('docs/API-OVERSIKT.md er oppdatert mot koden',
+        påDisk === oversikt.markdown(rader) + '\n', true);
+
+    const sikkerhet = fs.existsSync(oversikt.SIKKERHET_DOK)
+        ? fs.readFileSync(oversikt.SIKKERHET_DOK, 'utf8') : null;
+    sjekk('docs/SIKKERHET-OG-ARKITEKTUR.md finnes', sikkerhet !== null, true);
+    if (sikkerhet !== null) {
+        // Markørene må stå der. Forsvinner de, skriver `--skriv` ingenting og
+        // blokka blir stående som et gammelt øyeblikksbilde — stille.
+        sjekk('nøkkeltallsblokka har markørene sine',
+            oversikt.medNyBlokk(sikkerhet, rader) !== null, true);
+        sjekk('nøkkeltallsblokka er oppdatert mot koden',
+            sikkerhet.includes(oversikt.nokkeltallBlokk(rader)), true);
+    }
+    if (feil) console.log('      (kjør: node scripts/api-oversikt.js --skriv)');
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
