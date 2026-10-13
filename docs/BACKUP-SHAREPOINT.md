@@ -36,10 +36,21 @@ Filnavnene skiller miljøene fra hverandre: `Production-backup-…` mot
 Opprett (eller velg) et SharePoint-område og et dokumentbibliotek. Noter
 adressen, f.eks. `https://fhs.sharepoint.com/sites/Skjemasystem`.
 
-> **Skript:** `scripts/opprett-graph-apper.sh` gjør steg 2 og 3 under — og
-> setter samtidig opp appene for e-post og oppslag, hvis PA-flytene skal
-> legges om. Kjør `--sjekk` først for å se hvilke tillatelser som i det hele
-> tatt finnes som applikasjonsroller, og `--torrkjor` før du lar den endre noe.
+> **To skript gjør steg 2 og 3 for deg. Velg etter hva du skal gjøre:**
+>
+> `scripts/opprett-backup-app.ps1` — **PowerShell.** Bare backup-appen, med
+> `Sites.Selected` og skriverett på ett område. Kortest vei når det er
+> backupen som skal opp, og den eneste av de to som er skrevet for å leses
+> før den kjøres. Rollene hvert steg krever står i `.NOTES`, og stegene kan
+> deles på tre personer.
+>
+> `scripts/opprett-graph-apper.sh` — **bash med `az` CLI.** Alle tre appene,
+> altså også e-post og oppslag, for den dagen PA-flytene skal legges om. Kjør
+> `--sjekk` først: den svarer på hvilke tillatelser som i det hele tatt finnes
+> som applikasjonsroller, og det er et åpent spørsmål for Teams og Planner.
+>
+> Begge er idempotente, og begge har tørrkjøring (`-Torrkjor` / `--torrkjor`).
+> Kjør den før du lar noe endres.
 
 ### 2. App-registrering
 
@@ -93,13 +104,19 @@ godtas fortsatt ved oppretting. Verifiser med
 
 ### 4. Env-vars i hvert miljø
 
-Settes i SWA Configuration. Hemmeligheten som Key Vault-referanse.
+Settes i SWA Configuration, alle som **klartekst**.
+
+> Her sto det «hemmeligheten som Key Vault-referanse» til 12.10.2026. Det er
+> feil: SWA Managed Functions løser ikke `@Microsoft.KeyVault(...)` i app
+> settings. Prøvd i pilot — appen fikk referansestrengen som verdi.
+> Rolletildeling hjelper ikke. Key Vault er arkivet og rotasjonspunktet, ikke
+> kjøretidskilden; se `config/keyvault-secrets.md`.
 
 | Variabel | Verdi |
 |---|---|
 | `GRAPH_TENANT_ID` | Directory (tenant) ID for tenanten biblioteket ligger i |
 | `GRAPH_CLIENT_ID` | Application (client) ID |
-| `GRAPH_CLIENT_SECRET` | Key Vault-referanse til hemmeligheten |
+| `GRAPH_CLIENT_SECRET` | Klienthemmeligheten i klartekst. Arkiver den i Key Vault som `graph-client-secret` |
 | `BACKUP_SHAREPOINT_SITE` | `https://fhs.sharepoint.com/sites/Skjemasystem` |
 | `BACKUP_SHAREPOINT_BIBLIOTEK` | Valgfritt. Bibliotekets navn, f.eks. `Backup`. Uten dette brukes områdets standardbibliotek. |
 | `BACKUP_SHAREPOINT_MAPPE` | Valgfritt. Undermappe, f.eks. `Skjemasystem/Backup`. |
@@ -117,6 +134,65 @@ Legg hemmeligheten inn under **Administrasjon → 🗓 Nøkkelkalender** med
 utløpsdato, konsekvens («backup-kopien til SharePoint stopper stille») og
 rotasjonsprosedyre. Uten det står vi der den dagen den utløper — som er hele
 poenget med kalenderen.
+
+## Sjekkliste: sette opp backup i prod
+
+Prod kjører i dag **ikke** Graph-veien. `env.prod.json` sier det rett ut:
+`GRAPH_*` og `BACKUP_SHAREPOINT_SITE` er bevisst ikke satt, så backupen går
+via `BACKUP_FLOW_URL`. Byttet skjer av seg selv: `erKonfigurert()` i
+`lib/graph-opplast.js` krever alle fire, og `functions/backup.js` velger
+SharePoint-veien først når de er på plass. Det finnes ingen bryter å skru på.
+
+Rekkefølgen under følger hvem som må gjøre hva — stegene kan deles på tre
+personer, og skriptet er idempotent, så hver kan kjøre det én gang i
+vilkårlig rekkefølge.
+
+**Før møtet**
+
+- [ ] Avklar hvilket SharePoint-område prod-backupen skal til, og om et eget
+      bibliotek skal brukes. Noter full adresse.
+- [ ] Kjør `.\opprett-backup-app.ps1 -Site <url> -Torrkjor`. Den endrer
+      ingenting og viser nøyaktig hva den ville gjort.
+
+**I møtet — hvem må gjøre hva**
+
+- [ ] **Steg 1, app-registrering og hemmelighet** → *Application
+      Administrator* (eller Cloud Application Administrator)
+- [ ] **Steg 2, samtykke til `Sites.Selected`** → *Privileged Role
+      Administrator* eller *Global Administrator*.
+      Application Administrator er **ikke** nok: den rollen har et uttrykkelig
+      unntak for applikasjonsrettigheter på Microsoft Graph. Dette er den
+      vanligste grunnen til at alt annet går igjennom og dette ene feiler.
+- [ ] **Steg 3, skriverett på området** → *SharePoint Administrator* eller
+      *Global Administrator*. `Sites.Selected` gir i seg selv ingen tilgang;
+      uten dette steget kan appen ingenting.
+- [ ] **Steg 5, arkivering i Key Vault** → *Key Vault Secrets Officer* på
+      `fhs-kv-01`, pluss *Reader* på ressursen. Dette er Azure-roller, ikke
+      Entra-roller, og en helt annen tildeling enn de over.
+
+**Etterpå**
+
+- [ ] Sett de fire i SWA Configuration for prod, som klartekst:
+      `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`,
+      `BACKUP_SHAREPOINT_SITE`. Eventuelt `BACKUP_SHAREPOINT_BIBLIOTEK` og
+      `BACKUP_SHAREPOINT_MAPPE`.
+- [ ] Fjern `_backup_kommentar` fra `config/env.prod.json` og legg inn de
+      fire i inventaret med de ekte formene. `api/test/env-inventar.test.js`
+      holder lista komplett.
+- [ ] Sjekk `/api/system/info`: de fire skal stå som satt, og
+      `BACKUP_SHAREPOINT_SITE` vises i klartekst — feil områdeadresse er det
+      som oftest er galt når kopien ikke dukker opp der noen leter.
+- [ ] Kjør en backup manuelt og se at fila havner i biblioteket. Går den
+      fortsatt via flyten, mangler én av de fire.
+- [ ] Legg hemmeligheten inn i **Administrasjon → 🗓 Nøkkelkalender** med
+      utløpsdato og konsekvens. Uten det stopper backupen stille den dagen
+      den utløper.
+
+**Og så: slå av det som ikke lenger forventes å mangle**
+
+Når prod har Graph-veien, bør `KUN_I_MILJO` i `api/src/functions/system.js`
+rydde seg selv — i dag melder helsesjekken `GRAPH_*` som manglende i prod, og
+det er riktig fram til nå. Etterpå er det støy.
 
 ## Slik virker opplastingen
 

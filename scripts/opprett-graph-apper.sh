@@ -288,24 +288,31 @@ lag_hemmelighet "$ID_OPPSLAG" "$APP_OPPSLAG"
 # ---------- oppsummering ----------
 tittel "Env-vars"
 cat <<OPPSUMMERING
-  Settes i SWA Configuration i hvert miljø. Hemmelighetene som
-  Key Vault-referanser, aldri som klartekst.
+  Settes i SWA Configuration i hvert miljø. Hemmelighetene som KLARTEKST.
+
+  Her sto det «som Key Vault-referanser, aldri som klartekst» til 12.10.2026.
+  Det er feil: SWA Managed Functions løser ikke @Microsoft.KeyVault(...) i app
+  settings. Prøvd i pilot — appen fikk referansestrengen som verdi, og feilen
+  dukket opp langt fra årsaken. Rolletildeling hjelper ikke.
+
+  Key Vault er arkivet og rotasjonspunktet, ikke kjøretidskilden. Legg hver
+  hemmelighet DER OGSÅ — se config/keyvault-secrets.md.
 
   GRAPH_TENANT_ID                 $TENANT
 
   # Backup til SharePoint (i bruk i dag)
   GRAPH_CLIENT_ID                 $ID_LAGRING
-  GRAPH_CLIENT_SECRET             <Key Vault-referanse>
+  GRAPH_CLIENT_SECRET             <klartekst — arkiver i Key Vault>
   BACKUP_SHAREPOINT_SITE          $SITE
 
   # Utgående e-post (når flytene legges om)
   GRAPH_UTGAENDE_CLIENT_ID        $ID_UTGAENDE
-  GRAPH_UTGAENDE_CLIENT_SECRET    <Key Vault-referanse>
+  GRAPH_UTGAENDE_CLIENT_SECRET    <klartekst — arkiver i Key Vault>
   GRAPH_AVSENDER                  <postkassen det sendes fra>
 
   # Oppslag mot katalog og team
   GRAPH_OPPSLAG_CLIENT_ID         $ID_OPPSLAG
-  GRAPH_OPPSLAG_CLIENT_SECRET     <Key Vault-referanse>
+  GRAPH_OPPSLAG_CLIENT_SECRET     <klartekst — arkiver i Key Vault>
 OPPSUMMERING
 
 if [ ${#HEMMELIGHETER[@]} -gt 0 ]; then

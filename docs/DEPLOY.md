@@ -143,7 +143,11 @@ Etter opprettelse (og oppgradering til Standard):
 - Under IAM på storage-kontoen: gi MI'en `Storage Table Data Contributor` + `Storage Blob Data Contributor`
 - Under IAM på Key Vault: gi MI'en `Key Vault Secrets User`
 - Under Environment variables: sett `STORAGE_ACCOUNT_NAME`, `KEYVAULT_NAME`, `ADMIN_UPNS`, `AAD_CLIENT_ID`, `AAD_CLIENT_SECRET`, `MILJO`
-- Under Configuration: legg til enhver `public: false`-verdi fra `env.production.json` som ikke er Key Vault-referanse
+- Under Configuration: legg til hver nøkkel fra `config/env.<miljø>.json`.
+  `{"keyvault": "navn"}` betyr at verdien hentes fra Key Vault og limes inn
+  som **klartekst** — SWA løser ikke `@Microsoft.KeyVault(...)` i app settings
+  (unntaket er auth-sertifikatet, som plattformen henter selv).
+  `api/test/env-inventar.test.js` holder lista komplett
 
 ### 6. Entra ID app-registrering (for auth)
 
