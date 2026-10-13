@@ -2,7 +2,8 @@
  * Blob Storage-klient.
  *
  * Se kommentar i storage.js — samme grunn til at vi bruker connection string
- * via KV-referanse i stedet for Managed Identity direkte i koden.
+ * i klartekst i stedet for Managed Identity eller en Key Vault-referanse:
+ * SWA Managed Functions støtter ingen av delene.
  */
 // Samme grunn som i storage.js: lat lasting holder modulen importerbar
 // uten node_modules, slik at logikktester kan kjøre uten npm ci.
