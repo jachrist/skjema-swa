@@ -133,6 +133,32 @@ $ErrorActionPreference = 'Stop'
 $GRAPH_APP_ID = '00000003-0000-0000-c000-000000000000'
 $RETTIGHET = 'Sites.Selected'
 
+# Graph-modulene sjekkes FØRST. Uten dem falt skriptet på
+# «The term 'Connect-MgGraph' is not recognized» — en rå .NET-feil som ikke
+# sier hva som mangler eller hva man skal gjøre. Az.KeyVault hadde denne
+# sjekken fra før; Graph var glemt.
+#
+# De to undermodulene holder. Meta-modulen Microsoft.Graph drar inn alt og
+# tar lang tid å installere, uten å gi dette skriptet noe det trenger.
+$GRAFMODULER = @('Microsoft.Graph.Authentication', 'Microsoft.Graph.Applications')
+$manglende = @($GRAFMODULER | Where-Object { -not (Get-Module -ListAvailable -Name $_) })
+if ($manglende.Count -gt 0) {
+    Write-Host ""
+    Write-Host "Mangler PowerShell-modul: $($manglende -join ', ')" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Installer (krever ikke administrator):" -ForegroundColor Yellow
+    Write-Host "  Install-Module $($manglende -join ', ') -Scope CurrentUser" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Blir du spurt om en ikke-klarert kilde, er det PSGallery." -ForegroundColor DarkGray
+    Write-Host "Må den klareres først:" -ForegroundColor DarkGray
+    Write-Host "  Set-PSRepository -Name PSGallery -InstallationPolicy Trusted" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "Modulene virker i Windows PowerShell 5.1, men PowerShell 7 er" -ForegroundColor DarkGray
+    Write-Host "det Microsoft tester mot. Du kjører $($PSVersionTable.PSVersion)." -ForegroundColor DarkGray
+    exit 1
+}
+Import-Module $GRAFMODULER -ErrorAction Stop
+
 # Key Vault-skriving sjekkes FØR noe opprettes. Oppdager vi først etterpå at
 # modulen mangler, står vi med en fersk hemmelighet vi ikke har noe sted å
 # gjøre av — og den vises bare én gang.
@@ -241,6 +267,17 @@ Steg '3. Skrivetilgang til ETT SharePoint-område'
 $u = [Uri]$Site
 $omraadeRef = "$($u.Host):$($u.AbsolutePath.TrimEnd('/'))"
 Info "Område: $Site"
+# Et mellomrom i stien betyr nesten alltid at adressen er skrevet av fra
+# områdets VISNINGSNAVN og ikke kopiert fra adressefeltet. Graph slår opp på
+# stien, ikke på navnet, og et oppslag som bommer her ser ut som manglende
+# rettigheter. Si det før kallet, ikke etter.
+if ($Site -match '\s') {
+    Write-Host "   Adressen inneholder mellomrom." -ForegroundColor Yellow
+    Write-Host "   Kopier den fra adressefeltet i nettleseren når du står i" -ForegroundColor Yellow
+    Write-Host "   området — stien har som regel ingen mellomrom, selv om" -ForegroundColor Yellow
+    Write-Host "   visningsnavnet har det." -ForegroundColor Yellow
+    Write-Host "   Slår Graph opp: $omraadeRef" -ForegroundColor DarkGray
+}
 
 $omraade = $null
 try {

@@ -149,8 +149,17 @@ vilkårlig rekkefølge.
 
 **Før møtet**
 
+- [ ] Installer PowerShell-modulene skriptet trenger (krever ikke
+      administrator):
+      `Install-Module Microsoft.Graph.Authentication, Microsoft.Graph.Applications -Scope CurrentUser`
+      De to undermodulene holder — meta-modulen `Microsoft.Graph` drar inn alt
+      og tar lang tid uten å gi skriptet noe det trenger. Skriptet sjekker
+      selv og sier fra, men det tar tid å installere midt i et møte.
 - [ ] Avklar hvilket SharePoint-område prod-backupen skal til, og om et eget
-      bibliotek skal brukes. Noter full adresse.
+      bibliotek skal brukes. **Kopier adressen fra adressefeltet i
+      nettleseren** mens du står i området — ikke skriv den av fra
+      visningsnavnet. Stien har som regel ingen mellomrom selv om navnet har
+      det, og Graph slår opp på stien.
 - [ ] Kjør `.\opprett-backup-app.ps1 -Site <url> -Torrkjor`. Den endrer
       ingenting og viser nøyaktig hva den ville gjort.
 
