@@ -69,6 +69,27 @@ const escapeJsIAttributt = hentEksport(escapeKilde, 'escapeJsIAttributt');
     sjekk('hvert brukt navn er importert', manglerImport, []);
 }
 
+// ---------- de gamle navnene skal være borte ----------
+//
+// `escAttr` og `escapeAttr` fantes i fire filer med to ulike oppførsler. Blir
+// ett av navnene stående igjen et sted, er det enten en kopi som overlevde
+// eller et kall til noe som ikke finnes lenger — og det siste er en
+// ReferenceError første gang den kodestien kjøres, ikke ved innlasting.
+{
+    const filer = [
+        ...fs.readdirSync(path.join(rot, 'frontend')).filter(n => n.endsWith('.html')).map(n => ['frontend', n]),
+        ...fs.readdirSync(path.join(rot, 'frontend', 'js')).filter(n => n.endsWith('.js')).map(n => ['frontend', 'js', n])
+    ];
+    const igjen = [];
+    for (const deler of filer) {
+        const kode = utenKommentarer(les(...deler));
+        for (const m of kode.matchAll(/\b(escAttr|escapeAttr)\b/g)) {
+            igjen.push(`${deler.join('/')}: ${m[1]}`);
+        }
+    }
+    sjekk('ingen bruk av de gamle navnene', [...new Set(igjen)], []);
+}
+
 // ---------- escapeHtml ----------
 {
     sjekk('escapeHtml tar alle fem tegnene',
