@@ -77,23 +77,75 @@ signatur, så utskriften kan limes inn i en sak.
 
 ### To ting som reduserer antallet flyter
 
-**Varslingsflyten er en dispatcher.** Den tar fire `handling`-verdier, så det
-er én flyt — ikke fire:
+**Varslingsflyten er en dispatcher.** Den kalles med **sju** `handling`-verdier,
+så det er én flyt — ikke sju. Men de kommer i **to ulike nyttelastformer**, og
+det er dét flyten må forgrene på.
+
+### Full form — `sendVarslerViaFlyt()` i `lib/flyt-kaller.js`
 
 | `handling` | Sendes fra |
 |---|---|
-| `sendInnsenderKvittering` | `sendInnsenderKvittering()` |
-| `sendBehandlingsVarsling` | `sendBehandlerVarsling()` |
-| `sendBeslutningVarsling` | `sendBeslutningVarsling()` |
-| `sendFerdigVarsling` | `sendFerdigVarsling()` |
-| `sendUtsendinger` | `functions/utsending.js` — cron 05:00 |
-| `purreUtsendinger` | `functions/utsending.js` — cron 06:00 |
+| `sendInnsenderKvittering` | `varsling.js` — ved innsending |
+| `sendBehandlingsVarsling` | `varsling.js` — nytt steg er aktivt |
+| `sendBeslutningVarsling` | `varsling.js` — et steg er avgjort |
+| `sendFerdigVarsling` | `varsling.js` — siste steg avgjort |
+| `sendSamtaleVarsling` | `varsling.js` — nytt innlegg i dialogen. **Kaller flyten én gang per mottakergruppe**: innsender og behandlere får ulik lenke, så flyten ser flere kall med samme `handling` |
 
-> De to siste sender **ikke** samme nyttelast som de fire over: de mangler
-> `epost_og_teams`, og har mottakerfeltene i `mottakere[]` i stedet for
-> `lenker[]`. Flyten må derfor forgrene på `handling` — gjør den ikke det,
-> sender den en tom e-post til eksterne mottakere. Trinn 2 i
-> `docs/FASE-UTSENDING-SAMMENSLAING.md` samler dem til én form.
+Feltene, slik `flyt-kaller.js` faktisk setter dem:
+
+```jsonc
+{
+  "handling": "…", "miljø": "pilot",
+  "mottakere": [ { "epost": "", "navn": "" } ],
+  "kopi":      [ { "epost": "", "navn": "" } ],   // alltid satt, kan være tom
+  "varslinger": ["epost"],                        // epost|teams|planner|teamskanal
+  "lenker":  [ { "epost": "", "url": "" } ],      // én per mottaker
+  "skjema_id": "", "skjematype_id": "", "skjema_navn": "", "stegnavn": "",
+  "base_url": "",
+  "epost_og_teams": { "emne": "", "html": "" },
+  "planner": null, "teamskanal": null, "teams": null   // satt bare når kanalen er aktiv
+}
+```
+
+### Redusert form — `kallUtsendingsflyt()` i `functions/utsending.js`
+
+| `handling` | Sendes fra |
+|---|---|
+| `sendUtsendinger` | `utsending.js` — cron 05:00 |
+| `purreUtsendinger` | `utsending.js` — cron 06:00 |
+
+```jsonc
+{ "handling": "…", "miljø": "pilot", "mottakere": [ … ] }
+```
+
+**Det er alt.** Ingen `epost_og_teams`, ingen `kopi`, ingen `varslinger`, ingen
+`lenker` — hver mottaker bærer sin egen `url`.
+
+> **Flyten MÅ forgrene på `handling`.** Gjør den ikke det, leter den etter
+> `epost_og_teams.html` i den reduserte formen og sender en tom e-post til
+> eksterne mottakere. Trinn 2 i `docs/FASE-UTSENDING-SAMMENSLAING.md` samler
+> dem til én form; til da er dette skillet selve kontrakten.
+
+### Disse går IKKE hit
+
+De har egne adresser og egne nyttelaster, og skal ikke forveksles med
+dispatcherens verdier:
+
+| `handling` | Adresse |
+|---|---|
+| `sendOtp` | `OTP_FLOW_URL` |
+| `lagreBackup` | `BACKUP_FLOW_URL` |
+
+### Kopimottakere på kvitteringen
+
+`sendInnsenderKvittering` er det ene tilfellet der `kopi` betyr noe i dag.
+Flyten skal sende **én** e-post til `mottakere[0]` med `kopi` i kopi-feltet,
+og **hoppe over resten av `mottakere`** — ellers får kopimottakerne både en Cc
+og sin egen e-post.
+
+De samme adressene står i BEGGE lister med vilje. Se «`kopi[]` —
+kopimottakere» under for hvorfor, og for hva som kan ryddes bort når flyten er
+ute i prod.
 
 **Utsending og purring ER varslingsflyten.** `kallUtsendingsflyt()` i
 `functions/utsending.js` leser `VARSLING_FLOW_URL`, og de to skilles på
