@@ -8,7 +8,8 @@
     },
     "scripts": {
         "start": "func start",
-        "test": "node ../scripts/kjor-tester.js"
+        "test": "node ../scripts/kjor-tester.js",
+        "api-oversikt": "node ../scripts/api-oversikt.js --skriv"
     },
     "dependencies": {
         "@azure/data-tables": "^13.3.0",

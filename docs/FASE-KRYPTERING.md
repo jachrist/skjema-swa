@@ -81,9 +81,11 @@ Alle krever eier eller admin på skjematypen.
   Dekrypterer alle krypterte skjemaer med gammel nøkkel, krypterer med ny.
   `gammelNokkel` må matche lagret verdi (hindrer at feil nøkkel gjør skade).
 
-## nokkeladmin.html
+## Nøkkeladministrasjon
 
-Ny frontend-side under `/nokkeladmin.html` (authenticated):
+> Lå opprinnelig som egen side `/nokkeladmin.html`. Den er senere slått
+> sammen til fanen **🔑 Nøkler** i `admin.html` (`#nokler`); sida finnes ikke
+> lenger. Funksjonaliteten er den samme:
 - Velg skjematype (må være eier)
 - Vis nåværende nøkkel-status + Krypteres/Anonymiseres-konfig
 - Generer ny nøkkel (kun hvis ingen finnes)
@@ -106,7 +108,8 @@ Auto-åpner en spesifikk skjematype via `?skjematype_id=X` (linkes fra editor).
 
 **Anonymisering er pseudonym, ikke ekte anonymitet:**
 - SHA-256(salt + epost) er deterministisk → samme innsender = samme pseudonym
-- 12-hex-suffix = ~64 bits — brute-force mulig hvis salt lekker
+- 12-hex-suffix = 48 bits (ikke 64 — det sto feil her til 13.10.2026).
+  Lekker saltet, kan en kjent e-postadresse bekreftes ved utregning
 - Full anonymitet krever fjerning av alle IP/tid-korrelerte metadata (ikke gjort)
 
 **Nøkkelrotasjon:**

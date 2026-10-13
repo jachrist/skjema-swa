@@ -11,10 +11,15 @@ organiseres og gjøres tilgjengelig.
 | Filer i `docs/` | 30 |
 | Linjer til sammen | 6 315 |
 | Av dem `FASE-*` | 13 filer |
-| API-endepunkter i koden | 111 |
-| Endepunkter med en samlet oversikt | 0 |
+| API-endepunkter i koden | 133 |
+| Endepunkter med en samlet oversikt | alle |
 | Frontend-sider | 13 |
 | Sider med brukerrettet beskrivelse | 0 |
+
+De to siste radene er oppdatert 13.10.2026: oversikten finnes nå, generert av
+`scripts/api-oversikt.js`. 111 var dessuten for lavt — tre endepunkter i
+`samtale.js` ble ikke funnet før parseren også leste `route`-verdier satt fra
+en konstant.
 
 Mengden er ikke problemet. **Sjangeren er det.**
 
@@ -148,15 +153,15 @@ endepunkt ikke merges.
 
 Sikkerhetsevalueringen er førsteprioritet, så den styrer.
 
-**Runde 1 — det evalueringen trenger**
+**Runde 1 — det evalueringen trenger** — *punkt 1–3 ferdig 13.10.2026*
 
-1. `SIKKERHET-OG-ARKITEKTUR.md` — ett dokument som samler arkitektur,
+1. ✅ `SIKKERHET-OG-ARKITEKTUR.md` — ett dokument som samler arkitektur,
    datasikring og tilgangsstyring, med avgrensning, datastrømmer og en
    komponentfigur. Dette er overleveringsdokumentet.
-2. Generert API-oversikt, med auth-krav per endepunkt. Evaluatoren vil spørre
+2. ✅ Generert API-oversikt, med auth-krav per endepunkt. Evaluatoren vil spørre
    «hva er eksponert, og hvem slipper til» — og det svaret må være komplett,
    ikke representativt.
-3. Kjente begrensninger samlet ett sted. `ARCHITECTURE.md` har alt «siste
+3. ✅ Kjente begrensninger samlet ett sted — kapittel 10 i overleveringsdokumentet, 19 punkter. `ARCHITECTURE.md` har alt «siste
    skriving vinner»; klartekst-hemmelighetene i SWA Configuration hører også
    hjemme der. **En evaluator som finner noe vi ikke har nevnt, leser alt
    annet med nye øyne.**
