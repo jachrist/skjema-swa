@@ -654,9 +654,10 @@ vurderer dem.
    Cyberforsvarets Azure-administratorer. Inntil den er på plass, finnes det
    ingen automatisk, verifisert backup av produksjonsdata.
 2. **Hemmelighetene står i klartekst i SWA Configuration** (7.2). Det er et
-   plattformvalg, ikke vårt, men konsekvensen er vår. Blir SWA Managed
-   Functions en dag i stand til å løse `@Microsoft.KeyVault(...)`-referanser,
-   er dette første sted å se igjen.
+   plattformvalg, ikke vårt, men konsekvensen er vår. Det finnes en vei ut
+   som ikke krever at plattformen endrer seg — en egen Function App lenket
+   til SWA-en støtter både managed identity og Key Vault-referanser. Vurdert
+   i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`, ikke besluttet.
 3. **Deploy skjer med et SWA deployment token** i GitHub-secret
    `AZURE_STATIC_WEB_APPS_API_TOKEN`. Målet er OIDC federated credential med
    `Contributor` bare på SWA-ressursen. Ikke gjennomført.
@@ -779,4 +780,5 @@ del av innholdet.
 | Utrulling av en flyt på tvers av tenanter | `docs/FLYT-DEPLOY.md` |
 | Logging og hva som er verdt å kjenne igjen | `docs/LOGGING.md` |
 | Power BI-feeden | `docs/POWER-BI.md` |
+| Forslag: egen Function App i stedet for managed functions | `docs/BESLUTNING-EGEN-FUNCTION-APP.md` |
 | Plan for resten av dokumentasjonen | `docs/DOKUMENTASJONSPLAN.md` |

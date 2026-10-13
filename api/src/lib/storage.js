@@ -1,11 +1,14 @@
 /**
  * Table Storage-klient.
  *
- * SWA Managed Functions støtter ikke Managed Identity direkte i koden.
- * Vi bruker derfor connection string via env-var, hvor selve verdien ligger i
- * Key Vault og eksponeres til env-varen via `@Microsoft.KeyVault(...)`-referanse.
- * Da forlater aldri secretsen KV under koden — SWA-hosten løser referansen
- * ved oppstart (bruker sin egen MI mot KV).
+ * SWA Managed Functions støtter ikke Managed Identity direkte i koden, og
+ * hosten løser heller ikke `@Microsoft.KeyVault(...)`-referanser i app
+ * settings — prøvd i pilot 12.10.2026. Her sto det tidligere det motsatte.
+ *
+ * Connection stringen står derfor i KLARTEKST som app setting. Verdien har en
+ * kopi i Key Vault, men den kopien er arkiv og rotasjonspunkt, ikke kilden
+ * koden leser. Se `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 7, og
+ * `docs/BESLUTNING-EGEN-FUNCTION-APP.md` for veien ut av det.
  *
  * Både klientene og createTable-kallet caches per prosess: en tabell som
  * finnes fortsetter å finnes, så det er ingen grunn til å spørre om det på

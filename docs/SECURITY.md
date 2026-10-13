@@ -58,6 +58,10 @@ To ting følger, og de blandes lett:
 - **Hosten** løser ikke referanser i app settings. Verdien må limes inn som
   klartekst.
 
+Begge delene følger av at API-et kjører som *managed functions*. En egen
+Function App lenket til SWA-en støtter begge — se
+`docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
+
 Den ene MI-bruken som faktisk virker, er auth-sertifikatet i
 `staticwebapp.config.prod.json` — den leses av SWA-plattformens
 auth-komponent, ikke av app-settings-laget.
