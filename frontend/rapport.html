@@ -287,6 +287,7 @@
         import { hentInnloggetBruker } from './js/auth.js';
         import { statusTekstFraKode } from './js/skjemastatus.js';
         import { parseMarkdown } from './js/felt-render.js';
+        import { escapeHtml } from './js/escape.js';
 
         const params = new URLSearchParams(location.search);
         const rapporttypeId = params.get('rapporttype_id') || '';
@@ -354,9 +355,6 @@
             return escapeHtml(navn).replace(/_/g, MYK_BINDESTREK);
         }
 
-        function escapeHtml(s) {
-            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
 
         function byggFilterPanel() {
             const grid = document.getElementById('filter-grid');

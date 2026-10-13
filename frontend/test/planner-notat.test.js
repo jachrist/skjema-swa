@@ -37,10 +37,16 @@ const EKS = /const NOTAT_EKSEMPELLENKE = '([^']+)'/.exec(kilde);
 if (!EKS) throw new Error('Fant ikke NOTAT_EKSEMPELLENKE i editor.html');
 const L = EKS[1];
 
+// `notatForhandsvisning` bruker escapeHtml, som nå bor i escape.js. Den
+// sendes inn — ikke skrives om her, for da ville testen målt sin egen kopi.
+const { hentEksport } = require('../../scripts/test-kilde.js');
+const escapeHtml = hentEksport(
+    fs.readFileSync(path.join(__dirname, '..', 'js', 'escape.js'), 'utf8'), 'escapeHtml');
+
 const notatForhandsvisning = new Function(
-    'NOTAT_EKSEMPELLENKE',
+    'NOTAT_EKSEMPELLENKE', 'escapeHtml',
     `${klipp('notatForhandsvisning')}\nreturn notatForhandsvisning;`
-)(L);
+)(L, escapeHtml);
 
 // ---------- de to skal si det samme ----------
 const TEKSTER = [

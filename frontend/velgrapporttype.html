@@ -206,6 +206,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, logUt as authLogUt, styrOversiktslenker } from './js/auth.js';
+        import { escapeHtml } from './js/escape.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -231,9 +232,6 @@
             el.style.display = tekst ? 'block' : 'none';
         }
 
-        function escapeHtml(s) {
-            return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
 
         function kortHtml(t) {
             const fase = (t.Fase || 'Produksjon').toLowerCase();

@@ -76,7 +76,38 @@ function lesKode(...stier) {
     return utenKommentarer(fs.readFileSync(path.join(...stier), 'utf8'));
 }
 
+/**
+ * Hent en navngitt funksjon ut av en kildefil og gjør den kallbar.
+ *
+ * Testene her kjører mot ekte kode, ikke mot kopier skrevet i testen. Fire
+ * tester hadde hver sin måte å klippe ut `escapeHtml` på, og én hadde gitt
+ * opp og skrevet sin egen `escAttr` — som da ikke hadde hullet den ekte
+ * hadde, og derfor heller ikke kunne avsløre det.
+ *
+ * Leter etter `export function navn(`, `function navn(` og
+ * `const navn = (…) =>`, og leser til og med den avsluttende `}` på kolonne 0
+ * eller det avsluttende semikolonet.
+ *
+ * @param {string} kilde  filinnhold
+ * @param {string} navn   funksjonsnavnet
+ * @param {string[]} ogsa andre funksjoner den er avhengig av, i samme fil
+ * @returns {Function}
+ */
+function hentEksport(kilde, navn, ogsa = []) {
+    const biter = [...ogsa, navn].map(n => {
+        for (const m of [`export function ${n}(`, `function ${n}(`]) {
+            const i = kilde.indexOf(m);
+            if (i === -1) continue;
+            const slutt = kilde.indexOf('\n}', i);
+            if (slutt === -1) break;
+            return kilde.slice(i, slutt + 2).replace('export function', 'function');
+        }
+        throw new Error(`Fant ikke ${n} i kilden`);
+    });
+    return new Function(`${biter.join('\n')}\nreturn ${navn};`)();
+}
+
 module.exports = {
-    utenKommentarer, lesKode,
+    utenKommentarer, lesKode, hentEksport,
     utenHtmlKommentarer, utenBlokkKommentarer, utenLinjeKommentarer
 };

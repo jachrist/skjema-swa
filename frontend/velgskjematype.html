@@ -427,6 +427,7 @@
         import { CONFIG } from './js/config.js';
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, logUt as authLogUt } from './js/auth.js';
+        import { escapeHtml, escapeJsIAttributt } from './js/escape.js';
 
         let alle = [];
         // Rapporter er låst til admin/Skjemaskaper — settes fra /api/whoami før lista rendres.
@@ -890,8 +891,8 @@
                 ? `<span class="fase-badge" style="background: #ff3b30;" title="${antBeh} skjema venter på deg som behandler">🔔 ${antBeh}</span>`
                 : '';
             return `
-                <div class="skjematype-kort${kollapsetKlasse}" data-skjematype-id="${escapeAttr(String(t.Skjematype_id))}">
-                    <div class="kort-tittelrad" onclick="toggleKort('${escapeAttr(String(t.Skjematype_id))}')">
+                <div class="skjematype-kort${kollapsetKlasse}" data-skjematype-id="${escapeHtml(String(t.Skjematype_id))}">
+                    <div class="kort-tittelrad" onclick="toggleKort('${escapeJsIAttributt(String(t.Skjematype_id))}')">
                         <h2 class="kort-tittel">
                             <span class="kort-kollaps-pil">▼</span>
                             <span class="kort-id" title="Skjematype-ID">${escapeHtml(String(t.Skjematype_id))}</span>
@@ -947,9 +948,6 @@
             });
             skrivKollapsSett(sett);
         };
-        function escapeAttr(s) {
-            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
-        }
 
         function formaterDato(iso) {
             if (!iso) return '';
@@ -959,13 +957,6 @@
             return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}. ${pad(d.getHours())}:${pad(d.getMinutes())}`;
         }
 
-        function escapeHtml(s) {
-            return String(s ?? '')
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/"/g, '&quot;');
-        }
 
         // Minimal Markdown for kortvisning — bare bold/italic/lenker
         function parseMdSimpel(t) {

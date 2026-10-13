@@ -157,7 +157,7 @@ Se `docs/ARCHITECTURE.md` for komponenter. Hovedangrepsflater:
 - **Deploy-pipeline**: kompromittert GitHub-konto → uautorisert deploy. Mitigert av branch protection, review-krav, OIDC (planlagt).
 - **Storage**: tilgang skjer med `STORAGE_CONNECTION_STRING`, ikke med MI. Den som har strengen, har både krypterte skjemaer og krypteringsnøklene — de ligger i samme konto. Strengen er den mest verdifulle enkeltverdien i løsningen.
 - **App settings**: hemmelighetene står i klartekst. Å liste dem er en privilegert ARM-operasjon, så eksponeringen går til dem som alt kan endre appen. Se Managed Identity over.
-- **Ondsinnet skjemadefinisjon**: en admin eller skjemaeier kan i teorien lagre HTML som injiseres hos utfylleren. `escapeHtml` finnes i `felt-render.js`, men **det er ingen `Content-Security-Policy`** — det sto her at den fantes, og det var feil — og `innerHTML` brukes flere steder i frontend-modulene. Ikke systematisk gjennomgått.
+- **Ondsinnet skjemadefinisjon**: en admin eller skjemaeier kan i teorien lagre HTML som injiseres hos utfylleren. Gjennomgått 13.10.2026: escape-funksjonene er samlet i `frontend/js/escape.js` (åtte kopier under fire navn før det, og én av dem hadde et hull som lot seg utnytte), seks uescapede verdier er rettet, og en `Content-Security-Policy` er innført. `script-src` har fortsatt `'unsafe-inline'` på grunn av 275 inline event-handlere. Se `docs/SIKKERHET-OG-ARKITEKTUR.md` 6.4 og punkt 11.
 - **`FLOW_CALLBACK_KEY` er én delt verdi for fem inngangspunkter.** Se under.
 
 ## Teknisk gjeld: nøkkelen stegflytene bærer

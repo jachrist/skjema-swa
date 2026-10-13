@@ -23,6 +23,7 @@
  */
 const fs = require('fs');
 const path = require('path');
+const { hentEksport } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -76,18 +77,21 @@ const api = {
         return svar;
     }
 };
-const escHtml = (s) => String(s ?? '').replace(/[&<>"']/g,
-    c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const escAttr = (s) => String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
+// De EKTE escape-funksjonene, hentet fra escape.js. Her sto det tidligere
+// to kopier skrevet for hånd, og `escAttr`-kopien manglet nettopp det hullet
+// den ekte hadde — så testen kunne ikke ha avslørt det.
+const escapeKilde = fs.readFileSync(path.join(__dirname, '..', 'js', 'escape.js'), 'utf8');
+const escHtml = hentEksport(escapeKilde, 'escapeHtml');
+const escapeJsIAttributt = hentEksport(escapeKilde, 'escapeJsIAttributt');
 const kortDato = (iso) => iso ? String(iso).slice(0, 10) : '–';
 
 const miljo = new Function(
-    'window', 'document', 'api', 'escHtml', 'escAttr', 'kortDato',
+    'window', 'document', 'api', 'escHtml', 'escapeJsIAttributt', 'kortDato',
     'Blob', 'URL', 'prompt', 'setTimeout',
     `${seksjon}
      return { rendrArkiv, tegnArkiv, tegnArkivSletting, hentState: () => arkivState };`
 )(
-    vindu, dokument, api, escHtml, escAttr, kortDato,
+    vindu, dokument, api, escHtml, escapeJsIAttributt, kortDato,
     function Blob(deler) { this.tekst = deler.join(''); },
     {
         createObjectURL: (b) => { nedlastinger.push(b.tekst); logg.push('nedlasting'); return 'blob:x'; },

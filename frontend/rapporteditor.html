@@ -439,6 +439,7 @@
         import { hentInnloggetBruker, logUt as authLogUt } from './js/auth.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn } from './js/tilgang-editor.js';
         import { byggMdEditor } from './js/md-editor.js';
+        import { escapeHtml } from './js/escape.js';
 
         const params = new URLSearchParams(location.search);
         const rapporttypeId = params.get('rapporttype_id') || '';
@@ -1042,10 +1043,6 @@
             if (e.target === document.getElementById('lenke-modal')) lukkLenkeGenerator();
         });
 
-        function escapeHtml(s) {
-            return String(s ?? '')
-                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
 
         async function init() {
             const bruker = await hentInnloggetBruker();

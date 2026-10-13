@@ -359,6 +359,7 @@
     <script type="module">
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
+        import { escapeHtml as escHtml, escapeJsIAttributt } from './js/escape.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -680,7 +681,7 @@
                             </a>
                             <div class="vedlegg-navn" title="${escHtml(v.Filnavn)}">${escHtml(v.Filnavn)}</div>
                             <div class="todo-meta">${Math.max(1, Math.round(v.Storrelse / 1024))} kB</div>
-                            <button class="knapp danger mini" onclick="todoVedleggSlett(${nummer}, '${escAttr(v.Filnavn)}')">Fjern</button>
+                            <button class="knapp danger mini" onclick="todoVedleggSlett(${nummer}, '${escapeJsIAttributt(v.Filnavn)}')">Fjern</button>
                         </div>`;
                 }).join('');
 
@@ -998,7 +999,7 @@
                             <div>${escHtml(`${i.EN || ''}${i.FN ? ', ' + i.FN : ''}`.trim() || '-')}</div>
                             <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(i.UPN)}</div>
                             <div style="color: var(--text-secondary); font-size: 11px;">${escHtml(i.Kilde || 'manuell')}</div>
-                            <div><button class="knapp mini danger" onclick="rollerFjern('${escAttr(i.UPN)}')">Fjern</button></div>
+                            <div><button class="knapp mini danger" onclick="rollerFjern('${escapeJsIAttributt(i.UPN)}')">Fjern</button></div>
                         </div>
                     `).join('')}
                 `;
@@ -1045,12 +1046,12 @@
                     <h2>Teams-synkronisering</h2>
                     <div class="rad">
                         <label>Team <small>(navn eller gruppe-ID)</small></label>
-                        <input type="text" id="team-navn" value="${escAttr(status.Team || '')}"
+                        <input type="text" id="team-navn" value="${escHtml(status.Team || '')}"
                                placeholder="Tomt = ingen synkronisering" style="flex: 1;">
                     </div>
                     <div class="rad">
                         <label>Eier-rolle <small>(vernes mot utmelding)</small></label>
-                        <input type="text" id="team-eierrolle" value="${escAttr(status.EierRolle || '')}"
+                        <input type="text" id="team-eierrolle" value="${escHtml(status.EierRolle || '')}"
                                placeholder="F.eks. Eier — tomt = ingen verning" style="flex: 1;">
                         <button class="knapp mini primær" onclick="teamLagre()">Lagre</button>
                     </div>
@@ -1790,7 +1791,7 @@
             const p = document.getElementById('sm-preview');
             if (!p) return;
             p.innerHTML = systemmerke.url
-                ? `<img src="${escAttr(systemmerke.url)}" alt="" style="max-width: 130px; max-height: 100%; object-fit: contain;">`
+                ? `<img src="${escHtml(systemmerke.url)}" alt="" style="max-width: 130px; max-height: 100%; object-fit: contain;">`
                 : '<span style="font-size: 12px; color: var(--text-secondary);">Ingen logo</span>';
         }
 
@@ -1857,13 +1858,13 @@
                 return `
                 <div style="border: 2px solid ${erSystem ? 'var(--accent)' : 'var(--border-color)'}; border-radius: 8px; padding: 10px; background: var(--bg-container); display: flex; flex-direction: column; gap: 6px;">
                     <div style="height: 80px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border-radius: 4px; padding: 4px;">
-                        <img src="${escAttr(l.url)}" alt="${escAttr(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                        <img src="${escHtml(l.url)}" alt="${escHtml(l.navn)}" style="max-width: 100%; max-height: 100%; object-fit: contain;">
                     </div>
-                    <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(l.navn)}">${escHtml(l.navn)}</div>
-                    <button class="knapp mini" onclick="systemmerkeVelg('${escAttr(l.navn)}')" ${erSystem ? 'disabled style="opacity: 0.5;"' : ''}>${erSystem ? '✓ Systemlogo' : 'Bruk som systemlogo'}</button>
+                    <div style="font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(l.navn)}">${escHtml(l.navn)}</div>
+                    <button class="knapp mini" onclick="systemmerkeVelg('${escapeJsIAttributt(l.navn)}')" ${erSystem ? 'disabled style="opacity: 0.5;"' : ''}>${erSystem ? '✓ Systemlogo' : 'Bruk som systemlogo'}</button>
                     <div style="display: flex; gap: 4px;">
-                        <button class="knapp mini" onclick="logoKopierUrl('${escAttr(l.navn)}')">Kopier URL</button>
-                        <button class="knapp mini danger" onclick="logoSlett('${escAttr(l.navn)}')">Slett</button>
+                        <button class="knapp mini" onclick="logoKopierUrl('${escapeJsIAttributt(l.navn)}')">Kopier URL</button>
+                        <button class="knapp mini danger" onclick="logoSlett('${escapeJsIAttributt(l.navn)}')">Slett</button>
                     </div>
                 </div>`;
             }).join('');
@@ -2339,7 +2340,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                                 ${s.varighetSekunder ? ` · ${s.varighetSekunder}s` : ''}
                                 ${!s.antallRader && !s.varighetSekunder ? '<span style="color: var(--text-secondary);">—</span>' : ''}
                             </div>
-                            <div style="font-size: 12px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(s.sistFeil || '')}">${escHtml(s.sistFeil || '')}</div>
+                            <div style="font-size: 12px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(s.sistFeil || '')}">${escHtml(s.sistFeil || '')}</div>
                         </div>
                     `;
                 }).join('')}
@@ -2396,7 +2397,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                             ${b.varighetSekunder != null ? `<br><small style="color: var(--text-secondary);">${b.varighetSekunder}s</small>` : ''}
                             ${b.antallRader == null && b.antallSlettet == null && b.varighetSekunder == null ? '<span style="color: var(--text-secondary);">—</span>' : ''}
                         </div>
-                        <div style="font-size: 12px; color: var(--danger); overflow: hidden; text-overflow: ellipsis;" title="${escAttr(b.sistFeil || '')}">${escHtml(b.sistFeil || '')}</div>
+                        <div style="font-size: 12px; color: var(--danger); overflow: hidden; text-overflow: ellipsis;" title="${escHtml(b.sistFeil || '')}">${escHtml(b.sistFeil || '')}</div>
                     </div>
                 `;
             } catch (e) {
@@ -2707,7 +2708,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         <label style="min-width: 120px;">Skjematype</label>
                         <select id="ark-type" onchange="arkVelg(this.value)" style="flex: 1;">
                             <option value="">— velg —</option>
-                            ${arkivState.typer.map(t => `<option value="${escAttr(t.Skjematype_id)}"${t.Skjematype_id === arkivState.valgt ? ' selected' : ''}>${escHtml(t.Skjema_navn || t.Skjematype_id)}</option>`).join('')}
+                            ${arkivState.typer.map(t => `<option value="${escHtml(t.Skjematype_id)}"${t.Skjematype_id === arkivState.valgt ? ' selected' : ''}>${escHtml(t.Skjema_navn || t.Skjematype_id)}</option>`).join('')}
                         </select>
                     </div>
                     <div class="rad">
@@ -3218,7 +3219,7 @@ Skriv SLETT for å bekrefte.`);
                             ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
                             ${kopi}
                             ${st.oneDriveSti ? `<br><small>${erGraph ? 'Sti i biblioteket' : 'OneDrive-sti'}: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}
-                            ${st.kopiUrl ? `<br><small><a href="${escAttr(st.kopiUrl)}" target="_blank" rel="noopener">Åpne fila i ${maal}</a></small>` : ''}
+                            ${st.kopiUrl ? `<br><small><a href="${escHtml(st.kopiUrl)}" target="_blank" rel="noopener">Åpne fila i ${maal}</a></small>` : ''}
                         </div>
                     `;
                     if (venterPaKvittering) {
@@ -3287,11 +3288,11 @@ Skriv SLETT for å bekrefte.`);
                     </div>
                     ${liste.map(b => `
                         <div class="innehaver-rad" style="grid-template-columns: 2fr 145px 100px 100px 120px; gap: 12px;">
-                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escAttr(b.filnavn)}">${escHtml(b.filnavn)}</div>
+                            <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(b.filnavn)}">${escHtml(b.filnavn)}</div>
                             <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${formatDato(b.opprettet)}</div>
                             <div style="font-size: 12px;">${Math.round(b.storrelseBytes / 1024 / 1024 * 10) / 10} MB</div>
                             <div style="font-size: 12px;">${b.varighetSek != null ? b.varighetSek + 's' : '—'}</div>
-                            <div><a class="knapp mini" href="${escAttr(b.sasUrl)}" target="_blank" download>Last ned</a></div>
+                            <div><a class="knapp mini" href="${escHtml(b.sasUrl)}" target="_blank" download>Last ned</a></div>
                         </div>
                     `).join('')}
                 `;
@@ -3499,7 +3500,7 @@ Skriv SLETT for å bekrefte.`);
                         <div class="nk-dato">${r.UtloperFaktisk ? escHtml(r.UtloperFaktisk.slice(0, 10)) : '—'}</div>
                     </div>
                     <div class="nk-handling">
-                        <button class="knapp mini" onclick="nkRediger('${escAttr(r.Miljo)}', '${escAttr(r.Id)}')">Rediger</button>
+                        <button class="knapp mini" onclick="nkRediger('${escapeJsIAttributt(r.Miljo)}', '${escapeJsIAttributt(r.Id)}')">Rediger</button>
                     </div>
                 </div>
             `;
@@ -3554,9 +3555,9 @@ Skriv SLETT for å bekrefte.`);
                         <span style="text-transform: none; font-size: 12px;">Skal ikke roteres — varsles aldri (f.eks. salt som ville brutt eksisterende data)</span>
                     </label>
                     <div class="knapp-rad" style="margin-top: 12px;">
-                        <button class="knapp primær mini" onclick="${ny ? 'nkOpprett()' : `nkLagre('${escAttr(r.Miljo)}', '${escAttr(r.Id)}')`}">Lagre</button>
+                        <button class="knapp primær mini" onclick="${ny ? 'nkOpprett()' : `nkLagre('${escapeJsIAttributt(r.Miljo)}', '${escapeJsIAttributt(r.Id)}')`}">Lagre</button>
                         <button class="knapp mini" onclick="nkAvbryt()">Avbryt</button>
-                        ${ny ? '' : `<button class="knapp danger mini" style="margin-left: auto;" onclick="nkSlett('${escAttr(r.Miljo)}', '${escAttr(r.Id)}')">Slett</button>`}
+                        ${ny ? '' : `<button class="knapp danger mini" style="margin-left: auto;" onclick="nkSlett('${escapeJsIAttributt(r.Miljo)}', '${escapeJsIAttributt(r.Id)}')">Slett</button>`}
                     </div>
                     ${ny ? '' : `<div class="nk-meta" style="margin-top: 8px;">
                         Ny utløpsdato nullstiller varslingstrinnet, slik at eskaleringen starter forfra.
@@ -3683,12 +3684,6 @@ Skriv SLETT for å bekrefte.`);
         };
 
         // ==================== Hjelpere ====================
-        function escHtml(s) {
-            return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        }
-        function escAttr(s) {
-            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
-        }
 
         init();
     </script>

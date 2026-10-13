@@ -13,6 +13,8 @@
  *   valider(felt, svar)                → { ok, feilmelding? } (validering av felt-svar)
  *   escapeHtml(s)                      → string               (utility)
  */
+import { escapeHtml, escapeJsIAttributt } from './escape.js';
+
 
 export const FELTTYPER = [
     'Informasjon',
@@ -250,7 +252,7 @@ function _lagPostnummerInput(feltId, initialSvar) {
             rad.style.cssText = 'padding: 8px 12px; cursor: pointer; display: flex; gap: 10px; font-size: 14px;';
             rad.dataset.postnr = t.Postnr;
             rad.dataset.poststed = t.Poststed;
-            rad.innerHTML = `<span style="font-variant-numeric: tabular-nums; min-width: 44px; color: var(--text-secondary);">${t.Postnr}</span><span>${t.Poststed}</span>`;
+            rad.innerHTML = `<span style="font-variant-numeric: tabular-nums; min-width: 44px; color: var(--text-secondary);">${escapeHtml(t.Postnr)}</span><span>${escapeHtml(t.Poststed)}</span>`;
             rad.addEventListener('mouseenter', () => {
                 Array.from(dropdown.children).forEach((r, idx) => {
                     r.style.background = idx === i ? 'var(--accent-light, rgba(10,132,255,0.12))' : '';
@@ -1531,10 +1533,7 @@ export function renderTekstInline(tekstObj) {
 
 // ==================== UTILITY ====================
 
-export function escapeHtml(s) {
-    return String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
+// escapeHtml bodde her, og var én av fem kopier med tre ulike navn. Den
+// re-eksporteres fordi ti filer importerer den herfra — men selve regelen
+// bor nå ett sted, i escape.js.
+export { escapeHtml, escapeJsIAttributt };

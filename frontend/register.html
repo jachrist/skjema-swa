@@ -515,6 +515,7 @@
         import { evaluerVilkar } from './js/vilkar.js';
         import { statusTekst, statusKlasse } from './js/skjemastatus.js';
         import { listekolonner } from './js/listekolonne.js';
+        import { escapeJsIAttributt } from './js/escape.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -616,7 +617,7 @@
             const valg = (steg?.Beslutningsvalg || []).map(v => v.Tekst).filter(Boolean);
             if (valg.length === 0) { rad.style.display = 'none'; return; }
             rad.style.display = '';
-            velger.innerHTML = valg.map(v => `<option value="${escapeAttr(v)}">${escHtml(v)}</option>`).join('')
+            velger.innerHTML = valg.map(v => `<option value="${escapeHtml(v)}">${escHtml(v)}</option>`).join('')
                 + '<option value="">(uten behandling — blir «Ikke behandlet»)</option>';
         }
 
@@ -766,7 +767,7 @@
                 const nokkel = `${f.Seksjon}-${f.Felt}`;
                 const forekommende = samleFeltForekommendeVerdier(f.Seksjon, f.Felt);
                 if (forekommende.length === 0) return '';
-                const options = forekommende.map(v => `<option value="${escapeAttr(v)}">${escHtml(v)}</option>`).join('');
+                const options = forekommende.map(v => `<option value="${escapeHtml(v)}">${escHtml(v)}</option>`).join('');
                 return `<div style="margin-top: 6px;">
                     <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 2px;">${escHtml(f.Navn)}</label>
                     <select data-nokkel="${nokkel}" onchange="onFeltFilterEndret(this)" style="width: 100%; padding: 5px 8px; font-size: 12px;">
@@ -883,7 +884,7 @@
             const utfall = [...new Set(state.alle.map(utfallFor))]
                 .sort((a, b) => a === IKKE_BEHANDLET ? 1 : b === IKKE_BEHANDLET ? -1 : a.localeCompare(b, 'no'));
             el.innerHTML = '<option value="">Alle utfall</option>'
-                + utfall.map(u => `<option value="${escapeAttr(u)}">${escHtml(u)}</option>`).join('');
+                + utfall.map(u => `<option value="${escapeHtml(u)}">${escHtml(u)}</option>`).join('');
             el.style.display = '';
         }
 
@@ -924,7 +925,7 @@
                 // flytter ned på metalinja. En rad man ikke kan vise til er
                 // vanskelig å snakke om.
                 return `
-                    <div class="liste-element${aktiv}" onclick="velgSkjema('${escapeAttr(s.Skjema_id)}')">
+                    <div class="liste-element${aktiv}" onclick="velgSkjema('${escapeJsIAttributt(s.Skjema_id)}')">
                         <div class="liste-tittel">${escHtml(listeTittel(s, kolonner))}</div>
                         <div class="liste-meta">
                             <span>${kolonner.length > 0 ? '#' + escHtml(s.Skjema_id) + ' · ' : ''}${escHtml(dato)}</span>
@@ -1084,7 +1085,7 @@
                 const status = tolkBehStatus(steg);
                 rad.style.borderLeftColor = status.farge;
                 rad.innerHTML = `
-                    <span style="background: ${status.farge}; color: white; border-radius: 999px; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">${steg.Steg}</span>
+                    <span style="background: ${status.farge}; color: white; border-radius: 999px; width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700;">${escHtml(steg.Steg)}</span>
                     <span style="font-weight: 600; flex: 1;">${escHtml(steg.Stegnavn || `Steg ${steg.Steg}`)}</span>
                     <span style="color: ${status.farge}; font-weight: 600;">${escHtml(status.tekst)}</span>
                     ${(steg.Personer || []).length > 0 ? `<div style="width: 100%; font-size: 11px; color: var(--text-secondary);">Behandlere: ${escHtml(steg.Personer.join(', '))}</div>` : ''}
@@ -1292,9 +1293,6 @@
             if (isNaN(d)) return iso;
             const pad = n => String(n).padStart(2, '0');
             return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        }
-        function escapeAttr(s) {
-            return String(s ?? '').replace(/"/g, '&quot;').replace(/'/g, "\\'");
         }
 
         init();
