@@ -38,13 +38,20 @@
     Levetid på klienthemmeligheten. Standard 12 måneder.
 
 .PARAMETER KeyVault
-    Valgfritt. Navnet på en Key Vault hemmeligheten skal skrives rett inn i,
-    f.eks. fhs-kv-01. Oppgis den, vises hemmeligheten aldri på skjermen — du
-    får en ferdig `@Microsoft.KeyVault(...)`-referanse i stedet.
+    Valgfritt. Navnet på en Key Vault hemmeligheten skal arkiveres i, f.eks.
+    fhs-kv-01. Vaulten er kilden for rotasjon og gjenoppretting — ikke en
+    referanse appen følger.
+
+    MERK: hemmeligheten vises på skjermen UANSETT, også med denne
+    parameteren. Den må limes inn som klartekst i SWA Configuration, og da må
+    du se den. Fram til 12.10.2026 skrev skriptet ut en
+    `@Microsoft.KeyVault(...)`-referanse her og nullstilte verdien — det ga en
+    app-setting som ikke virker, og ingen verdi å lime inn. Se merknaden under
+    OPPSETT I SWA.
 
     Krever modulen Az.KeyVault og skriverett i vaulten (rollen «Key Vault
     Secrets Officer»). Er det en annen person enn den som kjører resten, la
-    parameteren stå tom: da skrives hemmeligheten ut som før.
+    parameteren stå tom.
 
 .PARAMETER HemmelighetNavn
     Navnet hemmeligheten får i Key Vault. Standard: graph-client-secret
@@ -60,6 +67,24 @@
     .\opprett-backup-app.ps1 -Site https://fhs.sharepoint.com/sites/Skjemasystem
 
 .NOTES
+    OPPSETT I SWA — IKKE BRUK KEY VAULT-REFERANSE
+
+    SWA Managed Functions løser IKKE `@Microsoft.KeyVault(...)` i app
+    settings. Limer du inn en referanse, får appen referansestrengen som
+    verdi, og feilen dukker opp langt fra årsaken.
+
+    Prøvd i pilot 12.10.2026 på TEAM_SOK_EKSTERNT_FLOW_URL: /api/system/info
+    meldte «ikke en gyldig URL» med lengde 109 — selve referansestrengen.
+    Rolletildeling på SWA-ens managed identity hjelper ikke.
+
+    GRAPH_CLIENT_SECRET skal derfor inn som KLARTEKST i SWA Configuration.
+    Key Vault er arkivet og rotasjonspunktet, ikke kjøretidskilden. Se
+    config/keyvault-secrets.md, «Hvorfor vaulten fortsatt har en jobb».
+
+    Unntaket i hele løsningen er auth-sertifikatet i
+    staticwebapp.config.prod.json, som plattformens egen auth-komponent
+    henter — ikke app-settings-laget.
+
     NØDVENDIGE ROLLER
 
     Global Administrator dekker steg 1–3, men trengs ikke. Stegene kan deles
@@ -281,7 +306,9 @@ if ($Torrkjor) {
 }
 
 # ------------------------------------------------- 5. rett i Key Vault
-$kvReferanse = $null
+# Settes når hemmeligheten faktisk kom i vaulten. Oppsummeringen skiller på
+# den: er den ikke arkivert, er skjermutskriften eneste kopi, og det må sies.
+$arkivert = $false
 if ($KeyVault -and $Torrkjor) {
     Steg '5. Key Vault'
     Ville "ville lagret hemmeligheten som «$HemmelighetNavn» i $KeyVault"
@@ -295,12 +322,12 @@ if ($KeyVault -and $Torrkjor) {
             -SecretValue $sikker -Expires $utloper.ToUniversalTime()
         Ok "Lagret som «$HemmelighetNavn» i $KeyVault"
 
-        # Uten versjon i URI-en henter SWA alltid nyeste — da overlever
-        # app-settingen en rotering uten at noen må endre den.
-        $kvReferanse = "@Microsoft.KeyVault(SecretUri=$($lagret.Id -replace '/[^/]+$', '/'))"
-        # Hemmeligheten er trygt plassert; ikke la den ligge igjen i minnet
-        # eller havne i oppsummeringen nedenfor.
-        $hemmelig = $null
+        # Verdien beholdes MED VILJE. Den skal limes inn som klartekst i SWA
+        # Configuration — se OPPSETT I SWA øverst. Her sto tidligere en
+        # @Microsoft.KeyVault-referanse og en nullstilling av $hemmelig; det
+        # etterlot operatøren med en app-setting som ikke virker og ingen
+        # verdi å lime inn.
+        $arkivert = $true
     } catch {
         Write-Host "   Kunne ikke skrive til $KeyVault — $($_.Exception.Message)" -ForegroundColor Red
         Write-Host "   Hemmeligheten er opprettet og vises nedenfor. Legg den inn manuelt." -ForegroundColor Yellow
@@ -323,21 +350,24 @@ Write-Host "  Valgfritt:"
 Write-Host "  BACKUP_SHAREPOINT_BIBLIOTEK   bibliotekets navn, f.eks. Backup"
 Write-Host "  BACKUP_SHAREPOINT_MAPPE       undermappe, f.eks. Skjemasystem/Backup"
 
-if ($kvReferanse) {
-    Write-Host ""
-    Write-Host "  GRAPH_CLIENT_SECRET       $kvReferanse" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "  Hemmeligheten ligger i Key Vault og har aldri vært på skjermen." -ForegroundColor Green
-    Write-Host "  SWA-ens managed identity må ha «Key Vault Secrets User» på" -ForegroundColor Green
-    Write-Host "  $KeyVault for at referansen skal la seg løse." -ForegroundColor Green
-} elseif ($hemmelig) {
+if ($hemmelig) {
     Write-Host ""
     Write-Host "  GRAPH_CLIENT_SECRET" -ForegroundColor Yellow
     Write-Host "  $hemmelig" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  Vises bare denne ene gangen. Legg den i Key Vault og referer" -ForegroundColor Yellow
-    Write-Host "  til den fra app-settingen — ikke lim den inn som ren tekst." -ForegroundColor Yellow
-    Write-Host "  Neste gang kan -KeyVault <navn> gjøre dette steget for deg." -ForegroundColor Yellow
+    Write-Host "  Lim inn som KLARTEKST i SWA Configuration." -ForegroundColor Yellow
+    Write-Host "  SWA Managed Functions loser ikke @Microsoft.KeyVault-referanser;" -ForegroundColor Yellow
+    Write-Host "  en referanse her gir en app-setting som ikke virker." -ForegroundColor Yellow
+    if ($arkivert) {
+        Write-Host ""
+        Write-Host "  Arkivert som «$HemmelighetNavn» i $KeyVault — der ligger den" -ForegroundColor Green
+        Write-Host "  for rotasjon og gjenoppretting, ikke for oppslag i drift." -ForegroundColor Green
+    } else {
+        Write-Host ""
+        Write-Host "  Vises bare denne ene gangen. Legg den OGSA i Key Vault:" -ForegroundColor Yellow
+        Write-Host "  det er eneste kopi hvis SWA Configuration gar tapt." -ForegroundColor Yellow
+        Write-Host "  Neste gang kan -KeyVault <navn> gjore det for deg." -ForegroundColor Yellow
+    }
 }
 if ($utloper) {
     Write-Host ""
