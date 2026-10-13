@@ -4,13 +4,28 @@ name: Oppdater oppslagslister
 # Denne workflowen kaller /api/oppslaglister/oppdater på schedule i stedet.
 # Samme mønster og samme hemmeligheter som refresh-fs.yml.
 #
-# 05:00 UTC — etter FS-refreshen (04:00), som tar 2-4 min. Rekkefølgen betyr
-# ingenting i dag, men to tunge jobber i samme minutt gjør det vanskelig å se
-# hvilken som brukte tiden hvis noe blir tregt.
+# 05:30 UTC. Etter FS-refreshen (04:00), som tar 2-4 min, og etter
+# utsendingen (05:00) — ikke fordi rekkefølgen betyr noe i dag, men fordi to
+# jobber i samme minutt gjør det vanskelig å se hvilken som brukte tiden når
+# noe blir tregt.
+#
+# Den lå på 05:00 til 13.10.2026, altså nøyaktig det den begrunnelsen advarte
+# mot. Klokka var ikke sjekket før den ble satt.
+#
+# Hele klokka, så neste jobb ikke havner oppå en annen:
+#
+#   02:00 søndag   backup
+#   04:00          refresh-fs          (2-4 min)
+#   04:30          team-synk
+#   04:30 15/1,7   refresh-postnumre
+#   05:00          send-utsendinger
+#   05:30          refresh-oppslagsliste   ← denne
+#   06:00          purre-utsendinger
+#   07:00          sjekk-nokler
 
 on:
   schedule:
-    - cron: '0 5 * * *' # 05:00 UTC daglig
+    - cron: '30 5 * * *' # 05:30 UTC daglig
   workflow_dispatch:
 
 jobs:

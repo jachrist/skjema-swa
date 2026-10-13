@@ -125,10 +125,14 @@ søkefeltet *er* kontrollen, og skriving filtrerer på delstreng i hele teksten.
 
 ## Oppdatering
 
-`.github/workflows/refresh-oppslagsliste.yml`, 05:00 UTC daglig — etter
-FS-refreshen (04:00). Timer-triggere støttes ikke i SWA Managed Functions, så
-jobben kalles over HTTP, samme mønster og samme hemmeligheter som
-`refresh-fs.yml`.
+`.github/workflows/refresh-oppslagsliste.yml`, **05:30 UTC** daglig — etter
+FS-refreshen (04:00) og etter utsendingen (05:00). Timer-triggere støttes ikke
+i SWA Managed Functions, så jobben kalles over HTTP, samme mønster og samme
+hemmeligheter som `refresh-fs.yml`.
+
+Hele døgnklokka står i kommentaren øverst i workflow-fila, så neste jobb ikke
+havner oppå en annen. Denne lå på 05:00 til 13.10.2026, altså i samme minutt
+som utsendingen.
 
 Manuelt: **Oppdater** (én liste) eller **Oppdater alle nå** i admin-panelet.
 
