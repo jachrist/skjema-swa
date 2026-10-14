@@ -395,7 +395,30 @@ az ad sp create-for-rbac --name sp-skjema-funcapp-proeve \
     --json-auth
 ```
 
-Utdata er en hemmelighet og limes rett inn i GitHub-secreten — ikke i en sak,
+**HELE JSON-objektet skal inn i secreten `AZURE_FUNCAPP_CREDENTIALS`** — ikke
+bare `clientSecret`-verdien. `azure/login@v2` parser innholdet som JSON, og
+får den noe annet, feiler den med
+
+    Login failed with SyntaxError: Unexpected token 'R', "RB18Q~TkTU"...
+    is not valid JSON
+
+Secreten skal altså begynne med `{` og se slik ut:
+
+```json
+{
+  "clientId": "<appId>",
+  "clientSecret": "<passordet>",
+  "subscriptionId": "<abonnements-id>",
+  "tenantId": "<tenant-id>"
+}
+```
+
+Passordet vises **bare én gang**. Har du mistet det, lag et nytt med
+`az ad sp credential reset --id <appId>` og sett sammen JSON-en selv — den
+kommandoen skriver ikke ut dette formatet, bare `appId`, `password` og
+`tenant`.
+
+Utdata er en hemmelighet: den limes rett inn i GitHub-secreten, ikke i en sak,
 en e-post eller et chatvindu. Blir forslaget vedtatt, erstattes den av OIDC
 federated credential (punkt 3 i kapittel 10), som ikke har en verdi som kan
 lekke.
