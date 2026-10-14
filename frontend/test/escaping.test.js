@@ -9,6 +9,12 @@
  * ikke `\`. Navnene var nesten like, så ingen kunne se forskjell på dem der
  * de ble brukt.
  *
+ * **Hvert navn som kalles i en malstreng finnes i fila.** `${escapeHtml(v)}`
+ * i register.html pekte på et navn som ikke var bundet der — fila importerer
+ * den som `escHtml`. Sida lastet fint, testene var grønne, og feilen kom
+ * fram som «Kunne ikke hente skjemaer: escapeHtml is not defined» først når
+ * lista skulle tegnes.
+ *
  * **CSP-en finnes, og den matcher det sidene faktisk laster.** Legger noen
  * inn et skript fra et CDN, slutter `default-src 'self'` å stemme, og da
  * skal denne testen si fra — ikke nettleseren hos en bruker.
@@ -17,7 +23,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { hentEksport, utenKommentarer } = require('../../scripts/test-kilde.js');
+const { hentEksport, utenKommentarer, bundneNavn } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -54,19 +60,62 @@ const escapeJsIAttributt = hentEksport(escapeKilde, 'escapeJsIAttributt');
     }
     sjekk('ingen lokal kopi av en escape-funksjon', kopier, []);
 
-    // Og alle som bruker navnene må importere dem.
-    const manglerImport = [];
+    // Og hvert navn som BRUKES må være bundet i den fila.
+    //
+    // Første versjon lette etter navnet i importlinja med et regex. Det
+    // matchet kildenavnet i et alias: `import { escapeHtml as escHtml }`
+    // binder escHtml, men regexet så «escapeHtml» og sa at alt var i orden.
+    // `${escapeHtml(v)}` i register.html slapp dermed gjennom til pilot og ga
+    // «escapeHtml is not defined» første gang lista ble tegnet — en feil som
+    // ikke vises ved innlasting, bare når kodestien kjøres.
+    //
+    // `bundneNavn()` løser aliaset, og brukes av testen og av koden som
+    // sjekker det samme, så regelen bare finnes ett sted.
+    const ubundet = [];
     for (const deler of filer) {
         const rel = deler.join('/');
         if (rel === 'frontend/js/escape.js') continue;
         const kode = utenKommentarer(les(...deler));
-        for (const navn of ['escapeHtml', 'escHtml', 'escapeJsIAttributt']) {
-            if (!new RegExp(`\\$\\{\\s*${navn}\\s*\\(`).test(kode)) continue;
-            const importert = new RegExp(`import[^;]*\\b(?:${navn}\\b|as\\s+${navn}\\b)[^;]*;`).test(kode);
-            if (!importert) manglerImport.push(`${rel}: ${navn}`);
+        const bundet = bundneNavn(kode);
+        for (const navn of ['escapeHtml', 'escHtml', 'escapeJsIAttributt', 'escapeAttr', 'escAttr']) {
+            const brukt = [...kode.matchAll(new RegExp(`\\$\\{\\s*${navn}\\s*\\(`, 'g'))].length;
+            if (brukt && !bundet.has(navn)) ubundet.push(`${rel}: ${navn} (${brukt} bruk)`);
         }
     }
-    sjekk('hvert brukt navn er importert', manglerImport, []);
+    sjekk('hvert brukt escape-navn er bundet i fila', ubundet, []);
+}
+
+// ---------- hver funksjon som kalles i en malstreng må finnes ----------
+//
+// Generaliseringen av feilen over, og den som ville tatt den uansett hvilket
+// navn det gjaldt: `${navn(...)}` inne i en malstreng der `navn` ikke er
+// bundet i fila, er en ReferenceError — men først når den kodestien kjøres.
+// Sida laster fint, testene er grønne, og feilen dukker opp som «Kunne ikke
+// hente skjemaer» hos en bruker.
+//
+// Null treff i dag, på tvers av alle filene. Blir det treff, er det enten en
+// glemt import eller et navn som er døpt om ett sted og ikke et annet.
+{
+    const BUILTIN = new Set(['String', 'Number', 'Boolean', 'Array', 'Object', 'JSON', 'Math',
+        'Date', 'parseInt', 'parseFloat', 'encodeURIComponent', 'decodeURIComponent', 'isNaN',
+        'RegExp', 'Set', 'Map', 'Promise', 'console', 'alert', 'prompt', 'confirm', 'fetch',
+        'setTimeout', 'BigInt', 'Symbol', 'Error']);
+    const filer = [
+        ...fs.readdirSync(path.join(rot, 'frontend')).filter(n => n.endsWith('.html')).map(n => ['frontend', n]),
+        ...fs.readdirSync(path.join(rot, 'frontend', 'js')).filter(n => n.endsWith('.js')).map(n => ['frontend', 'js', n])
+    ];
+    const ukjente = [];
+    for (const deler of filer) {
+        const kode = utenKommentarer(les(...deler));
+        const bundet = bundneNavn(kode);
+        const sett = new Set();
+        for (const m of kode.matchAll(/\$\{\s*([A-Za-zÆØÅæøå_$][\w$]*)\s*\(/g)) {
+            if (bundet.has(m[1]) || BUILTIN.has(m[1]) || sett.has(m[1])) continue;
+            sett.add(m[1]);
+            ukjente.push(`${deler.join('/')}: ${m[1]}`);
+        }
+    }
+    sjekk('hver funksjon kalt i en malstreng er bundet i fila', ukjente, []);
 }
 
 // ---------- de gamle navnene skal være borte ----------

@@ -107,7 +107,56 @@ function hentEksport(kilde, navn, ogsa = []) {
     return new Function(`${biter.join('\n')}\nreturn ${navn};`)();
 }
 
+/**
+ * Navnene som faktisk er i scope i en modul.
+ *
+ * `import { escapeHtml as escHtml } from …` binder **escHtml**, ikke
+ * escapeHtml. Det er hele poenget med denne funksjonen, og det var feilen
+ * den ble skrevet for: en test lette etter `\bescapeHtml\b` i importlinja,
+ * fant kildenavnet i aliaset, og konkluderte med at navnet var importert.
+ * `escapeHtml(...)` i register.html slapp dermed gjennom til pilot og ga
+ * «escapeHtml is not defined» første gang lista ble tegnet.
+ *
+ * Tar med importerte navn (med alias), og det som erklæres i fila selv med
+ * `function`, `const`, `let` eller `var`. Ikke en scope-analyse — parametre
+ * og blokk-scope ses bort fra — men nok til å svare på «finnes dette navnet
+ * i det hele tatt i denne fila».
+ */
+function bundneNavn(kilde) {
+    const ut = new Set();
+    for (const m of String(kilde).matchAll(/import\s*\{([^}]*)\}\s*from/g)) {
+        for (const del of m[1].split(',')) {
+            const t = del.trim();
+            if (!t) continue;
+            const deler = t.split(/\s+as\s+/);
+            ut.add((deler[1] || deler[0]).trim());
+        }
+    }
+    // `import navn from …` og `import * as navn from …`
+    for (const m of String(kilde).matchAll(/import\s+(?:\*\s+as\s+)?([A-Za-zÆØÅæøå_$][\w$]*)\s+from/g)) {
+        ut.add(m[1]);
+    }
+    for (const m of String(kilde).matchAll(/(?:^|\n)\s*(?:export\s+)?(?:async\s+)?(?:function|const|let|var)\s+([A-Za-zÆØÅæøå_$][\w$]*)/g)) {
+        ut.add(m[1]);
+    }
+    // Parametre, både til `function f(a, b)` og til `(a, b) =>`.
+    //
+    // Grovt: alle parametre legges i ett felles sett, uten hensyn til hvilken
+    // funksjon de hører til. Det gir FÆRRE treff enn en ekte scope-analyse
+    // ville gitt, og det er riktig retning her — en sjekk som roper om navn
+    // som finnes, blir slått av. `kommentarerSomHtml(steg, escape)` er
+    // grunnen: `escape` er et parameternavn, ikke den utdaterte globalen.
+    for (const m of String(kilde).matchAll(/(?:function\s*[A-Za-zÆØÅæøå_$][\w$]*\s*|function\s*)\(([^)]*)\)|\(([^)]*)\)\s*=>|(?:^|[^\w$])([A-Za-zÆØÅæøå_$][\w$]*)\s*=>/gm)) {
+        const liste = m[1] ?? m[2] ?? m[3] ?? '';
+        for (const p of liste.split(',')) {
+            const navn = p.trim().replace(/^\.\.\./, '').split(/[=:\s]/)[0];
+            if (/^[A-Za-zÆØÅæøå_$][\w$]*$/.test(navn)) ut.add(navn);
+        }
+    }
+    return ut;
+}
+
 module.exports = {
-    utenKommentarer, lesKode, hentEksport,
+    utenKommentarer, lesKode, hentEksport, bundneNavn,
     utenHtmlKommentarer, utenBlokkKommentarer, utenLinjeKommentarer
 };
