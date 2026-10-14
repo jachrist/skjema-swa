@@ -25,29 +25,55 @@
       Rører ingenting i pilot eller prod. Setter ingen hemmeligheter.
       Sletter ingenting.
 
+.PARAMETER Trinn
+    alt | funcapp | swa | lenk. Hvert trinn krever bare sine egne
+    parametere, så den som skal lenke på nytt slipper å oppgi resten.
+
 .PARAMETER Kjor
     Uten denne tørrkjører skriptet og viser bare hva det ville gjort.
 
 .EXAMPLE
     .\steg1-funcapp.ps1 -Rg FHS-skjema -FuncApp testfapp -Lagring fastate01 `
-        -Swa swa-funcapp-proeve -KeyVault kv-fhsskjema-pilot -DataLagring <konto>
+        -Swa swa-funcapp-proeve -KeyVault kv-fhsskjema-pilot -DataLagring <konto> -Kjor
+
+.EXAMPLE
+    # Bare lenkingen, etter at innholdet er bekreftet:
+    .\steg1-funcapp.ps1 -Rg FHS-skjema -FuncApp testfapp -Swa swa-funcapp-proeve2 -Trinn lenk -Kjor
 #>
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$Rg,
-    [Parameter(Mandatory)][string]$FuncApp,
-    [Parameter(Mandatory)][string]$Lagring,
-    [Parameter(Mandatory)][string]$Swa,
-    [Parameter(Mandatory)][string]$KeyVault,
-    [Parameter(Mandatory)][string]$DataLagring,
+    [string]$FuncApp,
+    [string]$Lagring,
+    [string]$Swa,
+    [string]$KeyVault,
+    [string]$DataLagring,
     [string]$Sted = 'norwayeast',
     [string]$SwaSted = 'westeurope',
+    # Trinn kan kjøres hver for seg. Første versjon hadde alt påkrevd og alt i
+    # én kjøring — da spør PowerShell om seks verdier før den gjør noe, og den
+    # som bare skal lenke på nytt må oppgi dem alle.
+    [ValidateSet('alt', 'funcapp', 'swa', 'lenk')][string]$Trinn = 'alt',
     [switch]$Kjor
 )
 
 $ErrorActionPreference = 'Stop'
 
-if ($Lagring -eq $DataLagring) {
+# Hvert trinn krever sitt. Sjekkes her framfor med [Parameter(Mandatory)], som
+# ville spurt om alle seks uansett hvilket trinn du ba om.
+$kreves = @{
+    'funcapp' = @('FuncApp', 'Lagring', 'KeyVault', 'DataLagring')
+    'swa'     = @('Swa')
+    'lenk'    = @('FuncApp', 'Swa')
+}
+$kreves['alt'] = ($kreves['funcapp'] + $kreves['swa'] + $kreves['lenk'] | Select-Object -Unique)
+
+$mangler = $kreves[$Trinn] | Where-Object { -not (Get-Variable $_ -ValueOnly) }
+if ($mangler) {
+    Write-Error "Trinn '$Trinn' krever: -$($mangler -join ', -')"
+}
+
+if ($Lagring -and $DataLagring -and $Lagring -eq $DataLagring) {
     Write-Error @"
 Lagring og DataLagring er den samme kontoen.
 Function App-runtime skriver køer, låser og tilstandstabeller i Lagring.
@@ -71,17 +97,22 @@ function Kjør-Az {
     return $null
 }
 
+if ($Trinn -in @('alt','funcapp')) {
 Write-Host "== 1. Lagringskonto til Function App-runtime ==" -ForegroundColor Green
 Kjør-Az @('storage','account','create','--name',$Lagring,'--resource-group',$Rg,
           '--location',$Sted,'--sku','Standard_LRS',
           '--allow-blob-public-access','false','--min-tls-version','TLS1_2') | Out-Null
+}
 
+if ($Trinn -in @('alt','funcapp')) {
 Write-Host "`n== 2. Function App, Node 22, Linux ==" -ForegroundColor Green
 Kjør-Az @('functionapp','create','--name',$FuncApp,'--resource-group',$Rg,
           '--storage-account',$Lagring,'--consumption-plan-location',$Sted,
           '--runtime','node','--runtime-version','22',
           '--functions-version','4','--os-type','Linux') | Out-Null
+}
 
+if ($Trinn -in @('alt','funcapp')) {
 Write-Host "`n== 3. Managed identity og roller ==" -ForegroundColor Green
 Write-Host "   (krever User Access Administrator eller Owner)"
 Kjør-Az @('functionapp','identity','assign','--name',$FuncApp,'--resource-group',$Rg) | Out-Null
@@ -99,12 +130,16 @@ foreach ($rolle in @('Storage Table Data Contributor','Storage Blob Data Contrib
 }
 Kjør-Az @('role','assignment','create','--assignee',$principal,'--role','Key Vault Secrets User',
           '--scope',"/subscriptions/$sub/resourceGroups/$Rg/providers/Microsoft.KeyVault/vaults/$KeyVault") | Out-Null
+}
 
+if ($Trinn -in @('alt','swa')) {
 Write-Host "`n== 4. Prøve-SWA ==" -ForegroundColor Green
 Write-Host "   Standard-planen er påkrevd: lenkede backends finnes ikke på Free."
 Kjør-Az @('staticwebapp','create','--name',$Swa,'--resource-group',$Rg,
           '--location',$SwaSted,'--sku','Standard') | Out-Null
+}
 
+if ($Trinn -in @('alt','swa')) {
 Write-Host "`n== 5. STOPP HER ==" -ForegroundColor Yellow
 Write-Host @"
    SWA-en har ingen build ennå, og en SWA uten build ruter ingenting -
@@ -127,19 +162,38 @@ Write-Host @"
         Status skal være Ready. Står den på Uploading, er deployen ikke
         ferdig, og lenking vil ikke hjelpe.
 
-   Kjør deretter dette skriptet på nytt med -BareLenk.
+   Kjør deretter:  .\steg1-funcapp.ps1 -Rg $Rg -FuncApp $FuncApp -Swa $Swa -Trinn lenk -Kjor
 "@
 
-Write-Host "`n== 6. Lenkingen (kjøres etter at innholdet er bekreftet) ==" -ForegroundColor Green
-if ($Kjor) {
-    $funcId = az functionapp show --name $FuncApp --resource-group $Rg --query id -o tsv
-} else {
-    $funcId = '<Function App-ens resource id>'
 }
-Write-Host "   az staticwebapp backends link --name $Swa --resource-group $Rg ``"
-Write-Host "      --backend-resource-id $funcId --backend-region $Sted"
-Write-Host ""
-Write-Host "   Angre:  az staticwebapp backends unlink --name $Swa --resource-group $Rg"
+
+if ($Trinn -in @('alt','lenk')) {
+Write-Host "`n== 6. Lenkingen (kjøres etter at innholdet er bekreftet) ==" -ForegroundColor Green
+
+if ($Trinn -eq 'alt') {
+    Write-Host "   HOPPES OVER i -Trinn alt: innholdet er ikke bekreftet ennå." -ForegroundColor Yellow
+    Write-Host "   Kjør -Trinn lenk når miljøet står på Ready."
+} else {
+    # Rester fra en tidligere lenking blokkerer en ny, med meldingen
+    # «Cannot link backend with a preexisting Azure Static Web Apps
+    # configuration» — som ikke sier hvor restene ligger. De sitter i Easy
+    # Auth på Function App-en, og blir stående også om SWA-en er slettet.
+    Write-Host "   Fjerner eventuelle auth-rester fra en tidligere lenking..."
+    Kjør-Az @('webapp','auth','update','-n',$FuncApp,'-g',$Rg,'--enabled','false') | Out-Null
+
+    if ($Kjor) {
+        $funcId = az functionapp show --name $FuncApp --resource-group $Rg --query id -o tsv
+        $region = az functionapp show --name $FuncApp --resource-group $Rg --query location -o tsv
+    } else {
+        $funcId = '<Function App-ens resource id>'
+        $region = $Sted
+    }
+    Kjør-Az @('staticwebapp','backends','link','-n',$Swa,'-g',$Rg,
+              '--backend-resource-id',$funcId,'--backend-region',$region) | Out-Null
+    Write-Host ""
+    Write-Host "   Angre:  az staticwebapp backends unlink --name $Swa --resource-group $Rg"
+}
+}
 
 Write-Host "`n== Prøven ==" -ForegroundColor Green
 Write-Host @"
