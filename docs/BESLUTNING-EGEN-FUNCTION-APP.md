@@ -254,11 +254,86 @@ hele forslaget her, og notatet har spart oss resten.
 
 ## 8b. Slik kjører du steg 1
 
+### Hva som opprettes, og hva som allerede finnes
+
+Fire ting lages. Tre av dem gir du et navn, og de navnene brukes om igjen
+flere steder — det er de samme verdiene som står som `FUNCAPP`, `LAGRING` og
+`SWA` i skriptet.
+
+| Nytt | Hva det er | Navnet |
+|---|---|---|
+| **Function App** | Selve API-et, atskilt fra SWA-en. Blir `<navn>.azurewebsites.net` | `FUNCAPP` — du velger. **Globalt unikt** i hele Azure |
+| **Lagringskonto** | Function App-runtime trenger sin egen til tilstand og låser. **Ikke** den som bærer dataene | `LAGRING` — du velger. Globalt unikt, 3–24 tegn, bare små bokstaver og tall |
+| **Managed identity** | Opprettes på Function App-en, har ikke eget navn | — |
+| **Tjenestehovedstol** | Så GitHub Actions kan deploye dit | `sp-skjema-funcapp-proeve`, eller det du vil kalle den |
+
+I tillegg endres to ting som allerede finnes: tre rolletildelinger legges til,
+og SWA-en får Function App-en lenket som backend.
+
+Dette **finnes fra før** og skal bare pekes på:
+
+| Finnes | Skriptets variabel | Hva du fyller inn |
+|---|---|---|
+| Ressursgruppa | `RG` | Den SWA-en ligger i |
+| Static Web App | `SWA` | Pilot-SWA-en, eller prøve-SWA-en hvis du velger variant A |
+| Key Vault | `KEYVAULT` | `kv-fhsskjema-pilot` |
+| Lagringskontoen **med dataene** | `DATALAGRING` | Den `STORAGE_CONNECTION_STRING` peker på i dag |
+| Region | `STED` | Samme som SWA-en |
+
+> **`LAGRING` og `DATALAGRING` må være to forskjellige kontoer.** Setter du
+> begge til den som bærer dataene, blander Function App-runtime sine egne
+> køer, låser og tilstandstabeller inn blant skjemadataene — og de blir med i
+> hver backup fra den dagen.
+
+### Rekkefølgen betyr noe
+
+> **Innholdet må på plass FØR lenkingen.** Første forsøk 14.10.2026 lenket
+> backend-en til en SWA som aldri hadde hatt en vellykket deploy.
+> Aktivitetsloggen bekreftet lenkingen, `backends show` viste den, og
+> `/api/ping` svarte 404 — fordi en SWA uten build ikke ruter noe, heller
+> ikke til en lenket backend.
+>
+> Oppsettet så altså riktig ut i alle kommandoene som finnes for å sjekke
+> det. Det eneste som avslørte det, var `az staticwebapp environment list`:
+> status `Uploading`, ikke `Ready`.
+
+Og tjenestehovedstolen får tilgang **bare på Function App-en**, og kan derfor
+ikke lages før Function App-en finnes:
+
+Tjenestehovedstolen får tilgang **bare på Function App-en**, og den kan derfor
+ikke lages før Function App-en finnes:
+
+1. Kjør `scripts/steg1-funcapp.ps1` (steg 1–4): Function App, identitet,
+   roller og prøve-SWA.
+2. Lag tjenestehovedstolen, og legg utdata i GitHub-secreten
+   `AZURE_FUNCAPP_CREDENTIALS`.
+3. Kjør `deploy-funcapp-pilot.yml`. API-et ligger nå på Function App-en.
+4. Legg innhold på SWA-en: `deploy-swa-proeve.yml`, med SWA-ens deploy-token
+   i `SWA_PROEVE_TOKEN`.
+5. **Bekreft at SWA-en faktisk serverer.** Rota skal vise «Prøve-SWA», ikke
+   Azures standardside, og miljøet skal stå på `Ready`:
+   ```
+   az staticwebapp environment list --name <swa> --resource-group <rg> \
+      --query "[].{Navn:name,Status:status}" -o table
+   ```
+   Står den på `Uploading`, er deployen ikke ferdig. Lenking hjelper ikke.
+6. **Først nå:** lenk Function App-en til SWA-en.
+7. Les svaret i `/api/ping`.
+
+Skriptet stopper av seg selv mellom steg 4 og 6, med denne sjekklista.
+
+Etter lenkingen svarer Function App-en **401 på direkte kall**. Det er riktig:
+lenkingen setter Easy Auth på den, og bare trafikk proxet via SWA slipper inn.
+Vil du teste den direkte, gjør det før du lenker.
+
+### Filene
+
 Alt som trengs ligger i repoet:
 
 | Hva | Hvor |
 |---|---|
-| Oppretter og lenker ressursene | `scripts/steg1-funcapp.sh` — tørrkjører som standard, `KJOER=ja` utfører |
+| Oppretter ressursene | `scripts/steg1-funcapp.ps1` — tørrkjører som standard, `-Kjor` utfører |
+| Legger innhold på prøve-SWA-en | `.github/workflows/deploy-swa-proeve.yml` |
 | Deployer API-et dit | `.github/workflows/deploy-funcapp-pilot.yml` — kun manuell kjøring |
 | Svarer på spørsmålet | `GET /api/ping`, feltet `principal` |
 
@@ -303,12 +378,18 @@ Function App-en til den, og la pilot stå urørt. Spørsmålet som skal besvares
 er plattformens oppførsel, ikke pilots konfigurasjon, så en tom SWA svarer
 like godt.
 
-To forbehold: en lenket backend krever **Standard-planen**, så prøve-SWA-en
-koster mens den står. Og den trenger en innlogging for at det skal finnes en
-principal i det hele tatt — om SWA-ens innebygde Entra-leverandør holder til
-det, eller om den må peke på en egen app-registrering, er ikke verifisert her.
-Krever den en registrering, er den enkleste veien å gjenbruke pilots, med
-prøve-SWA-ens URL lagt til som redirect-URI.
+Ett forbehold: en lenket backend krever **Standard-planen**, så prøve-SWA-en
+koster mens den står.
+
+Innlogging trenger den ikke egen oppsett for. En SWA uten
+`staticwebapp.config.json` bruker plattformens forhåndskonfigurerte
+Entra-leverandør, og `/.auth/login/aad` virker uten app-registrering.
+Registreringen i `staticwebapp.config.<miljø>.json` finnes for å LÅSE
+innloggingen til én tenant — nødvendig i pilot og prod, unødvendig i et
+forsøk som bare skal se om en header kommer fram.
+
+Merk at en egen registrering slår av de forhåndskonfigurerte leverandørene.
+Legger du inn en `auth`-blokk i prøve-SWA-en, må den være komplett.
 
 **B — pilot-SWA-en.** Tester også at pilots egen config følger med gjennom
 proxyen, som er en ting mer enn variant A svarer på.
@@ -327,16 +408,44 @@ Variant B bør derfor kjøres når ingen jobber i pilot, og med
 
 `deploy-funcapp-pilot.yml` logger inn med `AZURE_FUNCAPP_CREDENTIALS` i
 GitHub-miljøet. For en prøve holder en tjenestehovedstol med `Contributor`
-**bare på Function App-en**:
+**bare på Function App-en** — ikke på ressursgruppa.
 
-```
+Kjøres **etter** at Function App-en er opprettet, siden omfanget peker på den.
+`$FUNCAPP` og `$RG` er de samme verdiene du satte i skriptet:
+
+```bash
+SUB=$(az account show --query id -o tsv)
+
 az ad sp create-for-rbac --name sp-skjema-funcapp-proeve \
     --role Contributor \
-    --scopes /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<funcapp> \
+    --scopes "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$FUNCAPP" \
     --json-auth
 ```
 
-Utdata er en hemmelighet og limes rett inn i GitHub-secreten — ikke i en sak,
+**HELE JSON-objektet skal inn i secreten `AZURE_FUNCAPP_CREDENTIALS`** — ikke
+bare `clientSecret`-verdien. `azure/login@v2` parser innholdet som JSON, og
+får den noe annet, feiler den med
+
+    Login failed with SyntaxError: Unexpected token 'R', "RB18Q~TkTU"...
+    is not valid JSON
+
+Secreten skal altså begynne med `{` og se slik ut:
+
+```json
+{
+  "clientId": "<appId>",
+  "clientSecret": "<passordet>",
+  "subscriptionId": "<abonnements-id>",
+  "tenantId": "<tenant-id>"
+}
+```
+
+Passordet vises **bare én gang**. Har du mistet det, lag et nytt med
+`az ad sp credential reset --id <appId>` og sett sammen JSON-en selv — den
+kommandoen skriver ikke ut dette formatet, bare `appId`, `password` og
+`tenant`.
+
+Utdata er en hemmelighet: den limes rett inn i GitHub-secreten, ikke i en sak,
 en e-post eller et chatvindu. Blir forslaget vedtatt, erstattes den av OIDC
 federated credential (punkt 3 i kapittel 10), som ikke har en verdi som kan
 lekke.
