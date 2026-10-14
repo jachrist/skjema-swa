@@ -351,12 +351,18 @@ Function App-en til den, og la pilot stå urørt. Spørsmålet som skal besvares
 er plattformens oppførsel, ikke pilots konfigurasjon, så en tom SWA svarer
 like godt.
 
-To forbehold: en lenket backend krever **Standard-planen**, så prøve-SWA-en
-koster mens den står. Og den trenger en innlogging for at det skal finnes en
-principal i det hele tatt — om SWA-ens innebygde Entra-leverandør holder til
-det, eller om den må peke på en egen app-registrering, er ikke verifisert her.
-Krever den en registrering, er den enkleste veien å gjenbruke pilots, med
-prøve-SWA-ens URL lagt til som redirect-URI.
+Ett forbehold: en lenket backend krever **Standard-planen**, så prøve-SWA-en
+koster mens den står.
+
+Innlogging trenger den ikke egen oppsett for. En SWA uten
+`staticwebapp.config.json` bruker plattformens forhåndskonfigurerte
+Entra-leverandør, og `/.auth/login/aad` virker uten app-registrering.
+Registreringen i `staticwebapp.config.<miljø>.json` finnes for å LÅSE
+innloggingen til én tenant — nødvendig i pilot og prod, unødvendig i et
+forsøk som bare skal se om en header kommer fram.
+
+Merk at en egen registrering slår av de forhåndskonfigurerte leverandørene.
+Legger du inn en `auth`-blokk i prøve-SWA-en, må den være komplett.
 
 **B — pilot-SWA-en.** Tester også at pilots egen config følger med gjennom
 proxyen, som er en ting mer enn variant A svarer på.
