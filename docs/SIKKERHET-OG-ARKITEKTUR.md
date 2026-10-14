@@ -696,9 +696,11 @@ vurderer dem.
    plattformvalg, ikke vårt, men konsekvensen er vår. Det finnes en vei ut
    som ikke krever at plattformen endrer seg — en egen Function App lenket
    til SWA-en støtter både managed identity og Key Vault-referanser. Vurdert
-   i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`. **Steg 1 er verifisert
+   i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`. **Steg 1 og 2 er verifisert
    14.10.2026: `x-ms-client-principal` følger med gjennom proxyen, så
-   tilgangsmodellen overlever flyttingen.** Fortsatt ikke besluttet.
+   tilgangsmodellen overlever flyttingen — og en Function App løser
+   `@Microsoft.KeyVault(...)` i app settings, så klarteksten kan bort.**
+   Fortsatt ikke besluttet.
 3. **Deploy skjer med et SWA deployment token** i GitHub-secret
    `AZURE_STATIC_WEB_APPS_API_TOKEN`. Målet er OIDC federated credential med
    `Contributor` bare på SWA-ressursen. Ikke gjennomført.
