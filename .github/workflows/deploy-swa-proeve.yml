@@ -39,14 +39,16 @@ jobs:
           api_location: ""
           output_location: ""
           skip_app_build: true
-          # Uten disse to havnet deployen et annet sted enn production:
-          # workflowen gikk grønt 14.10.2026, og rota serverte fortsatt
-          # «Congratulations on your new site!».
+          # Eksplisitt, ikke fordi det var årsaken til at første kjøring
+          # ikke slo gjennom — det var det ikke. Miljølista viste bare ett
+          # miljø, `default`, med status `Uploading`: deployen nådde riktig
+          # sted og ble stående uferdig.
           #
-          # Semantikken er at `deployment_environment` overstyrer alt, og at
-          # en tom verdi sammen med `production_branch` sender andre grener
-          # til preview. Settes `production_branch` til grenen vi faktisk
-          # kjører fra, ER den produksjonsgrenen, og deployen går dit.
+          # De blir likevel stående. Semantikken er at
+          # `deployment_environment` overstyrer alt, og at en tom verdi
+          # sammen med `production_branch` sender andre grener til preview.
+          # Settes ingen av dem, avgjør standardoppførselen — og den ville
+          # bitt oss den dagen forsøket ble kjørt fra en annen gren.
           #
           # ${{ github.ref_name }} framfor et fast navn, fordi forsøket
           # kjøres fra en arbeidsgren som skifter navn.
