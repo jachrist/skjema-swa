@@ -3,6 +3,7 @@
  * Legg til nye funksjoner her etter hvert som de bygges.
  */
 require('./functions/ping');
+require('./functions/mi-diagnose');
 require('./functions/hello-storage');
 require('./functions/whoami');
 require('./functions/skjematyper');

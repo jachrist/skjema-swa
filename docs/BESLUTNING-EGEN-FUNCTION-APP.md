@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dato | 13.10.2026 |
-| Status | **Forslag — ikke besluttet** |
+| Status | **Steg 1 og 2 verifisert 14.10.2026. Forslaget står — ikke besluttet** |
 | Gjelder | Punkt 2 og 3 i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 10 |
 | Krever | Beslutning hos oppdragsgiver + ressursoppsett hos Cyberforsvaret |
 
@@ -241,8 +241,8 @@ Hvert steg er valgt slik at det kan **verifiseres før det neste begynner**.
 
 | Steg | Hva | Verifiseres ved |
 |---|---|---|
-| 1 | Opprett Function App, lenk den til en SWA, deploy uendret kode. Oppskrift i 8b | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
-| 2 | Legg inn én Key Vault-referanse i Function App-ens app settings | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
+| 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
+| 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | Legg om `storage.js` og `blob.js` til `DefaultAzureCredential`. `TODO_STORAGE_CONNECTION_STRING` beholdes | Hele testsuiten grønn, inkludert uten `node_modules`. Deretter: les og skriv et skjema i pilot |
 | 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke i pilot i et døgn |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
@@ -514,11 +514,116 @@ Og fjern GitHub-secretene `AZURE_FUNCAPP_CREDENTIALS` og `SWA_PROEVE_TOKEN`. En 
 peker på noe som ikke finnes, er den slags rest dette repoet har brukt tid på
 å rydde før.
 
+## 8c. Utfallet av steg 1
+
+**Dato:** 14.10.2026
+**Oppsett:** Function App `testfapp` (Node 22, Linux, Consumption, norwayeast)
+lenket som backend til en egen prøve-SWA (Standard, westeurope). Uendret
+API-kode fra `main`.
+
+### Svaret er ja
+
+`GET /api/ping` gjennom SWA-proxyen:
+
+| | `principal` |
+|---|---|
+| Uinnlogget | `headerMottatt: false` |
+| Etter `/.auth/login/aad` | `headerMottatt: true`, `kunneLeses: true`, `harUpn: true` |
+
+**SWA sender `x-ms-client-principal` videre til en lenket backend.**
+Forutsetningen hele forslaget hviler på, holder. `api/src/lib/auth.js` og
+tilgangsmodellen trenger ingen endring for å flytte API-et ut av managed
+functions.
+
+Det var den ene tingen som kunne stoppet forslaget på et faktum. Den gjorde
+det ikke.
+
+### Hva prøven ikke svarer på
+
+Forsøket brukte en tom prøve-SWA uten `staticwebapp.config.json`, med
+plattformens forhåndskonfigurerte Entra-leverandør. Det er verifisert at
+headeren kommer fram — ikke at pilots egen auth-konfigurasjon, med
+tenant-låst issuer og `rolesSource`, oppfører seg likt gjennom proxyen.
+Steg 2 og 3 kjøres mot pilot, og vil vise det.
+
+### Hva det kostet
+
+En arbeidsdag, mot anslaget «en formiddag». Tiden gikk ikke til Azure, men
+til fire fallgruver som alle ser ut som noe annet enn de er (se 8b), og til
+verktøyfeil rundt dem: SWA CLI-en feiler på Windows, `curl` i PowerShell er
+`Invoke-WebRequest`, en `workflow_dispatch`-arbeidsflyt vises ikke i Actions
+før fila ligger på standardgrenen, og en tjenestehovedstol med rolle bare på
+én ressurs mister den når ressursen bygges opp igjen.
+
+Anslaget for steg 2–6 bør justeres opp tilsvarende. Selve arbeidet er lite;
+det er oppsettet rundt som tar tid første gang.
+
+## 8d. Utfallet av steg 2
+
+**Dato:** 14.10.2026
+**Oppsett:** Samme Function App. `TEAM_SOK_EKSTERNT_FLOW_URL` satt til
+`@Microsoft.KeyVault(SecretUri=https://FHSFunctionKeys.vault.azure.net/secrets/TestSecret/)`,
+med appens system-assigned identity og rollen Key Vault Secrets User på
+vaulten.
+
+### Svaret er ja
+
+Beviset ligger i lengden `/api/system/info` rapporterer:
+
+| | `lengde` |
+|---|---|
+| Før | **90** — nøyaktig referansestrengen |
+| Etter | **18** — innholdet i hemmeligheten |
+
+Verdien koden leser har gått fra referansen til den løste hemmeligheten.
+**En Function App løser `@Microsoft.KeyVault(...)` i app settings.** Det er
+nøyaktig det SWA Managed Functions ikke gjør, prøvd i pilot 12.10.2026 med
+samme variabel, der appen fikk referansestrengen på 109 tegn.
+
+Dermed er punkt 2 i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 10 —
+klartekst-hemmelighetene — teknisk løsbart ved å flytte API-et. Det er den
+tyngste enkeltgevinsten i hele forslaget.
+
+### To ting det kostet, som er verdt å vite
+
+**`appsettings set` alene løser ikke referansen.** Appen må restartes, eller
+referansene oppdateres eksplisitt:
+
+```
+az rest --method POST --uri "https://management.azure.com/<resourceId>/config/configreferences/appsettings/refresh?api-version=2022-03-01"
+```
+
+**Plattformen sier selv hvorfor en referanse ikke løses**, og det er en
+vesentlig forskjell fra SWA. Dette endepunktet gir status og årsak per
+referanse:
+
+```
+az rest --method GET --uri "https://management.azure.com/<resourceId>/config/configreferences/appsettings?api-version=2022-03-01"
+```
+
+Underveis ga den `AccessToKeyVaultDenied` med teksten «site was denied access
+to Key Vault reference's vault» — årsaken var at rollen var gitt på feil
+vault. På SWA fikk vi bare «uløst referanse», uten å vite hvorfor. At
+feilsøkingen er mulig i det hele tatt, er et argument for forslaget i seg
+selv.
+
+### En feilmelding som nå gjetter feil
+
+`maskFlytUrl` i `api/src/functions/system.js` sier «ikke en gyldig URL —
+uløst Key Vault-referanse?» når en flyt-variabel ikke lar seg parse. På SWA
+var den gjetningen nesten alltid riktig. På en Function App er den det ikke:
+her kom meldingen fordi prøvehemmeligheten ikke inneholdt en URL, mens
+referansen var løst helt fint.
+
+`maskLengde`, som faktisk sjekker om verdien ER en referanse, var stille —
+den sjekken er riktig og skal stå. Det er bare gjetningen i `maskFlytUrl`
+som bør mykes opp hvis forslaget vedtas.
+
 ## 9. Risiko
 
 | Risiko | Hvor alvorlig | Hva vi gjør |
 |---|---|---|
-| `x-ms-client-principal` følger ikke med gjennom proxyen | **Stoppende** | Steg 1 avgjør det før noe annet gjøres |
+| ~~`x-ms-client-principal` følger ikke med gjennom proxyen~~ | ~~**Stoppende**~~ | **Avklart 14.10.2026: den følger med.** Se 8c |
 | Kaldstart på Consumption gir tregere første kall | Lav | Flex Consumption har kortere kaldstart. Alternativt alltid-på-instans, mot høyere pris |
 | Ett ekstra deploy-steg som kan feile uavhengig | Lav | `/api/ping` bærer commit-SHA. Avvik mellom frontend og API blir synlig med én gang |
 | Kostnad | Ukjent | Function App på Consumption koster lite ved dette volumet, men **prisen skal slås opp, ikke antas**. SWA-planen er uendret |
