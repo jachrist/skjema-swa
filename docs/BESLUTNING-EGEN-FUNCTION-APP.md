@@ -450,13 +450,67 @@ en e-post eller et chatvindu. Blir forslaget vedtatt, erstattes den av OIDC
 federated credential (punkt 3 i kapittel 10), som ikke har en verdi som kan
 lekke.
 
+### Fallgruvene, funnet ved å kjøre det
+
+Alle fire er funnet 14.10.2026, og alle fire ser ut som noe annet enn de er.
+
+**1. Innholdet må på plass før lenkingen.**
+En SWA uten en vellykket deploy ruter ingenting — heller ikke til en lenket
+backend. Og oppsettet ser riktig ut i alt som finnes for å sjekke det:
+aktivitetsloggen bekrefter `Register Static Site Build Linked Backend`,
+`backends show` viser lenken, `functionapp function list` viser alle
+funksjonene. `/api/ping` svarer 404 likevel.
+
+Det eneste som avslører det:
+
+```
+az staticwebapp environment list --name <swa> --resource-group <rg> \
+   --query "[].{Navn:name,Status:status}" -o table
+```
+
+`Ready` er svaret. `Uploading` eller `WaitingForDeployment` betyr at lenking
+ikke vil hjelpe.
+
+**2. Nedrigging må gjøres i rekkefølge: `unlink` FØR `delete`.**
+Slettes SWA-en først, blir Easy Auth-konfigurasjonen stående igjen på Function
+App-en. Neste forsøk på å lenke feiler med
+
+    (Conflict) Cannot link backend with a preexisting Azure Static Web Apps
+    configuration.
+
+— en melding som ikke sier hvor restene ligger. `az webapp auth update -n
+<funcapp> -g <rg> --enabled false` fjerner dem.
+
+**3. 401 på direkte kall til Function App-en er riktig etter lenking.**
+Lenkingen setter Easy Auth på den, og bare trafikk proxet via SWA slipper
+inn. Vil du teste Function App-en direkte, gjør det FØR du lenker.
+
+**4. Vertsnavnet er ikke `<navn>.azurewebsites.net`.**
+Nye Function Apps får et regionalt navn med tilfeldig suffiks, som
+`testfapp-bahdenbmgxgqbqhw.norwayeast-01.azurewebsites.net`. Hent det med
+`az functionapp show --query defaultHostName -o tsv` i stedet for å gjette.
+
 ### Når forsøket er over
 
 Uansett utfall: **skriv svaret inn i dette notatet, med dato.** Et forsøk
 ingen har notert utfallet av, blir gjort på nytt om tre måneder.
 
-Blir svaret nei, eller blir forslaget lagt bort, skal `scripts/steg1-funcapp.sh`
-og `deploy-funcapp-pilot.yml` fjernes sammen med ressursene. En workflow som
+Blir svaret nei, eller blir forslaget lagt bort, skal
+`scripts/steg1-funcapp.ps1`, `deploy-funcapp-pilot.yml`,
+`deploy-swa-proeve.yml` og `proeve/` fjernes sammen med ressursene.
+
+**Riv ned i denne rekkefølgen**, ellers blir det liggende rester (se
+fallgruve 2):
+
+```
+az staticwebapp backends unlink --name <swa> --resource-group <rg>
+az staticwebapp delete --name <swa> --resource-group <rg> --yes
+az functionapp delete --name <funcapp> --resource-group <rg>
+az storage account delete --name <lagring> --resource-group <rg> --yes
+az ad sp delete --id <appId for sp-skjema-funcapp-proeve>
+```
+
+Og fjern GitHub-secretene `AZURE_FUNCAPP_CREDENTIALS` og `SWA_PROEVE_TOKEN`. En workflow som
 peker på noe som ikke finnes, er den slags rest dette repoet har brukt tid på
 å rydde før.
 
