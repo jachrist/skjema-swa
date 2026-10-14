@@ -287,18 +287,44 @@ Dette **finnes fra før** og skal bare pekes på:
 
 ### Rekkefølgen betyr noe
 
+> **Innholdet må på plass FØR lenkingen.** Første forsøk 14.10.2026 lenket
+> backend-en til en SWA som aldri hadde hatt en vellykket deploy.
+> Aktivitetsloggen bekreftet lenkingen, `backends show` viste den, og
+> `/api/ping` svarte 404 — fordi en SWA uten build ikke ruter noe, heller
+> ikke til en lenket backend.
+>
+> Oppsettet så altså riktig ut i alle kommandoene som finnes for å sjekke
+> det. Det eneste som avslørte det, var `az staticwebapp environment list`:
+> status `Uploading`, ikke `Ready`.
+
+Og tjenestehovedstolen får tilgang **bare på Function App-en**, og kan derfor
+ikke lages før Function App-en finnes:
+
 Tjenestehovedstolen får tilgang **bare på Function App-en**, og den kan derfor
 ikke lages før Function App-en finnes:
 
-1. Kjør `scripts/steg1-funcapp.sh` (steg 1–4). Function App-en finnes nå.
-2. Lag tjenestehovedstolen, og legg utdata i GitHub-secreten.
+1. Kjør `scripts/steg1-funcapp.ps1` (steg 1–4): Function App, identitet,
+   roller og prøve-SWA.
+2. Lag tjenestehovedstolen, og legg utdata i GitHub-secreten
+   `AZURE_FUNCAPP_CREDENTIALS`.
 3. Kjør `deploy-funcapp-pilot.yml`. API-et ligger nå på Function App-en.
-4. Lenk den til SWA-en (steg 6 i skriptet).
-5. Les svaret i `/api/ping`.
+4. Legg innhold på SWA-en: `deploy-swa-proeve.yml`, med SWA-ens deploy-token
+   i `SWA_PROEVE_TOKEN`.
+5. **Bekreft at SWA-en faktisk serverer.** Rota skal vise «Prøve-SWA», ikke
+   Azures standardside, og miljøet skal stå på `Ready`:
+   ```
+   az staticwebapp environment list --name <swa> --resource-group <rg> \
+      --query "[].{Navn:name,Status:status}" -o table
+   ```
+   Står den på `Uploading`, er deployen ikke ferdig. Lenking hjelper ikke.
+6. **Først nå:** lenk Function App-en til SWA-en.
+7. Les svaret i `/api/ping`.
 
-Skriptet gjør steg 6 til slutt i én kjøring. Vil du ha deployen inn mellom —
-og det bør du, så SWA-en ikke peker på en tom Function App et øyeblikk — kjør
-skriptet, hopp over lenkingen, og kjør den kommandoen for seg etterpå.
+Skriptet stopper av seg selv mellom steg 4 og 6, med denne sjekklista.
+
+Etter lenkingen svarer Function App-en **401 på direkte kall**. Det er riktig:
+lenkingen setter Easy Auth på den, og bare trafikk proxet via SWA slipper inn.
+Vil du teste den direkte, gjør det før du lenker.
 
 ### Filene
 
@@ -306,7 +332,8 @@ Alt som trengs ligger i repoet:
 
 | Hva | Hvor |
 |---|---|
-| Oppretter og lenker ressursene | `scripts/steg1-funcapp.sh` — tørrkjører som standard, `KJOER=ja` utfører |
+| Oppretter ressursene | `scripts/steg1-funcapp.ps1` — tørrkjører som standard, `-Kjor` utfører |
+| Legger innhold på prøve-SWA-en | `.github/workflows/deploy-swa-proeve.yml` |
 | Deployer API-et dit | `.github/workflows/deploy-funcapp-pilot.yml` — kun manuell kjøring |
 | Svarer på spørsmålet | `GET /api/ping`, feltet `principal` |
 
