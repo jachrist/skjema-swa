@@ -1,0 +1,66 @@
+name: Deploy API til Function App (steg 1-prøve)
+
+# Deployer BARE api/ til en frittstående Function App. Frontend og
+# SWA-oppsettet røres ikke av denne jobben.
+#
+# Hører til steg 1 i docs/BESLUTNING-EGEN-FUNCTION-APP.md: forsøket som
+# avgjør om SWA sender x-ms-client-principal videre til en lenket backend.
+# Gjør den ikke det, stopper hele forslaget der, og da skal denne jobben og
+# ressursen fjernes igjen.
+#
+# KUN manuell kjøring. Function App-en finnes ikke før noen har opprettet
+# den (scripts/steg1-funcapp.sh), og en jobb som feiler ved hver push er en
+# jobb folk slutter å lese.
+on:
+  workflow_dispatch:
+    inputs:
+      appnavn:
+        description: 'Navnet på Function App-en (uten .azurewebsites.net)'
+        required: true
+      miljo:
+        description: 'Miljø config bygges for'
+        required: true
+        default: 'pilot'
+        type: choice
+        options: [pilot, prod]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.miljo }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sett opp Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Samme rekkefølge som deploy-pilot.yml: testene først, og de stopper
+      # deployen hvis de er røde.
+      - name: Kjør tester
+        run: node scripts/kjor-tester.js
+
+      # Skriver api/src/versjon.json, som ping leser byggstempelet fra.
+      # Uten dette steget svarer /api/ping med commit 'ukjent', og da kan
+      # ikke forsøket skilles fra «ikke deployet».
+      - name: Bygg konfigurasjon
+        run: node scripts/build-config.js ${{ inputs.miljo }}
+
+      # En Function App kjører ikke Oryx slik SWA gjør — avhengighetene må
+      # være med i pakka. --omit=dev fordi testene ikke trenger å være der.
+      - name: Installer avhengigheter
+        run: npm ci --omit=dev
+        working-directory: api
+
+      - name: Logg inn i Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_FUNCAPP_CREDENTIALS }}
+
+      - name: Deploy
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ inputs.appnavn }}
+          package: api
+          respect-funcignore: true

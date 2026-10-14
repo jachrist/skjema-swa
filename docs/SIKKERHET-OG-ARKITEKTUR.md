@@ -331,7 +331,7 @@ OTP-token, en signert lenke. De fem uten vakt er:
 
 | Rute | Hvorfor |
 |---|---|
-| `GET /api/ping` | Helsesjekk. Svarer med commit-SHA og miljø, ingen data. SHA-en er nødvendig for å avgjøre om en rettelse faktisk er deployet |
+| `GET /api/ping` | Helsesjekk. Svarer med commit-SHA, miljø, og om innloggingen nådde fram til funksjonen — ikke hvem som er innlogget. SHA-en er nødvendig for å avgjøre om en rettelse faktisk er deployet |
 | `GET /api/logo/{filnavn}` | Bilde-bytes. Vises i skjema-headere, også for eksterne som ikke er pålogget |
 | `GET /api/systemlogo` | Systemets logo og tittel. Vises før innlogging |
 | `POST /api/otp/be-om-kode` | Her ber en ekstern om tilgang. Rate-limitet |

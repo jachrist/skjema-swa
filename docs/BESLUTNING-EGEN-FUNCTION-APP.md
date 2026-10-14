@@ -241,7 +241,7 @@ Hvert steg er valgt slik at det kan **verifiseres før det neste begynner**.
 
 | Steg | Hva | Verifiseres ved |
 |---|---|---|
-| 1 | Opprett Function App i **pilot**, lenk den til pilot-SWA-en, deploy uendret kode | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
+| 1 | Opprett Function App, lenk den til en SWA, deploy uendret kode. Oppskrift i 8b | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | Legg inn én Key Vault-referanse i Function App-ens app settings | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | Legg om `storage.js` og `blob.js` til `DefaultAzureCredential`. `TODO_STORAGE_CONNECTION_STRING` beholdes | Hele testsuiten grønn, inkludert uten `node_modules`. Deretter: les og skriv et skjema i pilot |
 | 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke i pilot i et døgn |
@@ -251,6 +251,105 @@ Hvert steg er valgt slik at det kan **verifiseres før det neste begynner**.
 
 Steg 1 og 2 er de eneste som må gjøres i rekkefølge. Feiler steg 1, stopper
 hele forslaget her, og notatet har spart oss resten.
+
+## 8b. Slik kjører du steg 1
+
+Alt som trengs ligger i repoet:
+
+| Hva | Hvor |
+|---|---|
+| Oppretter og lenker ressursene | `scripts/steg1-funcapp.sh` — tørrkjører som standard, `KJOER=ja` utfører |
+| Deployer API-et dit | `.github/workflows/deploy-funcapp-pilot.yml` — kun manuell kjøring |
+| Svarer på spørsmålet | `GET /api/ping`, feltet `principal` |
+
+### Prøven
+
+`/api/ping` svarer nå med en `principal`-blokk som sier om innloggingen nådde
+fram til funksjonen:
+
+```json
+"principal": {
+  "headerMottatt": true,
+  "kunneLeses": true,
+  "harUpn": true,
+  "antallRoller": 3,
+  "merknad": "innlogging mottatt og lest"
+}
+```
+
+Den skiller tre tilstander som ellers ser like ut utenfra, og det er hele
+poenget: et 403 kan ikke fortelle deg om headeren uteble, kom i stykker, eller
+kom tom. Feltet settes alltid, med årsaken i seg.
+
+**Endepunktet er anonymt, og svaret bærer hverken UPN eller rollenavn** — bare
+om og hvor langt innloggingen kom. `api/test/ping-principal.test.js` krever
+begge deler.
+
+Slik leses svaret:
+
+| `principal` | Betyr | Hva da |
+|---|---|---|
+| `headerMottatt: false` mens du er innlogget | SWA sender den ikke videre til en lenket backend | **Forslaget stopper her.** Skriv det inn i notatet med dato, og riv ned ressursene |
+| `headerMottatt: true, harUpn: true` | Den kommer fram og lar seg lese | Forutsetningen holder. Gå til steg 2 |
+| `headerMottatt: true, harUpn: false` | Den kommer, men er tom | Noter `merknad` og undersøk videre — dette er ikke et nei, men det er ikke et ja heller |
+
+Sjekk først **uinnlogget**: da skal `headerMottatt` være `false`. Er den `true`
+der, måler du noe annet enn du tror.
+
+### To måter å kjøre den på
+
+**A — egen prøve-SWA (anbefalt).** Opprett en SWA bare for forsøket, lenk
+Function App-en til den, og la pilot stå urørt. Spørsmålet som skal besvares
+er plattformens oppførsel, ikke pilots konfigurasjon, så en tom SWA svarer
+like godt.
+
+To forbehold: en lenket backend krever **Standard-planen**, så prøve-SWA-en
+koster mens den står. Og den trenger en innlogging for at det skal finnes en
+principal i det hele tatt — om SWA-ens innebygde Entra-leverandør holder til
+det, eller om den må peke på en egen app-registrering, er ikke verifisert her.
+Krever den en registrering, er den enkleste veien å gjenbruke pilots, med
+prøve-SWA-ens URL lagt til som redirect-URI.
+
+**B — pilot-SWA-en.** Tester også at pilots egen config følger med gjennom
+proxyen, som er en ting mer enn variant A svarer på.
+
+> **Å lenke en backend ERSTATTER de managed functions SWA-en kjører i dag.**
+> Fra det øyeblikket går all `/api/*`-trafikk på pilot til Function App-en.
+> Det er ikke et parallellkjør.
+>
+> Angre: `az staticwebapp backends unlink`, og deretter en ordinær deploy fra
+> `deploy-pilot.yml`.
+
+Variant B bør derfor kjøres når ingen jobber i pilot, og med
+`deploy-pilot.yml` klar til å kjøres igjen.
+
+### Secreten deployen trenger
+
+`deploy-funcapp-pilot.yml` logger inn med `AZURE_FUNCAPP_CREDENTIALS` i
+GitHub-miljøet. For en prøve holder en tjenestehovedstol med `Contributor`
+**bare på Function App-en**:
+
+```
+az ad sp create-for-rbac --name sp-skjema-funcapp-proeve \
+    --role Contributor \
+    --scopes /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<funcapp> \
+    --json-auth
+```
+
+Utdata er en hemmelighet og limes rett inn i GitHub-secreten — ikke i en sak,
+en e-post eller et chatvindu. Blir forslaget vedtatt, erstattes den av OIDC
+federated credential (punkt 3 i kapittel 10), som ikke har en verdi som kan
+lekke.
+
+### Når forsøket er over
+
+Uansett utfall: **skriv svaret inn i dette notatet, med dato.** Et forsøk
+ingen har notert utfallet av, blir gjort på nytt om tre måneder.
+
+Blir svaret nei, eller blir forslaget lagt bort, skal `scripts/steg1-funcapp.sh`
+og `deploy-funcapp-pilot.yml` fjernes sammen med ressursene. En workflow som
+peker på noe som ikke finnes, er den slags rest dette repoet har brukt tid på
+å rydde før.
 
 ## 9. Risiko
 

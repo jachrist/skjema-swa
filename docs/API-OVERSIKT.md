@@ -32,7 +32,7 @@ SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.
 | `/api/oppslag` | POST | innlogget, utsendingstoken |
 | `/api/otp/be-om-kode` | POST | ratelimit — Må være anonymt — det er her en ekstern ber om tilgang. Koden sendes bare til adressen som oppgis, og kallet er rate-limitet. |
 | `/api/otp/verifiser-kode` | POST | _åpent med vilje:_ Må være anonymt av samme grunn. Feil kode gir ingen opplysning om adressen finnes. |
-| `/api/ping` | GET | _åpent med vilje:_ Helsesjekk. Svarer med commit-SHA og miljø — ingen data, og SHA-en er nødvendig for å kunne avgjøre om en rettelse er deployet. |
+| `/api/ping` | GET | _åpent med vilje:_ Helsesjekk. Svarer med commit-SHA, miljø, og om innloggingen nådde fram til funksjonen — ikke hvem som er innlogget: hverken UPN eller rollenavn er med. SHA-en er nødvendig for å kunne avgjøre om en rettelse er deployet. |
 | `/api/postnumre/refresh-bring` | POST | admin, innlogget, scheduler |
 | `/api/power-bi` | GET | pb-token |
 | `/api/publikum-skjematype/{id}` | GET | _åpent med vilje:_ Returnerer BARE skjematyper med EksternTilgang=true, og bare definisjonen — ingen svar. Er grunnlaget for at en ekstern kan åpne et skjema i det hele tatt. |
