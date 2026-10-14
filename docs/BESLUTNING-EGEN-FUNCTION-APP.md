@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dato | 13.10.2026 |
-| Status | **Steg 1 og 2 verifisert 14.10.2026. Forslaget står — ikke besluttet** |
+| Status | **Steg 1 og 2 verifisert, premisset for steg 3 og 7 bekreftet 14.10.2026. Forslaget står — ikke besluttet** |
 | Gjelder | Punkt 2 og 3 i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 10 |
 | Krever | Beslutning hos oppdragsgiver + ressursoppsett hos Cyberforsvaret |
 
@@ -618,6 +618,58 @@ referansen var løst helt fint.
 `maskLengde`, som faktisk sjekker om verdien ER en referanse, var stille —
 den sjekken er riktig og skal stå. Det er bare gjetningen i `maskFlytUrl`
 som bør mykes opp hvis forslaget vedtas.
+
+## 8e. Managed identity i koden — premisset for steg 3 og 7
+
+**Dato:** 14.10.2026
+**Hvordan:** `GET /api/diagnose/mi-token?ressurs=<audience>` på `testfapp`.
+
+### Koden får et MI-token
+
+| Ressurs | `ok` | `aud` i tokenet |
+|---|---|---|
+| `https://storage.azure.com/` | ja | `https://storage.azure.com` |
+| `https://service.flow.microsoft.com/` | ja | `https://service.flow.microsoft.com` |
+
+Samme identitet i begge: `oid` `64eac771-…`, `tid` `e4fcc393-…`.
+
+**Dette er det SWA Managed Functions ikke kan.** Der eksponeres ingen
+MI-token til funksjonskoden i det hele tatt, og det er grunnen til at
+`api/src/lib/keyvault.js` er død kode og at all lagring går via
+`STORAGE_CONNECTION_STRING`.
+
+* **Storage-tokenet** er premisset for steg 3: `storage.js` og `blob.js` kan
+  legges om til `DefaultAzureCredential`, og kontostrengen kan forsvinne.
+* **Flow-tokenet** er premisset for steg 7: en managed identity *kan* få et
+  token for Power Automate. Kildene beskrev bare app-registrering med client
+  credentials, aldri MI — det var den åpne antagelsen, og den holdt.
+
+### Hva dette IKKE beviser
+
+**Et token er ikke tilgang.** Prøven viser at identitetsendepunktet virker i
+koden og at audiencen godtas av Entra. Den sier ingenting om hvorvidt
+rolletildelingene faktisk gir lese- og skrivetilgang til tabellene, eller om
+en flyt godtar tokenet.
+
+De to neste prøvene er derfor:
+
+* **Steg 3:** les og skriv en tabell med `DefaultAzureCredential` mot
+  datalagringskontoen. Først da er kontostrengen beviselig overflødig.
+* **Steg 7:** sett én dev-flyts trigger til «Specific users in my tenant»
+  med `oid` fra tokenet, se at `sig=` forsvinner fra trigger-URL-en, og kall
+  den med MI-tokenet.
+
+`oid` i tokenet er verdien Power Automate vil ha i allow-lista. Den skal være
+den samme som
+`az functionapp identity show --query principalId`.
+
+### Forbehold om tenant
+
+Flytene finnes også på dev-tenanten, så ende-til-ende-prøven er mulig — men
+bare hvis Function App-en ligger i **samme tenant** som dev-flytene. En
+managed identity kan ikke stå i en allow-liste i en annen tenant; det er
+samme begrensning som gjør at `TODO_STORAGE_CONNECTION_STRING` må være en
+delt nøkkel.
 
 ## 9. Risiko
 
