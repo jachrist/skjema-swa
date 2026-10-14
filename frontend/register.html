@@ -617,7 +617,7 @@
             const valg = (steg?.Beslutningsvalg || []).map(v => v.Tekst).filter(Boolean);
             if (valg.length === 0) { rad.style.display = 'none'; return; }
             rad.style.display = '';
-            velger.innerHTML = valg.map(v => `<option value="${escapeHtml(v)}">${escHtml(v)}</option>`).join('')
+            velger.innerHTML = valg.map(v => `<option value="${escHtml(v)}">${escHtml(v)}</option>`).join('')
                 + '<option value="">(uten behandling — blir «Ikke behandlet»)</option>';
         }
 
@@ -767,7 +767,7 @@
                 const nokkel = `${f.Seksjon}-${f.Felt}`;
                 const forekommende = samleFeltForekommendeVerdier(f.Seksjon, f.Felt);
                 if (forekommende.length === 0) return '';
-                const options = forekommende.map(v => `<option value="${escapeHtml(v)}">${escHtml(v)}</option>`).join('');
+                const options = forekommende.map(v => `<option value="${escHtml(v)}">${escHtml(v)}</option>`).join('');
                 return `<div style="margin-top: 6px;">
                     <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 2px;">${escHtml(f.Navn)}</label>
                     <select data-nokkel="${nokkel}" onchange="onFeltFilterEndret(this)" style="width: 100%; padding: 5px 8px; font-size: 12px;">
@@ -884,7 +884,7 @@
             const utfall = [...new Set(state.alle.map(utfallFor))]
                 .sort((a, b) => a === IKKE_BEHANDLET ? 1 : b === IKKE_BEHANDLET ? -1 : a.localeCompare(b, 'no'));
             el.innerHTML = '<option value="">Alle utfall</option>'
-                + utfall.map(u => `<option value="${escapeHtml(u)}">${escHtml(u)}</option>`).join('');
+                + utfall.map(u => `<option value="${escHtml(u)}">${escHtml(u)}</option>`).join('');
             el.style.display = '';
         }
 
