@@ -54,7 +54,7 @@ const VAKTER = [
  * og begrunnelsen skal kunne leses av en som evaluerer sikkerheten.
  */
 const ÅPNE_MED_VILJE = {
-    '/api/ping': 'Helsesjekk. Svarer med commit-SHA og miljø — ingen data, og SHA-en er nødvendig for å kunne avgjøre om en rettelse er deployet.',
+    '/api/ping': 'Helsesjekk. Svarer med commit-SHA, miljø, og om innloggingen nådde fram til funksjonen — ikke hvem som er innlogget: hverken UPN eller rollenavn er med. SHA-en er nødvendig for å kunne avgjøre om en rettelse er deployet.',
     '/api/logo/{filnavn}': 'Serverer bilde-bytes. Vises i skjema-headere, også for eksterne innsendere som ikke er pålogget.',
     '/api/systemlogo': 'Systemets logo og tittel. Vises før innlogging.',
     '/api/publikum-skjematype/{id}': 'Returnerer BARE skjematyper med EksternTilgang=true, og bare definisjonen — ingen svar. Er grunnlaget for at en ekstern kan åpne et skjema i det hele tatt.',

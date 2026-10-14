@@ -61,8 +61,20 @@ for (const fil of deployer) {
     const kilde = les(fil);
     // Testene før utrullingen, ikke etter — rekkefølgen er hele poenget.
     sjekk(`${fil}: kjører testene`, /run: node scripts\/kjor-tester\.js/.test(kilde), true);
+
+    // Hvilken action som gjør utrullingen varierer: SWA-appen deployes med
+    // static-web-apps-deploy, et API på en egen Function App med
+    // functions-action. Regelen er den samme, og den skal uttrykkes mot det
+    // steget som faktisk ruller ut — ikke mot ett bestemt actionnavn.
+    //
+    // Sto navnet hardkodet, ville en ny arbeidsflyt med en annen action fått
+    // indexOf === -1, og sammenligningen svart «testene kjøres ikke først» om
+    // en fil der de gjør nøyaktig det.
+    const UTRULLING = ['static-web-apps-deploy', 'functions-action', 'azure/webapps-deploy'];
+    const utrulling = UTRULLING.map(a => kilde.toLowerCase().indexOf(a)).filter(i => i !== -1);
+    sjekk(`${fil}: har et utrullingssteg`, utrulling.length > 0, true);
     sjekk(`${fil}: testene kjøres før deployen`,
-        kilde.indexOf('kjor-tester.js') < kilde.indexOf('static-web-apps-deploy'), true);
+        utrulling.every(i => kilde.indexOf('kjor-tester.js') < i), true);
 }
 
 // ---------- pilot ----------
