@@ -27,9 +27,11 @@ RG="${RG:-}"                      # ressursgruppa SWA-en ligger i
 STED="${STED:-norwayeast}"        # samme region som SWA-en
 SWA="${SWA:-}"                    # navnet på Static Web App-en (pilot)
 FUNCAPP="${FUNCAPP:-}"            # navnet den nye Function App-en skal ha
-LAGRING="${LAGRING:-}"            # lagringskontoen Function App-en trenger for seg selv
+LAGRING="${LAGRING:-}"            # NY lagringskonto, bare til Function App-runtime.
+                                  # MÅ være en annen enn DATALAGRING under.
 KEYVAULT="${KEYVAULT:-}"          # miljøets Key Vault, f.eks. kv-fhsskjema-pilot
-DATALAGRING="${DATALAGRING:-}"    # lagringskontoen MED DATAENE (tabeller og blob)
+DATALAGRING="${DATALAGRING:-}"    # EKSISTERENDE konto med dataene (tabeller og blob) —
+                                  # den STORAGE_CONNECTION_STRING peker på i dag
 # ────────────────────────────────────────────────────────────────────────────
 
 KJOER="${KJOER:-nei}"
@@ -40,6 +42,13 @@ for v in RG SWA FUNCAPP LAGRING KEYVAULT DATALAGRING; do
 done
 if [ ${#mangler[@]} -gt 0 ]; then
     echo "Fyll ut, eller sett som miljøvariabler: ${mangler[*]}" >&2
+    exit 1
+fi
+
+if [ "$LAGRING" = "$DATALAGRING" ]; then
+    echo "LAGRING og DATALAGRING er den samme kontoen." >&2
+    echo "Function App-runtime skriver køer, låser og tilstandstabeller i LAGRING." >&2
+    echo "Blandes de med dataene, havner driftsartefaktene i hver backup." >&2
     exit 1
 fi
 

@@ -254,6 +254,54 @@ hele forslaget her, og notatet har spart oss resten.
 
 ## 8b. Slik kjører du steg 1
 
+### Hva som opprettes, og hva som allerede finnes
+
+Fire ting lages. Tre av dem gir du et navn, og de navnene brukes om igjen
+flere steder — det er de samme verdiene som står som `FUNCAPP`, `LAGRING` og
+`SWA` i skriptet.
+
+| Nytt | Hva det er | Navnet |
+|---|---|---|
+| **Function App** | Selve API-et, atskilt fra SWA-en. Blir `<navn>.azurewebsites.net` | `FUNCAPP` — du velger. **Globalt unikt** i hele Azure |
+| **Lagringskonto** | Function App-runtime trenger sin egen til tilstand og låser. **Ikke** den som bærer dataene | `LAGRING` — du velger. Globalt unikt, 3–24 tegn, bare små bokstaver og tall |
+| **Managed identity** | Opprettes på Function App-en, har ikke eget navn | — |
+| **Tjenestehovedstol** | Så GitHub Actions kan deploye dit | `sp-skjema-funcapp-proeve`, eller det du vil kalle den |
+
+I tillegg endres to ting som allerede finnes: tre rolletildelinger legges til,
+og SWA-en får Function App-en lenket som backend.
+
+Dette **finnes fra før** og skal bare pekes på:
+
+| Finnes | Skriptets variabel | Hva du fyller inn |
+|---|---|---|
+| Ressursgruppa | `RG` | Den SWA-en ligger i |
+| Static Web App | `SWA` | Pilot-SWA-en, eller prøve-SWA-en hvis du velger variant A |
+| Key Vault | `KEYVAULT` | `kv-fhsskjema-pilot` |
+| Lagringskontoen **med dataene** | `DATALAGRING` | Den `STORAGE_CONNECTION_STRING` peker på i dag |
+| Region | `STED` | Samme som SWA-en |
+
+> **`LAGRING` og `DATALAGRING` må være to forskjellige kontoer.** Setter du
+> begge til den som bærer dataene, blander Function App-runtime sine egne
+> køer, låser og tilstandstabeller inn blant skjemadataene — og de blir med i
+> hver backup fra den dagen.
+
+### Rekkefølgen betyr noe
+
+Tjenestehovedstolen får tilgang **bare på Function App-en**, og den kan derfor
+ikke lages før Function App-en finnes:
+
+1. Kjør `scripts/steg1-funcapp.sh` (steg 1–4). Function App-en finnes nå.
+2. Lag tjenestehovedstolen, og legg utdata i GitHub-secreten.
+3. Kjør `deploy-funcapp-pilot.yml`. API-et ligger nå på Function App-en.
+4. Lenk den til SWA-en (steg 6 i skriptet).
+5. Les svaret i `/api/ping`.
+
+Skriptet gjør steg 6 til slutt i én kjøring. Vil du ha deployen inn mellom —
+og det bør du, så SWA-en ikke peker på en tom Function App et øyeblikk — kjør
+skriptet, hopp over lenkingen, og kjør den kommandoen for seg etterpå.
+
+### Filene
+
 Alt som trengs ligger i repoet:
 
 | Hva | Hvor |
@@ -327,12 +375,17 @@ Variant B bør derfor kjøres når ingen jobber i pilot, og med
 
 `deploy-funcapp-pilot.yml` logger inn med `AZURE_FUNCAPP_CREDENTIALS` i
 GitHub-miljøet. For en prøve holder en tjenestehovedstol med `Contributor`
-**bare på Function App-en**:
+**bare på Function App-en** — ikke på ressursgruppa.
 
-```
+Kjøres **etter** at Function App-en er opprettet, siden omfanget peker på den.
+`$FUNCAPP` og `$RG` er de samme verdiene du satte i skriptet:
+
+```bash
+SUB=$(az account show --query id -o tsv)
+
 az ad sp create-for-rbac --name sp-skjema-funcapp-proeve \
     --role Contributor \
-    --scopes /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Web/sites/<funcapp> \
+    --scopes "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$FUNCAPP" \
     --json-auth
 ```
 
