@@ -135,5 +135,94 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
         /https:\/\/storage\.azure\.com\//.test(kode), true);
 }
 
+// ---------- beskrivUrl: flyt-URL-en skal aldri ut ----------
+//
+// Trigger-URL-en til en Power Automate-flyt bærer signaturen i
+// query-strengen. Ekkoes den fra et diagnoseendepunkt, har diagnosen gitt
+// bort nøkkelen den skulle hjelpe oss å bli kvitt.
+{
+    const beskrivUrl = hentEksport(rå, 'beskrivUrl');
+    const MED_SIG = 'https://prod-12.westeurope.logic.azure.com/workflows/abc/triggers/manual/paths/invoke'
+        + '?api-version=2016-06-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=HEMMELIG-SIGNATUR-HER';
+
+    const u = beskrivUrl(MED_SIG);
+    sjekk('vertsnavn med', u.vertsnavn, 'prod-12.westeurope.logic.azure.com');
+    sjekk('sti med', u.sti, '/workflows/abc/triggers/manual/paths/invoke');
+    sjekk('ser signaturen', u.harSignatur, true);
+    sjekk('teller parametere', u.antallParametere, 4);
+
+    const tekst = JSON.stringify(u);
+    sjekk('signaturverdien er ikke med', tekst.includes('HEMMELIG-SIGNATUR-HER'), false);
+    sjekk('hele URL-en er ikke med', tekst.includes(MED_SIG), false);
+    sjekk('ingen query-streng i det hele tatt', tekst.includes('api-version'), false);
+
+    // Uten sig — det er nettopp denne forskjellen forsøket skal vise.
+    const uten = beskrivUrl('https://prod-12.westeurope.logic.azure.com/workflows/abc/triggers/manual/paths/invoke?api-version=2016-06-01');
+    sjekk('uten signatur', uten.harSignatur, false);
+
+    for (const søppel of ['', 'ikke en url', 'file:///etc/passwd/..']) {
+        const r = beskrivUrl(søppel);
+        sjekk(`${JSON.stringify(søppel)}: svarer med noe`, typeof r === 'object' && r !== null, true);
+    }
+    sjekk('ugyldig URL sier fra', typeof beskrivUrl('tull').feil === 'string', true);
+}
+
+// ---------- FLYTVAR: ingen vei til andre miljøvariabler ----------
+//
+// Uten dette mønsteret er flyt-prøven en vei til å lese hvilken som helst
+// app setting. `?envVar=STORAGE_CONNECTION_STRING` ville vært det første
+// noen prøvde.
+{
+    const m = rå.match(/const FLYTVAR = (\/.+\/);/);
+    sjekk('FLYTVAR finnes', !!m, true);
+    const FLYTVAR = new RegExp(m[1].slice(1, -1));
+
+    for (const navn of ['PROVE_FLOW_URL', 'VARSLING_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL']) {
+        sjekk(`slipper gjennom ${navn}`, FLYTVAR.test(navn), true);
+    }
+    // Alt det som IKKE skal kunne leses.
+    for (const navn of ['STORAGE_CONNECTION_STRING', 'HASH_SALT', 'OTP_HMAC_KEY',
+        'BACKUP_PASSPHRASE', 'FLOW_CALLBACK_KEY', 'ADMIN_UPNS', 'GRAPH_CLIENT_SECRET',
+        'ANTHROPIC_API_KEY', 'PATH', 'flow_url', 'X_FLOW_URL_EKSTRA']) {
+        sjekk(`stopper ${navn}`, FLYTVAR.test(navn), false);
+    }
+}
+
+// ---------- tabellprøven ----------
+{
+    sjekk('krever admin', (kode.match(/if \(!erAdmin\(upn\)\)/g) || []).length >= 3, true);
+    // Skriving er opt-in. En diagnose som skriver i en ekte tabell uten at
+    // noen ba om det, er ikke en diagnose.
+    sjekk('skriving er opt-in', /const skriv = request\.query\.get\('skriv'\) === 'ja'/.test(kode), true);
+    sjekk('leser uten skriving', /if \(!skriv\)/.test(kode), true);
+    // Prøveraden må ryddes, og en mislykket rydding må SIES.
+    sjekk('sletter prøveraden', /deleteEntity\('mi-prove'/.test(kode), true);
+    sjekk('sier fra hvis ryddingen feiler', /ble IKKE slettet og må fjernes manuelt/.test(kode), true);
+    // Innholdet i tabellen er persondata. Bare antallet skal ut.
+    sjekk('rapporterer antall, ikke rader', /antallLest: funnet\.length/.test(kode), true);
+    sjekk('ingen rader i svaret', /svar\.lese = \{ ok: true, antallLest/.test(kode), true);
+}
+
+// ---------- flytprøven ----------
+{
+    sjekk('URL-en hentes fra app settings, ikke fra kallet',
+        /const url = process\.env\[navn\]/.test(kode), true);
+    sjekk('navnet må matche FLYTVAR', /if \(!FLYTVAR\.test\(navn\)\)/.test(kode), true);
+    // URL-en skal beskrives, aldri settes inn rå.
+    sjekk('URL-en beskrives', /url: beskrivUrl\(url\)/.test(kode), true);
+    // URL-en skal aldri stå rått i svaret — hverken som verdi i objektet
+    // eller tilordnet etterpå.
+    sjekk('ingen rå url som objektverdi', /[:,]\s*url\s*[,}]/.test(kode), false);
+    sjekk('ingen rå url tilordnet svaret', /svar\.\w+\s*=\s*url\s*;/.test(kode), false);
+    // Tokenet går i Authorization-headeren, aldri i svaret.
+    sjekk('token i headeren', /Authorization: `Bearer \$\{token\}`/.test(kode), true);
+    // Samme for tokenet. Legitimt er `{ ok, claims: claimsFra(token) }` og
+    // bruken i Authorization-headeren — alt annet er en lekkasje.
+    sjekk('ingen rått token som objektverdi', /[:,]\s*token\s*[,}]/.test(kode), false);
+    sjekk('ingen rått token tilordnet svaret', /svar\.\w+\s*=\s*token\s*;/.test(kode), false);
+    // Svaret fra flyten avkortes — den kan returnere hva som helst.
+    sjekk('svaret avkortes', /svarUtdrag: String\(tekst\)\.slice\(0, 300\)/.test(kode), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

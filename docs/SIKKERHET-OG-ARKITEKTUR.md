@@ -314,7 +314,7 @@ fem som ikke har det, er erklært med begrunnelse i koden, og
 <!-- GENERERT:api-nøkkeltall -->
 | | |
 |---|---|
-| Endepunkter i alt | 134 |
+| Endepunkter i alt | 136 |
 | Anonyme i SWA-gatewayen | 39 |
 | — av dem med vakt i handleren | 34 |
 | — av dem åpne med vilje, erklært og begrunnet | 5 |
