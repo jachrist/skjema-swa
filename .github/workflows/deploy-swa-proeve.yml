@@ -39,3 +39,16 @@ jobs:
           api_location: ""
           output_location: ""
           skip_app_build: true
+          # Uten disse to havnet deployen et annet sted enn production:
+          # workflowen gikk grønt 14.10.2026, og rota serverte fortsatt
+          # «Congratulations on your new site!».
+          #
+          # Semantikken er at `deployment_environment` overstyrer alt, og at
+          # en tom verdi sammen med `production_branch` sender andre grener
+          # til preview. Settes `production_branch` til grenen vi faktisk
+          # kjører fra, ER den produksjonsgrenen, og deployen går dit.
+          #
+          # ${{ github.ref_name }} framfor et fast navn, fordi forsøket
+          # kjøres fra en arbeidsgren som skifter navn.
+          production_branch: ${{ github.ref_name }}
+          deployment_environment: ''
