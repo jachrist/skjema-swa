@@ -1364,22 +1364,22 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 
 **Ressurser i dev-tenanten** (8g.1)
 
-- [ ] Ressursgruppe
-- [ ] Storage-konto — **tom**, ingen kopi fra pilot
-- [ ] Key Vault
-- [ ] **User-assigned** managed identity (egen ressurs, ikke system-assigned)
-- [ ] Function App, knyttet til identiteten
-- [ ] Static Web App — **Standard**-plan
-- [ ] Entra app-registrering + redirect URI
+- [x] Ressursgruppe: rg-skjema-3-dev
+- [x] Storage-konto — **tom**, ingen kopi fra pilot: stskjema3dev
+- [x] Key Vault: kv-skjema-3-dev
+- [x] **User-assigned** managed identity (egen ressurs, ikke system-assigned): mi-skjema-3-dev
+- [x] Function App, knyttet til identiteten: fa-skjema-3-dev
+- [x] Static Web App — **Standard**-plan: Skjema-3-dev
+- [x] Entra app-registrering + redirect URI: ad-skjema-3-dev
 
 `scripts/steg1-funcapp.ps1` gjør 1–6. Tørrkjører uten `-Kjor`.
 
 **Roller på identiteten** (8g.2) — ingen av dem heter `Contributor`
 
-- [ ] `Storage Table Data Contributor`
-- [ ] `Storage Blob Data Contributor`
-- [ ] `Storage Blob Delegator`
-- [ ] `Key Vault Secrets User`
+- [x] `Storage Table Data Contributor`
+- [x] `Storage Blob Data Contributor`
+- [x] `Storage Blob Delegator`
+- [x] `Key Vault Secrets User`
 
 **Repoet** (8g.3) — alle må med, ellers svarer de ulikt
 
