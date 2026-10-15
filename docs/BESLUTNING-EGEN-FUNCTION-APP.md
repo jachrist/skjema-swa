@@ -676,9 +676,13 @@ delt nøkkel.
 **Hvordan:** `GET /api/diagnose/mi-tabell` og `GET /api/diagnose/mi-flyt` på
 `testfapp`, gjennom prøve-SWA-en.
 
-**Kort fasit: begge stegene er bevist.** Tabellen leses og skrives med
-managed identity uten tilkoblingsstreng, og en flyt uten SAS-signatur i
-URL-en svarer 200 på et MI-token.
+**Kort fasit: begge stegene er bevist, i full bredde.** Tabell og blob leses
+og skrives med managed identity uten tilkoblingsstreng, en SAS laget med
+user delegation key henter blobben, og en flyt uten SAS-signatur i URL-en
+svarer 200 på et MI-token.
+
+Premissene forslaget hviler på er dermed målt, ikke antatt. Det som
+gjenstår i steg 3 er å skrive om koden — ikke å finne ut om det går.
 
 Veien dit er verdt å lese, for begge stegene begynte med en 403 som så ut
 som et nei og ikke var det. En avvisning fra *autorisasjons*-leddet betyr at
@@ -846,7 +850,7 @@ ut av lista, fjernes.
 
 | Steg | Status | Hva som mangler |
 |---|---|---|
-| 3 — storage uten delt nøkkel | **Bevist 15.10.2026** for tabell | Blob prøves når `blob.js` legges om |
+| 3 — storage uten delt nøkkel | **Bevist 15.10.2026** — tabell og blob, SAS inkludert | ingenting |
 | 7 — flyt uten SAS-signatur | **Bevist 15.10.2026** | ingenting |
 
 ### Steg 3 er bevist for tabell
@@ -959,6 +963,32 @@ Hva som ikke kommer ut av endepunktet:
 
 Prøveblobben heter `mi-prove-<tidsstempel>.txt` og slettes igjen. Skriving
 og opprydding rapporteres hver for seg, som i tabellprøven.
+
+#### Utfallet
+
+**Dato:** 15.10.2026
+**Kall:** `?konto=stfhsskjemapilot&container=hello-test&skriv=ja`, med
+`Storage Blob Data Contributor` og `Storage Blob Delegator` på kontoen.
+
+| Felt | Verdi |
+|---|---|
+| `lese.ok` | ja, `antallLest: 3` |
+| `delegering.ok` | ja |
+| `delegering.nokkel.signedObjectId` | `64eac771-…` — MI-ens egen `oid` |
+| `delegering.nokkel.signedService` | `b` (blob) |
+| `skrive.ok` | ja |
+| **`sasKall.ok`** | **ja, statuskode 200** |
+| **`sasKall.fikkRiktigInnhold`** | **ja** |
+| `rydding.ok` | ja |
+
+`sasKall` er den avgjørende: en SAS laget med delegeringsnøkkelen hentet
+blobben, og innholdet stemte med det prøven selv skrev. **`backup.js` kan
+legges om til user delegation SAS.**
+
+`signedObjectId` bekrefter at det var riktig identitet som signerte — ikke
+bare at *en* nøkkel kom tilbake.
+
+Med dette er steg 3 komplett: tabell, blob, delegering og SAS, alle målt.
 
 ## 9. Risiko
 
