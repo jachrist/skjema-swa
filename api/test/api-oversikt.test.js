@@ -37,7 +37,7 @@ function sjekk(navn, faktisk, forventet) {
 }
 
 const rot = path.join(__dirname, '..', '..');
-const MILJØER = ['pilot', 'prod'];
+const MILJØER = ['dev', 'pilot', 'prod'];
 
 // ---------- parseren må faktisk finne noe ----------
 //
@@ -111,20 +111,35 @@ for (const miljo of MILJØER) {
     const nøkkel = regler => (regler || [])
         .filter(r => r.route && String(r.route).startsWith('/api'))
         .map(r => `${r.route} :: ${JSON.stringify(r.allowedRoles || null)}`);
-    const [pilot, prod] = MILJØER.map(m => nøkkel(oversikt.lesRegler(m)));
-    // Rapporter BARE det som skiller. En full liste av 28 regler på begge
-    // sider gjør utslaget uleselig, og en feilmelding ingen leser er en
-    // feilmelding som blir stående.
-    sjekk('ingen api-ruteregel bare i pilot', pilot.filter(r => !prod.includes(r)), []);
-    sjekk('ingen api-ruteregel bare i prod', prod.filter(r => !pilot.includes(r)), []);
-    // Rekkefølgen teller for seg: SWA bruker FØRSTE treff, så to filer med de
-    // samme reglene i ulik rekkefølge svarer ulikt. En anonym regel flyttet
-    // ned under `/api/*` slutter å gjelde, uten at noen regel er endret.
-    // Bare FØRSTE avvik rapporteres: flyttes én regel, er alle indekser etter
-    // den forskjøvet, og en liste over 28 «avvik» sier ingenting om hva som
-    // faktisk ble flyttet.
-    const i = pilot.findIndex((r, k) => r !== prod[k]);
-    sjekk('og i samme rekkefølge', i === -1 ? null : { nr: i, pilot: pilot[i], prod: prod[i] }, null);
+
+    // Sammenlignes mot det FØRSTE miljøet, ikke parvis. Da vokser verken
+    // koden eller utslaget når et fjerde miljø kommer til — og det gjorde
+    // det: lista var hardkodet til [pilot, prod] da `dev` ble lagt til
+    // 15.10.2026, og en destrukturering med to navn tar imot tre verdier
+    // uten å si fra.
+    const [første, ...resten] = MILJØER;
+    const fasit = nøkkel(oversikt.lesRegler(første));
+    sjekk('mer enn ett miljø å sammenligne', resten.length > 0, true);
+
+    for (const miljø of resten) {
+        const her = nøkkel(oversikt.lesRegler(miljø));
+        // Rapporter BARE det som skiller. En full liste av 28 regler på begge
+        // sider gjør utslaget uleselig, og en feilmelding ingen leser er en
+        // feilmelding som blir stående.
+        sjekk(`ingen api-ruteregel bare i ${første} (mot ${miljø})`,
+            fasit.filter(r => !her.includes(r)), []);
+        sjekk(`ingen api-ruteregel bare i ${miljø}`,
+            her.filter(r => !fasit.includes(r)), []);
+        // Rekkefølgen teller for seg: SWA bruker FØRSTE treff, så to filer med
+        // de samme reglene i ulik rekkefølge svarer ulikt. En anonym regel
+        // flyttet ned under `/api/*` slutter å gjelde, uten at noen regel er
+        // endret. Bare FØRSTE avvik rapporteres: flyttes én regel, er alle
+        // indekser etter den forskjøvet, og en liste over 28 «avvik» sier
+        // ingenting om hva som faktisk ble flyttet.
+        const i = fasit.findIndex((r, k) => r !== her[k]);
+        sjekk(`og i samme rekkefølge (${miljø})`,
+            i === -1 ? null : { nr: i, [første]: fasit[i], [miljø]: her[i] }, null);
+    }
 }
 
 // ---------- unntakslista skal ikke forfalle ----------
