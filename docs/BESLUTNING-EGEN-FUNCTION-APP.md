@@ -676,7 +676,9 @@ delt nøkkel.
 **Hvordan:** `GET /api/diagnose/mi-tabell` og `GET /api/diagnose/mi-flyt` på
 `testfapp`, gjennom prøve-SWA-en.
 
-**Kort fasit: steg 7 er bevist, steg 3 mangler fortsatt riktig rolle.**
+**Kort fasit: begge stegene er bevist.** Tabellen leses og skrives med
+managed identity uten tilkoblingsstreng, og en flyt uten SAS-signatur i
+URL-en svarer 200 på et MI-token.
 
 Veien dit er verdt å lese, for begge stegene begynte med en 403 som så ut
 som et nei og ikke var det. En avvisning fra *autorisasjons*-leddet betyr at
@@ -844,8 +846,24 @@ ut av lista, fjernes.
 
 | Steg | Status | Hva som mangler |
 |---|---|---|
-| 3 — storage uten delt nøkkel | Autentisering vist, autorisasjon mangler | `Storage Table Data Contributor` på `stfhsskjemapilot` |
+| 3 — storage uten delt nøkkel | **Bevist 15.10.2026** for tabell | Blob prøves når `blob.js` legges om |
 | 7 — flyt uten SAS-signatur | **Bevist 15.10.2026** | ingenting |
+
+### Steg 3 er bevist for tabell
+
+**Dato:** 15.10.2026
+**Kall:** `?konto=stfhsskjemapilot&tabell=HelloTest&skriv=ja`, med
+`Storage Table Data Contributor` på kontoen.
+
+| Felt | Verdi |
+|---|---|
+| `lese.ok` | ja, `antallLest: 3` |
+| `skrive.ok` | ja |
+| `rydding.ok` | ja |
+
+Lesing, skriving og opprydding med `DefaultAzureCredential`, uten
+tilkoblingsstreng. `STORAGE_CONNECTION_STRING` er dermed beviselig
+overflødig for tabellbruk.
 
 ### Fellen i steg 3: `Contributor` er ikke en datarolle
 
@@ -859,8 +877,47 @@ likevel, gjennom en sidedør, med den delte nøkkelen vi holder på å fjerne.
 Rollen skal fjernes, ikke suppleres.
 
 Riktig rolle er `Storage Table Data Contributor` (eller `…Data Reader` for
-bare lesing). For blob kommer `Storage Blob Data Contributor` i tillegg når
-`blob.js` legges om.
+bare lesing).
+
+### Hva steg 3 krever i den ekte appen
+
+Rollene:
+
+| Rolle | Hvorfor |
+|---|---|
+| `Storage Table Data Contributor` | `lib/storage.js` — all tabellbruk |
+| `Storage Blob Data Contributor` | `lib/blob.js` — vedlegg, logoer, backup |
+| `Storage Blob Delegator` | SAS-en i `backup.js`, se under |
+
+Kø og filshare brukes ikke, så de trenger ingen roller.
+
+**To steder er ikke en utbytting av klient.** Resten av koden bytter
+`fromConnectionString(cs)` mot `new Klient(url, legitimasjon())` og er ferdig.
+Disse to er ikke det:
+
+**1. SAS-en i `backup.js`.** `lagSasUrl()` river kontonøkkelen ut av
+`STORAGE_CONNECTION_STRING` og signerer med den:
+
+```js
+const { konto, key } = hentKontoOgNokkel();   // parser AccountKey ut av strengen
+const cred = new StorageSharedKeyCredential(konto, key);
+```
+
+En managed identity kan ikke bygge en `StorageSharedKeyCredential` — det
+finnes ingen nøkkel å signere med. MI-veien er `getUserDelegationKey()` og
+signering med den i stedet, og det er `Storage Blob Delegator` som gir rett
+til å be om den. SAS-en er på 24 timer (`SAS_GYLDIG_TIMER`), og user
+delegation SAS har tak på 7 døgn, så levetiden er ikke noe hinder.
+
+Dette er det eneste stedet i `api/src` som genererer en SAS.
+
+**2. `kontoNavnFra()`.** Koden henter kontonavnet ut av tilkoblingsstrengen
+flere steder (`nokkelkalender-storage.js`, `todo-storage.js`, `backup.js`).
+Uten streng finnes ikke navnet, og `STORAGE_ACCOUNT_NAME` går fra
+`kun_dokumentasjon` i `config/env.*.json` til en **påkrevd** app setting.
+`api/test/env-inventar.test.js` vil kreve det idet koden begynner å lese den.
+
+Begge er små, men ingen av dem er synlige fra «bytt klientkonstruktøren».
 
 ## 9. Risiko
 
