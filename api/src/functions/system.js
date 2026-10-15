@@ -70,7 +70,7 @@ const HEMMELIGE_ENV = [
  */
 const KUN_I_MILJO = {
     AAD_CLIENT_SECRET: {
-        miljoer: ['pilot', 'development', 'lokal'],
+        miljoer: ['dev', 'pilot', 'lokal'],
         merknad: 'Prod bruker sertifikat fra Key Vault i stedet — tom verdi er riktig her.'
     }
 };
@@ -93,6 +93,12 @@ const KUN_I_MILJO = {
  */
 const MILJO_ALIAS = { production: 'pilot' };
 
+// `development` sto her til 15.10.2026, som alias for pilot. Da `dev` ble et
+// ekte miljø, ville det navnet pekt på feil sted — og det er den samme fellen
+// aliaset selv ble laget for å unngå, speilvendt. Det er fjernet også i
+// scripts/build-config.js; et alias som bare finnes ett av stedene, er verre
+// enn ingen.
+
 /**
  * Miljøene vi kjenner. Et navn utenfor denne mengden er «vet ikke», ikke
  * «gjelder ikke».
@@ -104,7 +110,7 @@ const MILJO_ALIAS = { production: 'pilot' };
  * miljønavn. En hemmelighet som mangler i et miljø vi ikke kjenner skal meldes,
  * ikke ties i hjel.
  */
-const KJENTE_MILJOER = new Set(['pilot', 'prod', 'development', 'lokal']);
+const KJENTE_MILJOER = new Set(['dev', 'pilot', 'prod', 'lokal']);
 
 function miljonavn() {
     const raatt = String(process.env.MILJO || '').trim().toLowerCase();

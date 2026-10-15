@@ -1,0 +1,52 @@
+name: Deploy frontend til dev-SWA
+
+# Steg 0 i docs/BESLUTNING-EGEN-FUNCTION-APP.md — dev-miljøet.
+#
+# DENNE DEPLOYER BARE FRONTEND. `api_location: ""` er ikke en forglemmelse:
+# dev kjører API-et på en lenket Function App, ikke på SWA Managed Functions.
+# API-et rulles ut med «Deploy API til Function App», og de to er separate
+# jobber som kan bli hengende hver for seg. Derfor bærer /api/ping og
+# /js/config.js hver sin commit-SHA — avviker de, vet du hvilken som henger.
+#
+# KUN manuell kjøring inntil videre. Dev skal ikke deployes av en push til
+# main før miljøet står og noen har sett at det virker; en rød jobb ved hver
+# push er en jobb folk slutter å lese.
+on:
+  workflow_dispatch:
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          lfs: false
+
+      - name: Sett opp Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Samme regel som de andre deploy-jobbene: testene først, og de stopper
+      # utrullingen hvis de er røde. Ingen npm ci — Azure-SDK-ene lastes lat.
+      - name: Kjør tester
+        run: node scripts/kjor-tester.js
+
+      # Skriver frontend/js/config.js og frontend/staticwebapp.config.json.
+      # Uten dette steget serverer dev pilotens konfigurasjon, inkludert
+      # pilotens tenant i openIdIssuer — og innloggingen peker feil sted.
+      - name: Bygg konfigurasjon
+        run: node scripts/build-config.js dev
+
+      - name: Build And Deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_DEV }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "./frontend"
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
