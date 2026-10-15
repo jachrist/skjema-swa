@@ -180,38 +180,59 @@ de skal være kjent før noen planlegger rundt dem.
 
 ## 7. Flytene: kan de bruke Managed Identity?
 
-Delvis ja, og delene er ulikt sikre. Dette er en **egen beslutning per flyt**,
-ikke en del av migreringen over. En flytendring er dyr: utrulling er en
-fire-stegs prosess på tvers av tenanter (`docs/FLYT-DEPLOY.md`).
+**Ja.** Det var et åpent spørsmål da dette kapitlet ble skrevet; 15.10.2026
+ble det kjørt ende til ende. Se 8f for målingen.
+
+Det er fortsatt en **egen beslutning per flyt**, ikke en del av migreringen
+over. En flytendring er dyr: utrulling er en fire-stegs prosess på tvers av
+tenanter (`docs/FLYT-DEPLOY.md`), så gevinsten må veies mot kostnaden for
+hver enkelt flyt.
 
 ### 7.1 Entra-auth på HTTP-triggeren
 
 Power Automates «when an HTTP request is received»-trigger kan kreve Entra i
-stedet for SAS. Settes «hvem kan utløse flyten» til **Any user in my tenant**
-eller **Specific users in my tenant**, forsvinner `sig=`-parameteren fra
+stedet for SAS. Settes «hvem kan utløse flyten» til **Specific users in my
+tenant** med identitetens `oid` i lista, forsvinner `sig=`-parameteren fra
 URL-en, og kalleren må sende et bearer-token.
 
-Det ville fjernet hele «lenken er en hemmelighet»-kategorien for flytene
-(9.1 i overleveringsdokumentet), og gjort flyt-URLene til ordinære,
-ikke-sensitive konfigurasjonsverdier.
+Det fjerner hele «lenken er en hemmelighet»-kategorien for flytene (9.1 i
+overleveringsdokumentet), og gjør flyt-URLene til ordinære, ikke-sensitive
+konfigurasjonsverdier.
 
-Microsofts Power Platform-blogg oppgir at allow-lista kan inneholde
-**objekt-ID-er for tjenestehovedstoler**, ikke bare brukere — og en managed
-identity *er* en tjenestehovedstol. Da ville Function App-ens MI kunne kalle
-flyten direkte.
+Gevinsten er større enn bare det: **en SAS-signatur på avveie må byttes, og
+alle som bruker den må få den nye. En `oid` som skal ut av lista, fjernes.**
+Det er forskjellen på en hemmelighet og en tilgang.
 
-**To forbehold, begge reelle:**
+#### Prøvd, ikke antatt
 
-* **Flyten ser ikke hvem som kalte.** Tokenet og claimene er ikke tilgjengelige
-  inne i flyten. Revisjonssporet flytter til Entras pålogningslogger. For
-  backup-kvitteringer betyr det lite; for noe som utløser en masseutsending
-  betyr det mer.
-* **At en MI faktisk får et token med Flow-tjenestens audience, må prøves.**
-  Kildene beskriver gjennomgående en app-registrering med client credentials,
-  ikke en managed identity. Det er plausibelt at MI virker — en MI kan be om
-  hvilken som helst audience — men dette er akkurat den typen påstand dette
-  repoet har brent seg på å tro på uten å kjøre den. **Prøv med én flyt i
-  pilot før noen planlegger rundt det.**
+Kjørt 15.10.2026 med `testfapp`s managed identity mot en testflyt på
+dev-tenanten (8f): `harSignatur: false`, og flyten svarte **200**.
+
+Tre ting ble avklart underveis, og alle tre er verdt å ha skrevet ned før
+noen prøver dette på en ekte flyt:
+
+* **Allow-lista tar `oid`, ikke `appid`.** En managed identity har begge.
+  `appid` ble prøvd først og avvist med `MisMatchingOAuthClaims`.
+* **Audiencen må ha skråstrek til slutt.** Microsoft sier det rett ut:
+  *«Audience values must be an exact match, including trailing slashes»* —
+  for public cloud `https://service.flow.microsoft.com/`. Sammenligningen er
+  bokstavelig og feiler på ett tegn.
+* **`DefaultAzureCredential` klipper den skråstreken av.** SDK-en tar et
+  *scope* (`<ressurs>/.default`) og oversetter det til plattformens
+  `resource`-parameter ved å fjerne `/.default`. Avsluttende skråstrek
+  forsvinner underveis, og `aud` blir feil. Tokenet må hentes fra
+  `IDENTITY_ENDPOINT` med `resource` ordrett. Dette er den fellen som gjorde
+  at prøven feilet tre ganger før den virket, og den er usynlig uten et felt
+  som viser hva som faktisk ble spurt om.
+
+**Ikke prøvd:** «Any user in my tenant». Det er ikke avklart om Power
+Automate regner en tjenestehovedstol som en «user» der. Den eksplisitte lista
+virker, og er uansett den strammere innstillingen.
+
+**Forbeholdet som står:** flyten ser ikke hvem som kalte. Tokenet og claimene
+er ikke tilgjengelige inne i flyten. Revisjonssporet flytter til Entras
+pålogningslogger. For backup-kvitteringer betyr det lite; for noe som utløser
+en masseutsending betyr det mer.
 
 ### 7.2 Det som kanskje er bedre: fjern flyten
 
@@ -232,6 +253,13 @@ Cyberforsvaret.
 Avveiningen: e-postmaler og -formatering flytter fra Power Automate inn i kode.
 Det er en fordel for sporbarhet og test, og en ulempe for den som er vant til å
 endre teksten i flyten.
+
+**Dette er IKKE prøvd.** 7.1 er målt; 7.2 er fortsatt et forslag. Prøven i
+8e viste at identiteten får et token for `https://graph.microsoft.com/`, men
+et token er ikke tilgang — det lærte vi to ganger i 8f. At en approlle
+faktisk kan tildeles en managed identity, og at `Sites.Selected` og
+`Mail.Send` virker med den, er ikke verifisert her. Det er en egen prøve, og
+den bør kjøres i dev før noen planlegger rundt den.
 
 ---
 
@@ -883,7 +911,7 @@ Skråstreken var hele forskjellen. `ressursSomBleSpurtOm` og `aud` viser at
 den gikk ut og kom tilbake, og flyten svarte 200.
 
 **Det grunnleggende spørsmålet er dermed besvart: Power Automate godtar en
-tjenestehovedmann som avsender.** Den må stå i triggerens liste med `oid` —
+tjenestehovedstol som avsender.** Den må stå i triggerens liste med `oid` —
 ikke `appid`, som ble prøvd og avvist.
 
 Dette er hele steg 7, kjørt ende til ende:
