@@ -1,8 +1,21 @@
 # Key Vault-secrets
 
-Hemmeligheter som hører hjemme i Key Vault: **`kv-fhsskjema-pilot`** for pilot,
-**`fhs-kv-01`** for prod. `config/env.*.json` viser hvilken secret hver
-app-setting henter verdien sin fra.
+Hemmeligheter som hører hjemme i Key Vault: **`kv-skjema-3-dev`** for dev,
+**`kv-fhsskjema-pilot`** for pilot, **`fhs-kv-01`** for prod.
+`config/env.*.json` viser hvilken secret hver app-setting henter verdien sin
+fra.
+
+> **Dev er annerledes, og det er poenget med miljøet.** Der er API-et en
+> frittstående Function App, og den LØSER `@Microsoft.KeyVault(...)`-referanser
+> (prøvd 14.10.2026, se 8d i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`). I dev
+> settes app settingen derfor til
+> `@Microsoft.KeyVault(SecretUri=https://kv-skjema-3-dev.vault.azure.net/secrets/<navn>/)`,
+> og hemmeligheten finnes aldri i klartekst noe sted utenfor Key Vault.
+>
+> Alt som står under om klartekst og rotasjon gjelder **pilot og prod**, som
+> kjører på SWA Managed Functions. Blandes de to oppskriftene, ender dev med
+> klartekst det ikke trenger — eller pilot med en referansestreng den ikke kan
+> løse, som er nøyaktig feilen 12.10.2026.
 
 > Navnene sto feil her og i `docs/SECURITY.md` til 12.10.2026 («-prod»-suffiks
 > på pilot). De er nå lest ut av pilots levende `KEYVAULT_NAME` og av
