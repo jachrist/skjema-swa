@@ -21,7 +21,9 @@
  * Fire krav:
  *
  *   **Ingenting koden leser mangler.** Hver `process.env.X` i `api/src` skal
- *   stå i BEGGE de aktive miljøfilene.
+ *   stå i BEGGE de aktive miljøfilene. Unntaket er variabler PLATTFORMEN
+ *   setter selv — de er ikke app settings, og er erklært i
+ *   `SATT_AV_PLATTFORMEN` i koden som leser dem.
  *
  *   **Ingenting står der uten grunn.** En nøkkel som ikke leses av koden må
  *   enten være `public: true` (den går til frontend) eller merket
@@ -110,7 +112,40 @@ function vistIHelsesjekken() {
  */
 const DATASTYRTE_OPPSLAG = ['process.env[rad.EnvVar]'];
 
-const lest = lestAvKoden();
+/**
+ * Variabler PLATTFORMEN setter, som derfor ikke er app settings.
+ *
+ * `IDENTITY_ENDPOINT` og `IDENTITY_HEADER` settes av App Service når en
+ * managed identity er på. Ingen fører dem opp i SWA Configuration, og ingen
+ * limer inn en verdi for dem. Krevde inventaret at de sto i
+ * `config/env.*.json`, ville lista påstått at noen må sette dem.
+ *
+ * Erklæringen bor i koden som leser dem — `SATT_AV_PLATTFORMEN` i
+ * `mi-diagnose.js` — og leses HERFRA. En liste i denne testen ville vært en
+ * kopi til av den samme regelen, og kopier nummer to er feilklassen dette
+ * repoet lager flest av.
+ */
+function sattAvPlattformen() {
+    const f = path.join(rot, 'api', 'src', 'functions', 'mi-diagnose.js');
+    const s = fs.readFileSync(f, 'utf8');
+    const m = /const SATT_AV_PLATTFORMEN = \[([^\]]*)\]/.exec(s);
+    if (!m) {
+        feil++;
+        console.log('FEIL  fant ikke SATT_AV_PLATTFORMEN i mi-diagnose.js');
+        return new Set();
+    }
+    return new Set([...m[1].matchAll(/'([A-Z][A-Z0-9_]*)'/g)].map(x => x[1]));
+}
+
+const lestRått = lestAvKoden();
+const plattformsatte = sattAvPlattformen();
+// Lista skal ikke kunne bli et gjemmested. Et navn der som koden IKKE leser,
+// er en rest — og en rest her slår av en kontroll uten at noen ser det.
+sjekk('ingen rest i plattform-lista',
+    [...plattformsatte].filter(n => !lestRått.has(n)).sort(), []);
+sjekk('plattform-lista er ikke tom', plattformsatte.size > 0, true);
+
+const lest = new Set([...lestRått].filter(n => !plattformsatte.has(n)));
 const vist = vistIHelsesjekken();
 const kvKart = fs.readFileSync(path.join(rot, 'config', 'keyvault-secrets.md'), 'utf8');
 

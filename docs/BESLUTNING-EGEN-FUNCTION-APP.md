@@ -651,7 +651,7 @@ koden og at audiencen godtas av Entra. Den sier ingenting om hvorvidt
 rolletildelingene faktisk gir lese- og skrivetilgang til tabellene, eller om
 en flyt godtar tokenet.
 
-De to neste prøvene er derfor:
+De to neste prøvene er derfor — **begge er kjørt, se 8f**:
 
 * **Steg 3:** les og skriv en tabell med `DefaultAzureCredential` mot
   datalagringskontoen. Først da er kontostrengen beviselig overflødig.
@@ -670,6 +670,157 @@ bare hvis Function App-en ligger i **samme tenant** som dev-flytene. En
 managed identity kan ikke stå i en allow-liste i en annen tenant; det er
 samme begrensning som gjør at `TODO_STORAGE_CONNECTION_STRING` må være en
 delt nøkkel.
+
+## 8f. Utfallet av de to tilgangsprøvene — steg 3 og 7
+
+**Hvordan:** `GET /api/diagnose/mi-tabell` og `GET /api/diagnose/mi-flyt` på
+`testfapp`, gjennom prøve-SWA-en. Koden som svarte bar commit `91af3e9`.
+
+Begge prøvene endte i 403, og **begge 403-ene er positive delresultater.**
+Det er verdt å si tydelig, for en rød statuskode leses lett som et nei: i
+begge tilfellene ble tokenet godtatt som legitimasjon, og det som manglet var
+en tildeling eller en liste på mottakersiden.
+
+### Tabellen — tokenet slipper inn, rollen mangler (steg 3)
+
+**Dato:** 14.10.2026, 19:33 UTC (klokkeslettet står i feilmeldingen fra
+Table Storage).
+**Kall:** `?konto=stfhsskjemapilot&tabell=HelloTest`
+
+| Felt | Verdi |
+|---|---|
+| `lese.ok` | nei |
+| `lese.statuskode` | 403 |
+| feilkode | `AuthorizationPermissionMismatch` |
+
+**Hva dette fastslår:** autentiseringen gikk gjennom hele veien fra managed
+identity til `storage.azure.com`. `AuthorizationPermissionMismatch` er
+dataplanets *autorisasjons*-avvisning. Var tokenet ugyldig, utløpt eller
+utstedt for en annen audience, ville svaret vært `AuthenticationFailed` med
+401 — en annen feilkode, fra et annet ledd.
+
+**Hva som gjenstår:** rolletildelingen. Identiteten `64eac771-…` har ingen av
+`Storage Table Data`-rollene på `stfhsskjemapilot`.
+
+Fellen her er verdt å skrive ned, for den koster alltid en runde:
+**kontrollplan er ikke dataplan.** `Reader`, `Contributor` og `Owner` på
+storage-kontoen gir *ingen* lese- eller skrivetilgang til tabellrader. Bare
+`Storage Table Data Reader` og `Storage Table Data Contributor` gjør det, og
+en tildeling som ser riktig ut i portalen gir samme 403 hvis den er av feil
+type.
+
+I portalen går den korteste veien fra identiteten, ikke fra kontoen:
+**Function App → Identity → System assigned → Azure role assignments**. Der
+er prinsipalen forvalgt. Fra kontoens IAM-fane må man velge **Managed
+identity** som medlemstype — under *User, group, or service principal* er
+managed identities ofte ikke søkbare på navn, og det er der folk konkluderer
+feil.
+
+### Flyten — signaturen er borte, policyen mangler avsenderen (steg 7)
+
+**Dato:** 15.10.2026
+**Kall:** `?envVar=TESTFLYT_FLOW_URL`
+
+| Felt | Verdi |
+|---|---|
+| `url.harSignatur` | **nei** |
+| `url.vertsnavn` | `…environment.api.powerplatform.com` |
+| `url.antallParametere` | 1 |
+| `token.ok` | ja |
+| `token.claims.aud` | `https://service.flow.microsoft.com` |
+| `token.claims.appid` | `3be2b536-…` |
+| `token.claims.oid` | `64eac771-…` |
+| `token.claims.tid` | `e4fcc393-…` |
+| `kall.statuskode` | 403 |
+| feilkode | `MisMatchingOAuthClaims` |
+
+**`harSignatur: false` er hovedfunnet.** Trigger-URL-en bærer ikke lenger
+`sig=`. Det var den åpne antagelsen bak hele steg 7, og den holder: en
+Power Automate-flyt *kan* settes til å kreve Entra i stedet for en
+SAS-signatur i query-strengen. Verten skifter samtidig fra Logic
+Apps-formen til `environment.api.powerplatform.com`, som er OAuth-formen av
+invoke-endepunktet.
+
+Dermed er svakhet 9.1 i `docs/SIKKERHET-OG-ARKITEKTUR.md` — «lenken *er*
+nøkkelen» — i prinsippet lukkbar. Ikke lukket, men ikke lenger en antagelse.
+
+**Hva 403-en betyr:** flyten tok imot bearer-legitimasjonen, leste claims ut
+av den og sammenlignet dem mot en tilgangspolicy. Den fant ikke avsenderen i
+lista. `MisMatchingOAuthClaims` er policy-sammenligningens feilkode, ikke
+tokenets: et ugyldig eller feil signert token gir 401 `Unauthorized`, uten
+noen claims-vurdering.
+
+Tre av fire ledd står altså:
+
+1. URL-en kan kvitte seg med signaturen. **Vist.**
+2. Koden får et token for Flow-audiencen. **Vist** (8e, bekreftet her).
+3. Flyten godtar formen og evaluerer claims. **Vist.**
+4. Policyen tillater nettopp denne avsenderen. **Åpent.**
+
+### Punkt 4: skråstreken
+
+Begge varianter av allow-lista — `oid` og `appid` — ble prøvd 15.10.2026, og
+begge ga samme `MisMatchingOAuthClaims`. Da er ikke lista forklaringen.
+
+Microsofts dokumentasjon for HTTP-triggeren sier hvilke claims som kreves, og
+én setning avgjør saken:
+
+> Audience values must be an exact match, **including trailing slashes**.
+>
+> | Cloud | Audience |
+> |---|---|
+> | Public cloud | `https://service.flow.microsoft.com/` |
+
+Tokenet vårt bærer `aud: "https://service.flow.microsoft.com"` — **uten**
+skråstrek. Det er en bokstavelig strengsammenligning, og den feiler på ett
+tegn.
+
+**Og årsaken ligger i vårt eget lag, ikke i Entra.** `DefaultAzureCredential`
+tar et *scope* (`<ressurs>/.default`). På App Service oversetter SDK-en det
+til plattformens `resource`-parameter ved å klippe av `/.default`, og da
+forsvinner en avsluttende skråstrek i ressursen underveis. Vi har aldri bedt
+om audiencen dokumentasjonen beskriver.
+
+Plattformens eget identity-endepunkt tar `resource` ordrett. `mi-flyt` og
+`mi-token` fikk derfor en `tokenkilde`-parameter:
+
+```
+/api/diagnose/mi-flyt?envVar=TESTFLYT_FLOW_URL&tokenkilde=plattform
+/api/diagnose/mi-token?ressurs=https://service.flow.microsoft.com/&tokenkilde=plattform
+```
+
+| `tokenkilde` | Hvordan | `ressursSomBleSpurtOm` |
+|---|---|---|
+| `sdk` (standard) | `getToken('<ressurs>/.default')` | skråstreken klippes av |
+| `plattform` | `IDENTITY_ENDPOINT?resource=<ressurs>` | ordrett |
+
+Svaret bærer `ressursSomBleSpurtOm` nettopp for at det skal være **synlig**
+hvilken streng som faktisk gikk ut. Uten det feltet ville forskjellen mellom
+de to veiene vært usynlig i diagnosen, og det er hele forskjellen.
+
+`IDENTITY_HEADER` er legitimasjon på linje med tokenet: den leses, går i
+`X-IDENTITY-HEADER`, og kommer aldri ut i et svar eller en feilmelding.
+
+**Dette er en hypotese med en målbar konsekvens, ikke en konklusjon.** Den er
+riktig hvis `aud` kommer tilbake med skråstrek *og* flyten svarer 200 eller
+202. Kommer `aud` fortsatt uten, er det Entra som normaliserer, og da er
+skråstreken ikke noe vi kan skaffe — og steg 7 krever en app-registrering med
+client credentials i stedet for managed identity.
+
+Det grunnleggende spørsmålet står uansett til det er målt: **teller en
+tjenestehovedmann som «user»** for Power Automate? Svarer flyten 200 på et
+token med riktig audience, er svaret ja.
+
+### Status for de to stegene
+
+| Steg | Status | Hva som mangler |
+|---|---|---|
+| 3 — storage uten delt nøkkel | Autentisering vist, autorisasjon ikke prøvd | `Storage Table Data`-rolle på `stfhsskjemapilot` |
+| 7 — flyt uten SAS-signatur | Signaturen borte, token godtatt, `aud` avvist på skråstreken | Ett kall med `tokenkilde=plattform` |
+
+Ingen av dem er avkreftet. Ingen av dem er bevist. Begge mangler en
+tildeling, ikke en mekanisme — og det er en annen slags gjenstående arbeid
+enn det vi lette etter.
 
 ## 9. Risiko
 

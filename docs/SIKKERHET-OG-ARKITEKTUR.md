@@ -628,6 +628,10 @@ Tre ting i løsningen er «hemmelig fordi den som har URL-en, kommer inn»:
   dekryptert, inkludert personopplysninger i klartekst. Den skal ikke i
   e-post, Teams eller en sak.
 * **Power Automate trigger-URL-ene.** `sig=`-parameteren er signaturen.
+  Dette gjelder slik løsningen står i dag. Krever triggeren Entra i
+  stedet, forsvinner `sig=` helt — målt 15.10.2026, se 8f i
+  `docs/BESLUTNING-EGEN-FUNCTION-APP.md`. Ingen flyt i pilot eller prod
+  er lagt om.
 * **Utsendingslenkene.** Gir tilgang uten pålogging i 90 dager.
 
 Alle tre er riktige mekanismer for formålet, og alle tre feiler på samme måte:

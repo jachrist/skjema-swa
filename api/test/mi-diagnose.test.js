@@ -224,5 +224,115 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
     sjekk('svaret avkortes', /svarUtdrag: String\(tekst\)\.slice\(0, 300\)/.test(kode), true);
 }
 
-console.log(`\n${ok} OK, ${feil} feil`);
-process.exit(feil ? 1 : 0);
+// ---------- tokenkilde: skråstreken som avgjorde steg 7 ----------
+//
+// Power Automate sammenligner `aud` bokstavelig, og Microsofts egen
+// dokumentasjon sier det rett ut: «Audience values must be an exact match,
+// including trailing slashes.» SDK-en klipper skråstreken av underveis.
+// Derfor finnes `tokenkilde=plattform`, og derfor måles det her.
+{
+    const tidspunkt = hentEksport(rå, 'tidspunkt');
+    sjekk('tidspunkt: epoch-sekunder', tidspunkt(1700000000),
+        new Date(1700000000 * 1000).toISOString());
+    // Feltet skal ALLTID settes. JSON.stringify dropper undefined, og da er
+    // «gikk galt» ikke til å skille fra «ikke deployet».
+    sjekk('tidspunkt: tomt gir en verdi', tidspunkt(''), '(ikke oppgitt)');
+    sjekk('tidspunkt: uleselig sier hva som kom',
+        /^ukjent format: /.test(tidspunkt('hva som helst')), true);
+
+    sjekk('to tokenkilder', /const TOKENKILDER = \['sdk', 'plattform'\];/.test(kode), true);
+    sjekk('sdk er standard i begge prøvene',
+        (kode.match(/request\.query\.get\('tokenkilde'\) \|\| 'sdk'/g) || []).length, 2);
+    sjekk('ukjent tokenkilde avvises i begge',
+        (kode.match(/if \(!TOKENKILDER\.includes\(kilde\)\)/g) || []).length, 2);
+
+    // Hele poenget med den nye veien: ressursen går ORDRETT videre.
+    sjekk('resource sendes ordrett',
+        /u\.searchParams\.set\('resource', ressurs\)/.test(kode), true);
+    sjekk('ingen normalisering av ressursen underveis',
+        /ressurs\.replace\(/.test(kode), false);
+
+    // IDENTITY_HEADER er legitimasjon på linje med tokenet.
+    sjekk('nøkkelen går bare i headeren',
+        /headers: \{ 'X-IDENTITY-HEADER': nokkel \}/.test(kode), true);
+    // Den ene lovlige bruken er headeren over. Klippes den bort, skal det
+    // ikke finnes noe annet sted nøkkelen settes inn i et objekt.
+    const utenHeader = kode.replace(/headers: \{ 'X-IDENTITY-HEADER': nokkel \}/g, '');
+    sjekk('nøkkelen havner ikke i svaret', /[:,]\s*nokkel\s*[,}]/.test(utenHeader), false);
+    sjekk('nøkkelen tilordnes ikke svaret', /svar\.\w+\s*=\s*nokkel\s*;/.test(kode), false);
+    sjekk('nøkkelen havner ikke i en feilmelding', /\$\{nokkel\}/.test(kode), false);
+    sjekk('variablene er erklært ett sted',
+        /const SATT_AV_PLATTFORMEN = \['IDENTITY_ENDPOINT', 'IDENTITY_HEADER'\];/.test(kode), true);
+    sjekk('feilmeldingen bygges fra erklæringen, ikke skrevet av på nytt',
+        /SATT_AV_PLATTFORMEN\.join\(/.test(kode), true);
+}
+
+// ---------- hentToken kjørt for ekte, med stubbede kilder ----------
+//
+// Den ekte funksjonen, ikke en kopi av regelen: det var nettopp en
+// gjenoppfunnet returform som lot flere feil overleve her tidligere.
+(async () => {
+    const start = rå.indexOf('async function hentToken(');
+    const kildeHentToken = rå.slice(start, rå.indexOf('\n}', start) + 2);
+    const lag = (legitimasjon, tokenFraPlattformen) => new Function(
+        'legitimasjon', 'tokenFraPlattformen', `${kildeHentToken}\nreturn hentToken;`
+    )(legitimasjon, tokenFraPlattformen);
+
+    // Hvilken vei som ble brukt REGISTRERES, den kastes ikke. En stub som
+    // kaster gjør testen rød ved å krasje, og en krasj sier ikke hva som er
+    // galt — den ser lik ut uansett hvilken regel som brøt.
+    let plattformBrukt = false, sdkBrukt = false;
+    const viaSdk = lag(
+        () => { sdkBrukt = true; return { getToken: async () => ({ token: 'a.b.c', expiresOnTimestamp: 1700000000000 }) }; },
+        async (r) => { plattformBrukt = true; return { token: 'x.y.z', utloper: '(ikke oppgitt)', scope: null, ressursSomBleSpurtOm: r }; }
+    );
+    const sdk = await viaSdk('https://service.flow.microsoft.com/', 'sdk');
+    sjekk('sdk: scope er ressurs + .default', sdk.scope,
+        'https://service.flow.microsoft.com/.default');
+    // DETTE er avvisningen Power Automate ga: skråstreken er borte.
+    sjekk('sdk: skråstreken forsvinner fra ressursen', sdk.ressursSomBleSpurtOm,
+        'https://service.flow.microsoft.com');
+
+    sjekk('sdk: plattformveien ble ikke brukt', plattformBrukt, false);
+
+    let bedtOm = null;
+    plattformBrukt = false; sdkBrukt = false;
+    const viaPlattform = lag(
+        () => { sdkBrukt = true; return { getToken: async () => ({ token: 'feil.vei.her', expiresOnTimestamp: 0 }) }; },
+        async (r) => { plattformBrukt = true; bedtOm = r; return { token: 'x.y.z', utloper: '(ikke oppgitt)', scope: null, ressursSomBleSpurtOm: r }; }
+    );
+    const plattform = await viaPlattform('https://service.flow.microsoft.com/', 'plattform');
+    sjekk('plattform: plattformveien ble faktisk brukt', plattformBrukt, true);
+    sjekk('plattform: sdk-veien ble ikke brukt', sdkBrukt, false);
+    sjekk('plattform: ressursen går ordrett videre', bedtOm,
+        'https://service.flow.microsoft.com/');
+    sjekk('plattform: skråstreken overlever', plattform.ressursSomBleSpurtOm,
+        'https://service.flow.microsoft.com/');
+    sjekk('plattform: ingen scope å snakke om', plattform.scope, null);
+
+    // Den ekte tokenFraPlattformen, kjørt uten identiteten. Meldingen må
+    // navngi BEGGE variablene — «det gikk galt» er ikke til å skille fra
+    // «koden er ikke deployet», og det er nettopp det som skal avgjøres.
+    const konst = rå.match(/const SATT_AV_PLATTFORMEN = \[[^\]]*\];/)[0];
+    const fra = rå.indexOf('async function tokenFraPlattformen(');
+    const tokenFraPlattformen = new Function(
+        `${konst}\n${rå.slice(fra, rå.indexOf('\n}', fra) + 2)}\nreturn tokenFraPlattformen;`
+    )();
+
+    const før = { e: process.env.IDENTITY_ENDPOINT, h: process.env.IDENTITY_HEADER };
+    delete process.env.IDENTITY_ENDPOINT;
+    delete process.env.IDENTITY_HEADER;
+    let melding = '(kastet ikke)';
+    try { await tokenFraPlattformen('https://service.flow.microsoft.com/'); }
+    catch (e) { melding = e.message; }
+    if (før.e !== undefined) process.env.IDENTITY_ENDPOINT = før.e;
+    if (før.h !== undefined) process.env.IDENTITY_HEADER = før.h;
+
+    sjekk('uten identitet: meldingen navngir begge variablene',
+        melding.includes('IDENTITY_ENDPOINT') && melding.includes('IDENTITY_HEADER'), true);
+    sjekk('uten identitet: meldingen sier hva som er galt',
+        /er ikke satt/.test(melding), true);
+
+    console.log(`\n${ok} OK, ${feil} feil`);
+    process.exit(feil ? 1 : 0);
+})();

@@ -2,7 +2,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 
 /**
- * GET /api/diagnose/mi-token?ressurs=<audience> — admin.
+ * GET /api/diagnose/mi-token?ressurs=<audience>[&tokenkilde=sdk|plattform] — admin.
  *
  * Svarer på om koden får et managed identity-token, og for hvilken ressurs.
  *
@@ -82,6 +82,119 @@ const KJENTE = {
     'https://management.azure.com/': 'ARM. Svarer MI her og ingen andre steder, er det tilgang og ikke token som mangler'
 };
 
+/**
+ * Lovlige verdier for `tokenkilde`.
+ *
+ * `sdk`       — DefaultAzureCredential.getToken(«<ressurs>/.default»).
+ * `plattform` — App Service sitt eget identity-endepunkt, med `resource`
+ *               ORDRETT slik den ble oppgitt.
+ */
+const TOKENKILDER = ['sdk', 'plattform'];
+
+/**
+ * Env-variabler PLATTFORMEN setter, ikke vi.
+ *
+ * App Service og Functions setter disse to når en managed identity er slått
+ * på. De står ikke i SWA Configuration, de står ikke i Key Vault, og ingen
+ * skal lime inn en verdi for dem noe sted.
+ *
+ * Erklæringen står her, i koden som leser dem, og
+ * `api/test/env-inventar.test.js` leser den herfra. Uten den ville
+ * inventartesten krevd at de ble ført opp i `config/env.*.json` som app
+ * settings — og da ville inventaret påstått at noen må sette dem. Et
+ * inventar som ser komplett ut og ikke er riktig, er verre enn ingen.
+ *
+ * `IDENTITY_HEADER` er legitimasjon. Den leses her og går bare i
+ * `X-IDENTITY-HEADER`-headeren — aldri til et svar, aldri til en feilmelding.
+ */
+const SATT_AV_PLATTFORMEN = ['IDENTITY_ENDPOINT', 'IDENTITY_HEADER'];
+
+/**
+ * Hvorfor `plattform` finnes ved siden av SDK-en: SKRÅSTREKEN.
+ *
+ * `getToken` tar et *scope* — «<ressurs>/.default» — og på App Service
+ * oversetter SDK-en det til plattformens `resource`-parameter ved å klippe
+ * av «/.default». Da forsvinner en avsluttende skråstrek i ressursen, og
+ * `aud` i tokenet blir `https://service.flow.microsoft.com`.
+ *
+ * Power Automate krever `https://service.flow.microsoft.com/` — MED
+ * skråstrek. Microsofts dokumentasjon sier det rett ut: «Audience values
+ * must be an exact match, including trailing slashes.» Det er en bokstavelig
+ * strengsammenligning, og den feiler på ett tegn.
+ *
+ * Plattformens endepunkt tar `resource` ordrett, og det er hele poenget med
+ * denne veien. Svaret bærer `ressursSomBleSpurtOm` nettopp for at det skal
+ * være synlig hvilken av dem som faktisk ble sendt.
+ *
+ * `IDENTITY_HEADER` er en hemmelighet og skal ALDRI ut herfra.
+ */
+async function tokenFraPlattformen(ressurs) {
+    const endepunkt = process.env.IDENTITY_ENDPOINT;
+    const nokkel = process.env.IDENTITY_HEADER;
+    if (!endepunkt || !nokkel) {
+        // Begge settes av plattformen når en managed identity er på. Mangler
+        // de, er det identiteten som mangler — ikke tilgangen. Forskjellen
+        // er verdt en egen melding.
+        throw new Error(`${SATT_AV_PLATTFORMEN.join(' / ')} er ikke satt — `
+            + 'ingen managed identity på denne verten');
+    }
+    const u = new URL(endepunkt);
+    u.searchParams.set('api-version', '2019-08-01');
+    u.searchParams.set('resource', ressurs);
+
+    const res = await fetch(u, { headers: { 'X-IDENTITY-HEADER': nokkel } });
+    const tekst = await res.text();
+    if (!res.ok) {
+        throw new Error(`identity-endepunktet svarte ${res.status}: ${String(tekst).slice(0, 200)}`);
+    }
+    let data;
+    try {
+        data = JSON.parse(tekst);
+    } catch (e) {
+        throw new Error(`identity-endepunktet ga ikke JSON: ${e.message}`);
+    }
+    if (!data.access_token) throw new Error('identity-endepunktet ga ingen access_token');
+    return {
+        token: data.access_token,
+        utloper: tidspunkt(data.expires_on),
+        scope: null,
+        // Plattformen ekkoer ressursen den forsto. Står skråstreken her,
+        // overlevde den hele veien.
+        ressursSomBleSpurtOm: data.resource ?? '(ikke oppgitt av plattformen)'
+    };
+}
+
+/**
+ * `expires_on` kommer som epoch-sekunder fra noen verter og som dato fra
+ * andre. Feltet skal uansett settes, med årsaken i seg hvis det ikke kunne
+ * tolkes — en nøkkel som forsvinner kan ikke feilsøkes.
+ */
+function tidspunkt(verdi) {
+    if (verdi === undefined || verdi === null || verdi === '') return '(ikke oppgitt)';
+    const tall = Number(verdi);
+    if (Number.isFinite(tall)) return new Date(tall * 1000).toISOString();
+    const d = new Date(String(verdi));
+    return Number.isNaN(d.getTime()) ? `ukjent format: ${verdi}` : d.toISOString();
+}
+
+/** Ett sted som vet hvordan et token hentes, for begge prøvene. */
+async function hentToken(ressurs, kilde) {
+    if (kilde === 'plattform') return tokenFraPlattformen(ressurs);
+
+    // `scope` er audience + «/.default» for en applikasjonsidentitet.
+    const scope = ressurs.endsWith('/') ? `${ressurs}.default` : `${ressurs}/.default`;
+    const t = await legitimasjon().getToken(scope);
+    if (!t || !t.token) return null;
+    return {
+        token: t.token,
+        utloper: t.expiresOnTimestamp ? new Date(t.expiresOnTimestamp).toISOString() : '(ikke oppgitt)',
+        scope,
+        // Dette er strengen SDK-en faktisk sender videre som `resource` —
+        // scopet uten «/.default». Skråstreken er borte her.
+        ressursSomBleSpurtOm: scope.replace(/\/\.default$/, '')
+    };
+}
+
 app.http('miTokenDiagnose', {
     methods: ['GET'],
     authLevel: 'anonymous',
@@ -93,25 +206,30 @@ app.http('miTokenDiagnose', {
         }
 
         const ressurs = request.query.get('ressurs') || 'https://storage.azure.com/';
+        const kilde = (request.query.get('tokenkilde') || 'sdk').trim();
+        if (!TOKENKILDER.includes(kilde)) {
+            return { status: 400, jsonBody: { status: 'feil',
+                melding: `tokenkilde må være en av: ${TOKENKILDER.join(', ')}` } };
+        }
         const svar = {
             ressurs,
+            tokenkilde: kilde,
             betydning: KJENTE[ressurs] || '(ikke en av de kjente ressursene)',
             kjenteRessurser: Object.keys(KJENTE)
         };
 
         try {
-            // `scope` er audience + «/.default» for en applikasjonsidentitet.
-            const scope = ressurs.endsWith('/') ? `${ressurs}.default` : `${ressurs}/.default`;
-            const t = await legitimasjon().getToken(scope);
-            if (!t || !t.token) {
+            const t = await hentToken(ressurs, kilde);
+            if (!t) {
                 svar.ok = false;
-                svar.feil = 'getToken returnerte ingenting — ingen feil, men heller ingen token';
+                svar.feil = 'tokenkilden returnerte ingenting — ingen feil, men heller ingen token';
                 return { jsonBody: svar };
             }
             svar.ok = true;
-            svar.scope = scope;
+            svar.scope = t.scope;
+            svar.ressursSomBleSpurtOm = t.ressursSomBleSpurtOm;
             svar.tegnITokenet = t.token.length;   // lengden, ikke tokenet
-            svar.utloper = t.expiresOnTimestamp ? new Date(t.expiresOnTimestamp).toISOString() : null;
+            svar.utloper = t.utloper;
             svar.claims = claimsFra(t.token);
         } catch (e) {
             // Årsaken MÅ med. «Det gikk galt» uten mer er umulig å skille fra
@@ -243,7 +361,7 @@ app.http('miTabellDiagnose', {
 });
 
 /**
- * GET /api/diagnose/mi-flyt?envVar=<NAVN>[&ressurs=<audience>] — admin.
+ * GET /api/diagnose/mi-flyt?envVar=<NAVN>[&ressurs=][&tokenkilde=sdk|plattform] — admin.
  *
  * Steg 7: godtar en Power Automate-flyt et managed identity-token i stedet
  * for SAS-signaturen i URL-en?
@@ -284,17 +402,24 @@ app.http('miFlytDiagnose', {
         if (svar.url.feil) return { status: 400, jsonBody: svar };
 
         const ressurs = request.query.get('ressurs') || 'https://service.flow.microsoft.com/';
-        const scope = ressurs.endsWith('/') ? `${ressurs}.default` : `${ressurs}/.default`;
-        svar.scope = scope;
+        const kilde = (request.query.get('tokenkilde') || 'sdk').trim();
+        if (!TOKENKILDER.includes(kilde)) {
+            return { status: 400, jsonBody: { status: 'feil',
+                melding: `tokenkilde må være en av: ${TOKENKILDER.join(', ')}` } };
+        }
+        svar.ressurs = ressurs;
+        svar.tokenkilde = kilde;
 
         let token;
         try {
-            const t = await legitimasjon().getToken(scope);
-            if (!t?.token) {
-                svar.token = { ok: false, feil: 'getToken returnerte ingenting' };
+            const t = await hentToken(ressurs, kilde);
+            if (!t) {
+                svar.token = { ok: false, feil: 'tokenkilden returnerte ingenting' };
                 return { jsonBody: svar };
             }
             token = t.token;
+            svar.scope = t.scope;
+            svar.ressursSomBleSpurtOm = t.ressursSomBleSpurtOm;
             svar.token = { ok: true, claims: claimsFra(token) };
         } catch (e) {
             svar.token = { ok: false, feil: e?.message || String(e) };
@@ -322,4 +447,5 @@ app.http('miFlytDiagnose', {
     }
 });
 
-module.exports = { claimsFra, beskrivUrl, CLAIMS_VI_VISER, KJENTE, FLYTVAR };
+module.exports = { claimsFra, beskrivUrl, tidspunkt, CLAIMS_VI_VISER, KJENTE, FLYTVAR,
+    TOKENKILDER, SATT_AV_PLATTFORMEN };
