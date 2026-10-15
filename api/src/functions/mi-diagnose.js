@@ -43,6 +43,12 @@ function tabellKlasse() {
     return TableClient;
 }
 
+let blobSdk = null;
+function blobPakke() {
+    if (!blobSdk) blobSdk = require('@azure/storage-blob');
+    return blobSdk;
+}
+
 /** Claims som identifiserer AVSENDEREN. Ingen av dem er en hemmelighet. */
 const CLAIMS_VI_VISER = ['aud', 'iss', 'appid', 'tid', 'oid', 'exp'];
 
@@ -447,5 +453,176 @@ app.http('miFlytDiagnose', {
     }
 });
 
+/**
+ * Claims i en user delegation key som IDENTIFISERER — ikke signerer.
+ *
+ * Nøkkelens `value` er selve signeringshemmeligheten: den som har den, kan
+ * lage en gyldig SAS for hva som helst identiteten har tilgang til, helt til
+ * nøkkelen utløper. Den skal aldri ut herfra, like lite som et token.
+ *
+ * Resten sier hvem som fikk nøkkelen og hvor lenge den varer, og det er
+ * nettopp det prøven skal vise.
+ */
+const DELEGERING_VI_VISER = ['signedObjectId', 'signedTenantId', 'signedService',
+    'signedVersion', 'signedStartsOn', 'signedExpiresOn'];
+
+/**
+ * GET /api/diagnose/mi-blob?konto=<navn>&container=<navn>[&skriv=ja] — admin.
+ *
+ * Steg 3 for blob, og det er en annen prøve enn tabellen — ikke bare samme
+ * spørsmål om en annen tjeneste.
+ *
+ * `backup.js` lager en SAS-URL ved å rive kontonøkkelen ut av
+ * `STORAGE_CONNECTION_STRING` og signere med en `StorageSharedKeyCredential`.
+ * En managed identity kan ikke bygge en slik — det finnes ingen nøkkel å
+ * signere med. MI-veien er `getUserDelegationKey()`, som krever rollen
+ * `Storage Blob Delegator` i tillegg til datarollene.
+ *
+ * Derfor måler denne fire ting hver for seg, og rapporterer dem hver for
+ * seg: lesing, skriving, delegering, og et SAS-kall som faktisk henter
+ * blobben. Det siste er det eneste som svarer på om `backup.js` kan legges
+ * om — de tre første kan være grønne mens det fjerde ikke er det.
+ *
+ * Blobnavn ekkoes ikke. Vedlegg er navngitt av innsendere, og et filnavn kan
+ * være en personopplysning i seg selv. Bare ANTALLET leses ut. Unntaket er
+ * prøveblobben vi lager selv: den navngis hvis oppryddingen feiler, for da
+ * må noen fjerne den for hånd.
+ */
+app.http('miBlobDiagnose', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'diagnose/mi-blob',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!erAdmin(upn)) {
+            return { status: 403, jsonBody: { status: 'feil', melding: 'Krever admin' } };
+        }
+
+        const konto = (request.query.get('konto') || '').trim();
+        const container = (request.query.get('container') || '').trim();
+        const skriv = request.query.get('skriv') === 'ja';
+        if (!/^[a-z0-9]{3,24}$/.test(konto) || !/^[a-z0-9][a-z0-9-]{2,62}$/.test(container)) {
+            return { status: 400, jsonBody: {
+                status: 'feil',
+                melding: 'konto og container må oppgis. konto: 3-24 små bokstaver/tall. '
+                    + 'container: små bokstaver, tall og bindestrek.'
+            } };
+        }
+
+        const svar = { konto, container, skrivingPrøvd: skriv };
+        const vert = `https://${konto}.blob.core.windows.net`;
+        let tjeneste, containerKlient;
+        try {
+            const { BlobServiceClient } = blobPakke();
+            tjeneste = new BlobServiceClient(vert, legitimasjon());
+            containerKlient = tjeneste.getContainerClient(container);
+        } catch (e) {
+            svar.lese = { ok: false, feil: e?.message || String(e) };
+            return { jsonBody: svar };
+        }
+
+        // ---- 1. lesing ----
+        try {
+            let antall = 0;
+            for await (const _ of containerKlient.listBlobsFlat()) {
+                antall++;
+                if (antall >= 3) break;
+            }
+            svar.lese = { ok: true, antallLest: antall };
+        } catch (e) {
+            svar.lese = { ok: false, feil: e?.message || String(e), statuskode: e?.statusCode ?? null };
+        }
+
+        // ---- 2. delegering ----
+        //
+        // Denne kan lykkes uten at lesingen gjør det, og omvendt: de kommer
+        // fra hver sin rolle. Derfor prøves den uansett utfall over.
+        const nå = new Date();
+        const utløp = new Date(nå.getTime() + 60 * 60 * 1000);
+        let delegeringsnokkel = null;
+        try {
+            const n = await tjeneste.getUserDelegationKey(new Date(nå.getTime() - 5 * 60 * 1000), utløp);
+            delegeringsnokkel = n;
+            const vist = {};
+            for (const felt of DELEGERING_VI_VISER) if (n[felt] !== undefined) vist[felt] = n[felt];
+            svar.delegering = {
+                ok: true,
+                // Lengden, ikke nøkkelen. Samme regel som for tokenet.
+                tegnINokkelen: String(n.value || '').length,
+                nokkel: vist
+            };
+        } catch (e) {
+            svar.delegering = {
+                ok: false,
+                feil: e?.message || String(e),
+                statuskode: e?.statusCode ?? null,
+                merknad: 'Krever rollen Storage Blob Delegator. Uten den kan backup.js '
+                    + 'ikke lage SAS-URL med managed identity.'
+            };
+        }
+
+        if (!skriv) {
+            svar.merknad = 'Bare lest og prøvd delegering. Legg til &skriv=ja for å prøve '
+                + 'skriving og et ekte SAS-kall — den laster opp og sletter én blob.';
+            return { jsonBody: svar };
+        }
+
+        // ---- 3. skriving ----
+        const blobNavn = `mi-prove-${Date.now()}.txt`;
+        const innhold = 'MI-diagnose, kan slettes';
+        let blobKlient;
+        try {
+            blobKlient = containerKlient.getBlockBlobClient(blobNavn);
+            await blobKlient.upload(innhold, Buffer.byteLength(innhold));
+            svar.skrive = { ok: true, blobNavn };
+        } catch (e) {
+            svar.skrive = { ok: false, feil: e?.message || String(e), statuskode: e?.statusCode ?? null };
+            return { jsonBody: svar };
+        }
+
+        // ---- 4. SAS-kallet — det som avgjør om backup.js kan legges om ----
+        if (delegeringsnokkel) {
+            try {
+                const { generateBlobSASQueryParameters, BlobSASPermissions } = blobPakke();
+                const sas = generateBlobSASQueryParameters({
+                    containerName: container,
+                    blobName: blobNavn,
+                    permissions: BlobSASPermissions.parse('r'),
+                    startsOn: new Date(nå.getTime() - 5 * 60 * 1000),
+                    expiresOn: utløp,
+                    protocol: 'https'
+                }, delegeringsnokkel, konto).toString();
+
+                // URL-en bygges, brukes og forlater aldri funksjonen. En SAS
+                // er legitimasjon: den som har lenken, har tilgangen.
+                const res = await fetch(`${vert}/${container}/${encodeURIComponent(blobNavn)}?${sas}`);
+                const tekst = await res.text();
+                svar.sasKall = {
+                    ok: res.ok,
+                    statuskode: res.status,
+                    // Vi skrev innholdet selv, så det kan sammenlignes trygt.
+                    fikkRiktigInnhold: tekst === innhold
+                };
+            } catch (e) {
+                svar.sasKall = { ok: false, feil: e?.message || String(e) };
+            }
+        } else {
+            svar.sasKall = { ok: false, feil: 'ingen delegeringsnøkkel — se delegering over' };
+        }
+
+        // ---- 5. opprydding ----
+        try {
+            await blobKlient.delete();
+            svar.rydding = { ok: true };
+        } catch (e) {
+            // Må rapporteres, og blobben må navngis: en prøvefil som blir
+            // liggende i en ekte container er noe noen skal fjerne.
+            svar.rydding = { ok: false, feil: e?.message || String(e),
+                merknad: `Blobben ${container}/${blobNavn} ble IKKE slettet og må fjernes manuelt.` };
+        }
+        return { jsonBody: svar };
+    }
+});
+
 module.exports = { claimsFra, beskrivUrl, tidspunkt, CLAIMS_VI_VISER, KJENTE, FLYTVAR,
-    TOKENKILDER, SATT_AV_PLATTFORMEN };
+    TOKENKILDER, SATT_AV_PLATTFORMEN, DELEGERING_VI_VISER };

@@ -674,14 +674,22 @@ delt nøkkel.
 ## 8f. Utfallet av de to tilgangsprøvene — steg 3 og 7
 
 **Hvordan:** `GET /api/diagnose/mi-tabell` og `GET /api/diagnose/mi-flyt` på
-`testfapp`, gjennom prøve-SWA-en. Koden som svarte bar commit `91af3e9`.
+`testfapp`, gjennom prøve-SWA-en.
 
-Begge prøvene endte i 403, og **begge 403-ene er positive delresultater.**
-Det er verdt å si tydelig, for en rød statuskode leses lett som et nei: i
-begge tilfellene ble tokenet godtatt som legitimasjon, og det som manglet var
-en tildeling eller en liste på mottakersiden.
+**Kort fasit: begge stegene er bevist.** Tabellen leses og skrives med
+managed identity uten tilkoblingsstreng, og en flyt uten SAS-signatur i
+URL-en svarer 200 på et MI-token.
+
+Veien dit er verdt å lese, for begge stegene begynte med en 403 som så ut
+som et nei og ikke var det. En avvisning fra *autorisasjons*-leddet betyr at
+tokenet kom fram og ble godtatt som legitimasjon — det er et helt annet svar
+enn at det ble avvist. Hver 403 under sier hvilket ledd den kom fra, og det
+er den forskjellen som flyttet saken videre hver gang.
 
 ### Tabellen — tokenet slipper inn, rollen mangler (steg 3)
+
+> Dette var første forsøk. Se også «Fellen i steg 3» nederst: andre forsøk
+> ga `Contributor`, som er feil rolle på en måte det er verdt å kjenne.
 
 **Dato:** 14.10.2026, 19:33 UTC (klokkeslettet står i feilmeldingen fra
 Table Storage).
@@ -716,7 +724,7 @@ identity** som medlemstype — under *User, group, or service principal* er
 managed identities ofte ikke søkbare på navn, og det er der folk konkluderer
 feil.
 
-### Flyten — signaturen er borte, policyen mangler avsenderen (steg 7)
+### Flyten, første forsøk — signaturen er borte, claims avvist (steg 7)
 
 **Dato:** 15.10.2026
 **Kall:** `?envVar=TESTFLYT_FLOW_URL`
@@ -755,7 +763,7 @@ Tre av fire ledd står altså:
 1. URL-en kan kvitte seg med signaturen. **Vist.**
 2. Koden får et token for Flow-audiencen. **Vist** (8e, bekreftet her).
 3. Flyten godtar formen og evaluerer claims. **Vist.**
-4. Policyen tillater nettopp denne avsenderen. **Åpent.**
+4. Policyen tillater nettopp denne avsenderen. **Åpent** — løst nedenfor.
 
 ### Punkt 4: skråstreken
 
@@ -801,26 +809,156 @@ de to veiene vært usynlig i diagnosen, og det er hele forskjellen.
 `IDENTITY_HEADER` er legitimasjon på linje med tokenet: den leses, går i
 `X-IDENTITY-HEADER`, og kommer aldri ut i et svar eller en feilmelding.
 
-**Dette er en hypotese med en målbar konsekvens, ikke en konklusjon.** Den er
-riktig hvis `aud` kommer tilbake med skråstrek *og* flyten svarer 200 eller
-202. Kommer `aud` fortsatt uten, er det Entra som normaliserer, og da er
-skråstreken ikke noe vi kan skaffe — og steg 7 krever en app-registrering med
-client credentials i stedet for managed identity.
+### Steg 7 er bevist
 
-Det grunnleggende spørsmålet står uansett til det er målt: **teller en
-tjenestehovedmann som «user»** for Power Automate? Svarer flyten 200 på et
-token med riktig audience, er svaret ja.
+**Dato:** 15.10.2026
+**Kall:** `?envVar=TESTFLYT_FLOW_URL&tokenkilde=plattform`, med `oid` lagt inn
+i triggerens liste over tillatte avsendere.
+
+| Felt | Verdi |
+|---|---|
+| `url.harSignatur` | **nei** |
+| `tokenkilde` | `plattform` |
+| `ressursSomBleSpurtOm` | `https://service.flow.microsoft.com/` |
+| `token.claims.aud` | `https://service.flow.microsoft.com/` |
+| `kall.statuskode` | **200** |
+
+Skråstreken var hele forskjellen. `ressursSomBleSpurtOm` og `aud` viser at
+den gikk ut og kom tilbake, og flyten svarte 200.
+
+**Det grunnleggende spørsmålet er dermed besvart: Power Automate godtar en
+tjenestehovedmann som avsender.** Den må stå i triggerens liste med `oid` —
+ikke `appid`, som ble prøvd og avvist.
+
+Dette er hele steg 7, kjørt ende til ende:
+
+* en flyt kan kreve Entra i stedet for en SAS-signatur,
+* trigger-URL-en slutter da å være en hemmelighet,
+* en managed identity kan kalle den,
+* og tilgangen kan trekkes tilbake ved å fjerne `oid` fra lista — uten å
+  rotere noen nøkkel, og uten å oppdatere noen app setting.
+
+Det siste punktet er den egentlige gevinsten. En SAS-signatur som er kommet
+på avveie må byttes, og alle som bruker den må få den nye. En `oid` som skal
+ut av lista, fjernes.
 
 ### Status for de to stegene
 
 | Steg | Status | Hva som mangler |
 |---|---|---|
-| 3 — storage uten delt nøkkel | Autentisering vist, autorisasjon ikke prøvd | `Storage Table Data`-rolle på `stfhsskjemapilot` |
-| 7 — flyt uten SAS-signatur | Signaturen borte, token godtatt, `aud` avvist på skråstreken | Ett kall med `tokenkilde=plattform` |
+| 3 — storage uten delt nøkkel | **Bevist 15.10.2026** for tabell | Blob prøves når `blob.js` legges om |
+| 7 — flyt uten SAS-signatur | **Bevist 15.10.2026** | ingenting |
 
-Ingen av dem er avkreftet. Ingen av dem er bevist. Begge mangler en
-tildeling, ikke en mekanisme — og det er en annen slags gjenstående arbeid
-enn det vi lette etter.
+### Steg 3 er bevist for tabell
+
+**Dato:** 15.10.2026
+**Kall:** `?konto=stfhsskjemapilot&tabell=HelloTest&skriv=ja`, med
+`Storage Table Data Contributor` på kontoen.
+
+| Felt | Verdi |
+|---|---|
+| `lese.ok` | ja, `antallLest: 3` |
+| `skrive.ok` | ja |
+| `rydding.ok` | ja |
+
+Lesing, skriving og opprydding med `DefaultAzureCredential`, uten
+tilkoblingsstreng. `STORAGE_CONNECTION_STRING` er dermed beviselig
+overflødig for tabellbruk.
+
+### Fellen i steg 3: `Contributor` er ikke en datarolle
+
+Første forsøk på å gi tilgang ga `Contributor` på storage-kontoen. Det er en
+**kontrollplan**-rolle: den gir rett til å forvalte kontoen, ikke til å lese
+en tabellrad. Samme `AuthorizationPermissionMismatch` som før.
+
+Og den er verre enn bare utilstrekkelig: `Contributor` på en storage-konto gir
+rett til å **liste kontonøklene**. Identiteten får dermed full datatilgang
+likevel, gjennom en sidedør, med den delte nøkkelen vi holder på å fjerne.
+Rollen skal fjernes, ikke suppleres.
+
+Riktig rolle er `Storage Table Data Contributor` (eller `…Data Reader` for
+bare lesing).
+
+### Hva steg 3 krever i den ekte appen
+
+Rollene:
+
+| Rolle | Hvorfor |
+|---|---|
+| `Storage Table Data Contributor` | `lib/storage.js` — all tabellbruk |
+| `Storage Blob Data Contributor` | `lib/blob.js` — vedlegg, logoer, backup |
+| `Storage Blob Delegator` | SAS-en i `backup.js`, se under |
+
+Kø og filshare brukes ikke, så de trenger ingen roller.
+
+**To steder er ikke en utbytting av klient.** Resten av koden bytter
+`fromConnectionString(cs)` mot `new Klient(url, legitimasjon())` og er ferdig.
+Disse to er ikke det:
+
+**1. SAS-en i `backup.js`.** `lagSasUrl()` river kontonøkkelen ut av
+`STORAGE_CONNECTION_STRING` og signerer med den:
+
+```js
+const { konto, key } = hentKontoOgNokkel();   // parser AccountKey ut av strengen
+const cred = new StorageSharedKeyCredential(konto, key);
+```
+
+En managed identity kan ikke bygge en `StorageSharedKeyCredential` — det
+finnes ingen nøkkel å signere med. MI-veien er `getUserDelegationKey()` og
+signering med den i stedet, og det er `Storage Blob Delegator` som gir rett
+til å be om den. SAS-en er på 24 timer (`SAS_GYLDIG_TIMER`), og user
+delegation SAS har tak på 7 døgn, så levetiden er ikke noe hinder.
+
+Dette er det eneste stedet i `api/src` som genererer en SAS.
+
+**2. `kontoNavnFra()`.** Koden henter kontonavnet ut av tilkoblingsstrengen
+flere steder (`nokkelkalender-storage.js`, `todo-storage.js`, `backup.js`).
+Uten streng finnes ikke navnet, og `STORAGE_ACCOUNT_NAME` går fra
+`kun_dokumentasjon` i `config/env.*.json` til en **påkrevd** app setting.
+`api/test/env-inventar.test.js` vil kreve det idet koden begynner å lese den.
+
+Begge er små, men ingen av dem er synlige fra «bytt klientkonstruktøren».
+
+### Blobprøven: `/api/diagnose/mi-blob`
+
+```
+GET /api/diagnose/mi-blob?konto=<navn>&container=<navn>[&skriv=ja]
+```
+
+Den måler fire ting **hver for seg**, fordi de kommer fra hver sin rolle og
+kan feile uavhengig:
+
+| Felt i svaret | Hva det svarer på | Rolle |
+|---|---|---|
+| `lese` | Kan identiteten liste blober? | `Storage Blob Data Reader` |
+| `delegering` | Får den en user delegation key? | `Storage Blob Delegator` |
+| `skrive` | Kan den laste opp? (`&skriv=ja`) | `Storage Blob Data Contributor` |
+| `sasKall` | **Virker SAS-en faktisk?** (`&skriv=ja`) | begge over |
+
+`sasKall` er den som avgjør om `backup.js` kan legges om. De tre første kan
+være grønne mens den er rød — det er nettopp det `Storage Blob Delegator`
+skiller. Prøven lager en SAS med delegeringsnøkkelen, henter blobben med
+den, og sammenligner innholdet med det den selv skrev. `fikkRiktigInnhold`
+skiller «fikk et svar» fra «fikk riktig svar».
+
+Delegeringen prøves **uansett** hvordan lesingen gikk, siden rollene er
+ulike. En grønn `delegering` med rød `lese` er et meningsfullt resultat.
+
+Hva som ikke kommer ut av endepunktet:
+
+* **Delegeringsnøkkelens `value`.** Den er selve signeringshemmeligheten —
+  den som har den, kan lage gyldig SAS for alt identiteten rekker, til den
+  utløper. Svaret har lengden og `signedObjectId` / `signedTenantId` /
+  `signedExpiresOn`, som identifiserer uten å signere.
+* **SAS-URL-en.** Den bygges, brukes i kallet, og forlater aldri funksjonen.
+  En SAS *er* tilgangen.
+* **Blobnavn.** Vedlegg er navngitt av innsendere, og et filnavn kan være en
+  personopplysning i seg selv. Bare antallet leses ut. Unntaket er
+  prøveblobben vi lager selv: den navngis hvis oppryddingen feiler, for da
+  må noen fjerne den for hånd.
+
+Prøveblobben heter `mi-prove-<tidsstempel>.txt` og slettes igjen. Skriving
+og opprydding rapporteres hver for seg, som i tabellprøven.
 
 ## 9. Risiko
 
