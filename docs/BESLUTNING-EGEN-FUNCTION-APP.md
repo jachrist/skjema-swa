@@ -757,40 +757,66 @@ Tre av fire ledd står altså:
 3. Flyten godtar formen og evaluerer claims. **Vist.**
 4. Policyen tillater nettopp denne avsenderen. **Åpent.**
 
-### To hypoteser for punkt 4, i rekkefølge
+### Punkt 4: skråstreken
 
-**A — policyen lister ikke avsenderen.** Mest sannsynlig. Se hvilket valg
-triggeren står på:
+Begge varianter av allow-lista — `oid` og `appid` — ble prøvd 15.10.2026, og
+begge ga samme `MisMatchingOAuthClaims`. Da er ikke lista forklaringen.
 
-* Står den på **«Specific users in my tenant»**, må avsenderen legges inn.
-  Prøv `oid` (`64eac771-…`) først, så `appid` (`3be2b536-…`) hvis den
-  avvises. En managed identity har begge, og hvilken av dem Power Automate
-  sammenligner mot er ikke avklart her.
-* Står den på **«Any user in my tenant»**, stemmer `tid` allerede, og da
-  peker avvisningen mot et mer grunnleggende spørsmål: **teller en
-  tjenestehovedmann som «user»?** Er svaret nei, må den eksplisitte lista
-  brukes, og i verste fall er MI ikke et alternativ i det hele tatt. Det
-  ville være det første reelle hinderet for steg 7.
+Microsofts dokumentasjon for HTTP-triggeren sier hvilke claims som kreves, og
+én setning avgjør saken:
 
-**B — audiencen er ikke den gatewayen venter.** Tokenet har
-`aud = https://service.flow.microsoft.com`, som er audiencen for Power
-Automate-tjenesten. Det nye `environment.api.powerplatform.com`-endepunktet
-kan vente en annen. `mi-flyt` tar `&ressurs=` nettopp for dette, så
-hypotesen koster ett kall og ingen deploy:
+> Audience values must be an exact match, **including trailing slashes**.
+>
+> | Cloud | Audience |
+> |---|---|
+> | Public cloud | `https://service.flow.microsoft.com/` |
+
+Tokenet vårt bærer `aud: "https://service.flow.microsoft.com"` — **uten**
+skråstrek. Det er en bokstavelig strengsammenligning, og den feiler på ett
+tegn.
+
+**Og årsaken ligger i vårt eget lag, ikke i Entra.** `DefaultAzureCredential`
+tar et *scope* (`<ressurs>/.default`). På App Service oversetter SDK-en det
+til plattformens `resource`-parameter ved å klippe av `/.default`, og da
+forsvinner en avsluttende skråstrek i ressursen underveis. Vi har aldri bedt
+om audiencen dokumentasjonen beskriver.
+
+Plattformens eget identity-endepunkt tar `resource` ordrett. `mi-flyt` og
+`mi-token` fikk derfor en `tokenkilde`-parameter:
 
 ```
-/api/diagnose/mi-flyt?envVar=TESTFLYT_FLOW_URL&ressurs=https://api.powerplatform.com
+/api/diagnose/mi-flyt?envVar=TESTFLYT_FLOW_URL&tokenkilde=plattform
+/api/diagnose/mi-token?ressurs=https://service.flow.microsoft.com/&tokenkilde=plattform
 ```
 
-Rekkefølgen er A før B: hypotese B forklarer ingenting hvis avsenderen uansett
-ikke står i lista.
+| `tokenkilde` | Hvordan | `ressursSomBleSpurtOm` |
+|---|---|---|
+| `sdk` (standard) | `getToken('<ressurs>/.default')` | skråstreken klippes av |
+| `plattform` | `IDENTITY_ENDPOINT?resource=<ressurs>` | ordrett |
+
+Svaret bærer `ressursSomBleSpurtOm` nettopp for at det skal være **synlig**
+hvilken streng som faktisk gikk ut. Uten det feltet ville forskjellen mellom
+de to veiene vært usynlig i diagnosen, og det er hele forskjellen.
+
+`IDENTITY_HEADER` er legitimasjon på linje med tokenet: den leses, går i
+`X-IDENTITY-HEADER`, og kommer aldri ut i et svar eller en feilmelding.
+
+**Dette er en hypotese med en målbar konsekvens, ikke en konklusjon.** Den er
+riktig hvis `aud` kommer tilbake med skråstrek *og* flyten svarer 200 eller
+202. Kommer `aud` fortsatt uten, er det Entra som normaliserer, og da er
+skråstreken ikke noe vi kan skaffe — og steg 7 krever en app-registrering med
+client credentials i stedet for managed identity.
+
+Det grunnleggende spørsmålet står uansett til det er målt: **teller en
+tjenestehovedmann som «user»** for Power Automate? Svarer flyten 200 på et
+token med riktig audience, er svaret ja.
 
 ### Status for de to stegene
 
 | Steg | Status | Hva som mangler |
 |---|---|---|
 | 3 — storage uten delt nøkkel | Autentisering vist, autorisasjon ikke prøvd | `Storage Table Data`-rolle på `stfhsskjemapilot` |
-| 7 — flyt uten SAS-signatur | Signaturen borte, token godtatt, claims avvist | Avsenderen inn i flytens tilgangspolicy |
+| 7 — flyt uten SAS-signatur | Signaturen borte, token godtatt, `aud` avvist på skråstreken | Ett kall med `tokenkilde=plattform` |
 
 Ingen av dem er avkreftet. Ingen av dem er bevist. Begge mangler en
 tildeling, ikke en mekanisme — og det er en annen slags gjenstående arbeid
