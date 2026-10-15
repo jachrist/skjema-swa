@@ -628,10 +628,19 @@ Tre ting i løsningen er «hemmelig fordi den som har URL-en, kommer inn»:
   dekryptert, inkludert personopplysninger i klartekst. Den skal ikke i
   e-post, Teams eller en sak.
 * **Power Automate trigger-URL-ene.** `sig=`-parameteren er signaturen.
-  Dette gjelder slik løsningen står i dag. Krever triggeren Entra i
-  stedet, forsvinner `sig=` helt — målt 15.10.2026, se 8f i
-  `docs/BESLUTNING-EGEN-FUNCTION-APP.md`. Ingen flyt i pilot eller prod
-  er lagt om.
+  Dette gjelder slik løsningen står i dag, og det er dagens tilstand som
+  skal evalueres.
+
+  **Men svakheten er ikke iboende.** 15.10.2026 ble det kjørt ende til ende
+  på prøveoppsettet: en flyt satt til å kreve Entra mister `sig=` helt, og
+  en managed identity kaller den med 200 tilbake når identitetens `oid` står
+  i triggerens liste. Da er lenken ikke lenger en hemmelighet, og tilgang
+  trekkes tilbake ved å fjerne en `oid` — ikke ved å rotere en nøkkel og
+  distribuere den på nytt. Se 8f i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
+
+  Forutsetningen er at koden får et MI-token, og det gjør den ikke i SWA
+  Managed Functions. Omleggingen henger derfor sammen med beslutningen om
+  egen Function App. **Ingen flyt i pilot eller prod er lagt om.**
 * **Utsendingslenkene.** Gir tilgang uten pålogging i 90 dager.
 
 Alle tre er riktige mekanismer for formålet, og alle tre feiler på samme måte:

@@ -674,14 +674,20 @@ delt nøkkel.
 ## 8f. Utfallet av de to tilgangsprøvene — steg 3 og 7
 
 **Hvordan:** `GET /api/diagnose/mi-tabell` og `GET /api/diagnose/mi-flyt` på
-`testfapp`, gjennom prøve-SWA-en. Koden som svarte bar commit `91af3e9`.
+`testfapp`, gjennom prøve-SWA-en.
 
-Begge prøvene endte i 403, og **begge 403-ene er positive delresultater.**
-Det er verdt å si tydelig, for en rød statuskode leses lett som et nei: i
-begge tilfellene ble tokenet godtatt som legitimasjon, og det som manglet var
-en tildeling eller en liste på mottakersiden.
+**Kort fasit: steg 7 er bevist, steg 3 mangler fortsatt riktig rolle.**
+
+Veien dit er verdt å lese, for begge stegene begynte med en 403 som så ut
+som et nei og ikke var det. En avvisning fra *autorisasjons*-leddet betyr at
+tokenet kom fram og ble godtatt som legitimasjon — det er et helt annet svar
+enn at det ble avvist. Hver 403 under sier hvilket ledd den kom fra, og det
+er den forskjellen som flyttet saken videre hver gang.
 
 ### Tabellen — tokenet slipper inn, rollen mangler (steg 3)
+
+> Dette var første forsøk. Se også «Fellen i steg 3» nederst: andre forsøk
+> ga `Contributor`, som er feil rolle på en måte det er verdt å kjenne.
 
 **Dato:** 14.10.2026, 19:33 UTC (klokkeslettet står i feilmeldingen fra
 Table Storage).
@@ -716,7 +722,7 @@ identity** som medlemstype — under *User, group, or service principal* er
 managed identities ofte ikke søkbare på navn, og det er der folk konkluderer
 feil.
 
-### Flyten — signaturen er borte, policyen mangler avsenderen (steg 7)
+### Flyten, første forsøk — signaturen er borte, claims avvist (steg 7)
 
 **Dato:** 15.10.2026
 **Kall:** `?envVar=TESTFLYT_FLOW_URL`
@@ -755,7 +761,7 @@ Tre av fire ledd står altså:
 1. URL-en kan kvitte seg med signaturen. **Vist.**
 2. Koden får et token for Flow-audiencen. **Vist** (8e, bekreftet her).
 3. Flyten godtar formen og evaluerer claims. **Vist.**
-4. Policyen tillater nettopp denne avsenderen. **Åpent.**
+4. Policyen tillater nettopp denne avsenderen. **Åpent** — løst nedenfor.
 
 ### Punkt 4: skråstreken
 
@@ -801,26 +807,60 @@ de to veiene vært usynlig i diagnosen, og det er hele forskjellen.
 `IDENTITY_HEADER` er legitimasjon på linje med tokenet: den leses, går i
 `X-IDENTITY-HEADER`, og kommer aldri ut i et svar eller en feilmelding.
 
-**Dette er en hypotese med en målbar konsekvens, ikke en konklusjon.** Den er
-riktig hvis `aud` kommer tilbake med skråstrek *og* flyten svarer 200 eller
-202. Kommer `aud` fortsatt uten, er det Entra som normaliserer, og da er
-skråstreken ikke noe vi kan skaffe — og steg 7 krever en app-registrering med
-client credentials i stedet for managed identity.
+### Steg 7 er bevist
 
-Det grunnleggende spørsmålet står uansett til det er målt: **teller en
-tjenestehovedmann som «user»** for Power Automate? Svarer flyten 200 på et
-token med riktig audience, er svaret ja.
+**Dato:** 15.10.2026
+**Kall:** `?envVar=TESTFLYT_FLOW_URL&tokenkilde=plattform`, med `oid` lagt inn
+i triggerens liste over tillatte avsendere.
+
+| Felt | Verdi |
+|---|---|
+| `url.harSignatur` | **nei** |
+| `tokenkilde` | `plattform` |
+| `ressursSomBleSpurtOm` | `https://service.flow.microsoft.com/` |
+| `token.claims.aud` | `https://service.flow.microsoft.com/` |
+| `kall.statuskode` | **200** |
+
+Skråstreken var hele forskjellen. `ressursSomBleSpurtOm` og `aud` viser at
+den gikk ut og kom tilbake, og flyten svarte 200.
+
+**Det grunnleggende spørsmålet er dermed besvart: Power Automate godtar en
+tjenestehovedmann som avsender.** Den må stå i triggerens liste med `oid` —
+ikke `appid`, som ble prøvd og avvist.
+
+Dette er hele steg 7, kjørt ende til ende:
+
+* en flyt kan kreve Entra i stedet for en SAS-signatur,
+* trigger-URL-en slutter da å være en hemmelighet,
+* en managed identity kan kalle den,
+* og tilgangen kan trekkes tilbake ved å fjerne `oid` fra lista — uten å
+  rotere noen nøkkel, og uten å oppdatere noen app setting.
+
+Det siste punktet er den egentlige gevinsten. En SAS-signatur som er kommet
+på avveie må byttes, og alle som bruker den må få den nye. En `oid` som skal
+ut av lista, fjernes.
 
 ### Status for de to stegene
 
 | Steg | Status | Hva som mangler |
 |---|---|---|
-| 3 — storage uten delt nøkkel | Autentisering vist, autorisasjon ikke prøvd | `Storage Table Data`-rolle på `stfhsskjemapilot` |
-| 7 — flyt uten SAS-signatur | Signaturen borte, token godtatt, `aud` avvist på skråstreken | Ett kall med `tokenkilde=plattform` |
+| 3 — storage uten delt nøkkel | Autentisering vist, autorisasjon mangler | `Storage Table Data Contributor` på `stfhsskjemapilot` |
+| 7 — flyt uten SAS-signatur | **Bevist 15.10.2026** | ingenting |
 
-Ingen av dem er avkreftet. Ingen av dem er bevist. Begge mangler en
-tildeling, ikke en mekanisme — og det er en annen slags gjenstående arbeid
-enn det vi lette etter.
+### Fellen i steg 3: `Contributor` er ikke en datarolle
+
+Første forsøk på å gi tilgang ga `Contributor` på storage-kontoen. Det er en
+**kontrollplan**-rolle: den gir rett til å forvalte kontoen, ikke til å lese
+en tabellrad. Samme `AuthorizationPermissionMismatch` som før.
+
+Og den er verre enn bare utilstrekkelig: `Contributor` på en storage-konto gir
+rett til å **liste kontonøklene**. Identiteten får dermed full datatilgang
+likevel, gjennom en sidedør, med den delte nøkkelen vi holder på å fjerne.
+Rollen skal fjernes, ikke suppleres.
+
+Riktig rolle er `Storage Table Data Contributor` (eller `…Data Reader` for
+bare lesing). For blob kommer `Storage Blob Data Contributor` i tillegg når
+`blob.js` legges om.
 
 ## 9. Risiko
 
