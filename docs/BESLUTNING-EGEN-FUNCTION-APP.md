@@ -1333,6 +1333,37 @@ generer i stedet.
 halvferdig miljø lager varsler ingen leser — og notatet har allerede ett
 eksempel på en alarm som sluttet å bli lest fordi den alltid var rød.
 
+**Ikke pek dev på pilots flyt-URLer.** Dette er den farligste, fordi
+ingenting feiler.
+
+Koden sender **ingen `Authorization`-header** til flyter. De ekte kallveiene
+(`flyt-kaller.js`, `sp-liste.js`, `ekstern-flyt.js`) POSTer payloaden og
+stoler på `sig=` i query-strengen. Kaller dev en pilot-URL, kjører flyten
+derfor helt normalt — og gjør det den alltid gjør:
+
+| Flyt | Hva som faktisk skjer |
+|---|---|
+| `TEAM_FLOW_URL` | **Destruktiv team-synk** — melder folk inn og ut av ekte team |
+| `VARSLING_FLOW_URL` | Epost, Teams-melding, Planner-oppgave til ekte mottakere |
+| `OTP_FLOW_URL` | Engangskoder til ekte mottakere |
+| `BACKUP_FLOW_URL` | Laster opp til SharePoint — dev-data i pilots backup-mappe |
+| `SP_LISTE_FLOW_URL` | Rader i ekte SharePoint-lister |
+
+Den øverste har ingen angreknapp.
+
+**La de sju `*_FLOW_URL` stå usatt til dev har egne flyter.** Koden er bygget
+for det: hvert kall returnerer `{ status: 'hoppet-over' }` med årsaken i seg
+og logger det, og resten av appen går videre. Hele steg 0 kan verifiseres
+uten at en eneste flyt kan fyre. `VARSLING_DEAKTIVERT=true` er et ekstra
+belte mens miljøet bygges.
+
+**Og ikke Entra-beskytt dev-flytene ennå.** Steg 7 er bevist, men ikke
+implementert i koden — det finnes ingen bearer-vei i `flyt-kaller.js`. En
+dev-flyt som krever Entra blir umulig for appen å kalle. Audiencen er
+dessuten ikke miljøavhengig: `https://service.flow.microsoft.com/` er den
+samme for alle flyter i public cloud. Det som er per flyt, er hvilke `oid`-er
+som står i allow-lista.
+
 **Prøveressursene er revet 15.10.2026** — `testfapp`, prøve-SWA-en og de to
 GitHub-hemmelighetene. Dev arver ingenting av dem; den får sin egen
 tjenestehovedstol og sine egne hemmeligheter. Oppskriften og rekkefølgen
@@ -1397,6 +1428,12 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 
 - [ ] Environment `dev`, **uten** approval
 - [ ] Tjenestehovedstol + hemmelighet
+
+**Flytene** (8g.6)
+
+- [ ] De sju `*_FLOW_URL` står **usatt** — ingen peker på pilots flyter
+- [ ] `VARSLING_DEAKTIVERT=true` mens miljøet bygges
+- [ ] Ingen dev-flyt er Entra-beskyttet (koden har ingen bearer-vei ennå)
 
 **Første utrulling** (8g.5) — rekkefølgen er poenget
 
