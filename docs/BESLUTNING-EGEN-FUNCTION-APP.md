@@ -1370,7 +1370,7 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 - [x] **User-assigned** managed identity (egen ressurs, ikke system-assigned): mi-skjema-3-dev
 - [x] Function App, knyttet til identiteten: fa-skjema-3-dev
 - [x] Static Web App — **Standard**-plan: Skjema-3-dev
-- [x] Entra app-registrering + redirect URI: ad-skjema-3-dev
+- [x] Entra app-registrering: ad-skjema-3-dev, Tenant ID: e4fcc393-7190-4d3d-a38d-fa6429f870f3 Client ID: f6198f01-633e-401b-903b-ad45fa43ba9d, 
 
 `scripts/steg1-funcapp.ps1` gjør 1–6. Tørrkjører uten `-Kjor`.
 
