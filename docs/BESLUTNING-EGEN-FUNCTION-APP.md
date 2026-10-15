@@ -1168,7 +1168,11 @@ system-assigned og feiler med en melding om at ingen identitet er
 tilgjengelig — som ser ut som at managed identity ikke er slått på i det
 hele tatt.
 
-`AZURE_CLIENT_ID` må derfor inn i `config/env.dev.json` sammen med de andre.
+`AZURE_CLIENT_ID` må derfor inn i `config/env.dev.json` sammen med de andre
+— **og `env-inventar.test.js` vil ikke fange det hvis den glemmes.** Testen
+leter etter `process.env.X` i `api/src`, og denne variabelen leses av
+`@azure/identity`, ikke av vår egen kode. Den er med andre ord like påkrevd
+som de andre og den eneste uten et nett under seg.
 
 #### Rettighetene er ikke synlige i portalen
 
