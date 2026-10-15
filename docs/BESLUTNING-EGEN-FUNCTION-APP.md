@@ -919,6 +919,47 @@ Uten streng finnes ikke navnet, og `STORAGE_ACCOUNT_NAME` går fra
 
 Begge er små, men ingen av dem er synlige fra «bytt klientkonstruktøren».
 
+### Blobprøven: `/api/diagnose/mi-blob`
+
+```
+GET /api/diagnose/mi-blob?konto=<navn>&container=<navn>[&skriv=ja]
+```
+
+Den måler fire ting **hver for seg**, fordi de kommer fra hver sin rolle og
+kan feile uavhengig:
+
+| Felt i svaret | Hva det svarer på | Rolle |
+|---|---|---|
+| `lese` | Kan identiteten liste blober? | `Storage Blob Data Reader` |
+| `delegering` | Får den en user delegation key? | `Storage Blob Delegator` |
+| `skrive` | Kan den laste opp? (`&skriv=ja`) | `Storage Blob Data Contributor` |
+| `sasKall` | **Virker SAS-en faktisk?** (`&skriv=ja`) | begge over |
+
+`sasKall` er den som avgjør om `backup.js` kan legges om. De tre første kan
+være grønne mens den er rød — det er nettopp det `Storage Blob Delegator`
+skiller. Prøven lager en SAS med delegeringsnøkkelen, henter blobben med
+den, og sammenligner innholdet med det den selv skrev. `fikkRiktigInnhold`
+skiller «fikk et svar» fra «fikk riktig svar».
+
+Delegeringen prøves **uansett** hvordan lesingen gikk, siden rollene er
+ulike. En grønn `delegering` med rød `lese` er et meningsfullt resultat.
+
+Hva som ikke kommer ut av endepunktet:
+
+* **Delegeringsnøkkelens `value`.** Den er selve signeringshemmeligheten —
+  den som har den, kan lage gyldig SAS for alt identiteten rekker, til den
+  utløper. Svaret har lengden og `signedObjectId` / `signedTenantId` /
+  `signedExpiresOn`, som identifiserer uten å signere.
+* **SAS-URL-en.** Den bygges, brukes i kallet, og forlater aldri funksjonen.
+  En SAS *er* tilgangen.
+* **Blobnavn.** Vedlegg er navngitt av innsendere, og et filnavn kan være en
+  personopplysning i seg selv. Bare antallet leses ut. Unntaket er
+  prøveblobben vi lager selv: den navngis hvis oppryddingen feiler, for da
+  må noen fjerne den for hånd.
+
+Prøveblobben heter `mi-prove-<tidsstempel>.txt` og slettes igjen. Skriving
+og opprydding rapporteres hver for seg, som i tabellprøven.
+
 ## 9. Risiko
 
 | Risiko | Hvor alvorlig | Hva vi gjør |

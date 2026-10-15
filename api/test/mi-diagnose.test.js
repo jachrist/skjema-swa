@@ -190,7 +190,11 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
 
 // ---------- tabellprøven ----------
 {
-    sjekk('krever admin', (kode.match(/if \(!erAdmin\(upn\)\)/g) || []).length >= 3, true);
+    // Hver app.http-registrering i fila skal ha sin egen admin-vakt. «Minst
+    // tre» sa ja uten å måle noe idet den fjerde kom til.
+    sjekk('hver registrering har en admin-vakt',
+        (kode.match(/if \(!erAdmin\(upn\)\)/g) || []).length,
+        (kode.match(/app\.http\(/g) || []).length);
     // Skriving er opt-in. En diagnose som skriver i en ekte tabell uten at
     // noen ba om det, er ikke en diagnose.
     sjekk('skriving er opt-in', /const skriv = request\.query\.get\('skriv'\) === 'ja'/.test(kode), true);
@@ -212,13 +216,13 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
     sjekk('URL-en beskrives', /url: beskrivUrl\(url\)/.test(kode), true);
     // URL-en skal aldri stå rått i svaret — hverken som verdi i objektet
     // eller tilordnet etterpå.
-    sjekk('ingen rå url som objektverdi', /[:,]\s*url\s*[,}]/.test(kode), false);
+    sjekk('ingen rå url som objektverdi', /(^|[^$])[:,{]\s*url\s*[,}]/.test(kode), false);
     sjekk('ingen rå url tilordnet svaret', /svar\.\w+\s*=\s*url\s*;/.test(kode), false);
     // Tokenet går i Authorization-headeren, aldri i svaret.
     sjekk('token i headeren', /Authorization: `Bearer \$\{token\}`/.test(kode), true);
     // Samme for tokenet. Legitimt er `{ ok, claims: claimsFra(token) }` og
     // bruken i Authorization-headeren — alt annet er en lekkasje.
-    sjekk('ingen rått token som objektverdi', /[:,]\s*token\s*[,}]/.test(kode), false);
+    sjekk('ingen rått token som objektverdi', /(^|[^$])[:,{]\s*token\s*[,}]/.test(kode), false);
     sjekk('ingen rått token tilordnet svaret', /svar\.\w+\s*=\s*token\s*;/.test(kode), false);
     // Svaret fra flyten avkortes — den kan returnere hva som helst.
     sjekk('svaret avkortes', /svarUtdrag: String\(tekst\)\.slice\(0, 300\)/.test(kode), true);
@@ -258,13 +262,64 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
     // Den ene lovlige bruken er headeren over. Klippes den bort, skal det
     // ikke finnes noe annet sted nøkkelen settes inn i et objekt.
     const utenHeader = kode.replace(/headers: \{ 'X-IDENTITY-HEADER': nokkel \}/g, '');
-    sjekk('nøkkelen havner ikke i svaret', /[:,]\s*nokkel\s*[,}]/.test(utenHeader), false);
+    sjekk('nøkkelen havner ikke i svaret', /(^|[^$])[:,{]\s*nokkel\s*[,}]/.test(utenHeader), false);
     sjekk('nøkkelen tilordnes ikke svaret', /svar\.\w+\s*=\s*nokkel\s*;/.test(kode), false);
     sjekk('nøkkelen havner ikke i en feilmelding', /\$\{nokkel\}/.test(kode), false);
     sjekk('variablene er erklært ett sted',
         /const SATT_AV_PLATTFORMEN = \['IDENTITY_ENDPOINT', 'IDENTITY_HEADER'\];/.test(kode), true);
     sjekk('feilmeldingen bygges fra erklæringen, ikke skrevet av på nytt',
         /SATT_AV_PLATTFORMEN\.join\(/.test(kode), true);
+}
+
+// ---------- blobprøven ----------
+//
+// Den er ikke tabellprøven om igjen for en annen tjeneste. backup.js
+// signerer en SAS med kontonøkkelen, og en managed identity har ingen
+// nøkkel å signere med — delegeringen og SAS-kallet er derfor egne
+// målinger, og de kan feile mens lesing og skriving er grønne.
+{
+    sjekk('fire prøver i fila', (kode.match(/app\.http\(/g) || []).length, 4);
+
+    // Blobnavn ekkoes ikke: vedlegg er navngitt av innsendere, og et filnavn
+    // kan være en personopplysning i seg selv.
+    sjekk('leser antall, ikke navn',
+        /for await \(const _ of containerKlient\.listBlobsFlat\(\)\)/.test(kode), true);
+    sjekk('rapporterer antall blober', /svar\.lese = \{ ok: true, antallLest: antall \}/.test(kode), true);
+
+    // Delegeringsnøkkelens `value` ER signeringshemmeligheten. Den som har
+    // den kan lage gyldig SAS for alt identiteten rekker, til den utløper.
+    sjekk('nøkkelen vises bare som lengde',
+        /tegnINokkelen: String\(n\.value \|\| ''\)\.length/.test(kode), true);
+    sjekk('ingen value som objektverdi', /(^|[^$])[:,{]\s*value\s*[,}]/.test(kode), false);
+    // Og ingen nøkkel som HETER value. Den formen har ':' etter navnet, ikke
+    // ',' eller '}', så sjekken over ser den ikke. `n.value` har punktum
+    // foran, og er den lovlige bruken.
+    sjekk('ingen value-felt i svaret', /(^|[^.\w])value\s*:/m.test(kode), false);
+    sjekk('bare utvalgte felt fra nøkkelen',
+        /for \(const felt of DELEGERING_VI_VISER\)/.test(kode), true);
+    const felt = /const DELEGERING_VI_VISER = \[([\s\S]*?)\];/.exec(kode)[1];
+    sjekk('value står ikke i det vi viser', /'value'/.test(felt), false);
+
+    // SAS-en er legitimasjon: den som har lenken, har tilgangen.
+    sjekk('ingen sas som objektverdi', /(^|[^$])[:,{]\s*sas\s*[,}]/.test(kode), false);
+    sjekk('ingen sas tilordnet svaret', /svar\.\w+\s*=\s*sas\s*;/.test(kode), false);
+    sjekk('sas brukes bare i kallet',
+        /fetch\(`\$\{vert\}\/\$\{container\}\/\$\{encodeURIComponent\(blobNavn\)\}\?\$\{sas\}`\)/.test(kode), true);
+
+    // Delegeringen kommer fra en ANNEN rolle enn lesingen, så den skal
+    // prøves uansett hvordan lesingen gikk.
+    sjekk('delegeringen prøves uansett lesing', /if \(svar\.lese\.ok\)/.test(kode), false);
+    sjekk('sier hvilken rolle som mangler', /Storage Blob Delegator/.test(kode), true);
+
+    // SAS-kallet skal bevise at innholdet kom tilbake, ikke bare at noe gjorde det.
+    sjekk('sammenligner innholdet', /fikkRiktigInnhold: tekst === innhold/.test(kode), true);
+
+    // Skriving er opt-in i begge prøvene, og prøvefilen ryddes.
+    sjekk('skriving er opt-in begge steder',
+        (kode.match(/request\.query\.get\('skriv'\) === 'ja'/g) || []).length, 2);
+    sjekk('sletter prøveblobben', /await blobKlient\.delete\(\)/.test(kode), true);
+    sjekk('begge prøvene sier fra hvis ryddingen feiler',
+        (kode.match(/ble IKKE slettet og må fjernes manuelt/g) || []).length, 2);
 }
 
 // ---------- hentToken kjørt for ekte, med stubbede kilder ----------
