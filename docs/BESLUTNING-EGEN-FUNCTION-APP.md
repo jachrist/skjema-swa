@@ -1273,6 +1273,8 @@ ellers svarer de ulikt:
 | `staticwebapp.config.dev.json` | Ny, med auth mot dev-app-registreringen |
 | `.github/workflows/deploy-dev.yml` | Ny. **`workflow_dispatch` først** |
 | `scripts/build-config.js` | `dev` inn i hvitelista over gyldige navn |
+| `scripts/build-config.js` | `development`-aliaset **fjernet** — se navnefellen under |
+| `.github/workflows/deploy-funcapp-pilot.yml` | `miljo`-valget utvidet med `dev` |
 | `api/test/env-inventar.test.js` | `MILJOER = ['pilot', 'prod']` → også `dev` |
 | `api/src/functions/system.js` | `KJENTE_MILJOER` |
 | `CLAUDE.md` | Sier i dag rett ut at «Det finnes ikke noe tredje miljø» |
@@ -1351,6 +1353,106 @@ De rives når steg 6 er i mål og prod er over — ikke før.
 * Pilot og prod er uendret — ingen deploy, ingen app-settings rørt
 
 Først da begynner steg 3.
+
+## 8h. Avkryssingsliste
+
+Kortversjonen, til å hake av i. **Hver linje peker på hvor detaljene står** —
+den gjentar dem ikke. En avkryssingsliste som også forklarer, blir et andre
+eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
+
+### Steg 0 — dev-miljøet (8g)
+
+**Ressurser i dev-tenanten** (8g.1)
+
+- [ ] Ressursgruppe
+- [ ] Storage-konto — **tom**, ingen kopi fra pilot
+- [ ] Key Vault
+- [ ] **User-assigned** managed identity (egen ressurs, ikke system-assigned)
+- [ ] Function App, knyttet til identiteten
+- [ ] Static Web App — **Standard**-plan
+- [ ] Entra app-registrering + redirect URI
+
+`scripts/steg1-funcapp.ps1` gjør 1–6. Tørrkjører uten `-Kjor`.
+
+**Roller på identiteten** (8g.2) — ingen av dem heter `Contributor`
+
+- [ ] `Storage Table Data Contributor`
+- [ ] `Storage Blob Data Contributor`
+- [ ] `Storage Blob Delegator`
+- [ ] `Key Vault Secrets User`
+
+**Repoet** (8g.3) — alle må med, ellers svarer de ulikt
+
+- [ ] `config/env.dev.json`, med `AZURE_CLIENT_ID`
+- [ ] `staticwebapp.config.dev.json`
+- [ ] `.github/workflows/deploy-dev.yml` — `workflow_dispatch` først
+- [ ] `scripts/build-config.js` — `dev` inn i hvitelista
+- [ ] `scripts/build-config.js` — `development`-aliaset **fjernet**
+- [ ] `api/test/env-inventar.test.js` — `MILJOER`
+- [ ] `api/src/functions/system.js` — `KJENTE_MILJOER`
+- [ ] `CLAUDE.md` — «det finnes ikke noe tredje miljø» stemmer ikke lenger
+- [ ] `deploy-funcapp-pilot.yml` — `miljo`-valget utvidet med `dev`
+
+**GitHub** (8g.4)
+
+- [ ] Environment `dev`, **uten** approval
+- [ ] Tjenestehovedstol + hemmelighet
+
+**Første utrulling** (8g.5) — rekkefølgen er poenget
+
+- [ ] Innhold til SWA-en **før** lenking
+- [ ] Lenk backend
+- [ ] `/api/ping` — riktig SHA
+- [ ] Logg inn, `/api/ping` igjen — riktig UPN gjennom proxyen
+- [ ] `/api/system/info` — hemmelighetene satt, Key Vault-referanser løst
+- [ ] `/api/diagnose/mi-tabell` og `/api/diagnose/mi-blob` grønne, `sasKall` inkludert
+
+- [ ] **Pilot og prod er urørt** — ingen deploy, ingen app settings rørt
+
+### Steg 3 — storage uten delt nøkkel
+
+- [ ] Valg av legitimasjon, **ett sted**, brukt av `storage.js` og `blob.js`
+- [ ] `backup.js` → `getUserDelegationKey()` i stedet for kontonøkkel
+- [ ] `kontoNavnFra()` erstattet av `STORAGE_ACCOUNT_NAME`
+- [ ] Testsuiten grønn, også uten `node_modules`
+- [ ] Les og skriv et skjema **i dev**
+- [ ] Pilot og prod fortsatt uendret (den nye veien er inert til variabelen settes)
+
+### Steg 4 — én cron-jobb
+
+- [ ] Én jobb flyttet til timer-trigger
+- [ ] Kjørt på klokke i dev i et døgn
+
+### Steg 5 — resten av cron-jobbene
+
+- [ ] De åtte workflowene fjernet
+- [ ] `SCHEDULER_KEY` ute av koden, miljøfilene og helsesjekken
+- [ ] `node scripts/api-oversikt.js` viser færre anonyme endepunkter
+
+### Steg 5b — ta i bruk i pilot
+
+**Ingen kodeendring.** Dette er app settings og rolletildelinger.
+
+- [ ] Rollene tildelt pilotens identitet
+- [ ] `STORAGE_ACCOUNT_NAME` og `AZURE_CLIENT_ID` satt
+- [ ] `STORAGE_CONNECTION_STRING` fjernet
+- [ ] Et skjema leses og skrives i pilot
+
+Går det galt: sett tilkoblingsstrengen tilbake. Reversibelt uten deploy.
+
+### Steg 6 — prod
+
+- [ ] Pilot har stått i minst to uker
+- [ ] Samme som 5b, i prod
+- [ ] **Gaffelen i koden fjernet** — tilkoblingsstreng-veien ut av
+      `storage.js` og `blob.js`
+- [ ] `mi-diagnose`-endepunktene fjernet, med tester og rutedeklarasjoner
+- [ ] `scripts/steg1-funcapp.ps1` og `deploy-funcapp-pilot.yml` vurdert på nytt
+
+### Egne beslutninger, ikke en del av rekkefølgen
+
+- [ ] **7.1** Entra-auth per flyt — bevist, men hver flyt er en egen avgjørelse
+- [ ] **7.2** Graph-approller på MI-en — **ikke kjørt**, må prøves i dev først
 
 ## 9. Risiko
 
