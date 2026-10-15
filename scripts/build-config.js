@@ -3,29 +3,33 @@
  * Bare oppføringer merket med "public": true tas med — resten er
  * server-side og eksponeres aldri til nettleseren.
  *
- * Bruk:  node scripts/build-config.js development
- *        node scripts/build-config.js production
+ * Bruk:  node scripts/build-config.js dev
+ *        node scripts/build-config.js pilot
+ *        node scripts/build-config.js prod
  */
 const fs = require('fs');
 const path = require('path');
 
 const miljo = process.argv[2];
-if (!['development', 'production', 'pilot', 'prod', 'lokal'].includes(miljo)) {
-    console.error('Bruk: node scripts/build-config.js <pilot|prod|lokal>');
-    console.error('(development og production er aliaser for pilot — bakoverkompatibilitet)');
+if (!['production', 'dev', 'pilot', 'prod', 'lokal'].includes(miljo)) {
+    console.error('Bruk: node scripts/build-config.js <dev|pilot|prod|lokal>');
+    console.error('(production er et gammelt navn for pilot — bakoverkompatibilitet)');
     process.exit(1);
 }
 
-// `development` og `production` er de gamle miljønavnene. Begge filene er
-// fjernet: `env.production.json` ble aldri lest (aliaset nedenfor rutet den
-// til pilot), og `development` hadde ingen deploy-workflow — den var bare
-// input til en røyktest i CI. To miljøfiler ingen ruller ut, vedlikeholdes
-// ikke, og de så like autoritative ut som de to ekte.
+// `development`-ALIASET ER FJERNET (15.10.2026), og det er med vilje.
 //
-// Navnene godtas fortsatt, så en gammel kommando eller workflow ikke brekker.
-// De rutes til pilot, og sier fra om det.
+// Det rutet `development` til pilot som bakoverkompatibilitet. Da `dev` ble
+// et ekte miljø, ble aliaset aktivt villedende: to navn som ligner og peker
+// på hver sin ting. `node scripts/build-config.js development` ville bygget
+// PILOT mens den som skrev det mente dev. Navnet avvises nå i stedet, og
+// feilmeldingen viser de gyldige.
+//
+// `production` → pilot står igjen, og det er ikke en forglemmelse:
+// `config/env.pilot.json` setter `MILJO=production`, så det navnet bærer
+// vekt. Å endre det rører et miljø i drift.
 let effektivtMiljo = miljo;
-if (['production', 'development'].includes(miljo)) {
+if (miljo === 'production') {
     effektivtMiljo = 'pilot';
     console.log(`(${miljo} er et gammelt miljønavn — bruker pilot)`);
 }
@@ -94,6 +98,6 @@ if (fs.existsSync(swaConfigKilde)) {
     ];
     for (const m of mal) fs.copyFileSync(swaConfigKilde, m);
     console.log(`Kopierte staticwebapp.config.${effektivtMiljo}.json → ${mal.map(m => path.relative(path.join(__dirname, '..'), m)).join(' og ')}`);
-} else if (effektivtMiljo !== 'lokal' && effektivtMiljo !== 'development') {
+} else if (effektivtMiljo !== 'lokal') {
     console.warn(`ADVARSEL: ${swaConfigKilde} finnes ikke — beholder eksisterende staticwebapp.config.json`);
 }

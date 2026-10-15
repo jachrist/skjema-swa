@@ -26,7 +26,7 @@ on:
         required: true
         default: 'pilot'
         type: choice
-        options: [pilot, prod]
+        options: [dev, pilot, prod]
 
 jobs:
   deploy:

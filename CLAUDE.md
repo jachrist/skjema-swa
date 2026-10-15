@@ -88,19 +88,34 @@ brukeren merger, blir liggende igjen.
 
 ## Miljøer
 
+- **dev** — `config/env.dev.json`. Dev-tenanten. **Lenket Function App**, ikke
+  SWA Managed Functions: her har koden en managed identity, og lagringen går
+  uten tilkoblingsstreng. Deploy er manuell (`deploy-dev.yml` for frontend,
+  «Deploy API til Function App» for API-et — to jobber, to SHA-er).
 - **pilot** — `config/env.pilot.json` + Key Vault `kv-fhsskjema-pilot`.
 - **prod** — `config/env.prod.json` + Key Vault `fhs-kv-01`. Deploy krever Environment approval.
 
-Det finnes ikke noe tredje miljø. Navnene `development` og `production` er
-gamle; `env.development.json` og `env.production.json` er fjernet, og begge
-navnene rutes til pilot av `build-config.js` slik at en gammel kommando ikke
-brekker.
+Dev kom til 15.10.2026, som steg 0 i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
+**Pilot og prod er uendret** og kjører fortsatt på tilkoblingsstreng; koden
+bærer begge veier og velger på konfigurasjon. Den gaffelen skal bort i steg 6.
+
+`production` er et gammelt navn for pilot og rutes dit av `build-config.js`,
+fordi `env.pilot.json` setter `MILJO=production`. **`development` er ikke et
+navn lenger** — det rutet til pilot, og med `dev` som et ekte miljø ville to
+navn som ligner pekt på hver sin ting. Begge listene over miljønavn
+(`build-config.js` og `system.js`) leses av `api/test/system-miljo.test.js`,
+som krever at de svarer likt.
 
 `config/env.*.json` er en **inventarliste**, ikke en kilde: ingenting der
 settes automatisk. Hemmelige verdier bor i Key Vault og limes manuelt inn i
-SWA Configuration. `api/test/env-inventar.test.js` krever at hver
-`process.env` i `api/src` står i begge filene — ellers driver lista, og en
-oversikt som ser komplett ut og ikke er det, er verre enn ingen.
+app settings. `api/test/env-inventar.test.js` krever at hver `process.env` i
+`api/src` står i alle tre filene — ellers driver lista, og en oversikt som ser
+komplett ut og ikke er det, er verre enn ingen.
+
+Unntaket er variabler **plattformen** setter, som `IDENTITY_ENDPOINT` og
+`IDENTITY_HEADER`. De er erklært i `SATT_AV_PLATTFORMEN` i koden som leser
+dem. `AZURE_CLIENT_ID` er motsatt: den er påkrevd i dev, men leses av
+`@azure/identity` og ikke av vår kode, så inventartesten ser den ikke.
 
 ## Referanse-app
 

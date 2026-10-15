@@ -51,10 +51,15 @@ function sjekk(navn, faktisk, forventet) {
 const rot = path.join(__dirname, '..', '..');
 
 /**
- * De AKTIVE miljøene. Det er disse to som rulles ut
- * (`deploy-pilot.yml`, `deploy-prod.yml`); noe tredje miljø finnes ikke.
+ * De AKTIVE miljøene. Alle tre rulles ut: `deploy-dev.yml` og «Deploy API til
+ * Function App» for dev, `deploy-pilot.yml` og `deploy-prod.yml` for de to
+ * andre.
+ *
+ * `dev` kom til 15.10.2026. Kravene under gjelder den likt — et nytt miljø
+ * som slipper unna inventaret er nettopp et inventar som ser komplett ut og
+ * ikke er det.
  */
-const MILJOER = ['pilot', 'prod'];
+const MILJOER = ['dev', 'pilot', 'prod'];
 
 /**
  * Hver app-setting api/src leser.
@@ -272,6 +277,31 @@ for (const miljo of MILJOER) {
             sjekk(`${miljo}: ingen ${hva}`, m.test(tekst), false);
         }
     }
+}
+
+// ---------- dev skal ikke ha en tilkoblingsstreng ----------
+//
+// Hele poenget med dev er at lagringen går på managed identity. Settes
+// STORAGE_CONNECTION_STRING likevel, velger koden den gamle veien — og da
+// måler miljøet ikke lenger det det ble bygget for, uten at noe feiler.
+//
+// Inventaret er ikke app settings, så dette kan ikke garantere at ingen setter
+// den i Azure. Det det KAN gjøre, er å hindre at lista ber noen om å gjøre det.
+{
+    const dev = JSON.parse(fs.readFileSync(path.join(rot, 'config', 'env.dev.json'), 'utf8'));
+    const cs = dev.STORAGE_CONNECTION_STRING || {};
+    sjekk('dev: STORAGE_CONNECTION_STRING er merket valgfri', cs.valgfri === true, true);
+    sjekk('dev: og er ikke en keyvault-referanse', 'keyvault' in cs, false);
+    sjekk('dev: og har ingen verdi', 'value' in cs, false);
+    sjekk('dev: merknaden sier at den ikke skal settes',
+        /SETTES IKKE I DEV/.test(cs.merknad || ''), true);
+
+    // Og motsatt: unntaket skal være ETT, ikke to. TODO_STORAGE_CONNECTION_STRING
+    // peker på en konto i en annen tenant der en MI ikke kan få rolle, og
+    // forblir en delt nøkkel. Står den som valgfri, har noen trodd den også
+    // kunne forsvinne.
+    const todo = dev.TODO_STORAGE_CONNECTION_STRING || {};
+    sjekk('dev: TODO-strengen er fortsatt en hemmelighet', 'keyvault' in todo, true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

@@ -139,6 +139,64 @@ const SATT = { satt: true, lengde: 40 };
     sjekk('prod: og markeres som utenfor miljøet', r.gjelderHer, false);
 }
 
+// ---------- dev er et ekte miljø, development er ikke et navn lenger ----------
+//
+// Lagt til 15.10.2026 sammen med dev-miljøet. Uten disse var `dev` og
+// `development` usynlige for testen: den dekket pilot, prod, production og
+// ett ukjent navn, og ville vært grønn uansett hva de to gjorde.
+{
+    process.env.MILJO = 'dev';
+    sjekk('dev er sitt eget miljø', miljonavn(), 'dev');
+    // Dev bruker klienthemmelighet som pilot, ikke sertifikat som prod.
+    sjekk('dev: tom AAD_CLIENT_SECRET er en ekte mangel',
+        medForventning('AAD_CLIENT_SECRET', TOM).gjelderHer, undefined);
+
+    // `development` var alias for pilot til 15.10.2026. Det er fjernet, og da
+    // skal navnet være UKJENT — ikke stille rutet til et miljø. Et ukjent
+    // navn melder en manglende hemmelighet i stedet for å unnskylde den, og
+    // det er den trygge retningen.
+    process.env.MILJO = 'development';
+    sjekk('development er ikke pilot lenger', miljonavn(), 'development');
+    sjekk('development: ingen unnskyldning for tom verdi',
+        medForventning('AAD_CLIENT_SECRET', TOM).gjelderHer, undefined);
+}
+
+// ---------- én regel, to filer ----------
+//
+// system.js og scripts/build-config.js har hver sin liste over miljønavn.
+// De drev fra hverandre før: build-config rutet `development` til pilot mens
+// KJENTE_MILJOER regnet det som et eget miljø. Denne testen leser BEGGE og
+// krever likt svar — formen CLAUDE.md foreskriver for en regel som må finnes
+// to steder.
+{
+    const fs = require('fs');
+    const path = require('path');
+    const rot = path.join(__dirname, '..', '..');
+    const sysKilde = fs.readFileSync(path.join(rot, 'api', 'src', 'functions', 'system.js'), 'utf8');
+    const byggKilde = fs.readFileSync(path.join(rot, 'scripts', 'build-config.js'), 'utf8');
+
+    const navnFra = (kilde, m) => {
+        const t = new RegExp(m).exec(kilde);
+        if (!t) return null;
+        return [...t[1].matchAll(/'([a-z]+)'/g)].map(x => x[1]).sort();
+    };
+
+    const kjente = navnFra(sysKilde, "KJENTE_MILJOER = new Set\\(\\[([^\\]]*)\\]");
+    const godtatt = navnFra(byggKilde, "!\\[([^\\]]*)\\]\\.includes\\(miljo\\)");
+    sjekk('fant KJENTE_MILJOER', Array.isArray(kjente), true);
+    sjekk('fant lista i build-config', Array.isArray(godtatt), true);
+
+    // build-config godtar i tillegg `production` som gammelt alias. Alt ANNET
+    // skal være det samme settet.
+    const utenAlias = (godtatt || []).filter(n => n !== 'production');
+    sjekk('samme miljønavn i system.js og build-config.js', utenAlias, kjente);
+
+    // Og aliaset skal bare finnes ett sted: det som rutes om, skal rutes om
+    // likt. `development` er fjernet begge steder.
+    sjekk('development er borte fra build-config', /'development'/.test(byggKilde), false);
+    sjekk('development er borte fra system.js', /'development'/.test(sysKilde), false);
+}
+
 if (før === undefined) delete process.env.MILJO; else process.env.MILJO = før;
 
 console.log(`\n${ok} OK, ${feil} feil`);
