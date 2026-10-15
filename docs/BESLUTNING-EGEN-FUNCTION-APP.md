@@ -129,9 +129,15 @@ samme runde.
 
 1. **En Function App per miljø** (pilot, prod). Node 22, Flex Consumption
    eller Consumption. Samme region som SWA-en.
-2. **System-assigned managed identity** på hver av dem.
+2. **En user-assigned managed identity** per miljø, knyttet til Function
+   App-en. **Ikke system-assigned** — begrunnelsen står i 8g, og den er
+   verdt å lese før noen oppretter noe: en system-assigned identitet dør med
+   appen, og da må hver håndgitte tildeling under gjøres om.
 3. **Rolletildelinger** på lagringskontoen i samme miljø:
-   `Storage Table Data Contributor` og `Storage Blob Data Contributor`.
+   `Storage Table Data Contributor`, `Storage Blob Data Contributor` og
+   `Storage Blob Delegator`. Den siste er den `backup.js` trenger for å lage
+   en SAS uten kontonøkkel — se 8f. **`Contributor` er ikke en av dem**, og
+   skal ikke tildeles.
 4. **`Key Vault Secrets User`** på miljøets Key Vault, for at
    Key Vault-referanser i app settings skal løses.
 5. **Lenking**: SWA-en konfigureres med Function App-en som linked backend.
@@ -244,6 +250,38 @@ Løsningen bruker allerede Microsoft Graph mot SharePoint, i dag med
 `Sites.Selected` for backup-opplasting. Da er det ingen hemmelighet igjen å
 rotere: hverken flyt-URL eller client secret.
 
+Cyberforsvaret bekreftet 15.10.2026 at dette er mulig, og at det er å
+foretrekke framfor en «løs» app-registrering som ingen eier.
+
+**Mekanismen.** En managed identity har en tjenestehovedstol i Entra, akkurat
+som en app-registrering, og approller tildeles den direkte. For
+`Sites.Selected` er det to trinn, som ellers:
+
+1. **Approllen** tildeles MI-ens tjenestehovedstol i Entra.
+2. **Sted-tilgangen** gis per SharePoint-site, med MI-ens `appId`.
+
+Trinn 1 har **ingen portalknapp** — MI-er dukker ikke opp i «API
+permissions»-bildet — så det gjøres med Graph eller PowerShell:
+
+```powershell
+Connect-MgGraph -Scopes "AppRoleAssignment.ReadWrite.All","Application.Read.All"
+$mi    = Get-MgServicePrincipal -Filter "displayName eq '<identitetsnavn>'"
+$graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+$rolle = $graph.AppRoles | Where-Object { $_.Value -eq 'Sites.Selected' -and $_.AllowedMemberTypes -contains 'Application' }
+New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $mi.Id `
+    -PrincipalId $mi.Id -ResourceId $graph.Id -AppRoleId $rolle.Id
+```
+
+Trinn 2 er `POST /sites/{siteId}/permissions` med MI-ens `appId`, eller
+PnP-PowerShell. Det krever `Sites.FullControl.All` hos den som utfører det —
+altså en engangsjobb for Cyberforsvaret, i samme runde som resten.
+
+**Forbehold om kildene:** cmdlet-navnene og den nøyaktige formen på
+site-grantet er skrevet fra hukommelsen, ikke lest i dokumentasjonen —
+nettverkspolicyen i økta der dette ble skrevet blokkerte
+`learn.microsoft.com`. Mekanismen er sikker; detaljene bør verifiseres. Samme
+forbehold som kapittel 10.
+
 `Mail.Send` som approlle lar appen sende som hvem som helst i tenanten, og må
 derfor snevres med en **Application Access Policy** (`New-ApplicationAccessPolicy`
 i Exchange Online) som binder den til én postboks. Det er en PowerShell-kommando
@@ -254,12 +292,17 @@ Avveiningen: e-postmaler og -formatering flytter fra Power Automate inn i kode.
 Det er en fordel for sporbarhet og test, og en ulempe for den som er vant til å
 endre teksten i flyten.
 
-**Dette er IKKE prøvd.** 7.1 er målt; 7.2 er fortsatt et forslag. Prøven i
-8e viste at identiteten får et token for `https://graph.microsoft.com/`, men
-et token er ikke tilgang — det lærte vi to ganger i 8f. At en approlle
-faktisk kan tildeles en managed identity, og at `Sites.Selected` og
-`Mail.Send` virker med den, er ikke verifisert her. Det er en egen prøve, og
-den bør kjøres i dev før noen planlegger rundt den.
+**Dette er IKKE kjørt.** 7.1 er målt ende til ende; 7.2 er fortsatt et
+forslag, og forskjellen er verdt å holde fast ved.
+
+Det vi har: Cyberforsvaret sier mekanismen finnes og er å foretrekke, og 8e
+viste at identiteten får et token for `https://graph.microsoft.com/`.
+
+Det vi ikke har: **et token er ikke tilgang** — det lærte vi to ganger i 8f,
+først på tabellen og så på flyten. At approllen faktisk gir
+`Sites.Selected`-opplasting, og at `Mail.Send` virker gjennom en Application
+Access Policy, er ikke målt. Det er en egen prøve, på linje med `mi-tabell`
+og `mi-blob`, og den bør kjøres i dev før noen planlegger rundt den.
 
 ---
 
@@ -1086,12 +1129,57 @@ og fellene er de vi faktisk gikk i under steg 1 og 2.
 | Ressursgruppe | Egen, så opprydding er én kommando |
 | Storage-konto | **Tom.** Se «Ikke kopier data» under |
 | Key Vault | Dev-tenantens egen |
-| Function App | Consumption eller Flex. **System-assigned managed identity på** |
+| Managed identity | **User-assigned**, egen ressurs. Se under |
+| Function App | Consumption eller Flex. Knyttet til identiteten over, med `AZURE_CLIENT_ID` som app setting |
 | Static Web App | **Standard-plan.** Free støtter ikke linked backend |
 | Entra app-registrering | Egen, med redirect URI for dev-SWA-ens vertsnavn |
 
-`scripts/steg1-funcapp.ps1` lager de tre midterste og lenker SWA-en. Den
-tørrkjører som standard; `-Kjor` utfører.
+`scripts/steg1-funcapp.ps1` lager identiteten, Function App-en, lagrings-
+kontoen og SWA-en, og lenker dem. Den tørrkjører som standard; `-Kjor`
+utfører.
+
+#### Hvorfor user-assigned, og ikke system-assigned
+
+En system-assigned identitet lever og dør med ressursen. Slettes Function
+App-en — eller gjenskapes den, i en opprydding eller en flytting mellom
+ressursgrupper — får den ny `oid` og ny `appId`. Da er **alt som er håndgitt
+borte**:
+
+| Tildeling | Hvem må gjøre den om |
+|---|---|
+| De tre storage-rollene | dere selv |
+| `Key Vault Secrets User` | dere selv |
+| Graph-approller (`Sites.Selected`, `Mail.Send`) | **Cyberforsvaret** |
+| SharePoint-tilgang per site | **Cyberforsvaret** |
+| Application Access Policy for `Mail.Send` | **Cyberforsvaret** |
+| `oid` i Power Automate-flytenes allow-liste | den som eier flyten |
+
+Seks manuelle tildelinger, halvparten av dem utenfor deres egen kontroll,
+fordi noen slettet en app. Og `oid`-en i flyt-allow-lista er ikke en teoretisk
+bekymring — 8f viste at det er nettopp `oid` Power Automate sammenligner mot.
+
+En user-assigned identitet er en selvstendig ressurs. Den overlever at
+Function App-en gjenskapes, kan knyttes til en erstatning, og beholder
+`oid`-en og `appId`-en sin.
+
+Prisen er én app setting: `DefaultAzureCredential` må få vite hvilken
+identitet den skal bruke, via **`AZURE_CLIENT_ID`**. Uten den prøver den
+system-assigned og feiler med en melding om at ingen identitet er
+tilgjengelig — som ser ut som at managed identity ikke er slått på i det
+hele tatt.
+
+`AZURE_CLIENT_ID` må derfor inn i `config/env.dev.json` sammen med de andre.
+
+#### Rettighetene er ikke synlige i portalen
+
+En app-registrering viser rettighetene sine under «API permissions». En
+managed identity gjør det ikke — Graph-approller tildelt en MI er bare
+synlige via et Graph-oppslag.
+
+Det er en reell ulempe for forvaltning og for en sikkerhetsevaluering:
+«hva har denne identiteten lov til?» blir et spørsmål som krever en
+kommando, ikke et blikk. Den som setter dette opp, bør skrive ned hva som
+ble tildelt — ellers er det usynlig for den som overtar.
 
 ### 2. Roller på Function App-ens identitet
 

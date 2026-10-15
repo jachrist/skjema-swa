@@ -16,7 +16,8 @@
     DET SKRIPTET GJØR:
       1. Oppretter lagringskonto til Function App-runtime
       2. Oppretter Function App-en, Node 22, Linux
-      3. Slår på managed identity og tildeler rollene den trenger
+      3. Oppretter en USER-ASSIGNED managed identity, knytter den til
+         Function App-en, setter AZURE_CLIENT_ID og tildeler rollene
       4. Oppretter prøve-SWA-en (Standard — lenkede backends finnes ikke på Free)
       5. STOPPER, og ber deg deploye innhold og bekrefte at det vises
       6. Lenker Function App-en til SWA-en
@@ -29,12 +30,20 @@
     alt | funcapp | swa | lenk. Hvert trinn krever bare sine egne
     parametere, så den som skal lenke på nytt slipper å oppgi resten.
 
+.PARAMETER Identitet
+    Navnet på den user-assigned managed identity-en. Den opprettes som egen
+    ressurs, og er bevisst IKKE system-assigned: en system-assigned identitet
+    dør med Function App-en, og da må hver håndgitte tildeling gjøres om —
+    storage-rollene, Key Vault-rollen, Graph-approllene, SharePoint-tilgangen
+    per site, og `oid` i Power Automate-flytenes allow-liste. Se 8g.
+
 .PARAMETER Kjor
     Uten denne tørrkjører skriptet og viser bare hva det ville gjort.
 
 .EXAMPLE
     .\steg1-funcapp.ps1 -Rg FHS-skjema -FuncApp testfapp -Lagring fastate01 `
-        -Swa swa-funcapp-proeve -KeyVault kv-fhsskjema-pilot -DataLagring <konto> -Kjor
+        -Swa swa-funcapp-proeve -KeyVault kv-fhsskjema-pilot -DataLagring <konto> `
+        -Identitet id-fhsskjema-dev -Kjor
 
 .EXAMPLE
     # Bare lenkingen, etter at innholdet er bekreftet:
@@ -48,6 +57,7 @@ param(
     [string]$Swa,
     [string]$KeyVault,
     [string]$DataLagring,
+    [string]$Identitet,
     [string]$Sted = 'norwayeast',
     [string]$SwaSted = 'westeurope',
     # Trinn kan kjøres hver for seg. Første versjon hadde alt påkrevd og alt i
@@ -62,7 +72,7 @@ $ErrorActionPreference = 'Stop'
 # Hvert trinn krever sitt. Sjekkes her framfor med [Parameter(Mandatory)], som
 # ville spurt om alle seks uansett hvilket trinn du ba om.
 $kreves = @{
-    'funcapp' = @('FuncApp', 'Lagring', 'KeyVault', 'DataLagring')
+    'funcapp' = @('FuncApp', 'Lagring', 'KeyVault', 'DataLagring', 'Identitet')
     'swa'     = @('Swa')
     'lenk'    = @('FuncApp', 'Swa')
 }
@@ -113,22 +123,56 @@ Kjør-Az @('functionapp','create','--name',$FuncApp,'--resource-group',$Rg,
 }
 
 if ($Trinn -in @('alt','funcapp')) {
-Write-Host "`n== 3. Managed identity og roller ==" -ForegroundColor Green
+Write-Host "`n== 3. User-assigned managed identity og roller ==" -ForegroundColor Green
 Write-Host "   (krever User Access Administrator eller Owner)"
-Kjør-Az @('functionapp','identity','assign','--name',$FuncApp,'--resource-group',$Rg) | Out-Null
+
+# USER-ASSIGNED, ikke system-assigned. En system-assigned identitet dør med
+# Function App-en: gjenskapes appen, får den ny oid og ny appId, og da er ALT
+# som er håndgitt borte — storage-rollene, Key Vault-rollen, Graph-approllene,
+# SharePoint-tilgangen per site, og oid i flytenes allow-liste. Flere av dem
+# krever Cyberforsvaret for å settes opp på nytt.
+Kjør-Az @('identity','create','--name',$Identitet,'--resource-group',$Rg,'--location',$Sted) | Out-Null
 
 if ($Kjor) {
-    $principal = az functionapp identity show --name $FuncApp --resource-group $Rg --query principalId -o tsv
+    $principal   = az identity show --name $Identitet --resource-group $Rg --query principalId -o tsv
+    $klientId    = az identity show --name $Identitet --resource-group $Rg --query clientId -o tsv
+    $identitetId = az identity show --name $Identitet --resource-group $Rg --query id -o tsv
     $sub = az account show --query id -o tsv
 } else {
-    $principal = '<principalId>'
+    $principal   = '<principalId>'
+    $klientId    = '<clientId>'
+    $identitetId = '<identitets-ressurs-id>'
     $sub = '<abonnements-id>'
 }
-foreach ($rolle in @('Storage Table Data Contributor','Storage Blob Data Contributor')) {
-    Kjør-Az @('role','assignment','create','--assignee',$principal,'--role',$rolle,
+
+Kjør-Az @('functionapp','identity','assign','--name',$FuncApp,'--resource-group',$Rg,
+          '--identities',$identitetId) | Out-Null
+
+# DefaultAzureCredential må få vite HVILKEN identitet den skal bruke. Uten
+# denne prøver den system-assigned og feiler med en melding om at ingen
+# identitet er tilgjengelig — som ser ut som at MI ikke er slått på.
+#
+# --output none er ikke pynt: uten den skriver kommandoen ut ALLE app settings
+# på appen, STORAGE_CONNECTION_STRING inkludert.
+Kjør-Az @('functionapp','config','appsettings','set','--name',$FuncApp,'--resource-group',$Rg,
+          '--settings',"AZURE_CLIENT_ID=$klientId",'--output','none') | Out-Null
+
+# Tre storage-roller, ikke to. Blob Delegator er den backup.js trenger for å
+# lage en SAS uten kontonøkkel (getUserDelegationKey) — målt i 8f.
+#
+# Og MERK: ingen av disse er «Contributor». Den er en kontrollplan-rolle som
+# ikke gir tilgang til en eneste tabellrad, og som i tillegg gir rett til å
+# liste kontonøklene — full datatilgang gjennom en sidedør, med den delte
+# nøkkelen hele øvelsen går ut på å fjerne.
+foreach ($rolle in @('Storage Table Data Contributor','Storage Blob Data Contributor','Storage Blob Delegator')) {
+    # --assignee-object-id, ikke --assignee: kortformen slår opp prinsipalen i
+    # Graph først, og for managed identities feiler eller henger det oppslaget.
+    Kjør-Az @('role','assignment','create','--assignee-object-id',$principal,
+              '--assignee-principal-type','ServicePrincipal','--role',$rolle,
               '--scope',"/subscriptions/$sub/resourceGroups/$Rg/providers/Microsoft.Storage/storageAccounts/$DataLagring") | Out-Null
 }
-Kjør-Az @('role','assignment','create','--assignee',$principal,'--role','Key Vault Secrets User',
+Kjør-Az @('role','assignment','create','--assignee-object-id',$principal,
+          '--assignee-principal-type','ServicePrincipal','--role','Key Vault Secrets User',
           '--scope',"/subscriptions/$sub/resourceGroups/$Rg/providers/Microsoft.KeyVault/vaults/$KeyVault") | Out-Null
 }
 
