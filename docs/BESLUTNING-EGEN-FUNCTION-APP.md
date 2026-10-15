@@ -642,12 +642,22 @@ ellers blir det liggende tildelinger og hemmeligheter som refererer til noe
 som ikke finnes.
 
 **1. Løsne det som peker på identiteten.** Den forsvinner med Function
-App-en, og det som refererer til den blir foreldreløst:
+App-en, og tildelingene blir stående som «Identity not found».
+
+Det er ryddighet, ikke risiko: Azure gjenbruker ikke objekt-ID-er, så en
+tildeling mot en slettet identitet gir ingen tilgang til noen. Grunnen til å
+fjerne dem er at de gjør IAM-bildet uleselig — og «hvem har tilgang til denne
+kontoen?» er et spørsmål en sikkerhetsevaluering stiller om nettopp
+`stfhsskjemapilot`.
 
 ```
-# Rolletildelingene på PILOT-kontoen — de ble gitt til prøveappens identitet
-az role assignment list --assignee <oid> --all --output table
-az role assignment delete --assignee <oid> --scope <storage-konto-id>
+# Rolletildelingene på PILOT-kontoen — gitt til prøveappens identitet
+az role assignment list --assignee <oid> --all \
+    --query "[].{rolle:roleDefinitionName, scope:scope, id:id}" -o table
+
+# Slett på ID, én per rad. --scope uten --role fjerner ALLE tildelinger for
+# prinsipalen på det scopet, og da er det lett å ta med noe du ikke mente.
+az role assignment delete --ids <id fra lista>
 ```
 
 Fjern også identitetens `oid` fra testflytens liste over tillatte avsendere,
