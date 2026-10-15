@@ -1,12 +1,15 @@
-name: Deploy API til Function App (steg 1-prøve)
+name: Deploy API til Function App
 
 # Deployer BARE api/ til en frittstående Function App. Frontend og
 # SWA-oppsettet røres ikke av denne jobben.
 #
-# Hører til steg 1 i docs/BESLUTNING-EGEN-FUNCTION-APP.md: forsøket som
-# avgjør om SWA sender x-ms-client-principal videre til en lenket backend.
-# Gjør den ikke det, stopper hele forslaget der, og da skal denne jobben og
-# ressursen fjernes igjen.
+# Skrevet for steg 1-forsøket 14.10.2026. Det er besvart, og prøveoppsettet
+# er revet — men denne jobben er IKKE stillas: den er deploy-veien steg 0
+# bruker for dev-miljøet (8g i docs/BESLUTNING-EGEN-FUNCTION-APP.md).
+# Filnavnet sier «pilot» av historiske grunner; `appnavn` avgjør hvor det går.
+#
+# `miljo` må utvides med `dev` når det miljøet opprettes — det er ett av de
+# syv stedene 8g lister opp.
 #
 # KUN manuell kjøring. Function App-en finnes ikke før noen har opprettet
 # den (scripts/steg1-funcapp.ps1), og en jobb som feiler ved hver push er en
