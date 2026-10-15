@@ -8,8 +8,9 @@ name: Deploy API til Function App
 # bruker for dev-miljøet (8g i docs/BESLUTNING-EGEN-FUNCTION-APP.md).
 # Filnavnet sier «pilot» av historiske grunner; `appnavn` avgjør hvor det går.
 #
-# `miljo` må utvides med `dev` når det miljøet opprettes — det er ett av de
-# syv stedene 8g lister opp.
+# `miljo` må utvides med `dev` når det miljøet opprettes. Den står i lista
+# over filer som må endres i 8g.3 — ikke stol på et antall her, lista er
+# fasiten.
 #
 # KUN manuell kjøring. Function App-en finnes ikke før noen har opprettet
 # den (scripts/steg1-funcapp.ps1), og en jobb som feiler ved hver push er en
