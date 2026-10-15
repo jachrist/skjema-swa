@@ -239,18 +239,70 @@ endre teksten i flyten.
 
 Hvert steg er valgt slik at det kan **verifiseres før det neste begynner**.
 
+**Omskrevet 15.10.2026.** Den opprinnelige planen la om pilot *på plass*:
+steg 3 sa «les og skriv et skjema i pilot». Det er ikke lenger nødvendig, og
+det var aldri ønskelig. Steg 1, 2 og 7 ble bevist på et prøveoppsett uten at
+pilot merket noe, og den fremgangsmåten gjelder nå hele veien: **bygg et
+komplett dev-miljø først, verifiser der ingenting står på spill, og flytt
+pilot etterpå med en konfigurasjonsendring.**
+
+Numrene 1–7 betyr det samme som før. Dev-miljøet er lagt til som **steg 0**
+og pilot-overgangen som **steg 5b**, nettopp for at de rundt femti
+henvisningene til «steg 3» og «steg 7» i dokumentasjonen fortsatt skal
+stemme. Et stabilt nummer er mer verdt enn et pent et.
+
 | Steg | Hva | Verifiseres ved |
 |---|---|---|
+| **0** | **Bygg dev-miljøet** i dev-tenanten: SWA + Function App, egen storage, egen Key Vault, egen app-registrering. Se 8g | `/api/ping` svarer med riktig SHA, pålogging gir riktig UPN, `/api/system/info` viser riktige hemmeligheter. Pilot og prod er urørt |
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
-| 3 | Legg om `storage.js` og `blob.js` til `DefaultAzureCredential`. `TODO_STORAGE_CONNECTION_STRING` beholdes | Hele testsuiten grønn, inkludert uten `node_modules`. Deretter: les og skriv et skjema i pilot |
-| 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke i pilot i et døgn |
+| 3 | Legg om `storage.js` og `blob.js` til `DefaultAzureCredential`, og `backup.js` til user delegation SAS. **Begge veier i samme kode**, valgt av konfigurasjon — se under | Hele testsuiten grønn, også uten `node_modules`. Deretter: les og skriv et skjema **i dev**. Pilot og prod er uendret fordi den nye veien er inert til `STORAGE_ACCOUNT_NAME` settes |
+| 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke **i dev** i et døgn |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
+| **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
-| 7 | *Egen beslutning:* Entra-auth på én flyt, eller Graph-med-MI for e-post | Prøv i pilot, med én flyt |
+| 7 | ✅ **Bevist 15.10.2026** — se 8f. Entra-auth på flytene, `sig=` ut av trigger-URL-ene | Flyten svarer 200 på et MI-token, og URL-en har ingen signatur |
 
-Steg 1 og 2 er de eneste som må gjøres i rekkefølge. Feiler steg 1, stopper
-hele forslaget her, og notatet har spart oss resten.
+Steg 1 og 2 var de eneste som måtte gjøres i rekkefølge, og begge er gjort.
+
+### Hvorfor steg 3 har to veier i samme kode
+
+`storage.js` og `blob.js` velger managed identity når `STORAGE_ACCOUNT_NAME`
+er satt og `STORAGE_CONNECTION_STRING` ikke er det — ellers tilkoblingsstreng,
+som i dag.
+
+Det gir tre ting:
+
+* **`main` kan bære begge deler samtidig.** Dev kjører MI-veien mens pilot og
+  prod står uendret. Ingen gren som lever sitt eget liv i ukevis.
+* **Overgangen i 5b er en app-settings-endring, ikke en deploy.** Den kan
+  rulles tilbake på et minutt ved å sette strengen inn igjen.
+* **Koden er inert i pilot og prod** til noen setter variabelen. Et deploy med
+  steg 3 i seg endrer ingen atferd der.
+
+Prisen er en gaffel inne i koden, og den skal bort i steg 6 når prod er over.
+**Valget må stå ett sted**, brukt av begge filene. To kopier av «hvilken
+legitimasjon bruker vi» er nøyaktig feilklassen dette repoet lager flest av.
+
+### Hvorfor ikke et eget repo eller en fork
+
+Et fork isolerer kilden, mens risikoen ligger i ressursene og
+konfigurasjonen. Det som deployer er workflows og Environments — ikke hvilke
+filer som finnes. `deploy-pilot.yml` fyrer på push til `main`,
+`deploy-prod.yml` er manuell med approval, og en `deploy-dev.yml` med bare
+`workflow_dispatch` kan ikke røre noen av dem.
+
+Det er demonstrert, ikke antatt: `deploy-funcapp-pilot.yml` og
+`deploy-swa-proeve.yml` har ligget på `main` siden 14.10.2026, bygget en
+komplett parallell løsning med egen SWA og egen Function App, og pilot og
+prod merket ingenting.
+
+Prisen ved et fork er derimot konkret: CLAUDE.md, 112 testfiler, `scripts/`
+og hele `docs/` duplisert — og i ukene migreringen tar må hver rettelse i
+løsningen som er i drift påføres to steder for hånd, uten noen test som
+krever at de er enige. Det er feilklassen CLAUDE.md åpner med, gjort til
+arbeidsmetode, samtidig som autentiseringsmodellen endres. En langlevd gren
+er det samme med en big-bang-merge på slutten.
 
 ## 8b. Slik kjører du steg 1
 
@@ -990,6 +1042,139 @@ bare at *en* nøkkel kom tilbake.
 
 Med dette er steg 3 komplett: tabell, blob, delegering og SAS, alle målt.
 
+## 8g. Slik bygges dev-miljøet (steg 0)
+
+Målet er et **komplett, uavhengig miljø i dev-tenanten** som kjører samme
+kode som pilot og prod, men med managed identity hele veien. Ingenting her
+rører miljøene i drift.
+
+Rekkefølgen under er valgt slik at hvert ledd kan verifiseres før det neste,
+og fellene er de vi faktisk gikk i under steg 1 og 2.
+
+### 1. Ressursene i dev-tenanten
+
+| Ressurs | Merknad |
+|---|---|
+| Ressursgruppe | Egen, så opprydding er én kommando |
+| Storage-konto | **Tom.** Se «Ikke kopier data» under |
+| Key Vault | Dev-tenantens egen |
+| Function App | Consumption eller Flex. **System-assigned managed identity på** |
+| Static Web App | **Standard-plan.** Free støtter ikke linked backend |
+| Entra app-registrering | Egen, med redirect URI for dev-SWA-ens vertsnavn |
+
+`scripts/steg1-funcapp.ps1` lager de tre midterste og lenker SWA-en. Den
+tørrkjører som standard; `-Kjor` utfører.
+
+### 2. Roller på Function App-ens identitet
+
+Målt i 8f — dette er ikke en antagelse om hva som trengs:
+
+| Rolle | På | Hvorfor |
+|---|---|---|
+| `Storage Table Data Contributor` | storage-kontoen | `lib/storage.js` |
+| `Storage Blob Data Contributor` | storage-kontoen | `lib/blob.js` |
+| `Storage Blob Delegator` | storage-kontoen | SAS-en i `backup.js` |
+| `Key Vault Secrets User` | Key Vault | app settings med KV-referanser |
+
+**`Contributor` er ikke en av dem, og skal ikke tildeles.** Den er en
+kontrollplan-rolle som ikke gir tilgang til en eneste tabellrad — og den gir
+rett til å liste kontonøklene, altså full datatilgang gjennom en sidedør,
+med den delte nøkkelen hele øvelsen går ut på å fjerne. Se «Fellen i steg 3»
+i 8f.
+
+Tildel med `--assignee-object-id` og `--assignee-principal-type
+ServicePrincipal`. Kortformen `--assignee` slår opp prinsipalen i Graph
+først, og for managed identities feiler eller henger det oppslaget ofte — en
+feil som ser ut som manglende rettigheter hos deg.
+
+Regn med noen minutter før en tildeling slår inn. Samme 403 rett etterpå er
+ikke et svar.
+
+### 3. Endringene i repoet
+
+Et tredje miljø finnes ikke i dag, og det står flere steder. Alle må med,
+ellers svarer de ulikt:
+
+| Fil | Hva |
+|---|---|
+| `config/env.dev.json` | Ny inventarliste |
+| `staticwebapp.config.dev.json` | Ny, med auth mot dev-app-registreringen |
+| `.github/workflows/deploy-dev.yml` | Ny. **`workflow_dispatch` først** |
+| `scripts/build-config.js` | `dev` inn i hvitelista over gyldige navn |
+| `api/test/env-inventar.test.js` | `MILJOER = ['pilot', 'prod']` → også `dev` |
+| `api/src/functions/system.js` | `KJENTE_MILJOER` |
+| `CLAUDE.md` | Sier i dag rett ut at «Det finnes ikke noe tredje miljø» |
+
+**Navnefellen:** `development` ruter i dag til pilot som
+bakoverkompatibilitet. Innføres `dev` som et ekte miljø, blir det aliaset
+aktivt villedende — to navn som ligner og betyr ulike ting. **Fjern
+`development`-aliaset i samme endring**; det er dokumentert som ren
+bekvemmelighet for gamle kommandoer.
+
+`production` → pilot må derimot stå foreløpig. `config/env.pilot.json` setter
+`MILJO=production`, så det aliaset bærer vekt, og å endre det rører et miljø
+i drift.
+
+### 4. GitHub Environment
+
+Et `dev`-Environment med egne hemmeligheter. **Uten approval** — poenget med
+dev er rask iterasjon. `prod` beholder sin.
+
+Tjenestehovedmannen lages med `az ad sp create-for-rbac`. Den utskriften er
+en hemmelighet: den går rett inn i GitHub-hemmeligheten, ikke innom en sak,
+en e-post eller et chat-vindu.
+
+### 5. Rekkefølge ved første utrulling
+
+Dette er leddet som kostet mest tid i steg 1, og årsaken var ikke åpenbar:
+
+1. **Deploy innhold til SWA-en FØRST.** En SWA uten en aktiv build ruter
+   ingenting — heller ikke til en lenket backend, selv om lenkingen står
+   registrert. Symptomet er default-siden eller 404 på `/api/*`, og det ser
+   ut som en lenkingsfeil.
+2. **Lenk backend etterpå.** Lenkingen installerer Easy Auth på Function
+   App-en, så direkte kall til den svarer 401 — det er riktig, ikke en feil.
+   Har SWA-en allerede en auth-konfig fra før, avvises lenkingen med
+   `Cannot link backend with a preexisting configuration`.
+3. **Verifiser `/api/ping`.** Den bærer commit-SHA-en den kjører. Stemmer den
+   ikke, feilsøker du en rettelse som ikke er ute.
+4. **Logg inn, og kall `/api/ping` igjen.** `principalDiagnose` viser om
+   `x-ms-client-principal` kom fram.
+5. **`/api/system/info`.** Viser om hemmelighetene er satt, og om
+   Key Vault-referansene ble løst — lengde og vertsnavn, ikke
+   referansestrengen. Det var denne prøven som avdekket hele problemet
+   12.10.2026.
+
+En `workflow_dispatch`-workflow dukker bare opp i Actions-fanen når fila
+ligger på **default-grenen**. Ligger den bare på en arbeidsgren, finnes ikke
+knappen, og det ser ut som om workflowen er ødelagt.
+
+### 6. Tre ting å la være
+
+**Ikke kopier pilot-data til dev.** Arkiv-JSON-en skrives dekryptert og
+inneholder personopplysninger i klartekst. Bruk skriptene i `testdata/` og
+generer i stedet.
+
+**Ikke gi dev cron-jobber til å begynne med.** En planlagt jobb mot et
+halvferdig miljø lager varsler ingen leser — og notatet har allerede ett
+eksempel på en alarm som sluttet å bli lest fordi den alltid var rød.
+
+**Ikke behold prøveressursene.** `testfapp`, prøve-SWA-en, de to
+GitHub-hemmelighetene, `scripts/steg1-funcapp.ps1`, `deploy-funcapp-pilot.yml`,
+`deploy-swa-proeve.yml`, `proeve/` og de fire `mi-diagnose`-endepunktene er
+stillas. Når dev står, er de erstattet. `unlink` før `delete`.
+
+### Hva steg 0 er ferdig når
+
+* `/api/ping` i dev svarer med riktig SHA
+* Pålogging gir riktig UPN gjennom proxyen
+* `/api/system/info` viser hemmelighetene som satt, via Key Vault-referanser
+* `/api/diagnose/mi-tabell` og `/api/diagnose/mi-blob` er grønne mot
+  dev-kontoen, `sasKall` inkludert
+* Pilot og prod er uendret — ingen deploy, ingen app-settings rørt
+
+Først da begynner steg 3.
+
 ## 9. Risiko
 
 | Risiko | Hvor alvorlig | Hva vi gjør |
@@ -998,7 +1183,10 @@ Med dette er steg 3 komplett: tabell, blob, delegering og SAS, alle målt.
 | Kaldstart på Consumption gir tregere første kall | Lav | Flex Consumption har kortere kaldstart. Alternativt alltid-på-instans, mot høyere pris |
 | Ett ekstra deploy-steg som kan feile uavhengig | Lav | `/api/ping` bærer commit-SHA. Avvik mellom frontend og API blir synlig med én gang |
 | Kostnad | Ukjent | Function App på Consumption koster lite ved dette volumet, men **prisen skal slås opp, ikke antas**. SWA-planen er uendret |
-| To miljøer ute av synk under migreringen | Middels | Prod røres ikke før pilot har stått i to uker (steg 6) |
+| Tre miljøer ute av synk under migreringen | Middels | Dev bærer endringene først (steg 0). Pilot tas i bruk i 5b, prod ikke før pilot har stått i to uker (steg 6) |
+| Gaffelen i koden — to veier for legitimasjon — blir permanent | Middels | Den er datert og erklært, valget står **ett sted**, og den fjernes i steg 6. En gaffel ingen har satt sluttdato på, får ingen |
+| Dev-miljøet blir liggende etter migreringen | Lav | Det er et miljø, ikke stillas: nye endringer skal fortsatt verifiseres et sted før pilot. Prøveressursene fra steg 1 rives derimot (8g, punkt 6) |
+| Kostnad for et miljø til | Lav | Egen ressursgruppe i dev-tenanten, Consumption. **Slås opp, ikke antas** — samme forbehold som over |
 
 ## 10. Forbehold om kildene
 
