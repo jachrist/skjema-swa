@@ -1226,6 +1226,39 @@ leter etter `process.env.X` i `api/src`, og denne variabelen leses av
 `@azure/identity`, ikke av vår egen kode. Den er med andre ord like påkrevd
 som de andre og den eneste uten et nett under seg.
 
+#### Og én innstilling til: `keyVaultReferenceIdentity`
+
+`AZURE_CLIENT_ID` dekker bare koden. **Key Vault-referanser løses av
+plattformen, ikke av koden**, og plattformen bruker **system-assigned**
+identitet med mindre den får beskjed om noe annet.
+
+Med bare en user-assigned identitet feiler derfor hver eneste referanse,
+uansett hvor riktig rolletildelingen på vaulten er:
+
+```
+Identity:      System assigned managed identity
+Status:        MSINotEnabled
+Error details: Reference was not able to be resolved because site
+               Managed Identity not enabled.
+```
+
+Det ser ut som en manglende rettighet, og er det ikke. Prøvd 15.10.2026 på
+`fa-skjema-3-dev`, med `Key Vault Secrets User` korrekt tildelt
+`mi-skjema-3-dev`.
+
+Rettes med en egenskap på selve appen — ikke en app setting:
+
+```
+$id = az identity show --name <identitet> --resource-group <rg> --query id -o tsv
+az functionapp update --name <funcapp> --resource-group <rg> `
+  --set keyVaultReferenceIdentity=$id --output none
+```
+
+Den tar **ressurs-ID-en**, ikke `clientId`. De to forveksles lett, og
+feilmeldingen blir like kryptisk begge veier. Restart appen etterpå.
+
+`scripts/steg1-funcapp.ps1` setter begge to.
+
 #### Rettighetene er ikke synlige i portalen
 
 En app-registrering viser rettighetene sine under «API permissions». En
@@ -1419,6 +1452,10 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 - [x] Storage-konto — **tom**, ingen kopi fra pilot: stskjema3dev
 - [x] Key Vault: kv-skjema-3-dev
 - [x] **User-assigned** managed identity (egen ressurs, ikke system-assigned): mi-skjema-3-dev
+- [ ] `AZURE_CLIENT_ID` satt — for **koden** (clientId)
+- [ ] `keyVaultReferenceIdentity` satt — for **Key Vault-referansene**
+      (egen innstilling på appen, tar ressurs-ID-en). Uten den feiler hver
+      referanse med `MSINotEnabled`, uansett rolletildeling
 - [x] Function App, knyttet til identiteten: fa-skjema-3-dev
 - [x] Static Web App — **Standard**-plan: Skjema-3-dev
 - [x] Entra app-registrering: ad-skjema-3-dev, Tenant ID: e4fcc393-7190-4d3d-a38d-fa6429f870f3 Client ID: f6198f01-633e-401b-903b-ad45fa43ba9d, 
