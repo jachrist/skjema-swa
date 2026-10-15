@@ -377,6 +377,11 @@ er det samme med en big-bang-merge på slutten.
 
 ## 8b. Slik kjører du steg 1
 
+> **Historikk.** Steg 1 ble gjort 14.10.2026, og prøveoppsettet er revet
+> (se «Når forsøket er over» nedenfor). `deploy-swa-proeve.yml` og `proeve/`
+> finnes ikke lenger. Kapitlet står igjen fordi fallgruvene i det er ekte og
+> gjelder dev-miljøet også — **den levende oppskriften er 8g.**
+
 ### Hva som opprettes, og hva som allerede finnes
 
 Fire ting lages. Tre av dem gir du et navn, og de navnene brukes om igjen
@@ -618,24 +623,71 @@ Nye Function Apps får et regionalt navn med tilfeldig suffiks, som
 Uansett utfall: **skriv svaret inn i dette notatet, med dato.** Et forsøk
 ingen har notert utfallet av, blir gjort på nytt om tre måneder.
 
-Blir svaret nei, eller blir forslaget lagt bort, skal
-`scripts/steg1-funcapp.ps1`, `deploy-funcapp-pilot.yml`,
-`deploy-swa-proeve.yml` og `proeve/` fjernes sammen med ressursene.
+**Revet 15.10.2026.** Forslaget ble vedtatt, så dette er ikke en nedrigging
+av et mislykket forsøk — det er stillas som er erstattet. Hva som gikk og
+hva som ble:
 
-**Riv ned i denne rekkefølgen**, ellers blir det liggende rester (se
-fallgruve 2):
+| Fjernet | Beholdt, og hvorfor |
+|---|---|
+| `proeve/swa-innhold/` | `scripts/steg1-funcapp.ps1` — bygger nå dev-miljøet (8g) |
+| `.github/workflows/deploy-swa-proeve.yml` | `.github/workflows/deploy-funcapp-pilot.yml` — samme deploy-vei dev trenger |
+| | `api/src/functions/mi-diagnose.js` — 8g krever at prøvene er grønne mot dev |
+
+Hadde forslaget blitt lagt bort, skulle alle seks vært fjernet.
+
+#### Riv ned i denne rekkefølgen
+
+Rekkefølgen er ikke vilkårlig: det som peker på noe annet, må løsnes først,
+ellers blir det liggende tildelinger og hemmeligheter som refererer til noe
+som ikke finnes.
+
+**1. Løsne det som peker på identiteten.** Den forsvinner med Function
+App-en, og tildelingene blir stående som «Identity not found».
+
+Det er ryddighet, ikke risiko: Azure gjenbruker ikke objekt-ID-er, så en
+tildeling mot en slettet identitet gir ingen tilgang til noen. Grunnen til å
+fjerne dem er at de gjør IAM-bildet uleselig — og «hvem har tilgang til denne
+kontoen?» er et spørsmål en sikkerhetsevaluering stiller om nettopp
+`stfhsskjemapilot`.
+
+```
+# Rolletildelingene på PILOT-kontoen — gitt til prøveappens identitet
+az role assignment list --assignee <oid> --all \
+    --query "[].{rolle:roleDefinitionName, scope:scope, id:id}" -o table
+
+# Slett på ID, én per rad. --scope uten --role fjerner ALLE tildelinger for
+# prinsipalen på det scopet, og da er det lett å ta med noe du ikke mente.
+az role assignment delete --ids <id fra lista>
+```
+
+Fjern også identitetens `oid` fra testflytens liste over tillatte avsendere,
+eller slett testflyten. En allow-liste med en `oid` som ikke finnes lenger,
+er en rest som ser ut som en tilgang.
+
+**2. Fjern prøvedataene i pilot-kontoen.** Tabellen `HelloTest` og
+containeren `hello-test` ligger i `stfhsskjemapilot` — altså i et miljø i
+drift, ikke i prøveoppsettet.
+
+**3. Så selve ressursene:**
 
 ```
 az staticwebapp backends unlink --name <swa> --resource-group <rg>
 az staticwebapp delete --name <swa> --resource-group <rg> --yes
 az functionapp delete --name <funcapp> --resource-group <rg>
 az storage account delete --name <lagring> --resource-group <rg> --yes
+```
+
+**4. Til slutt legitimasjonen.** Dette er den viktigste, og den som lettest
+blir glemt — en tjenestehovedstol ingen har bruk for, er en nøkkel ingen
+passer på:
+
+```
 az ad sp delete --id <appId for sp-skjema-funcapp-proeve>
 ```
 
-Og fjern GitHub-secretene `AZURE_FUNCAPP_CREDENTIALS` og `SWA_PROEVE_TOKEN`. En workflow som
-peker på noe som ikke finnes, er den slags rest dette repoet har brukt tid på
-å rydde før.
+Og fjern GitHub-secretene `AZURE_FUNCAPP_CREDENTIALS` og `SWA_PROEVE_TOKEN`,
+samt Key Vault-secreten `testflyt-flow-url` hvis den ble lagd. Dev får sine
+egne; de skal ikke arve prøveoppsettets.
 
 ## 8c. Utfallet av steg 1
 
@@ -1279,10 +1331,15 @@ generer i stedet.
 halvferdig miljø lager varsler ingen leser — og notatet har allerede ett
 eksempel på en alarm som sluttet å bli lest fordi den alltid var rød.
 
-**Ikke behold prøveressursene.** `testfapp`, prøve-SWA-en, de to
-GitHub-hemmelighetene, `scripts/steg1-funcapp.ps1`, `deploy-funcapp-pilot.yml`,
-`deploy-swa-proeve.yml`, `proeve/` og de fire `mi-diagnose`-endepunktene er
-stillas. Når dev står, er de erstattet. `unlink` før `delete`.
+**Prøveressursene er revet 15.10.2026** — `testfapp`, prøve-SWA-en og de to
+GitHub-hemmelighetene. Dev arver ingenting av dem; den får sin egen
+tjenestehovedstol og sine egne hemmeligheter. Oppskriften og rekkefølgen
+står under «Når forsøket er over» i 8b.
+
+Tre ting ble beholdt fordi de ikke er stillas: `scripts/steg1-funcapp.ps1`
+bygger dev, `deploy-funcapp-pilot.yml` er deploy-veien dit, og
+`mi-diagnose`-endepunktene er det «Hva steg 0 er ferdig når» under måler med.
+De rives når steg 6 er i mål og prod er over — ikke før.
 
 ### Hva steg 0 er ferdig når
 

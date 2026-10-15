@@ -1,8 +1,10 @@
 ﻿<#
 .SYNOPSIS
-    Steg 1 i docs/BESLUTNING-EGEN-FUNCTION-APP.md — oppretter prøveoppsettet
-    som svarer på ett spørsmål: sender SWA x-ms-client-principal videre til en
-    lenket backend?
+    Oppretter en Function App med egen identitet, lenket til en SWA.
+
+    Skrevet for steg 1-forsøket 14.10.2026, som svarte ja på spørsmålet det
+    ble lagd for. Prøveoppsettet er revet; skriptet er det ikke — det bygger
+    nå dev-miljøet i steg 0 (8g i docs/BESLUTNING-EGEN-FUNCTION-APP.md).
 
 .DESCRIPTION
     Svaret avgjør om API-et kan flyttes ut av SWA Managed Functions. Blir det
