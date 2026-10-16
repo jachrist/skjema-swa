@@ -536,7 +536,9 @@ prod går derfor all lagring via `STORAGE_CONNECTION_STRING`.
 > **Koden bærer nå begge veier** (16.10.2026). `api/src/lib/lagringsvalg.js`
 > velger managed identity når `STORAGE_ACCOUNT_NAME` er satt og
 > `STORAGE_CONNECTION_STRING` ikke er det — ellers tilkoblingsstreng, som før.
-> Valget står ett sted og brukes av både `storage.js` og `blob.js`. Se 8j.
+> Valget står ett sted og brukes av både `storage.js` og `blob.js`. Det gjelder
+> også SAS-signeringen av backup-lenkene, som på identitetsveien går via
+> `getUserDelegationKey()` i stedet for kontonøkkelen. Se 8j og 8k.
 >
 > **Pilot og prod er uendret.** Begge har en tilkoblingsstreng, og den vinner
 > over kontonavnet nettopp for at utrullingen av den nye veien skal være

@@ -14,6 +14,15 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
   Dev går på identitet; pilot og prod har strengen, og den vinner. Gaffelen
   rives i steg 6. `*Fra`-variantene går alltid på delt nøkkel: de peker på en
   annen tenant, der en MI ikke kan få rolle.
+  - **SAS-signering** ligger i `lib/blob.js` (`sasUrl`), også begge veier:
+    delt nøkkel signerer lokalt, identiteten må hente en delegeringsnøkkel
+    først (`async`, og krever rollen `Storage Blob Delegator`).
+  - **«Hvilken konto er vår egen»** svares av `miljoetsKonto()` i
+    `lagringsvalg.js`, aldri ved å lese tilkoblingsstrengen. Tre vakter
+    avhenger av det svaret, og alle tre var stille slått av i dev før dette.
+  - **Oppgavelista og nøkkelkalenderen** velger lager i `lib/delt-lager.js`:
+    den delte SAS-en hvis `TODO_STORAGE_CONNECTION_STRING` er satt, ellers
+    miljøets eget lager — og da er listene lokale for miljøet.
 - **Hemmeligheter:** app settings i SWA Configuration. Verdiene hentes manuelt
   fra Key Vault når de settes — koden slår ikke opp i Key Vault selv.
 

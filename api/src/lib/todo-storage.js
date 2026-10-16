@@ -12,13 +12,13 @@
  * Nummer gjenbrukes ikke: nye punkter legges alltid bakerst, slik at
  * «punkt 17» betyr det samme i dag og om en måned.
  */
-const { sikreTabellFra, glemOpprettelse, kontoNavnFra } = require('./storage');
+// HVOR lista ligger står i `delt-lager.js`, sammen med nøkkelkalenderens
+// samme spørsmål. Fallbacken og `lagerInfo()` sto tidligere i to kopier her og
+// der, og kopiene svarte feil i et miljø som går på managed identity.
+const dl = require('./delt-lager');
 
 const TABELL = 'TodoPunkter';
 const PK = 'Todo';
-
-const DELT_CS = process.env.TODO_STORAGE_CONNECTION_STRING || '';
-const CS = DELT_CS || process.env.STORAGE_CONNECTION_STRING || '';
 
 const KATEGORI_STANDARD = 'Brukerønsker';
 const STATUS_VERDIER = ['åpen', 'ferdig'];
@@ -28,7 +28,7 @@ function rk(nummer) {
 }
 
 async function tabell() {
-    return sikreTabellFra(CS, TABELL, 'TODO_STORAGE_CONNECTION_STRING');
+    return dl.sikreDeltTabell(TABELL);
 }
 
 function erTabellMangler(e) {
@@ -39,7 +39,7 @@ function erTabellMangler(e) {
  * Kjør en operasjon mot tabellen, og oversett «TableNotFound» til noe som
  * faktisk hjelper.
  *
- * `sikreTabellFra` svelger feil fra createTable med vilje — en connection
+ * `sikreDeltTabell` svelger feil fra createTable med vilje — en connection
  * string uten rett til å opprette tabeller skal fortsatt kunne lese tabeller
  * som finnes. Baksiden er at avvisningen dukker opp som TableNotFound på neste
  * kall, langt fra årsaken. Her prøver vi opprettelsen én gang til og lar den
@@ -51,12 +51,12 @@ async function medTabell(fn) {
         return await fn(t);
     } catch (e) {
         if (!erTabellMangler(e)) throw e;
-        glemOpprettelse(CS, TABELL);
+        dl.glemDeltOpprettelse(TABELL);
         try {
             await t.createTable();
         } catch (opprett) {
             if (opprett.statusCode !== 409) {
-                const konto = kontoNavnFra(CS) || 'lagringskontoen';
+                const konto = dl.deltKonto() || 'lagringskontoen';
                 throw new Error(
                     `Tabellen ${TABELL} finnes ikke på ${konto}, og kunne ikke opprettes: ` +
                     `${opprett.message}. Enten må SAS-en i TODO_STORAGE_CONNECTION_STRING ` +
@@ -88,15 +88,7 @@ function fraEntitet(e) {
 
 /** Hvilket lager lista faktisk ligger i — vises i admin-panelet. */
 function lagerInfo() {
-    const konto = kontoNavnFra(CS);
-    const egenKonto = kontoNavnFra(process.env.STORAGE_CONNECTION_STRING || '');
-    // En SAS utstedt på feil lagringskonto er fullt gyldig: appen kobler til,
-    // oppretter tabellen, og viser en tom liste uten en eneste feilmelding.
-    // Peker den delte strengen på miljøets egen konto, er lista ikke delt med
-    // noen — og det er nesten alltid en forveksling ved utstedelsen.
-    const sammeSomMiljo = !!(DELT_CS && konto && egenKonto
-        && konto.toLowerCase() === egenKonto.toLowerCase());
-    return { konto, delt: !!DELT_CS, sammeSomMiljo, miljoKonto: egenKonto };
+    return dl.deltLagerInfo();
 }
 
 async function listAlle() {
@@ -294,8 +286,6 @@ function tilMarkdown(punkter) {
 // lista, med nummeret som mappe: `0017/skjermbilde.png`. Blob-navnet ER
 // fasiten; ingen egen kolonne på raden som kan komme ut av takt med filene.
 
-const { containerKlientFra } = require('./blob');
-
 const VEDLEGG_CONTAINER = 'todo-vedlegg';
 const VEDLEGG_MAKS = 4 * 1024 * 1024;
 
@@ -337,14 +327,14 @@ function filtype(navn) {
 }
 
 async function vedleggContainer() {
-    const c = containerKlientFra(CS, VEDLEGG_CONTAINER, 'TODO_STORAGE_CONNECTION_STRING');
+    const c = dl.deltContainer(VEDLEGG_CONTAINER);
     try {
         await c.createIfNotExists();
     } catch (e) {
         // Samme felle som med tabellen: en SAS uten rett til å opprette
         // containere feiler her, og ville ellers dukket opp som «BlobNotFound»
         // langt fra årsaken.
-        const konto = kontoNavnFra(CS) || 'lagringskontoen';
+        const konto = dl.deltKonto() || 'lagringskontoen';
         // «not authorized ... using this service» betyr at signaturen ikke
         // gjelder for Blob i det hele tatt — en SAS utstedt med bare Table
         // lar tabellen virke mens blobs avvises. Det er en annen sak enn for

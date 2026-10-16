@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dato | 13.10.2026 |
-| Status | **Steg 0, 1 og 2 gjort, steg 7 bevist, steg 3 del 1 i koden 16.10.2026. Forslaget står — ikke besluttet** |
+| Status | **Steg 0, 1, 2 og 3 gjort, steg 7 bevist. Lagringen kan gå uten delt nøkkel fra 16.10.2026. Forslaget står — ikke besluttet** |
 | Gjelder | Punkt 2 og 3 i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 10 |
 | Krever | Beslutning hos oppdragsgiver + ressursoppsett hos Cyberforsvaret |
 
@@ -330,7 +330,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | **0** | ✅ **Gjort 16.10.2026** — dev-miljøet står. Se 8i | `/api/ping` med riktig SHA, pålogging gir riktig UPN, hemmelighetene løses fra Key Vault, og begge MI-prøvene er grønne. Pilot og prod urørt |
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
-| 3 | 🔶 **Del 1 gjort 16.10.2026** — `storage.js` og `blob.js` har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j. **Del 2 gjenstår:** `backup.js` → user delegation SAS, og `kontoNavnFra()` → `STORAGE_ACCOUNT_NAME` | Hele testsuiten grønn, også uten `node_modules`. Deretter: les og skriv et skjema **i dev**. Pilot og prod er uendret fordi den nye veien er inert så lenge `STORAGE_CONNECTION_STRING` er satt |
+| 3 | ✅ **Gjort 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Hele testsuiten grønn, også uten `node_modules`. Gjenstår å måle i dev: sett `STORAGE_ACCOUNT_NAME` og les/skriv et skjema. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke **i dev** i et døgn |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
@@ -1541,16 +1541,22 @@ Del 1 (8j):
 - [x] Testsuiten grønn, også uten `node_modules` — 113 testfiler
 - [x] Pilot og prod fortsatt uendret (strengen vinner der den er satt)
 
-Del 2:
+Del 2 (8k):
 
-- [ ] `backup.js` → `getUserDelegationKey()` i stedet for kontonøkkel.
-      **Backup-nedlasting virker ikke i dev før dette er gjort** — se 8j
-- [ ] `kontoNavnFra()` erstattet av `STORAGE_ACCOUNT_NAME` i
-      `nokkelkalender-storage.js`, `todo-storage.js` og `functions/backup.js`
+- [x] `backup.js` → `getUserDelegationKey()` i stedet for kontonøkkel.
+      Signeringen ligger nå i `lib/blob.js`, som kjenner begge veiene
+- [x] `kontoNavnFra()` erstattet av `miljoetsKonto()` i de tre vaktene
+- [x] De delte listene faller tilbake til miljøets eget lager uten
+      `TODO_STORAGE_CONNECTION_STRING` — `lib/delt-lager.js`
+
+Gjenstår å måle i dev:
+
 - [ ] `STORAGE_ACCOUNT_NAME` satt på `fa-skjema-3-dev`
 - [ ] `/api/system/info` viser `lagring.maate = managed-identity` i dev
 - [ ] `/api/hello-storage` grønn i dev — den går gjennom den ekte koden
 - [ ] Les og skriv et skjema **i dev**
+- [ ] Ta en backup i dev og last den ned via lenken i admin-panelet — det er
+      SAS-veien, og den eneste som krever `Storage Blob Delegator`
 
 ### Steg 4 — én cron-jobb
 
@@ -1772,22 +1778,21 @@ Merkingen er fjernet i alle tre, `STORAGE_ACCOUNT_NAME` er ute av
 `VIST_UTEN_AT_KODEN_LESER` i `system.js`, og `env-inventar.test.js` krever nå
 at ingen nøkkel koden leser er merket `kun_dokumentasjon`.
 
-### Hva som IKKE virker i dev før del 2
+### Hva som gjensto etter del 1
 
-`functions/backup.js` signerer nedlastingslenken med
-`StorageSharedKeyCredential`, og nøkkelen hentes ut av tilkoblingsstrengen.
-Uten en streng finnes ingen nøkkel. **Backup-nedlasting i dev feiler derfor
-til `getUserDelegationKey()` er på plass** — selve backupen leses gjennom
-`tabellKlient`/`containerKlient` og går fint.
+> **Gjort i del 2, se 8k.** Avsnittet står igjen fordi det sier hva som var
+> galt, og hvorfor det ikke var kosmetisk.
+
+`functions/backup.js` signerte nedlastingslenken med
+`StorageSharedKeyCredential`, og nøkkelen ble hentet ut av tilkoblingsstrengen.
+Uten en streng finnes ingen nøkkel, så backup-nedlasting i dev feilet.
 
 `kontoNavnFra(process.env.STORAGE_CONNECTION_STRING)` i
-`nokkelkalender-storage.js`, `todo-storage.js` og `functions/backup.js` gir
-`null` i dev. Følgen er kosmetisk — «ukjent konto» i admin-panelet — men det
-er nøyaktig det feltet man leser når man vil vite hvilket lager man snakker
-med, så det hører med i del 2.
+`nokkelkalender-storage.js`, `todo-storage.js` og `functions/backup.js` ga
+`null` i dev.
 
-Prøven `/api/diagnose/mi-blob` har allerede målt at `getUserDelegationKey()`
-og SAS-signering virker med identiteten i dev. Del 2 er omskriving, ikke
+Prøven `/api/diagnose/mi-blob` hadde allerede målt at `getUserDelegationKey()`
+og SAS-signering virker med identiteten i dev. Del 2 var omskriving, ikke
 utprøving.
 
 ### Slik verifiseres del 1 i dev
@@ -1805,6 +1810,106 @@ var å lese et grønt prøvesvar som om det gjaldt appen.
 `/api/system/info` viser samtidig valget under nøkkelen `lagring`: `maate`,
 `konto`, `klientId` og `grunn`. Står det `tilkoblingsstreng` der du ventet
 `managed-identity`, er strengen fortsatt satt på appen.
+
+## 8k. Utfallet av steg 3, del 2 — SAS, kontonavn og de delte listene
+
+**16.10.2026.** Del 1 ga lagringen to veier inn. Tre ting gikk fortsatt bare
+gjennom tilkoblingsstrengen, og alle tre er lagt om.
+
+### SAS-URL-en til en backupfil
+
+`functions/backup.js` rev kontonøkkelen ut av `STORAGE_CONNECTION_STRING` og
+signerte lokalt med en `StorageSharedKeyCredential`. Det finnes ingen nøkkel å
+signere med når lagringen går på en identitet.
+
+Signeringen ligger nå i `lib/blob.js` som `sasUrl(container, blob)`, og
+kjenner begge veiene:
+
+| Vei | Hvordan |
+|---|---|
+| delt nøkkel | `StorageSharedKeyCredential` — signeres lokalt, ingen nettverkskall |
+| managed identity | `getUserDelegationKey()` over nettet, så lokal signering. Krever rollen **`Storage Blob Delegator`** i tillegg til datarollene |
+
+To ting er verdt å vite om den asymmetrien:
+
+* **`sasUrl` er `async`.** Den var synkron, og de to kallstedene i
+  `functions/backup.js` måtte få `await`. Et glemt `await` gir
+  `[object Promise]` i et JSON-svar — en «lenke» som ser ut som en feil i
+  Azure. Testen teller `await` mot antall kall.
+* **Delegeringsnøkkelen caches, per lager.** Den dekker hele kontoen, ikke én
+  blob, så `/api/backup/liste` henter én nøkkel for hele lista i stedet for én
+  per fil. Cachet i én global ville den signert neste kontos SAS med forrige
+  kontos nøkkel — en URL som ser riktig ut og avvises. Den fornyes når den
+  ikke lenger dekker SAS-ens utløp; en nøkkel som utløper først gjør SAS-en
+  ugyldig i stillhet.
+
+### «Er dette vår egen lagringskonto?»
+
+Tre vakter spør om det:
+
+* den som nekter en **ekstern backup** av vårt eget lager — ellers får man en
+  fil merket med et annet miljø, fylt med dette miljøets data;
+* de to som sier fra når den **delte SAS-en peker hjem** i stedet for til den
+  delte kontoen. En SAS utstedt på feil konto er fullt gyldig: appen kobler
+  til, oppretter tabellen og viser en tom liste uten en eneste feilmelding.
+
+Alle tre leste `process.env.STORAGE_CONNECTION_STRING` direkte, og ble derfor
+**stille slått av** i et miljø som går på identitet. En vakt som ikke sier fra
+at den har sluttet å virke er verre enn ingen vakt.
+
+Svaret kommer nå fra `miljoetsKonto()` i `lagringsvalg.js`, og det følger
+samme valg som legitimasjonen: går miljøet på tilkoblingsstreng, leses navnet
+**ut av strengen** — ikke av `STORAGE_ACCOUNT_NAME`. De to kan være uenige
+(pilot har en verdi i inventaret som ikke nødvendigvis er den strengen peker
+på), og da er det strengen som forteller hvor dataene ligger. Et inventarnavn
+som har drevet ville pekt admin-panelet på et lager vi ikke snakker med.
+
+`kontoNavnFra()` flyttet med, fra `storage.js` til `lagringsvalg.js`. Den er
+fortsatt riktig for en streng noen **har gitt oss** — den eksterne backupen —
+og de tre stedene den brukes er erklært i testen.
+
+### De delte listene
+
+Oppgavelista og nøkkelkalenderen ligger på en konto i dev-tenanten, nådd med
+en SAS i `TODO_STORAGE_CONNECTION_STRING`. Er den ikke satt, falt begge
+tilbake på `process.env.STORAGE_CONNECTION_STRING` — som er en **tom streng** i
+et miljø som går på identitet. Da feilet listene med at en variabel som med
+vilje ikke er satt, mangler.
+
+Fallbacken er nå miljøets eget lager, og regelen står i `lib/delt-lager.js`.
+Den erstatter to kopier: `DELT_CS || process.env.STORAGE_CONNECTION_STRING` og
+en identisk `lagerInfo()` sto i begge filene.
+
+Praktisk følge: **dev virker uten `todo-storage-connection-string` i
+vaulten.** Listene er da lokale for dev — ikke de samme som i pilot og prod.
+Det står i merknaden i `config/env.dev.json`.
+
+### Testen
+
+`api/test/lagring-sas.test.js` — 91 sjekker, de ekte funksjonene mot stubbede
+SDK-er. Den sjekker ikke at signaturen er kryptografisk riktig; det kan bare
+Azure svare på, og `/api/diagnose/mi-blob?skriv=ja` gjorde det i dev. Den
+sjekker at riktig legitimasjon, riktig konto og riktig utløp går inn i
+signeringen, at kontonavnet er med som tredje argument på delegeringsveien og
+**ikke** på den andre (SDK-en velger signeringsvariant på det), at vaktene
+virker begge veier, og at ingen av de to reglene har fått en kopi.
+
+Femten mutasjoner er prøvd. Én ble ikke fanget første gang: cachen for
+delegeringsnøkkelen var ikke knyttet til kontoen, og testen tømte den mellom
+hvert miljø — så en global cache så riktig ut. Sjekken bytter nå konto UTEN å
+tømme, og nøkkelen caches per lager.
+
+Underveis falt to ting ut som ikke var planlagt: `serviceKlient` var importert
+i `functions/backup.js` uten å brukes, og `tilkoblingsstreng`-parsing fanst i
+to utgaver. Begge er borte.
+
+### Hva som gjenstår for å kalle steg 3 ferdig MÅLT
+
+Koden er på plass; dev har ikke fått `STORAGE_ACCOUNT_NAME` ennå. Når den
+settes, er det fire ting som skal sjekkes, og backup-nedlastingen er den
+viktigste — den er den eneste som krever `Storage Blob Delegator`, og den
+eneste veien prøven ikke har gått gjennom med den ekte koden. Lista står i
+8h.
 
 ## 9. Risiko
 

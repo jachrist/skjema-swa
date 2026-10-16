@@ -193,6 +193,14 @@ sjekk('helsesjekken viser noen', vist.size > 10, true);
     for (const n of ['STORAGE_ACCOUNT_NAME', 'STORAGE_CONNECTION_STRING', 'AZURE_CLIENT_ID']) {
         sjekk(`og scanneren fant ${n}`, lest.has(n), true);
     }
+    // Samme i delt-lager.js, som er det ENESTE stedet den delte strengen leses
+    // etter 16.10.2026. Leses den gjennom konstanten `VAR`, forsvinner den fra
+    // inventaret uten at noe annet feiler.
+    const dlKilde = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'delt-lager.js'), 'utf8');
+    sjekk('env.NAVN-formen står fortsatt i delt-lager.js',
+        /env\.TODO_STORAGE_CONNECTION_STRING/.test(dlKilde), true);
+    sjekk('og scanneren fant TODO_STORAGE_CONNECTION_STRING',
+        lest.has('TODO_STORAGE_CONNECTION_STRING'), true);
 
     // Og motsatt: prosa teller ikke. Kommentaren i lagringsvalg.js forklarer
     // formen med `env.NAVN` som eksempel. Tas kommentarfiltreringen over bort,

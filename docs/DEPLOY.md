@@ -206,6 +206,11 @@ identity). Feiler det med `AuthorizationPermissionMismatch` på MI-veien, mangle
 identiteten en **datarolle** — `Storage Table Data Contributor` og
 `Storage Blob Data Contributor`. `Contributor` er ikke en av dem.
 
+Feiler en backup-NEDLASTING med at delegeringsnøkkelen ikke kan utstedes,
+mangler identiteten `Storage Blob Delegator` — en fjerde rolle, og den eneste
+som bare SAS-signeringen trenger. Lesing og skriving kan være grønne mens den
+er rød.
+
 ## Rollout til brukere
 
 - Under SWA → Role management: tildel `admin`-rolle til admin-brukere
