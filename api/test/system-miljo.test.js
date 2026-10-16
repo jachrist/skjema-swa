@@ -161,6 +161,54 @@ const SATT = { satt: true, lengde: 40 };
         medForventning('AAD_CLIENT_SECRET', TOM).gjelderHer, undefined);
 }
 
+// ---------- uløst Key Vault-referanse: ett symptom, to årsaker ----------
+//
+// SWA Managed Functions løser ikke referanser; en Function App gjør det.
+// Samme uløste referanse betyr derfor ulike ting i dev og i pilot, og rådet
+// må følge miljøet. Helsesjekken ga 16.10.2026 et aktivt feil råd i dev —
+// «lim inn verdien som klartekst» — mens referansene der virket og det som
+// manglet var én secret i vaulten.
+{
+    const uloest = modul._uloestReferanse;
+    const maskLengde = modul._maskLengde;
+    sjekk('system.js eksporterer det testen trenger',
+        typeof uloest === 'function' && typeof maskLengde === 'function', true);
+
+    process.env.MILJO = 'dev';
+    const iDev = uloest();
+    sjekk('dev: sier at plattformen LØSER dem', /LØSER dem/.test(iDev), true);
+    sjekk('dev: ber IKKE om klartekst', /klartekst/.test(iDev), false);
+    sjekk('dev: navngir de tre mulige årsakene',
+        /secreten finnes ikke/.test(iDev) && /Key Vault Secrets User/.test(iDev)
+            && /keyVaultReferenceIdentity/.test(iDev), true);
+
+    for (const m of ['pilot', 'prod']) {
+        process.env.MILJO = m;
+        const her = uloest();
+        sjekk(`${m}: ber om klartekst`, /klartekst i SWA Configuration/.test(her), true);
+        sjekk(`${m}: sier ikke at plattformen løser dem`, /LØSER dem/.test(her), false);
+    }
+
+    // Et ukjent miljø skal få BEGGE årsakene, ikke den ene gjettet. Samme
+    // regel som KJENTE_MILJOER: vi vet ikke nok til å peke én vei.
+    process.env.MILJO = 'staging';
+    const ukjent = uloest();
+    sjekk('ukjent miljø: nevner begge årsakene',
+        /SWA Managed Functions/.test(ukjent) && /Function App/.test(ukjent), true);
+
+    // Og den ekte inngangen: maskLengde skal kjenne igjen referansestrengen.
+    process.env.MILJO = 'dev';
+    const ref = maskLengde('@Microsoft.KeyVault(SecretUri=https://kv.vault.azure.net/secrets/x/)');
+    sjekk('referansestreng gir feilmelding', typeof ref.feil === 'string' && ref.feil.length > 0, true);
+    sjekk('referansestreng rapporteres som satt', ref.satt, true);
+    // En vanlig verdi skal IKKE få feilmeldingen.
+    const vanlig = maskLengde('en-helt-vanlig-hemmelighet');
+    sjekk('vanlig verdi har ingen feil', vanlig.feil, undefined);
+    sjekk('vanlig verdi rapporterer lengde', vanlig.lengde, 26);
+    // Tom verdi er «ikke satt», ikke en uløst referanse.
+    sjekk('tom verdi er ikke satt', maskLengde(''), { satt: false });
+}
+
 // ---------- én regel, to filer ----------
 //
 // system.js og scripts/build-config.js har hver sin liste over miljønavn.
