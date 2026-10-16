@@ -157,7 +157,7 @@ async function kallFlyt(navn, flytUrl, payload, context) {
     try {
         const resp = await fetch(flytUrl, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             // miljø ligger foerst, men kan overstyres av payloaden hvis
             // et kall noen gang trenger noe annet.
             body: JSON.stringify({ miljø: miljo(), ...payload }),

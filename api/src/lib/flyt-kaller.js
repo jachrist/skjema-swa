@@ -10,6 +10,7 @@
  *   TEAM_FLOW_URL         — PA-endepunkt for destruktiv team-synk fra rollegruppe
  *   DIAGNOSE_FLOW_URL     — PA-endepunkt som slår opp team, planer og SP-lister
  *   VARSLING_DEAKTIVERT   — 'true' skrur av kall (dry-run til logg)
+ *   FLYT_AUTH             — 'entra' legger på et Bearer-token; se lib/flyt-auth.js
  *
  * Payload-kontrakt (samme som legacy — se docs/FASE-6A-EPOST.md):
  *   {
@@ -23,6 +24,8 @@
  *     epost_og_teams: { emne, html }   // kun hvis epost/teams i varslinger
  *   }
  */
+
+const { flytAutorisasjon } = require('./flyt-auth');
 
 function baseUrl(request) {
     const fra_env = String(process.env.SWA_URL || '').replace(/\/+$/, '');
@@ -74,7 +77,7 @@ async function kallVarslingFlyt(payload, log = () => {}) {
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify(payload)
         });
         if (!respons.ok) {
@@ -137,12 +140,25 @@ async function kallVarslingFlyt(payload, log = () => {}) {
  * Er den ikke satt, sendes ingen header. Da oppfører kallet seg som før, og en
  * flyt som ennå ikke sjekker headeren merker ingenting — rekkefølgen ved
  * utrulling er derfor fri.
+ *
+ * **`Authorization` kommer i tillegg, ikke i stedet** — se `lib/flyt-auth.js`.
+ * Er `FLYT_AUTH=entra`, legges et Bearer-token på; ellers er headeren ikke
+ * med i det hele tatt, og kallet ser ut nøyaktig som før. De to sperrene er
+ * uavhengige: `x-flow-key` sier at det er OSS, tokenet sier at vi har lov.
+ *
+ * **Funksjonen er `async` fra 16.10.2026.** Tokenet må hentes over nettet
+ * første gang. Alle kallstedene ligger inne i en try/catch som gjør en feil
+ * om til `{ status: 'feil' }`, og det er med vilje: feiler tokenhentingen,
+ * skal ÅRSAKEN følge med ut — ikke en 401 fra flyten som like gjerne kunne
+ * betydd at oppsettet der er galt.
  */
-function flytHeadere() {
+async function flytHeadere() {
+    const headere = { 'Content-Type': 'application/json' };
     const nokkel = String(process.env.FLOW_CALLBACK_KEY || '').trim();
-    return nokkel
-        ? { 'Content-Type': 'application/json', 'x-flow-key': nokkel }
-        : { 'Content-Type': 'application/json' };
+    if (nokkel) headere['x-flow-key'] = nokkel;
+    const autorisasjon = await flytAutorisasjon();
+    if (autorisasjon) headere.Authorization = autorisasjon;
+    return headere;
 }
 
 function miljo() {
@@ -249,7 +265,7 @@ async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, lo
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify({ handling: 'sendOtp', miljø: miljo(), kanal, mottaker, kode, gyldig_minutter: gyldigMinutter })
         });
         if (!respons.ok) {
@@ -301,7 +317,7 @@ async function kallTeamSynkFlyt(payload, log = () => {}) {
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify(payload)
         });
         if (!respons.ok) {
@@ -354,7 +370,7 @@ async function kallDiagnoseFlyt(payload, log = () => {}, { timeoutMs = 10000 } =
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify(payload),
             signal: avbryt.signal
         });

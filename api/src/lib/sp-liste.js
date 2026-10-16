@@ -167,7 +167,7 @@ async function oppdaterSPListe(skjema, skjematype, log = () => {}) {
 
         const respons = await fetch(url, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify(payload)
         });
         if (!respons.ok) {

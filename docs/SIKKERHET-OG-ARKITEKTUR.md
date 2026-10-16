@@ -664,7 +664,15 @@ Tre ting i løsningen er «hemmelig fordi den som har URL-en, kommer inn»:
 
   Forutsetningen er at koden får et MI-token, og det gjør den ikke i SWA
   Managed Functions. Omleggingen henger derfor sammen med beslutningen om
-  egen Function App. **Ingen flyt i pilot eller prod er lagt om.**
+  egen Function App.
+
+  **Koden kan det fra 16.10.2026.** `FLYT_AUTH=entra` får `flytHeadere()` til
+  å legge på `Authorization: Bearer`, hentet med Function App-ens managed
+  identity. Dev kaller flytene sine slik. Se 8l.
+
+  **Ingen flyt i pilot eller prod er lagt om**, og `FLYT_AUTH` står usatt
+  begge steder — de har ingen identitet å hente et token med. Kallene der går
+  nøyaktig som før.
 * **Utsendingslenkene.** Gir tilgang uten pålogging i 90 dager.
 
 Alle tre er riktige mekanismer for formålet, og alle tre feiler på samme måte:

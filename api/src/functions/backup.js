@@ -232,7 +232,7 @@ async function kallBackupFlyt(res, sasUrl, sti, jobbLog) {
     try {
         const respons = await fetch(flytUrl, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify({
                 handling: 'lagreBackup',
                 filnavn: res.filnavn,

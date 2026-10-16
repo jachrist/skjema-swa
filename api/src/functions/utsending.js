@@ -173,7 +173,7 @@ async function kallUtsendingsflyt(handling, mottakere, context, navn) {
     try {
         const res = await fetch(url, {
             method: 'POST',
-            headers: flytHeadere(),
+            headers: await flytHeadere(),
             body: JSON.stringify({ handling, miljø: miljo(), mottakere }),
             signal: avbryt.signal
         });
