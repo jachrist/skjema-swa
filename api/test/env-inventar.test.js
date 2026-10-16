@@ -350,6 +350,32 @@ for (const miljo of MILJOER) {
     sjekk('dev: merknaden sier at den ikke skal settes',
         /SETTES IKKE I DEV/.test(cs.merknad || ''), true);
 
+    // ---------- flyt-URLene i dev er ikke hemmeligheter ----------
+    //
+    // Flytene i dev krever et Entra-token (FLYT_AUTH=entra), så adressen har
+    // ingen `sig=` og er ikke legitimasjon. Da hører den ikke i Key Vault.
+    //
+    // PILOT OG PROD er motsatt: deres URL-er bærer fortsatt signaturen, og en
+    // klartekst-oppføring der ville vært en hemmelighet på avveie. De to
+    // retningene sjekkes hver for seg, fordi en kopiert oppføring mellom
+    // miljøene er feil begge veier.
+    {
+        const flytVarer = (d) => Object.keys(d).filter(n => n.endsWith('_FLOW_URL'));
+        sjekk('dev: ingen flyt-URL er en keyvault-referanse',
+            flytVarer(dev).filter(n => 'keyvault' in (dev[n] || {})).sort(), []);
+        // Og de står uten verdi: inventaret skal ikke bære en GUID-adresse
+        // som driver fra virkeligheten når flyten lages på nytt.
+        sjekk('dev: ingen flyt-URL står med verdi',
+            flytVarer(dev).filter(n => 'value' in (dev[n] || {})).sort(), []);
+        sjekk('dev: det finnes flyt-URLer i det hele tatt', flytVarer(dev).length > 0, true);
+
+        for (const miljo of ['pilot', 'prod']) {
+            const d = JSON.parse(fs.readFileSync(path.join(rot, 'config', `env.${miljo}.json`), 'utf8'));
+            sjekk(`${miljo}: hver flyt-URL er fortsatt en keyvault-referanse`,
+                flytVarer(d).filter(n => !('keyvault' in (d[n] || {}))).sort(), []);
+        }
+    }
+
     // Og motsatt: unntaket skal være ETT, ikke to. TODO_STORAGE_CONNECTION_STRING
     // peker på en konto i en annen tenant der en MI ikke kan få rolle, og
     // forblir en delt nøkkel. Står den som valgfri, har noen trodd den også

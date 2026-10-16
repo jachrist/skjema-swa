@@ -443,9 +443,9 @@ const STANDARD = [
     {
         Navn: 'PA-flytenes signatur-URLer (sig=)',
         Type: 'flyt-URL',
-        Hvor: 'Key Vault — sju *_FLOW_URL-varer. Signaturen ligger i query-strengen.',
+        Hvor: 'Key Vault — åtte *_FLOW_URL-varer i PILOT og PROD. Signaturen ligger i query-strengen. Gjelder IKKE dev: der krever flytene et Entra-token (FLYT_AUTH=entra), adressen har ingen sig=, og den settes som klartekst i app settings.',
         Konsekvens: 'Feil eller manglende URL gjør at varsling, utsending, purring, OTP, backup og teamsøk stopper.',
-        Rotasjon: 'Ingen utløpsdato — en URL gjelder til noen regenererer nøkkelen i flytens trigger-innstillinger. Regenerering krever at den nye URL-en legges inn i Key Vault samtidig.',
+        Rotasjon: 'Ingen utløpsdato — en URL gjelder til noen regenererer nøkkelen i flytens trigger-innstillinger. Regenerering krever at den nye URL-en legges inn i Key Vault samtidig. En Entra-beskyttet flyt har ingenting å rotere: tilgang trekkes tilbake ved å fjerne en oid fra triggeren.',
         VarsleDagerFor: 30
     },
     {
