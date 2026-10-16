@@ -304,5 +304,46 @@ for (const miljo of MILJOER) {
     sjekk('dev: TODO-strengen er fortsatt en hemmelighet', 'keyvault' in todo, true);
 }
 
+// ---------- «valgfri» må stemme med koden ----------
+//
+// Formen i inventaret er en PÅSTAND om koden: `valgfri` betyr «knapp med
+// default, trenger ikke settes». Står den feil, ber lista enten om en verdi
+// ingen har, eller friskmelder en som faktisk kreves.
+//
+// Begge retningene har stått feil. BACKUP_SHAREPOINT_BIBLIOTEK og _MAPPE var
+// merket `settes_i_swa` i alle tre miljøene til 16.10.2026, selv om
+// graph-opplast.js aldri har krevd dem — ingen av miljøene har noen gang satt
+// dem, og backupene har ligget i rota av standardbiblioteket hele tiden.
+//
+// Testen leser BEGGE sider: den påkrevde lista i koden, og formen i filene.
+{
+    const graph = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'graph-opplast.js'), 'utf8');
+
+    // `kreves`-objektet i manglerKonfig() er kildens egen liste over hva
+    // Graph-veien ikke klarer seg uten.
+    const m = /const kreves = \{([\s\S]*?)\};/.exec(graph);
+    sjekk('fant kreves-lista i graph-opplast.js', !!m, true);
+    const påkrevd = m ? [...m[1].matchAll(/([A-Z][A-Z0-9_]*):/g)].map(x => x[1]) : [];
+    sjekk('kreves-lista er ikke tom', påkrevd.length > 0, true);
+
+    // Dokumentert valgfrie, i samme fil. Står de i `kreves`, er kommentaren
+    // over dem gal — og da skal denne testen si fra, ikke tilpasse seg.
+    const VALGFRIE = ['BACKUP_SHAREPOINT_BIBLIOTEK', 'BACKUP_SHAREPOINT_MAPPE'];
+    sjekk('de valgfrie står ikke i kreves-lista',
+        VALGFRIE.filter(n => påkrevd.includes(n)), []);
+
+    for (const miljo of MILJOER) {
+        const d = JSON.parse(fs.readFileSync(path.join(rot, 'config', `env.${miljo}.json`), 'utf8'));
+        // En påkrevd variabel merket valgfri er den farlige retningen:
+        // helsesjekken friskmelder den, og Graph-veien faller stille tilbake
+        // til flyten.
+        sjekk(`${miljo}: ingen påkrevd variabel er merket valgfri`,
+            påkrevd.filter(n => d[n] && d[n].valgfri === true).sort(), []);
+        // Og motsatt: en valgfri merket som noe annet ber om en verdi ingen har.
+        sjekk(`${miljo}: de valgfrie er merket valgfri`,
+            VALGFRIE.filter(n => !(d[n] && d[n].valgfri === true)).sort(), []);
+    }
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
