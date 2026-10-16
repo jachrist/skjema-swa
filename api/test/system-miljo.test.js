@@ -147,9 +147,30 @@ const SATT = { satt: true, lengde: 40 };
 {
     process.env.MILJO = 'dev';
     sjekk('dev er sitt eget miljø', miljonavn(), 'dev');
-    // Dev bruker klienthemmelighet som pilot, ikke sertifikat som prod.
-    sjekk('dev: tom AAD_CLIENT_SECRET er en ekte mangel',
+
+    // AUTH-INNSTILLINGENE HØRER IKKE HJEMME PÅ FUNCTION APP-EN I DEV.
+    //
+    // Denne testen sa til 16.10.2026 det motsatte: «dev bruker
+    // klienthemmelighet som pilot, ikke sertifikat som prod». Det stemmer om
+    // SWA-ens innlogging — men i dev er API-et en EGEN ressurs, og SWA-ens
+    // auth-innstillinger ligger på SWA-en. En kopi på Function App-en er ikke
+    // i bruk, og kan drive fra originalen uten at noe sier fra.
+    //
+    // Helsesjekken skal derfor friskmelde en tom verdi i dev, ikke melde den
+    // som mangel. Motsatt i pilot, der den samme env-varen ER den som brukes.
+    for (const navn of ['AAD_CLIENT_SECRET', 'AAD_CLIENT_ID']) {
+        const r = medForventning(navn, TOM);
+        sjekk(`dev: tom ${navn} er forventet`, r.gjelderHer, false);
+        sjekk(`dev: ${navn} får en forklaring`,
+            typeof r.merknad === 'string' && /SWA-en/.test(r.merknad), true);
+    }
+
+    process.env.MILJO = 'pilot';
+    sjekk('pilot: tom AAD_CLIENT_SECRET er fortsatt en ekte mangel',
         medForventning('AAD_CLIENT_SECRET', TOM).gjelderHer, undefined);
+    sjekk('pilot: tom AAD_CLIENT_ID er fortsatt en ekte mangel',
+        medForventning('AAD_CLIENT_ID', TOM).gjelderHer, undefined);
+    process.env.MILJO = 'dev';
 
     // `development` var alias for pilot til 15.10.2026. Det er fjernet, og da
     // skal navnet være UKJENT — ikke stille rutet til et miljø. Et ukjent

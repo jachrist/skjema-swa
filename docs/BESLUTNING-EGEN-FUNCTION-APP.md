@@ -324,7 +324,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 
 | Steg | Hva | Verifiseres ved |
 |---|---|---|
-| **0** | **Bygg dev-miljøet** i dev-tenanten: SWA + Function App, egen storage, egen Key Vault, egen app-registrering. Se 8g | `/api/ping` svarer med riktig SHA, pålogging gir riktig UPN, `/api/system/info` viser riktige hemmeligheter. Pilot og prod er urørt |
+| **0** | ✅ **Gjort 16.10.2026** — dev-miljøet står. Se 8i | `/api/ping` med riktig SHA, pålogging gir riktig UPN, hemmelighetene løses fra Key Vault, og begge MI-prøvene er grønne. Pilot og prod urørt |
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | Legg om `storage.js` og `blob.js` til `DefaultAzureCredential`, og `backup.js` til user delegation SAS. **Begge veier i samme kode**, valgt av konfigurasjon — se under | Hele testsuiten grønn, også uten `node_modules`. Deretter: les og skriv et skjema **i dev**. Pilot og prod er uendret fordi den nye veien er inert til `STORAGE_ACCOUNT_NAME` settes |
@@ -1573,6 +1573,91 @@ Går det galt: sett tilkoblingsstrengen tilbake. Reversibelt uten deploy.
 
 - [ ] **7.1** Entra-auth per flyt — bevist, men hver flyt er en egen avgjørelse
 - [ ] **7.2** Graph-approller på MI-en — **ikke kjørt**, må prøves i dev først
+
+## 8i. Utfallet av steg 0 — dev-miljøet står
+
+**Dato:** 16.10.2026
+**Oppsett:** `rg-skjema-3-dev` i dev-tenanten. SWA `Skjema-3-dev` (Standard)
+med Function App `fa-skjema-3-dev` som lenket backend, user-assigned identitet
+`mi-skjema-3-dev`, Key Vault `kv-skjema-3-dev`, storage `stskjema3dev`.
+App-registrering i **jccodevel**, ikke i tenanten ressursene ligger i.
+
+### Hva som er målt
+
+| Spørsmål | Svar |
+|---|---|
+| Kjører riktig kode? | `/api/ping` og `/js/config.js` bærer samme SHA |
+| Følger `x-ms-client-principal` med? | `headerMottatt: true`, `harUpn: true`, tre roller |
+| Virker **`rolesSource`** mot en lenket backend? | **Ja.** Admin-rollen kom fra `/api/roller-swa`, kalt server-til-server av SWA |
+| Løser plattformen Key Vault-referanser? | **Ja**, 21 av 22. Den siste manglet i vaulten |
+| Får koden et MI-token? | Ja — `aud` `https://storage.azure.com/`, `appid` = MI-ens clientId |
+| Tabell: lese, skrive, rydde? | **Grønt** |
+| Blob: lese, delegering, skrive, SAS-kall? | **Grønt** |
+| Er pilot og prod urørt? | Ja. Ingen deploy, ingen app settings rørt |
+
+> Verdiene i de to siste radene er bekreftet av den som kjørte dem, ikke
+> gjengitt felt for felt her. De øvrige står med eksakte verdier i avsnittene
+> de hører til.
+
+**`rolesSource`-raden er den viktigste nye.** Pilot har ingen lenket backend,
+så det leddet kunne ikke prøves der. Det var ført som en åpen risiko; nå er
+det målt.
+
+### Det dev kan, og det dev ikke kan ennå
+
+Dev kan logge inn, lese roller, løse hemmeligheter fra Key Vault, og snakke
+med storage på managed identity.
+
+Dev kan **ikke lese skjemadata**, og det er med vilje: `storage.js` krever
+fortsatt `STORAGE_CONNECTION_STRING`, og dev har ingen. Appen svarer
+«Kunne ikke hente skjematyper: STORAGE_CONNECTION_STRING env-var mangler».
+Det er grensen mellom steg 0 og steg 3, og den er synlig i brukergrensesnittet.
+
+Flyt-URLene står usatt (8g.6), så ingen flyt kan fyre fra dev.
+
+### Åtte feller, i den rekkefølgen de traff
+
+Steg 0 tok lengre tid enn det skulle, og ingen av årsakene var i selve
+arkitekturen. De står her fordi de treffer hvem som helst som setter opp
+det samme miljøet.
+
+1. **Tjenestehovedstolen.** `az ad sp create-for-rbac --scopes` vil ha
+   abonnementets **GUID**, ikke navnet. Og `azure/login` vil ha hele
+   JSON-objektet fra `--sdk-auth`, ikke bare `clientSecret`. Sett det sammen
+   for hånd, og noe er alltid i utakt — kopier hele utskriften fra den
+   kjøringen som lyktes.
+2. **`ID tokens`** var ikke slått på i app-registreringen. Symptomet er en
+   innloggingsløkke uten feilmelding noe sted.
+3. **Redirect-URI** må være `…/.auth/login/aad/callback` på en **Web**-plattform.
+   Feil her gir `AADSTS50011`, og den kan ikke oppstå før alt foran virker.
+4. **`keyVaultReferenceIdentity`** må settes til identitetens ressurs-ID.
+   Uten den feiler hver referanse med `MSINotEnabled`, uansett rolletildeling.
+5. **`AZURE_CLIENT_ID` er ikke `AAD_CLIENT_ID`.** De står rett ved siden av
+   hverandre alfabetisk i app settings, og betyr helt forskjellige ting. Se
+   tabellen i 8g.
+6. **Plattformens identity-endepunkt krever `client_id`** når appen bare har
+   user-assigned identiteter — også når den har nøyaktig én. Dette var en feil
+   i diagnoseverktøyet, ikke i oppsettet, og det pekte på oppsettet mens det
+   feilet på seg selv.
+7. **Kontrollplan er ikke dataplan**, igjen. `Owner` på abonnementet lar deg
+   opprette en tabell, men ikke skrive en rad i den.
+8. **`TableNotFound` er 404, ikke 403.** Prøven oppretter ikke tabellen selv.
+   Et 404 her betyr at identiteten kom inn.
+
+Og én feil i vår egen kode: helsesjekken ga i dev rådet «lim inn verdien som
+klartekst i SWA Configuration» om en uløst Key Vault-referanse. Begge
+setningene er gale der. Se `LØSER_KEYVAULT_REFERANSER` i `system.js`.
+
+### Hva som gjenstår før steg 3
+
+* `AAD_CLIENT_ID` og `AAD_CLIENT_SECRET` fjernes fra Function App-ens app
+  settings — de hører til SWA-en i dev, og en kopi kan drive.
+* `todo-storage-connection-string` legges i `kv-skjema-3-dev`, eller står
+  usatt til steg 3 trenger den.
+* `GRAPH_TENANT_ID` har feil verdi (8 tegn; en tenant-ID er 36).
+* `BACKUP_SHAREPOINT_*` står som `SETT-INN`.
+
+Ingen av dem blokkerer steg 3.
 
 ## 9. Risiko
 
