@@ -7,6 +7,7 @@
  *   GET  /api/logo/{filnavn}         — server bilde-bytes (anonymous — brukes i skjema-headere).
  */
 const { app } = require('@azure/functions');
+const { formatStorrelse } = require('../lib/storrelse');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const logoStorage = require('../lib/logo-storage');
 const hendelser = require('../lib/hendelser-storage');
@@ -50,7 +51,7 @@ app.http('logoerOpplast', {
             }
             const buffer = Buffer.from(await fil.arrayBuffer());
             if (buffer.length > MAX_LOGO_STORRELSE) {
-                return { status: 413, jsonBody: { status: 'feil', melding: `For stor (maks ${MAX_LOGO_STORRELSE / 1024 / 1024} MB)` } };
+                return { status: 413, jsonBody: { status: 'feil', melding: `For stor (maks ${formatStorrelse(MAX_LOGO_STORRELSE)})` } };
             }
             const res = await logoStorage.opplast(fil.name, buffer);
             context.log(`logoer: ${upn} lastet opp "${fil.name}" (${buffer.length} bytes)`);

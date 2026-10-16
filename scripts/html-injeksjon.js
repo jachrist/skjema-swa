@@ -66,11 +66,18 @@ const GODTATT_GRUPPER = [
             'b.antallRader', 'b.antallSlettet', 'b.varighetSekunder',
             't.antall', 't.slettet', 'c.antall', 'c.slettet',
             'Math.round((Date.now() - start) / 1000)',
-            'Math.round(data.storrelseBytes / 1024 / 1024 * 10) / 10',
-            'Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10',
-            'Math.round(blob.size / 1024 / 1024 * 10) / 10',
-            'Math.round(b.storrelseBytes / 1024 / 1024 * 10) / 10',
             'Math.round(stille / 60)']
+    },
+    {
+        fil: 'frontend/admin.html',
+        grunn: 'formatStorrelse() fra js/storrelse.js. Den slipper ALDRI inndata gjennom: '
+            + 'returverdien er enten null eller en streng bygget av sifre, ett komma, ett '
+            + 'mellomrom og en enhet fra en fast liste i funksjonen. En markup-bærende verdi '
+            + 'inn gir null ut, ikke markup ut — så escaping ville ikke endret noe her.',
+        uttrykk: ['formatStorrelse(data.storrelseBytes)',
+            'formatStorrelse(st.storrelseBytes)',
+            'formatStorrelse(blob.size)',
+            'formatStorrelse(b.storrelseBytes)']
     },
     {
         fil: 'frontend/admin.html',

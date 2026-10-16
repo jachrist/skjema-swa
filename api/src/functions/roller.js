@@ -10,6 +10,7 @@
  * Alle innloggede kan lese. Kun admin kan endre.
  */
 const { app } = require('@azure/functions');
+const { formatStorrelse } = require('../lib/storrelse');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const rollerStorage = require('../lib/roller-storage');
 const rolleImport = require('../lib/rolle-import');
@@ -213,7 +214,7 @@ app.http('rollerImport', {
 
             const buffer = Buffer.from(await fil.arrayBuffer());
             if (buffer.length > MAKS_IMPORTFIL) {
-                return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (maks ${MAKS_IMPORTFIL / 1024 / 1024} MB)` } };
+                return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (maks ${formatStorrelse(MAKS_IMPORTFIL)})` } };
             }
 
             const { rader, feil } = rolleImport.lesFil(buffer, fil.name);

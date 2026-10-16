@@ -53,6 +53,11 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 - Timer-triggere støttes ikke i SWA Managed Functions — bruk GitHub Actions cron mot HTTP-endepunkter (`.github/workflows/refresh-fs.yml`).
 - Autorisasjon på ruter håndteres primært deklarativt i `staticwebapp.config.json`. Fininnstilt admin-sjekk gjøres i handler via `erAdmin(upn)`.
 - HTML-filene har inline CSS/JS — samme mønster som referanse-appen. Ikke trekk ut felles CSS uten eksplisitt avtale.
+- Felles JS som flere sider trenger, bor som ES-modul i `frontend/js/` og
+  importeres — `escape.js` og `storrelse.js` er der fordi de samme reglene
+  fanst i fem og ni eksemplarer som svarte ulikt. Trenger backend den samme
+  regelen, får den en tvilling i `api/src/lib/` og en test som kjører BEGGE og
+  krever samme svar.
 - Tester: `npm test` fra `api/` kjører alt via `scripts/kjor-tester.js` — alle
   `*.test.js` i `api/test/` og `frontend/test/`. Testene skal kunne kjøre **uten**
   `node_modules`; derfor lastes Azure-SDK-ene lat i `storage.js` og `blob.js`.

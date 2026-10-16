@@ -14,6 +14,7 @@
  *   escapeHtml(s)                      → string               (utility)
  */
 import { escapeHtml, escapeJsIAttributt } from './escape.js';
+import { formatStorrelse } from './storrelse.js';
 
 
 export const FELTTYPER = [
@@ -885,7 +886,7 @@ function _lagOpplasting(felt, feltId, initialSvar) {
                 continue;
             }
             if (fil.size > MAX_FIL_STORRELSE) {
-                alert(`"${fil.name}" er for stor (maks ${MAX_FIL_STORRELSE / 1024 / 1024} MB)`);
+                alert(`"${fil.name}" er på ${formatStorrelse(fil.size)} — maks er ${formatStorrelse(MAX_FIL_STORRELSE)}`);
                 continue;
             }
             // Håndhev antall: eksisterende (ikke-slettede) + valgte nye ≤ maxValg

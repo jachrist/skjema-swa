@@ -51,6 +51,7 @@ const hendelser = require('../lib/hendelser-storage');
 const { containerKlient, sasUrl: blobSasUrl } = require('../lib/blob');
 const { tabellKlient } = require('../lib/storage');
 const { kontoNavnFra, miljoetsKonto } = require('../lib/lagringsvalg');
+const { formatStorrelse } = require('../lib/storrelse');
 
 const BACKUP_CONTAINER = 'backups';
 
@@ -337,7 +338,7 @@ async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
         hendelser.logg({
             Type: 'backup.kjort', Aktor: aktor,
             ObjektType: 'backup', ObjektId: res.filnavn,
-            Melding: `Backup (${res.modus}) kjørt — ${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB kryptert. ${kanalNavn}: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
+            Melding: `Backup (${res.modus}) kjørt — ${formatStorrelse(res.storrelseKryptert)} kryptert. ${kanalNavn}: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
             Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, kanal, flytStatus, flytMelding, webUrl: graph?.webUrl || null }
         });
     } catch (e) {
@@ -559,7 +560,7 @@ app.http('backupLastNed', {
             hendelser.logg({
                 Type: 'backup.last-ned', Aktor: a.upn,
                 ObjektType: 'backup', ObjektId: filnavn,
-                Melding: `Last-ned backup — ${Math.round(buffer.length / 1024 / 1024 * 10) / 10} MB (${varighetSekunder}s)`
+                Melding: `Last-ned backup — ${formatStorrelse(buffer.length)} (${varighetSekunder}s)`
             });
             return {
                 body: buffer,
@@ -781,7 +782,7 @@ async function kjorEksternBackup(aktor, { connectionString, miljo, passphrase },
             Type: 'backup.eksternt', Aktor: aktor,
             ObjektType: 'backup', ObjektId: filnavn,
             Melding: `Ekstern backup av ${miljo} fra ${konto} — `
-                + `${Math.round(res.storrelseKryptert / 1024 / 1024 * 10) / 10} MB, `
+                + `${formatStorrelse(res.storrelseKryptert)}, `
                 + `SharePoint: ${opplasting.status} (${sek}s)`
         });
         jobbLog(`backup/eksternt: ferdig — ${filnavn}, SharePoint ${opplasting.status}`);
@@ -958,7 +959,7 @@ async function kjorVerifisering(aktor, filnavn, kilde, jobbLog) {
         }
 
         await settVerifiserStatus({
-            Status: 'kjører', Steg: `leser ${Math.round(total / 1024 / 1024)} MB fra ${kilde}`,
+            Status: 'kjører', Steg: `leser ${formatStorrelse(total)} fra ${kilde}`,
             SistOppdatert: new Date().toISOString()
         });
         jobbLog(`backup/verifiser-lagret: ${filnavn} fra ${hvor} — ${total} bytes`);
@@ -969,7 +970,7 @@ async function kjorVerifisering(aktor, filnavn, kilde, jobbLog) {
         // Taggen holdt, men er innholdet en zip? Billig ekstrasjekk som skiller
         // «dekrypterte riktig» fra «dekrypterte riktig til noe meningsfullt».
         const melding = res.zipSignatur
-            ? `Verifisert: ${Math.round(res.kryptertBytes / 1024 / 1024)} MB dekryptert og autentisert, innholdet er en gyldig zip`
+            ? `Verifisert: ${formatStorrelse(res.kryptertBytes)} dekryptert og autentisert, innholdet er en gyldig zip`
             : `Dekrypteringen gikk igjennom, men innholdet starter ikke som en zip — undersøk fila`;
 
         await settVerifiserStatus({

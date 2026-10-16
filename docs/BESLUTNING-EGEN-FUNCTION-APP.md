@@ -1936,22 +1936,39 @@ Nedlastingslenken i **Historikk** er en rå `<a href>` rett til SAS-URL-en, og
 et klikk der er hele prøven. Et `403 AuthenticationFailed` der ville vært
 signeringen, ikke rollen — rollen er allerede bevist av punktet over.
 
-### En visning som avrunder for hardt
+### En visning som avrundet for hardt — rettet 16.10.2026
 
 Backupen viste «0 MB kryptert» og «0 MB bekreftet av Graph». Den så tom ut og
 var det ikke: hendelsesloggen (`backup.kjort` → `Detaljer`) bar hele
 manifestet, med rader på `Skjemaer` og `Skjemadefinisjoner`.
 
-Alle størrelsene i admin-panelet formateres som
-`Math.round(bytes / 1024 / 1024 * 10) / 10`, altså én desimal, så alt under
-~50 kB leses som «0 MB». I pilot og prod, der en backup er titalls megabyte,
-er det usynlig. I et nytt miljø er det nøyaktig når man trenger å se
-forskjellen på «noen få kB» og «ingenting» — og formelen står i åtte
-eksemplarer i `frontend/admin.html`.
+Formelen `Math.round(bytes / 1024 / 1024 * 10) / 10` ga én desimal i MB, så
+alt under ~50 kB leste som «0 MB». I pilot og prod, der en backup er titalls
+megabyte, er det usynlig. I et nytt miljø er det nøyaktig når man trenger å se
+forskjellen på «noen få kB» og «ingenting».
 
-Rettes ved å vise kB under 1 MB, fra ÉN hjelpefunksjon. Åtte kopier av samme
-formatering er den samme feilklassen som resten av dette kapitlet handler om,
-bare i det billigste hjørnet av den.
+Den sto i **ni eksemplarer i `frontend/admin.html`** og ni til i backend, i
+flere varianter: én uten MB-trinn, én med `toFixed(1)`, én med
+`Math.max(1, …)`. De svarte ikke likt på samme tall.
+
+Nå velges enheten etter tallet — B, kB, MB, GB, TB — fra én funksjon.
+«0 B» betyr da virkelig tomt, og kan ikke forveksles med noe annet. Den
+samme kjøringen ville vist «4,1 kB kryptert».
+
+**Funksjonen finnes i to eksemplarer, og det er med vilje.**
+`frontend/js/storrelse.js` og `api/src/lib/storrelse.js`: frontend kan ikke
+importere fra `api/`, og backend kan ikke importere en ES-modul fra
+`frontend/` uten et byggsteg. `api/test/storrelse.test.js` kjører BEGGE mot
+samme verditabell og krever samme svar — og krever i tillegg at
+funksjonskroppene er tegn for tegn like. En tabell på tretti verdier kan ikke
+utelukke at to utgaver skiller lag på den trettiførste.
+
+Testen fant også et hull som ikke hadde med formateringen å gjøre: en fil kan
+kalle funksjonen uten å importere den, og hele testsuiten forblir grønn fordi
+ingen test laster den fila. Det skjedde i `ai-analyser.js` mens dette ble
+skrevet. Feilen ville dukket opp som en `ReferenceError` i en 413-melding om
+at en fil er for stor — altså en kodesti som nesten aldri kjøres. Testen
+krever nå at hver fil som kaller `formatStorrelse` har den i scope.
 
 ## 9. Risiko
 

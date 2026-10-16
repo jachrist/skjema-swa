@@ -664,6 +664,7 @@
         import { migrerFeltreferanser } from './js/feltref-migrering.js';
         import { byggMdEditor } from './js/md-editor.js';
         import { escapeHtml, escapeJsIAttributt } from './js/escape.js';
+        import { formatStorrelse } from './js/storrelse.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -3293,7 +3294,7 @@
             const settFil = (f) => {
                 if (!f) return;
                 valgtFil = f;
-                filnavnEl.textContent = `${f.name} (${Math.round(f.size / 1024)} KB)`;
+                filnavnEl.textContent = `${f.name} (${formatStorrelse(f.size)})`;
                 analyserBtn.disabled = false;
             };
             dropEl.addEventListener('click', () => inputEl.click());

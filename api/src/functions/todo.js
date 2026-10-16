@@ -19,6 +19,7 @@
  * Lista deles på tvers av tenanter, så alle skrivende kall logges med UPN.
  */
 const { app } = require('@azure/functions');
+const { formatStorrelse } = require('../lib/storrelse');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const todo = require('../lib/todo-storage');
 const hendelser = require('../lib/hendelser-storage');
@@ -253,7 +254,7 @@ app.http('todoVedleggOpplast', {
             }
             const buffer = Buffer.from(await fil.arrayBuffer());
             if (buffer.length > todo.VEDLEGG_MAKS) {
-                return { status: 413, jsonBody: { status: 'feil', melding: `Filen er for stor (maks ${todo.VEDLEGG_MAKS / 1024 / 1024} MB)` } };
+                return { status: 413, jsonBody: { status: 'feil', melding: `Filen er for stor (maks ${formatStorrelse(todo.VEDLEGG_MAKS)})` } };
             }
 
             const res = await todo.lagreVedlegg(nummer, {

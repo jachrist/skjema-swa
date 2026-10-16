@@ -13,6 +13,7 @@
  * Størrelses-grense: 4 MB per fil (SWA request body-limit for managed functions).
  */
 const { app } = require('@azure/functions');
+const { formatStorrelse } = require('../lib/storrelse');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const utsendingToken = require('../lib/utsending-token');
 const vedleggStorage = require('../lib/vedlegg-storage');
@@ -69,7 +70,7 @@ app.http('opplastVedlegg', {
             }
             const buffer = Buffer.from(await fil.arrayBuffer());
             if (buffer.length > MAX_FIL_STORRELSE) {
-                return { status: 413, jsonBody: { status: 'feil', melding: `Filen er for stor (maks ${MAX_FIL_STORRELSE / 1024 / 1024} MB)` } };
+                return { status: 413, jsonBody: { status: 'feil', melding: `Filen er for stor (maks ${formatStorrelse(MAX_FIL_STORRELSE)})` } };
             }
 
             const res = await vedleggStorage.opplastVedlegg({
