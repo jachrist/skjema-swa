@@ -830,6 +830,45 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
     }, log);
 }
 
+/**
+ * Logg utfallet av en bunke varslinger. Venter på alle, kaster aldri.
+ *
+ * **Grunnen til at dette er en funksjon og ikke to kodeblokker:** de to
+ * stedene som sender varslinger gjorde det ulikt. Beslutningsveien brukte
+ * `Promise.allSettled` og logget hvert utfall som ikke var `ok` — den ble
+ * rettet en gang nettopp fordi «resultatene ble kastet før, så en varsling
+ * som ble hoppet over etterlot seg ingen spor».
+ *
+ * Innsendingsveien brukte fortsatt `Promise.all(...).catch(...)` til
+ * 16.10.2026. Den fanget bare en REJECT — og `kallVarslingFlyt` kaster ikke;
+ * den returnerer `{ status: 'feil' }`. Et kall som ble hoppet over, tørrkjørt
+ * eller feilet ved innsending etterlot seg derfor ingenting i det hele tatt.
+ *
+ * Det var ikke en teoretisk mangel: 16.10.2026 ble en flyt ikke kalt i dev,
+ * og loggen var tom. Diagnosen sa at alt var i orden, fordi den svarer på
+ * «ville den sendt NÅ», ikke på «hva skjedde den gangen».
+ *
+ * `merkelapp` sier hvilken av veiene linja kom fra — ellers er to like
+ * meldinger i loggen umulige å skille.
+ */
+async function loggVarslingsutfall(varslinger, log, merkelapp) {
+    const resultater = await Promise.allSettled(varslinger);
+    try {
+        for (const r of resultater) {
+            if (r.status === 'rejected') {
+                log(`varsling (${merkelapp}): FEIL — ${r.reason?.message || r.reason}`);
+                continue;
+            }
+            for (const v of (Array.isArray(r.value) ? r.value : [r.value])) {
+                if (v?.status && v.status !== 'ok') {
+                    log(`varsling (${merkelapp}): ${v.status}${v.melding ? ' — ' + v.melding : ''}`);
+                }
+            }
+        }
+    } catch (_) { /* logging skal aldri velte noe */ }
+    return resultater;
+}
+
 async function sendVarslingAktiveSteg(skjema, skjematype, aktiveSteg, opts = {}) {
     const log = opts.log || (() => {});
     const resultater = [];
@@ -1059,6 +1098,7 @@ module.exports = {
     sendInnsenderKvittering,
     sendBehandlerVarsling,
     sendVarslingAktiveSteg,
+    loggVarslingsutfall,
     sendBeslutningVarsling,
     sendFerdigVarsling,
     løsMottakere,
