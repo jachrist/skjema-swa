@@ -31,6 +31,7 @@ const { PassThrough } = require('stream');
 // lagringslaget uten å røre produksjonskoden. Samme mønster som backupKrypto.
 const storage = require('./storage');
 const blobLager = require('./blob');
+const deltLager = require('./delt-lager');
 const backupKrypto = require('./backup-krypto');
 
 // Tabeller vi tar backup av. Utsendinger + Hendelser inkluderes for full
@@ -298,7 +299,7 @@ function standardKilde() {
     return {
         tabell: (navn) => storage.tabellKlient(navn),
         container: (navn) => blobLager.containerKlient(navn),
-        deltCs: process.env.TODO_STORAGE_CONNECTION_STRING || ''
+        deltCs: deltLager.deltStreng()
     };
 }
 

@@ -135,27 +135,20 @@ function glemOpprettelse(lagerNokkel, tabellNavn) {
 }
 
 /**
- * Kontonavnet fra en connection string, til visning i UI. Gjør det mulig å se
- * hvilket lager et miljø faktisk snakker med uten å eksponere nøkkelen.
- *
- * Brukes bare for lagre som NÅS MED DELT NØKKEL. Går miljøet på managed
- * identity, finnes ingen streng å lese navnet ut av — der står navnet i
- * `STORAGE_ACCOUNT_NAME`, og kallerne legges om i del 2 av steg 3.
+ * Samme, for miljøets eget lager. Da er lagernøkkelen ikke noe kalleren har —
+ * den avhenger av hvilken vei `lagringsvalg()` valgte.
  */
-function kontoNavnFra(connectionString) {
-    const s = String(connectionString || '');
-    const m = /(?:^|;)\s*AccountName=([^;]+)/i.exec(s);
-    if (m) return m[1].trim();
-    // En SAS-basert connection string fra portalen har ingen AccountName — bare
-    // endepunkter og signaturen. Da må navnet leses ut av vertsnavnet, ellers
-    // står det «ukjent konto» i admin-panelet akkurat når man trenger å vite
-    // hvilken konto man faktisk snakker med.
-    const e = /(?:Blob|Table|Queue|File)Endpoint=https?:\/\/([^.;/]+)\./i.exec(s);
-    return e ? e[1].trim() : null;
+function glemOpprettelseIMiljoet(tabellNavn) {
+    glemOpprettelse(miljoetsLager().nokkel, tabellNavn);
 }
+
+// `kontoNavnFra` lå her til 16.10.2026. Den bor nå i `lagringsvalg.js`, ved
+// siden av `miljoetsKonto()` — spørsmålet «hvilken konto er dette» har to
+// svar avhengig av hvilken vei miljøet går, og de to svarene skal ikke ligge
+// i hver sin modul.
 
 module.exports = {
     tabellKlient, sikreTabell,
     tabellKlientFra, sikreTabellFra,
-    glemOpprettelse, kontoNavnFra, odata
+    glemOpprettelse, glemOpprettelseIMiljoet, odata
 };

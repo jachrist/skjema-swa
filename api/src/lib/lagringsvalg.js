@@ -149,6 +149,76 @@ function endepunkt(tjeneste, konto) {
 }
 
 /**
+ * Kontonavnet ut av en tilkoblingsstreng.
+ *
+ * Til visning: gjør det mulig å se hvilket lager et miljø faktisk snakker med
+ * uten å eksponere nøkkelen. Lå i `storage.js` til 16.10.2026, og flyttet hit
+ * fordi `miljoetsKonto()` under må kunne svare for BEGGE veiene — og den som
+ * spør «hvilken konto er dette» skal ikke måtte vite hvilken vei miljøet går.
+ */
+function kontoNavnFra(connectionString) {
+    const s = String(connectionString || '');
+    const m = /(?:^|;)\s*AccountName=([^;]+)/i.exec(s);
+    if (m) return m[1].trim();
+    // En SAS-basert connection string fra portalen har ingen AccountName — bare
+    // endepunkter og signaturen. Da må navnet leses ut av vertsnavnet, ellers
+    // står det «ukjent konto» i admin-panelet akkurat når man trenger å vite
+    // hvilken konto man faktisk snakker med.
+    const e = /(?:Blob|Table|Queue|File)Endpoint=https?:\/\/([^.;/]+)\./i.exec(s);
+    return e ? e[1].trim() : null;
+}
+
+/**
+ * Hvilken lagringskonto DETTE miljøet bruker — uansett vei inn.
+ *
+ * Svaret følger `lagringsvalg()`, og det er hele poenget: går miljøet på
+ * tilkoblingsstreng, leses navnet UT AV STRENGEN, ikke av
+ * `STORAGE_ACCOUNT_NAME`. De to kan være uenige — pilot har en verdi i
+ * inventaret som ikke nødvendigvis er den strengen peker på — og da er det
+ * strengen som forteller hvor dataene faktisk ligger.
+ *
+ * Tre vakter i appen sammenligner noe mot «vår egen konto»: den som nekter en
+ * ekstern backup av vårt eget lager, og de to som sier fra når en delt SAS
+ * peker hjem i stedet for til den delte kontoen. Alle tre leste tidligere
+ * `STORAGE_CONNECTION_STRING` direkte, og ble derfor STILLE SLÅTT AV i et
+ * miljø som går på managed identity. En vakt som ikke sier fra at den har
+ * sluttet å virke er verre enn ingen vakt.
+ *
+ * `null` betyr «vet ikke», og alle tre vaktene behandler det som «ikke
+ * sammenlign» — som før.
+ */
+function miljoetsKonto(env = process.env) {
+    const valg = lagringsvalg(env);
+    if (valg.maate === 'managed-identity') return valg.konto;
+    if (valg.maate === 'tilkoblingsstreng') return kontoNavnFra(tilkoblingsstreng(env));
+    return null;
+}
+
+/**
+ * AccountName og AccountKey ut av en tilkoblingsstreng.
+ *
+ * Eneste bruk er SAS-signering med delt nøkkel. Kaster hvis noen av dem
+ * mangler — en SAS signert med halve opplysninger er ikke en SAS.
+ *
+ * Verdien gjentas aldri i feilmeldingen: det er en kontonøkkel.
+ */
+function kontonokkelFra(connectionString) {
+    const kv = {};
+    for (const del of String(connectionString || '').split(';')) {
+        const i = del.indexOf('=');
+        if (i < 0) continue;
+        kv[del.substring(0, i).trim()] = del.substring(i + 1).trim();
+    }
+    const konto = kv.AccountName;
+    const nokkel = kv.AccountKey;
+    if (!konto || !nokkel) {
+        throw new Error(`${STRENG_VAR} mangler AccountName eller AccountKey — `
+            + 'en SAS kan ikke signeres med delt nøkkel uten begge');
+    }
+    return { konto, nokkel };
+}
+
+/**
  * Nøkkel for klientcachen på MI-veien.
  *
  * Nøkkelen identifiserer LAGERET, ikke tabellen eller containeren. For delt
@@ -192,5 +262,6 @@ function legitimasjon(klientId) {
 
 module.exports = {
     lagringsvalg, tilkoblingsstreng, endepunkt, legitimasjon, miNokkel,
+    kontoNavnFra, miljoetsKonto, kontonokkelFra,
     STRENG_VAR, KONTO_VAR, KLIENTID_VAR, MAATER, KONTONAVN
 };

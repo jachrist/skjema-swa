@@ -21,12 +21,11 @@
  * er SAS-strenger, som bærer utløpet i seg selv (`se=`); de leses direkte fra
  * env-varen og kan derfor aldri komme ut av takt med virkeligheten.
  */
-const { sikreTabellFra, glemOpprettelse, kontoNavnFra } = require('./storage');
+// HVOR kalenderen ligger står i `delt-lager.js` — samme regel som todo-lista,
+// og nå ett sted i stedet for to kopier som svarte ulikt med managed identity.
+const dl = require('./delt-lager');
 
 const TABELL = 'Nokkelkalender';
-
-const DELT_CS = process.env.TODO_STORAGE_CONNECTION_STRING || '';
-const CS = DELT_CS || process.env.STORAGE_CONNECTION_STRING || '';
 
 const TYPER = ['sertifikat', 'secret', 'SAS', 'passord', 'kontonøkkel', 'token', 'flyt-URL', 'annet'];
 const VARSLE_DAGER_STANDARD = 30;
@@ -49,7 +48,7 @@ function slug(navn) {
 }
 
 async function tabell() {
-    return sikreTabellFra(CS, TABELL, 'TODO_STORAGE_CONNECTION_STRING');
+    return dl.sikreDeltTabell(TABELL);
 }
 
 function erTabellMangler(e) {
@@ -63,12 +62,12 @@ async function medTabell(fn) {
         return await fn(t);
     } catch (e) {
         if (!erTabellMangler(e)) throw e;
-        glemOpprettelse(CS, TABELL);
+        dl.glemDeltOpprettelse(TABELL);
         try {
             await t.createTable();
         } catch (opprett) {
             if (opprett.statusCode !== 409) {
-                const konto = kontoNavnFra(CS) || 'lagringskontoen';
+                const konto = dl.deltKonto() || 'lagringskontoen';
                 throw new Error(
                     `Tabellen ${TABELL} finnes ikke på ${konto}, og kunne ikke opprettes: ` +
                     `${opprett.message}. Enten må SAS-en i TODO_STORAGE_CONNECTION_STRING ` +
@@ -84,11 +83,7 @@ async function medTabell(fn) {
 
 /** Hvilket lager kalenderen faktisk ligger i — vises i admin-panelet. */
 function lagerInfo() {
-    const konto = kontoNavnFra(CS);
-    const egenKonto = kontoNavnFra(process.env.STORAGE_CONNECTION_STRING || '');
-    const sammeSomMiljo = !!(DELT_CS && konto && egenKonto
-        && konto.toLowerCase() === egenKonto.toLowerCase());
-    return { konto, delt: !!DELT_CS, sammeSomMiljo, miljoKonto: egenKonto, miljo: miljo() };
+    return { ...dl.deltLagerInfo(), miljo: miljo() };
 }
 
 

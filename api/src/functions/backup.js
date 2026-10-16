@@ -48,12 +48,11 @@ const graphOpplast = require('../lib/graph-opplast');
 const restore = require('../lib/restore');
 const innstillinger = require('../lib/innstillinger-storage');
 const hendelser = require('../lib/hendelser-storage');
-const { containerKlient, serviceKlient } = require('../lib/blob');
-const { tabellKlient, kontoNavnFra } = require('../lib/storage');
-const { BlobSASPermissions, generateBlobSASQueryParameters, StorageSharedKeyCredential } = require('@azure/storage-blob');
+const { containerKlient, sasUrl: blobSasUrl } = require('../lib/blob');
+const { tabellKlient } = require('../lib/storage');
+const { kontoNavnFra, miljoetsKonto } = require('../lib/lagringsvalg');
 
 const BACKUP_CONTAINER = 'backups';
-const SAS_GYLDIG_TIMER = 24; // PA-flyt bruker denne til å hente og laste opp
 
 // Statusrad i CacheMetadata, samme mønster som refresh-fs bruker.
 const STATUS_PK = 'Meta';
@@ -92,36 +91,16 @@ async function backupContainer() {
 }
 
 /**
- * Parse Storage-connection-string for å hente konto-navn og delt nøkkel,
- * som trengs for å generere SAS. SWA Managed Functions kan bruke MI, men
- * bytter til connection-string-parsing for enkelhet.
+ * SAS-URL til en backupfil.
+ *
+ * Signeringen lå her til 16.10.2026, med kontonøkkelen revet ut av
+ * `STORAGE_CONNECTION_STRING`. Den veien finnes ikke i et miljø som går på
+ * managed identity — det er ingen nøkkel å signere med — så den bor nå i
+ * `lib/blob.js`, som kjenner begge veiene. `sasUrl` er `async` fordi
+ * MI-veien må hente en delegeringsnøkkel over nettet.
  */
-function hentKontoOgNokkel() {
-    const cs = process.env.STORAGE_CONNECTION_STRING || '';
-    const kv = {};
-    for (const del of cs.split(';')) {
-        const idx = del.indexOf('=');
-        if (idx < 0) continue;
-        kv[del.substring(0, idx).trim()] = del.substring(idx + 1).trim();
-    }
-    const konto = kv.AccountName;
-    const key = kv.AccountKey;
-    if (!konto || !key) throw new Error('STORAGE_CONNECTION_STRING mangler AccountName eller AccountKey');
-    return { konto, key };
-}
-
 function lagSasUrl(blobNavn) {
-    const { konto, key } = hentKontoOgNokkel();
-    const cred = new StorageSharedKeyCredential(konto, key);
-    const sas = generateBlobSASQueryParameters({
-        containerName: BACKUP_CONTAINER,
-        blobName: blobNavn,
-        permissions: BlobSASPermissions.parse('r'),
-        startsOn: new Date(Date.now() - 5 * 60 * 1000),
-        expiresOn: new Date(Date.now() + SAS_GYLDIG_TIMER * 3600 * 1000),
-        protocol: 'https'
-    }, cred).toString();
-    return `https://${konto}.blob.core.windows.net/${BACKUP_CONTAINER}/${encodeURIComponent(blobNavn)}?${sas}`;
+    return blobSasUrl(BACKUP_CONTAINER, blobNavn);
 }
 
 async function byggOgLagre(aktor, jobbLog, fremdrift = () => {}, opsjoner = {}) {
@@ -320,7 +299,7 @@ async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
 
         const res = await byggOgLagre(aktor, jobbLog, fremdrift, opsjoner);
         if (res.modus === 'full') await settSisteFulle(res.filnavn, startet);
-        const sasUrl = lagSasUrl(res.filnavn);
+        const sasUrl = await lagSasUrl(res.filnavn);
         const stiInnst = await innstillinger.hent('BackupOneDriveSti');
         const sti = stiInnst?.Verdi || '';
         const { kanal, flytStatus, flytMelding, graph } = await lastOppKopi(res, sasUrl, sti, jobbLog, fremdrift);
@@ -862,7 +841,11 @@ app.http('backupKjorEksternt', {
             return { status: 400, jsonBody: { status: 'feil', melding: 'Fant verken AccountName eller endepunkt i connection stringen' } };
         }
 
-        const egenKonto = kontoNavnFra(process.env.STORAGE_CONNECTION_STRING || '');
+        // Vår egen konto, uansett hvilken vei miljøet går inn til lagringen.
+        // Leste tidligere tilkoblingsstrengen direkte, og var dermed stille
+        // slått av i et miljø som bruker managed identity — nøyaktig den slags
+        // vakt man ikke oppdager at har sluttet å virke.
+        const egenKonto = miljoetsKonto();
         if (egenKonto && konto.toLowerCase() === egenKonto.toLowerCase()) {
             return {
                 status: 400,
@@ -1136,7 +1119,7 @@ app.http('backupListe', {
                     opprettetAv: blob.metadata?.opprettet_av || null,
                     klartekstBytes: blob.metadata?.klartekst_bytes ? Number(blob.metadata.klartekst_bytes) : null,
                     varighetSek: blob.metadata?.varighet_sek ? Number(blob.metadata.varighet_sek) : null,
-                    sasUrl: lagSasUrl(blob.name)
+                    sasUrl: await lagSasUrl(blob.name)
                 });
             }
             liste.sort((a, b) => (b.opprettet || '').localeCompare(a.opprettet || ''));

@@ -44,7 +44,7 @@ fra.
 
 | Secret-navn | App-setting | Beskrivelse | Rotasjon |
 |---|---|---|---|
-| `storage-connection-string` | `STORAGE_CONNECTION_STRING` | Full tilgang til miljøets lagringskonto | Ved lekkasje |
+| `storage-connection-string` | `STORAGE_CONNECTION_STRING` | Full tilgang til miljøets lagringskonto. **Settes ikke i dev** — der går lagringen på managed identity | Ved lekkasje |
 | `todo-storage-connection-string` | `TODO_STORAGE_CONNECTION_STRING` | Dev-tenantens konto, for den delte oppgavelista | Ved lekkasje — se under |
 | `fs-api-url` | `FS_API_URL` | Base-URL for FS-integrasjonen | Sjelden |
 | `fs-api-user` | `FS_API_USER` | Bruker for FS-API | Ved bytte |
@@ -101,6 +101,11 @@ prod leser og skriver til `TodoPunkter`-tabellen på dev-kontoen.
 
 Managed Identity kan ikke brukes til dette — MI er tenant-bundet, og prod-appens
 identitet finnes ikke i dev-tenanten. Derfor delt nøkkel.
+
+Er secreten **ikke** satt i et miljø, faller begge listene tilbake til miljøets
+eget lager (`api/src/lib/delt-lager.js`). Da virker de, men de er lokale for
+miljøet — ikke den ene felles versjonen. Det er greit i dev; i pilot og prod er
+en manglende verdi en feil.
 
 Anbefalt: bruk en **SAS på kontonivå** som bare gir tilgang til Table-tjenesten
 i stedet for kontonøkkelen, så en lekkasje ikke gir tilgang til blobene.
