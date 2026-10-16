@@ -27,16 +27,12 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
  * Diagnoseverktøy. Rives sammen med resten hvis forslaget legges bort.
  */
 
-// SDK-ene lastes først ved kall, samme grunn som i storage.js: testene skal
-// kunne kjøre uten node_modules.
-let DefaultAzureCredential = null;
-function legitimasjon(klientId) {
-    if (!DefaultAzureCredential) {
-        ({ DefaultAzureCredential } = require('@azure/identity'));
-    }
-    // Uten clientId leter SDK-en etter system-assigned, som ikke finnes her.
-    return new DefaultAzureCredential(klientId ? { managedIdentityClientId: klientId } : undefined);
-}
+// Identiteten og endepunktet kommer fra den SAMME modulen som storage.js og
+// blob.js bruker. Det er hele poenget med prøvene: bygger de sin egen URL og
+// sin egen legitimasjon, kan de bli grønne mens den ekte veien er rød — og da
+// måler de seg selv. `lagringsvalg.js` laster SDK-ene lat, samme grunn som
+// her: testene skal kunne kjøre uten node_modules.
+const { legitimasjon, endepunkt, KONTONAVN } = require('../lib/lagringsvalg');
 
 /**
  * Hvilken identitet prøven skal bruke — ÉTT sted, for alle fire endepunktene.
@@ -344,7 +340,7 @@ app.http('miTabellDiagnose', {
         const konto = (request.query.get('konto') || '').trim();
         const tabell = (request.query.get('tabell') || '').trim();
         const skriv = request.query.get('skriv') === 'ja';
-        if (!/^[a-z0-9]{3,24}$/.test(konto) || !/^[A-Za-z][A-Za-z0-9]{2,62}$/.test(tabell)) {
+        if (!KONTONAVN.test(konto) || !/^[A-Za-z][A-Za-z0-9]{2,62}$/.test(tabell)) {
             return { status: 400, jsonBody: {
                 status: 'feil',
                 melding: 'konto og tabell må oppgis. konto: 3-24 små bokstaver/tall. tabell: bokstav først, så bokstaver og tall.'
@@ -359,7 +355,7 @@ app.http('miTabellDiagnose', {
         const svar = { konto, tabell, skrivingPrøvd: skriv, klientIdBrukt: klientId || '(ingen)' };
         let klient;
         try {
-            klient = new (tabellKlasse())(`https://${konto}.table.core.windows.net`, tabell, legitimasjon(klientId));
+            klient = new (tabellKlasse())(endepunkt('tabell', konto), tabell, legitimasjon(klientId));
         } catch (e) {
             svar.lese = { ok: false, feil: e?.message || String(e) };
             return { jsonBody: svar };
@@ -548,7 +544,7 @@ app.http('miBlobDiagnose', {
         const konto = (request.query.get('konto') || '').trim();
         const container = (request.query.get('container') || '').trim();
         const skriv = request.query.get('skriv') === 'ja';
-        if (!/^[a-z0-9]{3,24}$/.test(konto) || !/^[a-z0-9][a-z0-9-]{2,62}$/.test(container)) {
+        if (!KONTONAVN.test(konto) || !/^[a-z0-9][a-z0-9-]{2,62}$/.test(container)) {
             return { status: 400, jsonBody: {
                 status: 'feil',
                 melding: 'konto og container må oppgis. konto: 3-24 små bokstaver/tall. '
@@ -562,7 +558,7 @@ app.http('miBlobDiagnose', {
                 melding: 'klientId må være en GUID' } };
         }
         const svar = { konto, container, skrivingPrøvd: skriv, klientIdBrukt: klientId || '(ingen)' };
-        const vert = `https://${konto}.blob.core.windows.net`;
+        const vert = endepunkt('blob', konto);
         let tjeneste, containerKlient;
         try {
             const { BlobServiceClient } = blobPakke();

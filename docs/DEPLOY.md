@@ -199,8 +199,12 @@ Etter første deploy:
 3. Klikk "Test /api/ping" — skal returnere JSON med tid
 4. Klikk "Test /api/hello-storage" — skal skrive én rad + én blob, deretter lese tilbake
 
-Hvis /api/hello-storage feiler med "Forbidden" → MI mangler storage-rolletildeling.
-Hvis den feiler med "STORAGE_ACCOUNT_NAME mangler" → env-var er ikke satt i SWA config.
+Feiler et lagringsoppslag med `Lagring er ikke konfigurert: …`, sier meldingen
+selv hvilken av de to veiene som mangler sin verdi: `STORAGE_CONNECTION_STRING`
+(pilot og prod) eller `STORAGE_ACCOUNT_NAME` (dev, der lagringen går på managed
+identity). Feiler det med `AuthorizationPermissionMismatch` på MI-veien, mangler
+identiteten en **datarolle** — `Storage Table Data Contributor` og
+`Storage Blob Data Contributor`. `Contributor` er ikke en av dem.
 
 ## Rollout til brukere
 

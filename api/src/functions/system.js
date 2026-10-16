@@ -5,6 +5,7 @@
 const { app } = require('@azure/functions');
 const os = require('os');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
+const { lagringsvalg } = require('../lib/lagringsvalg');
 
 // SWA-safe env-vars å vise. Aldri eksponer hemmeligheter — bare
 // om de er satt eller ikke, evt. lengde/prefiks for identifisering.
@@ -30,15 +31,21 @@ const OFFENTLIGE_ENV = [
  * Vist i helsesjekken, men IKKE lest av api/src.
  *
  * De brukes av PLATTFORMEN, ikke av koden vår: auth-innstillingene leses av
- * `staticwebapp.config.<miljø>.json`, og lagringskontonavnet står for
- * orienteringens skyld. Uten dem ville helsesjekken tiet om at innloggingen
- * er feilkonfigurert — og det er det verste tilfellet å ikke få vite om.
+ * `staticwebapp.config.<miljø>.json`. Uten dem ville helsesjekken tiet om at
+ * innloggingen er feilkonfigurert — og det er det verste tilfellet å ikke få
+ * vite om.
+ *
+ * `STORAGE_ACCOUNT_NAME` sto her til 16.10.2026, med «står for orienteringens
+ * skyld» som begrunnelse. Nå LESER koden den: `lagringsvalg.js` velger
+ * managed identity på den når tilkoblingsstrengen ikke er satt. Et unntak som
+ * ikke lenger er et unntak er en løgn med lav halveringstid — testen under
+ * fanger begge retninger.
  *
  * Lista er erklært fordi `api/test/env-inventar.test.js` ellers krever at alt
  * helsesjekken viser også leses av koden. Et unntak uten begrunnelse er et
  * hull; et unntak med begrunnelse er en beslutning.
  */
-const VIST_UTEN_AT_KODEN_LESER = ['AAD_CLIENT_ID', 'AAD_CLIENT_SECRET', 'STORAGE_ACCOUNT_NAME'];
+const VIST_UTEN_AT_KODEN_LESER = ['AAD_CLIENT_ID', 'AAD_CLIENT_SECRET'];
 
 const HEMMELIGE_ENV = [
     'STORAGE_CONNECTION_STRING', 'TODO_STORAGE_CONNECTION_STRING',
@@ -269,6 +276,13 @@ app.http('systemInfo', {
                 },
                 offentligeEnv: offentlige,
                 hemmeligeEnv: hemmelige,
+                // HVILKEN VEI LAGRINGEN GÅR, fra regelen selv — ikke gjettet
+                // ut av hvilke env-varer som er satt. To veier inn til samme
+                // konto betyr at «storage svarer ikke» har to helt ulike
+                // feilsøkinger, og den som leser helsesjekken skal ikke måtte
+                // utlede hvilken. `lagringsvalg()` tar aldri med
+                // tilkoblingsstrengen, så dette er trygt å vise.
+                lagring: lagringsvalg(),
                 request: {
                     host: request.headers.get('host') || null,
                     xForwardedHost: request.headers.get('x-forwarded-host') || null,
@@ -282,5 +296,6 @@ app.http('systemInfo', {
 // Eksporteres for test. Miljøskillet er lett å reversere ved en opprydding,
 // og feilen det gir er stille: en tom verdi leses som en mangel.
 module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO, _miljonavn: miljonavn,
+    _VIST_UTEN_AT_KODEN_LESER: VIST_UTEN_AT_KODEN_LESER,
     _maskLengde: maskLengde, _uloestReferanse: uloestReferanse,
     _LØSER_KEYVAULT_REFERANSER: LØSER_KEYVAULT_REFERANSER };

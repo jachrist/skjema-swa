@@ -150,6 +150,12 @@ ingen MI-token, så `DefaultAzureCredential` får ikke tak i noe —
 og koden får referansestrengen som verdi. `maskLengde()` i
 `api/src/functions/system.js` kjenner igjen det tilfellet og sier fra.
 
+> **Dette gjelder pilot og prod.** Dev-miljøet kjører API-et som en
+> frittstående Function App: der LØSER plattformen referansene, og lagringen
+> går på en managed identity i stedet for tilkoblingsstreng (16.10.2026). Rådet
+> i helsesjekken er derfor miljøavhengig — se `LØSER_KEYVAULT_REFERANSER` i
+> `system.js` og 8j i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
+
 Den ene managed identityen som faktisk brukes ligger på SWA-ressursen i prod og
 slås opp av **plattformen**: auth-sertifikatet hentes via
 `clientSecretCertificateKeyVaultReference` i `staticwebapp.config.prod.json`.

@@ -69,10 +69,16 @@ const MILJOER = ['dev', 'pilot', 'prod'];
  * av GitHub Actions (`GITHUB_SHA`), og hører ikke hjemme i et inventar over
  * SWA Configuration.
  *
- * TO former må leses, ikke én. Den første versjonen av denne testen tok bare
+ * TRE former må leses, ikke én. Den første versjonen av denne testen tok bare
  * `process.env.NAVN`, og var derfor blind for seks app settings:
  * `graph-opplast.js:46` leser via `process.env[n]` gjennom en `les()`-hjelper.
  * Testen så komplett ut og var det ikke — nøyaktig feilen den skal hindre.
+ *
+ * Den tredje er `env.NAVN`: `lagringsvalg.js` tar env som argument
+ * (`env = process.env`) for å kunne prøves uten å tømme require-cachen, og
+ * leser `env.STORAGE_ACCOUNT_NAME`. Samme felle, tredje gang — og de tre
+ * app settingene som velger lagringsvei er ikke de man vil ha utenfor
+ * inventaret.
  */
 function lestAvKoden() {
     const funnet = new Set();
@@ -81,9 +87,18 @@ function lestAvKoden() {
             const p = path.join(katalog, n.name);
             if (n.isDirectory()) { gå(p); continue; }
             if (!n.name.endsWith('.js')) continue;
-            const t = fs.readFileSync(p, 'utf8');
+            // Hele kommentarlinjer kastes først. Scanneren skal måle KODE, og
+            // et navn nevnt i prosa er ikke et oppslag: en kommentar som
+            // forklarer formen «env.<NAVN>» meldte seg selv som app setting
+            // «NAVN» og krevde en oppføring i alle tre miljøfilene. Bare hele
+            // linjer — et forsøk på å klippe `//` midt i en linje spiser
+            // «https://» og kan skjule et ekte oppslag, som er den farlige
+            // retningen.
+            const t = fs.readFileSync(p, 'utf8')
+                .split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
             for (const m of t.matchAll(/process\.env\.([A-Z][A-Z0-9_]*)/g)) funnet.add(m[1]);
             for (const m of t.matchAll(/\bles\('([A-Z][A-Z0-9_]*)'\)/g)) funnet.add(m[1]);
+            for (const m of t.matchAll(/\benv\.([A-Z][A-Z0-9_]*)/g)) funnet.add(m[1]);
         }
     };
     gå(path.join(rot, 'api', 'src'));
@@ -167,6 +182,24 @@ sjekk('helsesjekken viser noen', vist.size > 10, true);
     const nk = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'nokkelkalender-storage.js'), 'utf8');
     sjekk('det datastyrte oppslaget står der det er erklært',
         DATASTYRTE_OPPSLAG.every(f => nk.includes(f)), true);
+
+    // Og den tredje formen. Skrives lagringsvalg.js om til å lese gjennom
+    // konstantene sine (`env[KONTO_VAR]`), blir scanneren blind for de tre
+    // app settingene som bestemmer hvilken legitimasjon lagringen bruker —
+    // og inventaret ser fortsatt komplett ut.
+    const lv = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'lagringsvalg.js'), 'utf8');
+    sjekk('env.NAVN-formen står fortsatt i lagringsvalg.js',
+        /env\.STORAGE_ACCOUNT_NAME/.test(lv), true);
+    for (const n of ['STORAGE_ACCOUNT_NAME', 'STORAGE_CONNECTION_STRING', 'AZURE_CLIENT_ID']) {
+        sjekk(`og scanneren fant ${n}`, lest.has(n), true);
+    }
+
+    // Og motsatt: prosa teller ikke. Kommentaren i lagringsvalg.js forklarer
+    // formen med `env.NAVN` som eksempel. Tas kommentarfiltreringen over bort,
+    // melder den seg som en app setting ved navn «NAVN» — og krever en
+    // oppføring i alle tre miljøfilene for en variabel som ikke finnes.
+    sjekk('kommentaren som nevner formen står der', /env\.NAVN/.test(lv), true);
+    sjekk('men et navn nevnt i prosa er ikke et oppslag', lest.has('NAVN'), false);
 }
 
 // ---------- tre lister, ett svar ----------
@@ -206,6 +239,16 @@ for (const miljo of MILJOER) {
         [...lest].filter(n => !nokler.includes(n)).sort(), []);
     sjekk(`${miljo}: alt helsesjekken viser er deklarert`,
         [...vist].filter(n => !nokler.includes(n)).sort(), []);
+
+    // ---- 2a. «kun_dokumentasjon» er en påstand om koden ----
+    //
+    // Formen betyr «koden leser den ikke». Begynner koden å lese den, er
+    // merkingen feil — og den feilen er stille i den dyre retningen: den som
+    // setter opp et miljø leser «står bare for oversiktens skyld» og hopper
+    // over en verdi appen ikke klarer seg uten. STORAGE_ACCOUNT_NAME sto slik
+    // i alle tre filene til 16.10.2026.
+    const feilmerket = nokler.filter(n => lest.has(n) && d[n]?.kun_dokumentasjon === true);
+    sjekk(`${miljo}: ingen nøkkel koden leser er merket kun_dokumentasjon`, feilmerket.sort(), []);
 
     // ---- 2. ingenting står der uten grunn ----
     const uforklart = nokler.filter(n => {
