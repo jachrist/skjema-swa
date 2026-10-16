@@ -527,7 +527,22 @@ funksjonskoden. `DefaultAzureCredential` har ingenting å hente.
 `api/src/lib/keyvault.js` er død kode og importeres ingen steder. All lagring
 går derfor via `STORAGE_CONNECTION_STRING`.
 
+> **Dette er en begrensning i vertsmodellen, ikke i Azure.** 16.10.2026 ble
+> det målt i et dev-miljø der API-et kjører som en frittstående Function App
+> lenket til SWA-en: koden får et MI-token, og leser og skriver både tabeller
+> og blober uten tilkoblingsstreng. Se 8i i
+> `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
+>
+> **Pilot og prod er uendret** og kjører fortsatt på tilkoblingsstreng.
+> Omleggingen er steg 3 og 5b i den planen.
+
 ### 7.2 Hosten løser ikke Key Vault-referanser
+
+> Samme forbehold som 7.1: dette gjelder SWA Managed Functions. En
+> frittstående Function App løser dem — 16.10.2026 ble 21 ekte hemmeligheter
+> hentet som `@Microsoft.KeyVault(SecretUri=…)` i dev-miljøet, uten klartekst
+> noe sted utenfor Key Vault. Det krever at `keyVaultReferenceIdentity` peker
+> på identitetens ressurs-ID. Se 8i.
 
 Dette er det viktige punktet, og det er fastslått ved forsøk, ikke antatt.
 
