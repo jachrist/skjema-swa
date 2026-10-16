@@ -335,7 +335,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
-| 7 | ✅ **Bevist 15.10.2026, i koden 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Flyten svarer 200 på et MI-token, og URL-en har ingen signatur. Dev kaller flytene slik fra 16.10.2026 |
+| 7 | ✅ **Bevist, i koden og målt 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Varslingene kom fram i dev gjennom en flyt uten `sig=` i adressen: kvittering og behandlervarsling på en innsending |
 
 Steg 1 og 2 var de eneste som måtte gjøres i rekkefølge, og begge er gjort.
 
@@ -1596,7 +1596,8 @@ Går det galt: sett tilkoblingsstrengen tilbake. Reversibelt uten deploy.
 ### Egne beslutninger, ikke en del av rekkefølgen
 
 - [x] **7.1** Entra-auth per flyt — koden kan det fra 16.10.2026 (`FLYT_AUTH`,
-      se 8l). Dev kjører på det. Hver flyt i pilot og prod er fortsatt en egen
+      se 8l), og **varslingene kom fram i dev samme dag**, gjennom en flyt uten
+      `sig=` i adressen. Hver flyt i pilot og prod er fortsatt en egen
       avgjørelse, og bryteren er per MILJØ, ikke per flyt — se 8l
 - [ ] **7.2** Graph-approller på MI-en — **ikke kjørt**, må prøves i dev først
 
@@ -2061,6 +2062,45 @@ fra `Flyt_url` på steget. Mutasjonen som satte de håndskrevne headerne tilbake
 ga grønt. Default er nå snudd: enhver håndskreven JSON-header på et utgående
 kall i `api/src` er mistenkt, og de fire som ikke er flyt-kall er erklært med
 hvorfor.
+
+### Målt i dev, 16.10.2026
+
+`FLYT_AUTH=entra` satt på `fa-skjema-3-dev`, og **varslingene kom fram**: et
+skjema sendt inn, kvittering til innsenderen og behandlervarsling til steget,
+gjennom en flyt uten `sig=` i adressen. Hele steg 7 er dermed målt ende til
+ende, ikke bare bevist.
+
+### Hvordan det så ut da det ikke virket, og hvorfor det tok tid
+
+Navnet `FLYT_AUTH` var feilskrevet på appen. Da er modusen `sas`, ingen
+`Authorization` sendes, og Power Automate avviser kallet med 401.
+
+**Et 401 fra Power Automate lager ingen kjøring.** Autorisasjonen skjer på
+trigger-endepunktet, før flyt-instansen opprettes. Kjørehistorikken var derfor
+tom — og det ble lest som «appen kalte aldri flyten», som er noe helt annet
+enn «appen kalte, og ble avvist i døra». Prøven fikk en kjøring nettopp fordi
+tokenet ble godtatt; den feilet *inne i* flyten.
+
+Og fordi innsendingsveien kastet utfallet (se commiten «Innsendingsveien
+kastet utfallet av varslingene»), sto det ingenting i vår logg heller. To
+kilder, begge tause, av to ulike grunner.
+
+Svaret sto hele tiden i `/api/system/info` under `flytAuth`: `modus` og
+`grunn`. Feltet ble lagt inn sammen med bryteren, nettopp for at «hvilken
+modus gjelder» ikke skal være noe man utleder — og det er det ene stedet som
+ville svart med én gang. **Sjekk det først neste gang en flyt avviser oss.**
+
+### Om 502 NoResponse fra prøven
+
+`/api/diagnose/mi-flyt` fikk `502 NoResponse` fra varslingsflyten mens alt
+annet var grønt. Det var prøvens egen payload: den sender
+`{ kilde: 'mi-diagnose', tid: … }`, og flyten leser `mottakere`,
+`varslinger` og `epost_og_teams`. Den feiler før Response-handlingen, og svaret
+blir `NoResponse`.
+
+Prøven svarer altså på om flyten godtar IDENTITETEN, ikke på om den forstår
+innholdet. Et 502 derfra er ikke et tegn på at noe er galt med steg 7 — et 401
+eller 403 ville vært det.
 
 ### Hva som gjenstår
 
