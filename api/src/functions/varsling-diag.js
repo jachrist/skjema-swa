@@ -182,8 +182,15 @@ app.http('varslingDiagSkjema', {
                     behandlervarsling: {
                         // Gjelder alle kanaler. Er denne false, kalles flyten
                         // ikke i det hele tatt — uansett hvor riktig adressen er.
-                        flytKalles: !!process.env.VARSLING_FLOW_URL
-                            && String(process.env.VARSLING_DEAKTIVERT || '').toLowerCase() !== 'true',
+                        //
+                        // SVARET KOMMER FRA `varslingAv()`, ikke fra en egen
+                        // tolkning av env-varen. Her sto det en kopi til
+                        // 16.10.2026, og den manglet `.trim()`: en verdi med
+                        // et mellomrom rundt — som er lett å få med fra
+                        // portalen — ga «flytKalles: true» mens kallene
+                        // tørrkjørte. En diagnose som svarer noe annet enn
+                        // koden den skal forklare, er verre enn ingen.
+                        flytKalles: !!process.env.VARSLING_FLOW_URL && !varslingAv(),
                         VARSLING_FLOW_URL_satt: !!process.env.VARSLING_FLOW_URL,
                         VARSLING_DEAKTIVERT: process.env.VARSLING_DEAKTIVERT || null,
                         steg: behandlerSteg
