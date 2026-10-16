@@ -1226,6 +1226,39 @@ leter etter `process.env.X` i `api/src`, og denne variabelen leses av
 `@azure/identity`, ikke av vår egen kode. Den er med andre ord like påkrevd
 som de andre og den eneste uten et nett under seg.
 
+#### Og én innstilling til: `keyVaultReferenceIdentity`
+
+`AZURE_CLIENT_ID` dekker bare koden. **Key Vault-referanser løses av
+plattformen, ikke av koden**, og plattformen bruker **system-assigned**
+identitet med mindre den får beskjed om noe annet.
+
+Med bare en user-assigned identitet feiler derfor hver eneste referanse,
+uansett hvor riktig rolletildelingen på vaulten er:
+
+```
+Identity:      System assigned managed identity
+Status:        MSINotEnabled
+Error details: Reference was not able to be resolved because site
+               Managed Identity not enabled.
+```
+
+Det ser ut som en manglende rettighet, og er det ikke. Prøvd 15.10.2026 på
+`fa-skjema-3-dev`, med `Key Vault Secrets User` korrekt tildelt
+`mi-skjema-3-dev`.
+
+Rettes med en egenskap på selve appen — ikke en app setting:
+
+```
+$id = az identity show --name <identitet> --resource-group <rg> --query id -o tsv
+az functionapp update --name <funcapp> --resource-group <rg> `
+  --set keyVaultReferenceIdentity=$id --output none
+```
+
+Den tar **ressurs-ID-en**, ikke `clientId`. De to forveksles lett, og
+feilmeldingen blir like kryptisk begge veier. Restart appen etterpå.
+
+`scripts/steg1-funcapp.ps1` setter begge to.
+
 #### Rettighetene er ikke synlige i portalen
 
 En app-registrering viser rettighetene sine under «API permissions». En
@@ -1333,6 +1366,57 @@ generer i stedet.
 halvferdig miljø lager varsler ingen leser — og notatet har allerede ett
 eksempel på en alarm som sluttet å bli lest fordi den alltid var rød.
 
+**Gi dev sitt eget sett med flyter — ikke pilots.**
+
+Først hva som *ikke* er problemet: pilots flyt-URLer peker på flyter i
+**utviklingstenanten**, ikke i prod. Mottakere, team og lister der er
+testobjekter. Det eneste som hentes fra ekte kilder er offentlige data — FS
+og postnummerregisteret. Et dev-kall mot en pilot-flyt rører altså ikke
+produksjonsdata.
+
+Merk likevel at **ingenting feiler**, og det er verdt å vite hvorfor: koden
+sender **ingen `Authorization`-header** til flyter. `flyt-kaller.js`,
+`sp-liste.js` og `ekstern-flyt.js` POSTer payloaden og stoler på `sig=` i
+query-strengen. Det eneste stedet som sender bearer-token er
+`mi-diagnose.js` — prøven, ikke appen. En gammel URL virker derfor nøyaktig
+som før, uten noe signal om at den kalles fra et nytt miljø.
+
+Det er grunnen til å skille dem likevel:
+
+* **Kjørehistorikken blir felles.** En kjøring fra dev og en fra pilot ser
+  like ut i flytens historikk. Når noe skal feilsøkes, er «hvem utløste
+  denne» ikke lenger et spørsmål med svar.
+* **En endring for dev treffer pilot samtidig.** Flytene er delte, og en
+  flytendring er dyr å rulle ut (`docs/FLYT-DEPLOY.md`).
+* **Dev-settet er uansett det som skal bygges**, med Entra-auth i stedet for
+  SAS, og eksporteres til prod ved overgangen.
+
+**La `*_FLOW_URL` stå usatt til dev har sine egne.** Koden er bygget for det:
+hvert kall returnerer `{ status: 'hoppet-over' }` med årsaken i seg og logger
+det, og resten av appen går videre. Hele steg 0 kan verifiseres uten at en
+eneste flyt fyrer. `VARSLING_DEAKTIVERT=true` er et ekstra belte mens miljøet
+bygges.
+
+**Rekkefølgen når dev-flytene bygges med Entra-auth.** Steg 7 er bevist, men
+**ikke implementert i koden** — det finnes ingen bearer-vei i
+`flyt-kaller.js`, `sp-liste.js` eller `ekstern-flyt.js`. En flyt som krever
+Entra er derfor umulig for appen å kalle før den veien er bygget.
+
+Det gir en avhengighet som er verdt å planlegge rundt:
+
+1. Bygg dev-flytene, foreløpig med `sig=`, og sett URL-ene. Da virker dev.
+2. Legg bearer-veien inn i kallerne — samme mønster som `mi-flyt`-prøven:
+   token fra plattformens identity-endepunkt med `resource` ORDRETT, slik at
+   skråstreken i audiencen overlever.
+3. Først da settes flytene til å kreve Entra, med identitetens `oid` i lista.
+
+Gjøres 3 før 2, slutter dev å virke, og det ser ut som en feil i miljøet.
+
+Audiencen er ikke miljøavhengig: `https://service.flow.microsoft.com/` er den
+samme for alle flyter i public cloud. Det som er per flyt, er hvilke `oid`-er
+som står i allow-lista — og den lista må utvides med prod-identiteten når
+settet eksporteres dit.
+
 **Prøveressursene er revet 15.10.2026** — `testfapp`, prøve-SWA-en og de to
 GitHub-hemmelighetene. Dev arver ingenting av dem; den får sin egen
 tjenestehovedstol og sine egne hemmeligheter. Oppskriften og rekkefølgen
@@ -1368,6 +1452,10 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 - [x] Storage-konto — **tom**, ingen kopi fra pilot: stskjema3dev
 - [x] Key Vault: kv-skjema-3-dev
 - [x] **User-assigned** managed identity (egen ressurs, ikke system-assigned): mi-skjema-3-dev
+- [ ] `AZURE_CLIENT_ID` satt — for **koden** (clientId)
+- [ ] `keyVaultReferenceIdentity` satt — for **Key Vault-referansene**
+      (egen innstilling på appen, tar ressurs-ID-en). Uten den feiler hver
+      referanse med `MSINotEnabled`, uansett rolletildeling
 - [x] Function App, knyttet til identiteten: fa-skjema-3-dev
 - [x] Static Web App — **Standard**-plan: Skjema-3-dev
 - [x] Entra app-registrering: ad-skjema-3-dev, Tenant ID: e4fcc393-7190-4d3d-a38d-fa6429f870f3 Client ID: f6198f01-633e-401b-903b-ad45fa43ba9d, 
@@ -1397,6 +1485,12 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 
 - [ ] Environment `dev`, **uten** approval
 - [ ] Tjenestehovedstol + hemmelighet
+
+**Flytene** (8g.6)
+
+- [ ] `*_FLOW_URL` står **usatt** til dev har egne flyter
+- [ ] `VARSLING_DEAKTIVERT=true` mens miljøet bygges
+- [ ] Ingen dev-flyt er Entra-beskyttet (koden har ingen bearer-vei ennå)
 
 **Første utrulling** (8g.5) — rekkefølgen er poenget
 

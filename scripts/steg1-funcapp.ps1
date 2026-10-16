@@ -159,6 +159,24 @@ Kjør-Az @('functionapp','identity','assign','--name',$FuncApp,'--resource-group
 Kjør-Az @('functionapp','config','appsettings','set','--name',$FuncApp,'--resource-group',$Rg,
           '--settings',"AZURE_CLIENT_ID=$klientId",'--output','none') | Out-Null
 
+# OG DET SAMME FOR KEY VAULT-REFERANSER, som er en EGEN innstilling.
+#
+# @Microsoft.KeyVault(...) løses av plattformen, ikke av koden, og plattformen
+# bruker SYSTEM-ASSIGNED identitet med mindre den får beskjed om noe annet.
+# Med bare en user-assigned identitet feiler hver referanse med
+#
+#     Status: MSINotEnabled
+#     Reference was not able to be resolved because site Managed Identity
+#     not enabled.
+#
+# — selv når rolletildelingen på vaulten er helt riktig. Det ser ut som en
+# manglende rettighet og er det ikke.
+#
+# Merk at denne tar RESSURS-ID-en, ikke clientId. De to forveksles lett, og
+# feilmeldingen blir like kryptisk begge veier.
+Kjør-Az @('functionapp','update','--name',$FuncApp,'--resource-group',$Rg,
+          '--set',"keyVaultReferenceIdentity=$identitetId",'--output','none') | Out-Null
+
 # Tre storage-roller, ikke to. Blob Delegator er den backup.js trenger for å
 # lage en SAS uten kontonøkkel (getUserDelegationKey) — målt i 8f.
 #
