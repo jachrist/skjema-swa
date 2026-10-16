@@ -1254,10 +1254,36 @@ az functionapp update --name <funcapp> --resource-group <rg> `
   --set keyVaultReferenceIdentity=$id --output none
 ```
 
-Den tar **ressurs-ID-en**, ikke `clientId`. De to forveksles lett, og
-feilmeldingen blir like kryptisk begge veier. Restart appen etterpå.
+Den tar **ressurs-ID-en**, ikke `clientId`. Restart appen etterpå.
 
 `scripts/steg1-funcapp.ps1` setter begge to.
+
+#### Fire GUID-er, og tre av dem hører til samme identitet
+
+Dette kostet tre runder 15.–16.10.2026. En managed identity har **tre**
+forskjellige identifikatorer, og hvert sted vil ha sin:
+
+| Hvor | Hvilken | Hentes med |
+|---|---|---|
+| `AZURE_CLIENT_ID` (app setting) | MI-ens **clientId** | `az identity show … --query clientId` |
+| `keyVaultReferenceIdentity` (egenskap på appen) | MI-ens **ressurs-ID** | `az identity show … --query id` |
+| Rolletildelinger på storage og Key Vault | MI-ens **principalId** | `az identity show … --query principalId` |
+| `AAD_CLIENT_ID` (app setting) | **app-registreringens** client-ID | Entra → App registrations |
+
+De tre øverste er ulike verdier på samme objekt. Den nederste er en helt
+annen ting: app-registreringen er brukernes innlogging, og har ingen rolle i
+hva koden autentiserer seg som mot storage.
+
+Feilmeldingene forteller hvilken som er feil, hvis man leser dem bokstavelig:
+
+* `No User Assigned or Delegated Managed Identity found for specified
+  ClientId` → `AZURE_CLIENT_ID` peker ikke på en managed identity. Enten er
+  det `principalId`, eller det er app-registreringens client-ID.
+* `MSINotEnabled … site Managed Identity not enabled` →
+  `keyVaultReferenceIdentity` er ikke satt, så plattformen faller tilbake på
+  system-assigned, som ikke finnes.
+* `AuthorizationPermissionMismatch` → identiteten er riktig, rollen mangler.
+  Se «Fellen i steg 3».
 
 #### Rettighetene er ikke synlige i portalen
 
