@@ -666,9 +666,11 @@ Tre ting i løsningen er «hemmelig fordi den som har URL-en, kommer inn»:
   Managed Functions. Omleggingen henger derfor sammen med beslutningen om
   egen Function App.
 
-  **Koden kan det fra 16.10.2026.** `FLYT_AUTH=entra` får `flytHeadere()` til
-  å legge på `Authorization: Bearer`, hentet med Function App-ens managed
-  identity. Dev kaller flytene sine slik. Se 8l.
+  **Koden kan det fra 16.10.2026, og det er målt.** `FLYT_AUTH=entra` får
+  `flytHeadere()` til å legge på `Authorization: Bearer`, hentet med Function
+  App-ens managed identity. Samme dag kom varslingene fram i dev gjennom en
+  flyt uten `sig=` i adressen — kvittering og behandlervarsling på en
+  innsending. For de flytene er lenken ikke lenger en hemmelighet. Se 8l.
 
   **Ingen flyt i pilot eller prod er lagt om**, og `FLYT_AUTH` står usatt
   begge steder — de har ingen identitet å hente et token med. Kallene der går
