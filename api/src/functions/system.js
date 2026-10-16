@@ -10,6 +10,12 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 // om de er satt eller ikke, evt. lengde/prefiks for identifisering.
 const OFFENTLIGE_ENV = [
     'MILJO', 'SWA_URL', 'STORAGE_ACCOUNT_NAME', 'KEYVAULT_NAME',
+    // VISES I SIN HELHET, med vilje. En clientId er en offentlig
+    // identifikator, ikke en hemmelighet — og en managed identity har TRE
+    // GUID-er som ligner. Å maskere den til «lengde: 36» ville skjult
+    // nøyaktig verdien hvis forveksling koster mest tid (se 8g). Endepunktet
+    // krever admin.
+    'AZURE_CLIENT_ID',
     'FS_API_URL', 'FS_EIER_ORG_KODE', 'ADMIN_UPNS',
     // Hvor backupen lastes opp. Ikke hemmelig, og det som oftest er feil
     // konfigurert når kopien ikke dukker opp der noen leter etter den.
