@@ -345,20 +345,10 @@ app.http('lagreBeslutning', {
                 for (const s of flytSteg) varslinger.push(kallEksternFlyt(s.Flyt_url, skjemaKlartekst, s, log));
             }
             // allSettled i stedet for all: resultatene ble kastet før, så en
-            // varsling som ble hoppet over etterlot seg ingen spor.
-            Promise.allSettled(varslinger).then(resultater => {
-                for (const r of resultater) {
-                    if (r.status === 'rejected') {
-                        context.log(`varsling (beslutning): FEIL — ${r.reason?.message || r.reason}`);
-                        continue;
-                    }
-                    for (const v of (Array.isArray(r.value) ? r.value : [r.value])) {
-                        if (v?.status && v.status !== 'ok') {
-                            context.log(`varsling (beslutning): ${v.status}${v.melding ? ' — ' + v.melding : ''}`);
-                        }
-                    }
-                }
-            }).catch(() => { /* logging skal aldri velte noe */ });
+            // varsling som ble hoppet over etterlot seg ingen spor. Regelen
+            // bor i varsling.js, fordi innsendingsveien hadde den IKKE — og
+            // den forskjellen var usynlig helt til en flyt sluttet å bli kalt.
+            varsling.loggVarslingsutfall(varslinger, log, 'beslutning');
 
             return {
                 jsonBody: {
@@ -1010,7 +1000,9 @@ app.http('lagreSkjema', {
                 const harBehandling = Array.isArray(skjemaKlartekst.Behandling) && skjemaKlartekst.Behandling.length > 0;
 
                 const log = (m) => context.log(m);
-                Promise.all([
+                log(`innsending: varsler ${vanligeSteg.length} aktive steg`
+                    + `${flytSteg.length ? `, ${flytSteg.length} eksterne flyt-steg` : ''}`);
+                varsling.loggVarslingsutfall([
                     varsling.sendInnsenderKvittering(skjemaKlartekst, skjematype, varslOpts),
                     ...(bleFerdigVedInnsending && harBehandling
                         ? [varsling.sendFerdigVarsling(skjemaKlartekst, skjematype, varslOpts)]
@@ -1018,7 +1010,15 @@ app.http('lagreSkjema', {
                     varsling.sendVarslingAktiveSteg(skjemaKlartekst, skjematype, vanligeSteg, varslOpts),
                     ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaKlartekst, s, log)),
                     oppdaterSPListe(skjemaKlartekst, skjematype, log)
-                ]).catch(e => context.log(`varsling/ekstern-flyt/sp FEIL (innsending): ${e.message}`));
+                ], log, 'innsending');
+            } else {
+                // DEN TAUSE TREDJE SAKEN. Et lagret skjema som ikke gikk til
+                // behandling varsler ingen — og sa det ikke. «Jeg lagret, og
+                // det kom ingen e-post» er da umulig å skille fra «kallet
+                // feilet». Én linje, med begge statusene i seg.
+                context.log(`lagring: ingen varsling — status ${skjemaKlartekst.Skjema_status}`
+                    + `, var ${erNytt ? '(nytt)' : (eksisterende?.Skjema_status ?? '(ukjent)')}`
+                    + `, innsending=${erInnsending}`);
             }
 
             return {
