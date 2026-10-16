@@ -524,8 +524,8 @@ avgjørende å forstå riktig.
 
 SWA Managed Functions eksponerer **ingen** managed-identity-token til
 funksjonskoden. `DefaultAzureCredential` har ingenting å hente.
-`api/src/lib/keyvault.js` er død kode og importeres ingen steder. All lagring
-går derfor via `STORAGE_CONNECTION_STRING`.
+`api/src/lib/keyvault.js` er død kode og importeres ingen steder. I pilot og
+prod går derfor all lagring via `STORAGE_CONNECTION_STRING`.
 
 > **Dette er en begrensning i vertsmodellen, ikke i Azure.** 16.10.2026 ble
 > det målt i et dev-miljø der API-et kjører som en frittstående Function App
@@ -533,8 +533,15 @@ går derfor via `STORAGE_CONNECTION_STRING`.
 > og blober uten tilkoblingsstreng. Se 8i i
 > `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
 >
-> **Pilot og prod er uendret** og kjører fortsatt på tilkoblingsstreng.
-> Omleggingen er steg 3 og 5b i den planen.
+> **Koden bærer nå begge veier** (16.10.2026). `api/src/lib/lagringsvalg.js`
+> velger managed identity når `STORAGE_ACCOUNT_NAME` er satt og
+> `STORAGE_CONNECTION_STRING` ikke er det — ellers tilkoblingsstreng, som før.
+> Valget står ett sted og brukes av både `storage.js` og `blob.js`. Se 8j.
+>
+> **Pilot og prod er uendret.** Begge har en tilkoblingsstreng, og den vinner
+> over kontonavnet nettopp for at utrullingen av den nye veien skal være
+> virkningsløs der. Omleggingen er steg 5b og 6 i den planen, og den gjøres
+> ved å FJERNE tilkoblingsstrengen — ikke ved å deploye.
 
 ### 7.2 Hosten løser ikke Key Vault-referanser
 

@@ -1,9 +1,10 @@
 /**
  * Blob Storage-klient.
  *
- * Se kommentar i storage.js — samme grunn til at vi bruker connection string
- * i klartekst i stedet for Managed Identity eller en Key Vault-referanse:
- * SWA Managed Functions støtter ingen av delene.
+ * Samme to veier inn som i `storage.js` — delt nøkkel eller managed identity —
+ * og SAMME VALG: det tas i `lagringsvalg.js`, ikke her. Står regelen to
+ * steder, kan et blob-oppslag velge annerledes enn et tabelloppslag mot samme
+ * konto i samme prosess, og symptomet er at halve appen virker.
  */
 // Samme grunn som i storage.js: lat lasting holder modulen importerbar
 // uten node_modules, slik at logikktester kan kjøre uten npm ci.
@@ -13,15 +14,39 @@ function blobKlientKlasse() {
     return BlobServiceClient;
 }
 
-const cs = process.env.STORAGE_CONNECTION_STRING;
-let service = null;
+const {
+    lagringsvalg, tilkoblingsstreng, endepunkt, legitimasjon, miNokkel, STRENG_VAR
+} = require('./lagringsvalg');
 
-function serviceKlient() {
-    if (!cs) throw new Error('STORAGE_CONNECTION_STRING env-var mangler');
-    if (!service) {
-        service = blobKlientKlasse().fromConnectionString(cs);
+// Nøkkelen identifiserer LAGERET: connection stringen selv for delt nøkkel,
+// `miNokkel(valg)` for managed identity — samme hjelper som storage.js bruker.
+// Dette var tidligere én global `service` pluss ett kart; to måter å cache på
+// i samme fil er én for mange.
+const tjenester = new Map();
+
+function tjenesteI(nokkel, lag) {
+    let s = tjenester.get(nokkel);
+    if (!s) {
+        s = lag();
+        tjenester.set(nokkel, s);
     }
-    return service;
+    return s;
+}
+
+/**
+ * Blob-tjenesten for miljøets eget lager.
+ *
+ * Feilmeldingen navngir hvilken av de to veiene som mangler sin verdi — se
+ * `miljoetsLager()` i storage.js, samme begrunnelse.
+ */
+function serviceKlient() {
+    const valg = lagringsvalg();
+    if (valg.maate === 'tilkoblingsstreng') return serviceKlientFra(tilkoblingsstreng());
+    if (valg.maate === 'managed-identity') {
+        const url = endepunkt('blob', valg.konto);
+        return tjenesteI(miNokkel(valg), () => new (blobKlientKlasse())(url, legitimasjon(valg.klientId)));
+    }
+    throw new Error(`Lagring er ikke konfigurert: ${valg.grunn}`);
 }
 
 function containerKlient(containerNavn) {
@@ -32,19 +57,12 @@ function containerKlient(containerNavn) {
  * Blob-klient mot en annen lagringskonto enn miljøets egen.
  *
  * Samme behov som tabellKlientFra i storage.js: todo-lista med vedlegg bor på
- * dev-tenanten, og Managed Identity virker ikke over tenantgrenser. Klientene
- * caches per connection string, ikke i én global som serviceKlient().
+ * dev-tenanten, og Managed Identity virker ikke over tenantgrenser. Denne
+ * veien går derfor alltid på delt nøkkel, uansett hva miljøet selv bruker.
  */
-const tjenester = new Map();
-
-function serviceKlientFra(connectionString, varNavn = 'STORAGE_CONNECTION_STRING') {
+function serviceKlientFra(connectionString, varNavn = STRENG_VAR) {
     if (!connectionString) throw new Error(`${varNavn} env-var mangler`);
-    let s = tjenester.get(connectionString);
-    if (!s) {
-        s = blobKlientKlasse().fromConnectionString(connectionString);
-        tjenester.set(connectionString, s);
-    }
-    return s;
+    return tjenesteI(connectionString, () => blobKlientKlasse().fromConnectionString(connectionString));
 }
 
 function containerKlientFra(connectionString, containerNavn, varNavn) {

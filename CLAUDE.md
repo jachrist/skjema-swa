@@ -7,14 +7,24 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 
 - **Frontend:** ren HTML/CSS/JS med ES-moduler i `frontend/`. Ingen byggsteg (bortsett fra config.js-generering).
 - **Backend:** Azure Functions v4 i `api/`, kun HTTP-triggere.
-- **Datalagring:** Azure Table Storage + Blob Storage via tilkoblingsstreng
-  (`STORAGE_CONNECTION_STRING`), lest i `lib/storage.js` og `lib/blob.js`.
+- **Datalagring:** Azure Table Storage + Blob Storage, lest i `lib/storage.js`
+  og `lib/blob.js`. **To veier inn, og valget står ett sted:**
+  `lib/lagringsvalg.js` velger managed identity når `STORAGE_ACCOUNT_NAME` er
+  satt og `STORAGE_CONNECTION_STRING` ikke er det — ellers tilkoblingsstreng.
+  Dev går på identitet; pilot og prod har strengen, og den vinner. Gaffelen
+  rives i steg 6. `*Fra`-variantene går alltid på delt nøkkel: de peker på en
+  annen tenant, der en MI ikke kan få rolle.
 - **Hemmeligheter:** app settings i SWA Configuration. Verdiene hentes manuelt
   fra Key Vault når de settes — koden slår ikke opp i Key Vault selv.
 
-> **Managed Identity er ikke tilgjengelig for koden vår.** SWA Managed
-> Functions eksponerer ingen MI-token, så `DefaultAzureCredential` får ikke
-> tak i noe. `lib/keyvault.js` er død kode og importeres ingen steder.
+> **Managed Identity er ikke tilgjengelig for koden vår i pilot og prod.** SWA
+> Managed Functions eksponerer ingen MI-token, så `DefaultAzureCredential` får
+> ikke tak i noe. `lib/keyvault.js` er død kode og importeres ingen steder.
+>
+> **I dev er det omvendt:** API-et er en frittstående Function App med en
+> user-assigned identitet, og lagringen går på den. Det er målt, ikke antatt —
+> se 8e, 8f og 8j i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`. En påstand om MI i
+> dette repoet må derfor si HVILKET miljø den gjelder.
 >
 > Den ene MI-en som faktisk brukes, ligger på SWA-ressursen i prod og slås opp
 > av *plattformen*, ikke av oss: auth-sertifikatet hentes fra Key Vault via

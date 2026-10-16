@@ -1,8 +1,10 @@
 {
+    "_kommentar": "Kopier til local.settings.json og fyll inn. STORAGE_CONNECTION_STRING peker på Azurite-emulatoren MED VILJE: lagringsvalg.js velger managed identity når strengen IKKE er satt, og da ville DefaultAzureCredential falt tilbake på din egen az login mot kontoen i STORAGE_ACCOUNT_NAME - altså et ekte miljøs data fra en lokal kjøring. Skal du lese et ekte lager lokalt, sett strengen til det lageret bevisst.",
     "IsEncrypted": false,
     "Values": {
         "FUNCTIONS_WORKER_RUNTIME": "node",
         "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+        "STORAGE_CONNECTION_STRING": "UseDevelopmentStorage=true",
         "STORAGE_ACCOUNT_NAME": "stfhsskjemapilot",
         "KEYVAULT_NAME": "kv-fhsskjema-pilot",
         "ADMIN_UPNS": "din@epost.no",

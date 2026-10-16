@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Dato | 13.10.2026 |
-| Status | **Steg 1 og 2 verifisert, premisset for steg 3 og 7 bekreftet 14.10.2026. Forslaget står — ikke besluttet** |
+| Status | **Steg 0, 1 og 2 gjort, steg 7 bevist, steg 3 del 1 i koden 16.10.2026. Forslaget står — ikke besluttet** |
 | Gjelder | Punkt 2 og 3 i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 10 |
 | Krever | Beslutning hos oppdragsgiver + ressursoppsett hos Cyberforsvaret |
 
@@ -71,6 +71,9 @@ Med andre ord: dette er i hovedsak infrastruktur, ikke omskriving.
 ## 4. Hva som endres i koden
 
 ### `api/src/lib/storage.js` og `api/src/lib/blob.js`
+
+> **Gjort 16.10.2026.** Avsnittet her beskrev hva som skulle gjøres. Det er
+> gjort — se 8j for hva som faktisk står i koden, og hva som gjenstår.
 
 I dag bygges klientene med `fromConnectionString(...)`. Med en MI blir det
 `new TableClient(url, tabell, new DefaultAzureCredential())` og
@@ -327,7 +330,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | **0** | ✅ **Gjort 16.10.2026** — dev-miljøet står. Se 8i | `/api/ping` med riktig SHA, pålogging gir riktig UPN, hemmelighetene løses fra Key Vault, og begge MI-prøvene er grønne. Pilot og prod urørt |
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
-| 3 | Legg om `storage.js` og `blob.js` til `DefaultAzureCredential`, og `backup.js` til user delegation SAS. **Begge veier i samme kode**, valgt av konfigurasjon — se under | Hele testsuiten grønn, også uten `node_modules`. Deretter: les og skriv et skjema **i dev**. Pilot og prod er uendret fordi den nye veien er inert til `STORAGE_ACCOUNT_NAME` settes |
+| 3 | 🔶 **Del 1 gjort 16.10.2026** — `storage.js` og `blob.js` har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j. **Del 2 gjenstår:** `backup.js` → user delegation SAS, og `kontoNavnFra()` → `STORAGE_ACCOUNT_NAME` | Hele testsuiten grønn, også uten `node_modules`. Deretter: les og skriv et skjema **i dev**. Pilot og prod er uendret fordi den nye veien er inert så lenge `STORAGE_CONNECTION_STRING` er satt |
 | 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke **i dev** i et døgn |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
@@ -368,7 +371,7 @@ Det er demonstrert, ikke antatt: `deploy-funcapp-pilot.yml` og
 komplett parallell løsning med egen SWA og egen Function App, og pilot og
 prod merket ingenting.
 
-Prisen ved et fork er derimot konkret: CLAUDE.md, 112 testfiler, `scripts/`
+Prisen ved et fork er derimot konkret: CLAUDE.md, 113 testfiler, `scripts/`
 og hele `docs/` duplisert — og i ukene migreringen tar må hver rettelse i
 løsningen som er i drift påføres to steder for hånd, uten noen test som
 krever at de er enige. Det er feilklassen CLAUDE.md åpner med, gjort til
@@ -1531,12 +1534,23 @@ eksemplar av planen, og to eksemplarer svarer ulikt før eller siden.
 
 ### Steg 3 — storage uten delt nøkkel
 
-- [ ] Valg av legitimasjon, **ett sted**, brukt av `storage.js` og `blob.js`
-- [ ] `backup.js` → `getUserDelegationKey()` i stedet for kontonøkkel
-- [ ] `kontoNavnFra()` erstattet av `STORAGE_ACCOUNT_NAME`
-- [ ] Testsuiten grønn, også uten `node_modules`
+Del 1 (8j):
+
+- [x] Valg av legitimasjon, **ett sted**, brukt av `storage.js` og `blob.js`
+      — `api/src/lib/lagringsvalg.js`
+- [x] Testsuiten grønn, også uten `node_modules` — 113 testfiler
+- [x] Pilot og prod fortsatt uendret (strengen vinner der den er satt)
+
+Del 2:
+
+- [ ] `backup.js` → `getUserDelegationKey()` i stedet for kontonøkkel.
+      **Backup-nedlasting virker ikke i dev før dette er gjort** — se 8j
+- [ ] `kontoNavnFra()` erstattet av `STORAGE_ACCOUNT_NAME` i
+      `nokkelkalender-storage.js`, `todo-storage.js` og `functions/backup.js`
+- [ ] `STORAGE_ACCOUNT_NAME` satt på `fa-skjema-3-dev`
+- [ ] `/api/system/info` viser `lagring.maate = managed-identity` i dev
+- [ ] `/api/hello-storage` grønn i dev — den går gjennom den ekte koden
 - [ ] Les og skriv et skjema **i dev**
-- [ ] Pilot og prod fortsatt uendret (den nye veien er inert til variabelen settes)
 
 ### Steg 4 — én cron-jobb
 
@@ -1654,10 +1668,143 @@ setningene er gale der. Se `LØSER_KEYVAULT_REFERANSER` i `system.js`.
   settings — de hører til SWA-en i dev, og en kopi kan drive.
 * `todo-storage-connection-string` legges i `kv-skjema-3-dev`, eller står
   usatt til steg 3 trenger den.
-* `GRAPH_TENANT_ID` har feil verdi (8 tegn; en tenant-ID er 36).
+* `GRAPH_TENANT_ID` sto oppført som feil fordi verdien var 8 tegn.
+  **Det var vår feil, ikke miljøets:** token-endepunktet godtar et
+  tenant-domenenavn like godt som en GUID, så en kort verdi er ikke i seg selv
+  gal. Verdien i dev er fornuftig.
 * `BACKUP_SHAREPOINT_*` står som `SETT-INN`.
 
 Ingen av dem blokkerer steg 3.
+
+## 8j. Utfallet av steg 3, del 1 — begge veier i koden
+
+**16.10.2026.** `storage.js` og `blob.js` kan nå nå lagringen både med delt
+nøkkel og med managed identity. Valget mellom dem står i
+`api/src/lib/lagringsvalg.js`.
+
+### Regelen
+
+| `STORAGE_CONNECTION_STRING` | `STORAGE_ACCOUNT_NAME` | Vei |
+|---|---|---|
+| satt | satt eller ikke | tilkoblingsstreng |
+| ikke satt | satt | managed identity |
+| ikke satt | ikke satt | ukonfigurert — kaster med begge navnene i meldingen |
+
+**Strengen vinner, og rekkefølgen er ikke tilfeldig.** Pilot og prod har
+begge verdiene i inventaret. Hadde MI-veien vunnet, ville den slått inn i prod
+i samme øyeblikk dette ble merget, mot en identitet som ikke finnes der.
+Slik det står er endringen inert i de to miljøene som er i drift: de har en
+tilkoblingsstreng, og beholder den til 5b og 6.
+
+Overgangen i 5b er derfor å **fjerne** en app setting, ikke å sette en. Det
+er den rekkefølgen som er reversibel på et minutt.
+
+### Hva som ligger i `lagringsvalg.js`
+
+* `lagringsvalg()` — hvilken vei, og **hvorfor**, som en setning i `grunn`.
+  Tilkoblingsstrengen er ikke med i objektet; den hentes med et eget kall.
+  Derfor kan valget vises rått i `/api/system/info`, og det gjør det nå under
+  nøkkelen `lagring`.
+* `tilkoblingsstreng()` — strengen, bak et navn som sier at verdien er en
+  hemmelighet.
+* `endepunkt('tabell'|'blob', konto)` — vertsnavnet. Ett sted, i stedet for
+  fire steder som bygget det av samme to deler.
+* `legitimasjon(klientId)` — `DefaultAzureCredential`, cachet per identitet,
+  med `managedIdentityClientId` når `AZURE_CLIENT_ID` er satt. Uten den finner
+  SDK-en ikke en user-assigned identitet, også når det bare finnes én.
+* Kontonavn-regelen (3–24 små bokstaver og sifre), som også validerer
+  `STORAGE_ACCOUNT_NAME`. Den nærliggende tastefeilen er å lime hele
+  tilkoblingsstrengen inn der, og uten sjekken havner nøkkelen i et vertsnavn
+  — og derfra i en feilmelding og i loggen.
+
+`mi-diagnose.js` bruker nå de **samme** fire. Prøvene finnes for å måle den
+ekte veien; bygger de sin egen URL og sin egen legitimasjon, kan de bli grønne
+mens lagringen er rød.
+
+### `*Fra`-variantene følger ikke valget
+
+`tabellKlientFra`, `sikreTabellFra`, `serviceKlientFra` og
+`containerKlientFra` tar en tilkoblingsstreng som argument og går alltid på
+delt nøkkel. De peker på TODO-lista med vedlegg, som ligger i en annen tenant
+der en managed identity ikke kan få rolle. Det er det ene unntaket som
+overlever hele migreringen, og `api/test/env-inventar.test.js` krever at
+`TODO_STORAGE_CONNECTION_STRING` fortsatt er en hemmelighet i alle tre
+miljøene.
+
+### Testen
+
+`api/test/lagringsvalg.test.js` — 77 sjekker. Den gjør tre ting:
+
+* leser regelen, alle utfallene;
+* **kjører de ekte funksjonene i BEGGE modulene** mot stubbede SDK-er, og
+  krever at `storage.tabellKlient()` og `blob.serviceKlient()` går samme vei,
+  peker på samme konto og bruker samme legitimasjonsobjekt;
+* krever at ingen av dem leser `STORAGE_CONNECTION_STRING` eller
+  `STORAGE_ACCOUNT_NAME` selv, bygger sitt eget vertsnavn eller lager sin egen
+  legitimasjon — og at kontonavn-mønsteret ikke finnes skrevet ut noe annet
+  sted i `api/src`.
+
+Sytten mutasjoner er prøvd. Den viktigste — snu rekkefølgen slik at MI vinner
+over strengen — gjør tre sjekker røde, blant dem «begge satt: begge går på
+delt nøkkel». En kopi av regelen lagt inn i `blob.js` med motsatt rekkefølge
+gir fire røde.
+
+To hull ble funnet ved å mutere, ikke ved å lese:
+
+* **`endepunkt()` gjentok verdien i feilmeldingen.** Er den gale verdien en
+  tilkoblingsstreng, står nøkkelen i en exception — og i loggen. Nå står bare
+  lengden.
+* **Scanneren i `env-inventar.test.js` leste kommentarer.** En kommentar som
+  forklarte formen `env.NAVN` meldte seg selv som en app setting ved navn
+  «NAVN», og krevde en oppføring i alle tre miljøfilene. Hele kommentarlinjer
+  kastes nå før scanningen — bare hele linjer: et forsøk på å klippe `//` midt
+  i en linje spiser `https://` og kan skjule et ekte oppslag, som er den
+  farlige retningen.
+
+### Inventaret: `STORAGE_ACCOUNT_NAME` er ikke dokumentasjon lenger
+
+Den sto som `kun_dokumentasjon` i alle tre miljøfilene, med «API-et leser
+tilkoblingsstrengen, ikke navnet» som begrunnelse. Nå leser koden den. Det er
+den dyre retningen å ta feil i: den som setter opp et miljø leser «står bare
+for oversiktens skyld» og hopper over en verdi appen ikke klarer seg uten.
+
+Merkingen er fjernet i alle tre, `STORAGE_ACCOUNT_NAME` er ute av
+`VIST_UTEN_AT_KODEN_LESER` i `system.js`, og `env-inventar.test.js` krever nå
+at ingen nøkkel koden leser er merket `kun_dokumentasjon`.
+
+### Hva som IKKE virker i dev før del 2
+
+`functions/backup.js` signerer nedlastingslenken med
+`StorageSharedKeyCredential`, og nøkkelen hentes ut av tilkoblingsstrengen.
+Uten en streng finnes ingen nøkkel. **Backup-nedlasting i dev feiler derfor
+til `getUserDelegationKey()` er på plass** — selve backupen leses gjennom
+`tabellKlient`/`containerKlient` og går fint.
+
+`kontoNavnFra(process.env.STORAGE_CONNECTION_STRING)` i
+`nokkelkalender-storage.js`, `todo-storage.js` og `functions/backup.js` gir
+`null` i dev. Følgen er kosmetisk — «ukjent konto» i admin-panelet — men det
+er nøyaktig det feltet man leser når man vil vite hvilket lager man snakker
+med, så det hører med i del 2.
+
+Prøven `/api/diagnose/mi-blob` har allerede målt at `getUserDelegationKey()`
+og SAS-signering virker med identiteten i dev. Del 2 er omskriving, ikke
+utprøving.
+
+### Slik verifiseres del 1 i dev
+
+Sett `STORAGE_ACCOUNT_NAME=stskjema3dev` på `fa-skjema-3-dev` og kall
+**`/api/hello-storage`** (innlogget). Den skriver én tabellrad og én blob og
+leser radene tilbake — gjennom `tabellKlient()` og `containerKlient()`, altså
+den ekte veien, ikke prøvens egen.
+
+Det er forskjellen fra `mi-tabell` og `mi-blob`: de to tar kontoen som
+parameter og svarer på om *identiteten* har tilgang. `hello-storage` svarer på
+om *koden* velger riktig vei. Begge trengs — den første feilen vi gjorde i dev
+var å lese et grønt prøvesvar som om det gjaldt appen.
+
+`/api/system/info` viser samtidig valget under nøkkelen `lagring`: `maate`,
+`konto`, `klientId` og `grunn`. Står det `tilkoblingsstreng` der du ventet
+`managed-identity`, er strengen fortsatt satt på appen.
 
 ## 9. Risiko
 
