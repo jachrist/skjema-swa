@@ -62,11 +62,27 @@ fra.
 | `diagnose-flow-url` | `DIAGNOSE_FLOW_URL` | Slår opp eksterne referanser for varslingsdiagnosen | Ved lekkasje |
 | `team-flow-url` | `TEAM_FLOW_URL` | Team-oppslag mot Graph | Ved lekkasje |
 
-### Flyt-URLer er også hemmeligheter
+### Flyt-URLer er hemmeligheter — så lenge de bærer `sig=`
 
 Signaturen ligger i query-strengen, så URL-en **er** legitimasjonen: hvem som
 helst med den kan kalle flyten. Derfor hører de hjemme her, ikke som klartekst
 i en app-setting noen deler i en skjermdump.
+
+> **Dette gjelder pilot og prod.** I dev krever flytene et Entra-token
+> (`FLYT_AUTH=entra`, se 8l i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`), og da
+> har adressen ingen `sig=`. Den som har lenken kommer ingen vei uten et token
+> fra en identitet flyten stoler på, så URL-en er ikke legitimasjon lenger.
+>
+> **De åtte `*_FLOW_URL`-varene i dev settes derfor som klartekst i app
+> settings, uten Key Vault-referanse.** De står som `settes_i_swa` i
+> `config/env.dev.json` og ikke med verdi: fila er en inventarliste,
+> ingenting der settes automatisk, og en GUID-bærende adresse i repoet driver
+> fra virkeligheten så snart flyten lages på nytt.
+>
+> Én ting forsvinner med signaturen: **det er ingenting å rotere.** En
+> Entra-beskyttet flyt har ingen nøkkel i adressen, så tilgang trekkes tilbake
+> ved å fjerne en `oid` fra triggeren — ikke ved å regenerere en URL og
+> distribuere den på nytt.
 
 | Secret-navn | App-setting |
 |---|---|
@@ -78,7 +94,9 @@ i en app-setting noen deler i en skjermdump.
 | `team-sok-eksternt-flow-url` | `TEAM_SOK_EKSTERNT_FLOW_URL` |
 
 `/api/system/info` viser bare vertsnavnet og stien for disse, aldri
-query-strengen (`maskFlytUrl` i `api/src/functions/system.js`).
+query-strengen (`maskFlytUrl` i `api/src/functions/system.js`). Maskeringen
+gjelder alle miljøer, også dev: vertsnavn og sti er det nyttige, og regelen
+hører til variabelen, ikke til miljøet.
 
 ### Ikke hemmeligheter
 
@@ -278,13 +296,32 @@ Vil du ha SWA-ens egen JSON som ett gjenopprettbart objekt — altså punkt 3 og
 4 dekket også — hører det **i Key Vault**, ikke i repoet:
 
 ```bash
+# pilot og prod — API-et kjører i SWA-en
 az staticwebapp appsettings list --name <swa-navn> --resource-group <rg> -o json > /tmp/appsettings.json
 az keyvault secret set --vault-name <vault> --name swa-appsettings-<miljø> --file /tmp/appsettings.json
 shred -u /tmp/appsettings.json
+
+# dev — API-et er en frittstående Function App, og SWA-en har sine EGNE
+# innstillinger (auth-verdiene bor der). Begge må tas, ellers mangler
+# halvparten den dagen miljøet skal settes opp igjen.
+az functionapp config appsettings list --name <funcapp-navn> --resource-group <rg> -o json > /tmp/fa.json
+az keyvault secret set --vault-name <vault> --name funcapp-appsettings-dev --file /tmp/fa.json
+shred -u /tmp/fa.json
 ```
 
 Key Vault tar 25 KB per secret, og gir versjonshistorikk, tilgangsstyring og
 revisjonslogg på kjøpet. Gjenta etter hver endring i Configuration.
+
+To ting å vite om kopien, siden den er fristende å stole på:
+
+* **Den samler alle hemmelighetene i én.** Den som kan lese akkurat den
+  secreten, har hver eneste av de andre. `Key Vault Secrets User` på vaulten
+  er derfor en kraftigere rolle enn den ser ut når denne kopien ligger der.
+* **Den blir foreldet i stillhet.** Roteres en verdi uten at kopien tas på
+  nytt, holder kopien den gamle — og en gjenoppretting fra den setter miljøet
+  tilbake til noe som ikke virker lenger. Versjonshistorikken i Key Vault sier
+  når kopien sist ble tatt; sammenlign den med rotasjonsdatoene i
+  nøkkelkalenderen før du bruker den.
 
 > **Den utdataen skal aldri innom et commit, en e-post, en sak eller et
 > chatvindu.** Den inneholder flyt-URLer med SAS-signatur,
