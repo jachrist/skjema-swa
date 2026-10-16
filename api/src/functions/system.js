@@ -75,9 +75,30 @@ const HEMMELIGE_ENV = [
  * brukes.
  */
 const KUN_I_MILJO = {
+    // Prod bruker sertifikat fra Key Vault. Dev har ikke hemmeligheten HER:
+    // API-et er en egen Function App, og SWA-ens auth-innstillinger ligger på
+    // SWA-en. Se AAD_CLIENT_ID rett under.
     AAD_CLIENT_SECRET: {
-        miljoer: ['dev', 'pilot', 'lokal'],
-        merknad: 'Prod bruker sertifikat fra Key Vault i stedet — tom verdi er riktig her.'
+        miljoer: ['pilot', 'lokal'],
+        merknad: 'Prod bruker sertifikat fra Key Vault. I dev ligger verdien på '
+            + 'SWA-en, ikke på Function App-en — tom verdi er riktig begge steder.'
+    },
+    // EN KOPI HER VILLE VÆRT VERRE ENN INGEN.
+    //
+    // I pilot og prod kjører API-et inne i SWA-en, så denne env-varen ER den
+    // verdien innloggingen bruker, og helsesjekken bekrefter at auth er
+    // konfigurert. I dev er API-et en egen ressurs: SWA-ens auth-innstillinger
+    // er ikke synlige herfra.
+    //
+    // Settes den likevel på Function App-en, rapporterer helsesjekken en kopi
+    // ingen bruker — og en kopi som har drevet fra originalen ser nøyaktig ut
+    // som en som ikke har det. 16.10.2026 sto MI-ens clientId der, og
+    // innloggingen virket fint, fordi SWA-en hadde sin egen riktige verdi.
+    AAD_CLIENT_ID: {
+        miljoer: ['pilot', 'prod', 'lokal'],
+        merknad: 'I dev leser SWA-en denne fra SINE egne app settings. En kopi på '
+            + 'Function App-en er ikke i bruk og kan drive fra originalen — '
+            + 'tom verdi er riktig her.'
     }
 };
 
