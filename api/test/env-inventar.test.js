@@ -141,17 +141,20 @@ const DATASTYRTE_OPPSLAG = ['process.env[rad.EnvVar]'];
  * `config/env.*.json`, ville lista påstått at noen må sette dem.
  *
  * Erklæringen bor i koden som leser dem — `SATT_AV_PLATTFORMEN` i
- * `mi-diagnose.js` — og leses HERFRA. En liste i denne testen ville vært en
- * kopi til av den samme regelen, og kopier nummer to er feilklassen dette
- * repoet lager flest av.
+ * `lib/plattform-token.js` — og leses HERFRA. En liste i denne testen ville
+ * vært en kopi til av den samme regelen, og kopier nummer to er feilklassen
+ * dette repoet lager flest av.
+ *
+ * Lå i `functions/mi-diagnose.js` til 16.10.2026, sammen med tokenkoden. Den
+ * flyttet til lib-en da `flyt-auth.js` begynte å bruke den samme veien.
  */
 function sattAvPlattformen() {
-    const f = path.join(rot, 'api', 'src', 'functions', 'mi-diagnose.js');
+    const f = path.join(rot, 'api', 'src', 'lib', 'plattform-token.js');
     const s = fs.readFileSync(f, 'utf8');
     const m = /const SATT_AV_PLATTFORMEN = \[([^\]]*)\]/.exec(s);
     if (!m) {
         feil++;
-        console.log('FEIL  fant ikke SATT_AV_PLATTFORMEN i mi-diagnose.js');
+        console.log('FEIL  fant ikke SATT_AV_PLATTFORMEN i plattform-token.js');
         return new Set();
     }
     return new Set([...m[1].matchAll(/'([A-Z][A-Z0-9_]*)'/g)].map(x => x[1]));

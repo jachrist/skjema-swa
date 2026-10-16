@@ -21,7 +21,7 @@
 
 // varslingAv deles med flyt-kaller: samme bryter, ett sted. flyt-kaller har
 // ingen toppnivaa-require selv, saa fila kan fortsatt lastes uten node_modules.
-const { varslingAv } = require('./flyt-kaller');
+const { varslingAv, flytHeadere } = require('./flyt-kaller');
 
 function utledSwaBaseUrl() {
     const fra = String(process.env.SWA_URL || '').trim();
@@ -50,7 +50,10 @@ async function kallEksternFlyt(url, skjema, steg, log = () => {}) {
     try {
         const respons = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            // Gikk utenom `flytHeadere()` til 16.10.2026, og sendte derfor
+            // verken `x-flow-key` eller `Authorization`. En kopi av «hvordan
+            // ser et flyt-kall ut» som manglet begge sperrene de andre har.
+            headers: await flytHeadere(),
             body: JSON.stringify(payload)
         });
         if (!respons.ok) {

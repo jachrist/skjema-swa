@@ -21,6 +21,7 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const hendelser = require('../lib/hendelser-storage');
+const { formatStorrelse } = require('../lib/storrelse');
 
 const MAKS_STORRELSE = 20 * 1024 * 1024;
 const DEFAULT_MODELL = 'claude-sonnet-5-20260201';
@@ -215,7 +216,7 @@ app.http('aiAnalyserSkjema', {
                 return { status: 400, jsonBody: { status: 'feil', melding: `Ustøttet filtype: ${contentType || '(mangler)'} — bruk bilde eller PDF` } };
             }
             if (buffer.length > MAKS_STORRELSE) {
-                return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (${Math.round(buffer.length / 1024 / 1024)} MB, maks ${MAKS_STORRELSE / 1024 / 1024} MB)` } };
+                return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (${formatStorrelse(buffer.length)}, maks ${formatStorrelse(MAKS_STORRELSE)})` } };
             }
 
             // Bygg Claude-payload.

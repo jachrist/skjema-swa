@@ -360,6 +360,7 @@
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { escapeHtml as escHtml, escapeJsIAttributt } from './js/escape.js';
+        import { formatStorrelse } from './js/storrelse.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -680,7 +681,7 @@
                                     : '<div class="vedlegg-ikon">📄</div>'}
                             </a>
                             <div class="vedlegg-navn" title="${escHtml(v.Filnavn)}">${escHtml(v.Filnavn)}</div>
-                            <div class="todo-meta">${Math.max(1, Math.round(v.Storrelse / 1024))} kB</div>
+                            <div class="todo-meta">${formatStorrelse(v.Storrelse) || '—'}</div>
                             <button class="knapp danger mini" onclick="todoVedleggSlett(${nummer}, '${escapeJsIAttributt(v.Filnavn)}')">Fjern</button>
                         </div>`;
                 }).join('');
@@ -1959,10 +1960,10 @@
                 catch (e) { s.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`; return; }
 
                 if (st.status === 'ok' || st.status === 'feil') {
-                    const mb = st.storrelseBytes ? Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10 : null;
+                    const storrelse = formatStorrelse(st.storrelseBytes);
                     s.innerHTML = st.status === 'ok'
                         ? `<div class="banner suksess"><strong>✓ ${escHtml(st.miljo || '')} sikkerhetskopiert</strong>
-                             <br><small>${escHtml(st.filnavn || '')}${mb !== null ? ` · ${mb} MB` : ''} · fra ${escHtml(st.konto || '')} · ${st.varighetSekunder}s</small>
+                             <br><small>${escHtml(st.filnavn || '')}${storrelse ? ` · ${storrelse}` : ''} · fra ${escHtml(st.konto || '')} · ${st.varighetSekunder}s</small>
                              <br><small>${escHtml(st.melding || '')}</small></div>`
                         : `<div class="banner feil"><strong>⚠ Feilet</strong><br><small>${escHtml(st.sistFeil || 'ukjent feil')}</small></div>`;
                     return;
@@ -2004,7 +2005,7 @@
                     return;
                 }
                 if (st.status === 'ok' || st.status === 'feil') {
-                    const mb = st.kryptertBytes ? Math.round(st.kryptertBytes / 1024 / 1024 * 10) / 10 : null;
+                    const storrelse = formatStorrelse(st.kryptertBytes);
                     s.innerHTML = st.status === 'ok'
                         ? `<div class="banner suksess">
                              <strong>✓ ${escHtml(st.filnavn || '')} er lesbar</strong>
@@ -3052,7 +3053,7 @@ Skriv SLETT for å bekrefte.`);
                 el.innerHTML = `
                     <div class="banner suksess">
                         <strong>✓ Backup verifisert</strong>
-                        <br><small>${escHtml(data.filnavn)} · ${Math.round(data.storrelseBytes / 1024 / 1024 * 10) / 10} MB · passphrase: ${escHtml(data.passphraseKilde)}</small>
+                        <br><small>${escHtml(data.filnavn)} · ${formatStorrelse(data.storrelseBytes) || 'ukjent størrelse'} · passphrase: ${escHtml(data.passphraseKilde)}</small>
                     </div>
                     <div style="margin-top: 12px;">
                         <div style="font-weight: 600; margin-bottom: 6px;">Manifest</div>
@@ -3075,7 +3076,7 @@ Skriv SLETT for å bekrefte.`);
                             <div class="innehaver-rad" style="grid-template-columns: 1fr 90px 100px; gap: 12px;">
                                 <div>${escHtml(c.navn)}</div>
                                 <div style="font-size: 13px;">${c.antall}</div>
-                                <div style="font-size: 13px;">${Math.round(c.bytes / 1024 / 1024 * 10) / 10} MB</div>
+                                <div style="font-size: 13px;">${formatStorrelse(c.bytes) || '—'}</div>
                             </div>
                         `).join('')}
                     </div>
@@ -3193,14 +3194,14 @@ Skriv SLETT for å bekrefte.`);
                     const venterPaKvittering = !erGraph && st.status === 'ok' && st.flytStatus === 'ok'
                         && !st.oneDriveStatus && (Date.now() - ferdigTid) < KVITTERING_MS;
 
-                    const mb = st.storrelseBytes ? Math.round(st.storrelseBytes / 1024 / 1024 * 10) / 10 : null;
+                    const storrelse = formatStorrelse(st.storrelseBytes);
                     const feilet = st.status === 'feil' || st.oneDriveStatus === 'feil';
                     const klasse = feilet ? 'advarsel' : (st.oneDriveStatus === 'ok' ? 'suksess' : 'info');
 
                     let kopi;
                     if (st.oneDriveStatus === 'ok') {
                         const bekreftet = st.oneDriveStorrelse
-                            ? ` — ${Math.round(st.oneDriveStorrelse / 1024 / 1024 * 10) / 10} MB bekreftet av ${erGraph ? 'Graph' : 'flyten'}`
+                            ? ` — ${formatStorrelse(st.oneDriveStorrelse)} bekreftet av ${erGraph ? 'Graph' : 'flyten'}`
                             : '';
                         kopi = `<br><small>✓ Bekreftet i ${maal}${bekreftet}</small>`;
                     } else if (st.oneDriveStatus === 'feil') {
@@ -3215,7 +3216,7 @@ Skriv SLETT for å bekrefte.`);
                         <div class="banner ${klasse}">
                             <strong>${feilet ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.modus ? ` (${escHtml(st.modus)})` : ''}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
                             ${st.modus === 'delta' && st.basertPa ? `<br><small>Bygger på <code>${escHtml(st.basertPa)}</code> — begge trengs ved gjenoppretting.</small>` : ''}
-                            ${mb !== null ? `<br><small>${mb} MB kryptert · ${st.varighetSekunder}s · ${escHtml(kanalNavn)}: ${escHtml(st.flytStatus || '-')}</small>` : ''}
+                            ${storrelse ? `<br><small>${storrelse} kryptert · ${st.varighetSekunder}s · ${escHtml(kanalNavn)}: ${escHtml(st.flytStatus || '-')}</small>` : ''}
                             ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
                             ${kopi}
                             ${st.oneDriveSti ? `<br><small>${erGraph ? 'Sti i biblioteket' : 'OneDrive-sti'}: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}
@@ -3268,7 +3269,7 @@ Skriv SLETT for å bekrefte.`);
                 a.href = url; a.download = filnavn;
                 document.body.appendChild(a); a.click(); a.remove();
                 URL.revokeObjectURL(url);
-                s.innerHTML = `<div class="banner suksess">✓ Lastet ned ${escHtml(filnavn)} (${Math.round(blob.size / 1024 / 1024 * 10) / 10} MB)</div>`;
+                s.innerHTML = `<div class="banner suksess">✓ Lastet ned ${escHtml(filnavn)} (${formatStorrelse(blob.size) || 'ukjent størrelse'})</div>`;
             } catch (e) {
                 s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
@@ -3290,7 +3291,7 @@ Skriv SLETT for å bekrefte.`);
                         <div class="innehaver-rad" style="grid-template-columns: 2fr 145px 100px 100px 120px; gap: 12px;">
                             <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${escHtml(b.filnavn)}">${escHtml(b.filnavn)}</div>
                             <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${formatDato(b.opprettet)}</div>
-                            <div style="font-size: 12px;">${Math.round(b.storrelseBytes / 1024 / 1024 * 10) / 10} MB</div>
+                            <div style="font-size: 12px;">${formatStorrelse(b.storrelseBytes) || '—'}</div>
                             <div style="font-size: 12px;">${b.varighetSek != null ? b.varighetSek + 's' : '—'}</div>
                             <div><a class="knapp mini" href="${escHtml(b.sasUrl)}" target="_blank" download>Last ned</a></div>
                         </div>

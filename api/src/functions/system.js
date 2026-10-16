@@ -6,6 +6,7 @@ const { app } = require('@azure/functions');
 const os = require('os');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { lagringsvalg } = require('../lib/lagringsvalg');
+const { flytAuthModus } = require('../lib/flyt-auth');
 
 // SWA-safe env-vars å vise. Aldri eksponer hemmeligheter — bare
 // om de er satt eller ikke, evt. lengde/prefiks for identifisering.
@@ -25,6 +26,10 @@ const OFFENTLIGE_ENV = [
     // oppførsel som ellers ser ut som en feil: et miljø der ingen varsler
     // sendes, eller der purringen har sluttet.
     'VARSLING_DEAKTIVERT', 'ANTHROPIC_MODELL', 'BACKUP_DEL_MAKS_MB',
+    // Hvordan vi autentiserer oss mot flytene. Ikke hemmelig, og den forklarer
+    // et symptom som ellers ser likt ut fra begge kanter: en 401 fra flyten
+    // betyr noe helt annet når modusen er «sas» enn når den er «entra».
+    'FLYT_AUTH',
     'PURRE_MAKS_DAGER', 'PURRE_MIN_DAGER_MELLOM'
 ];
 /**
@@ -283,6 +288,13 @@ app.http('systemInfo', {
                 // utlede hvilken. `lagringsvalg()` tar aldri med
                 // tilkoblingsstrengen, så dette er trygt å vise.
                 lagring: lagringsvalg(),
+                // HVORDAN VI AUTENTISERER OSS MOT FLYTENE. En 401 fra en flyt
+                // betyr noe helt annet i «sas» enn i «entra», og den som leser
+                // helsesjekken skal ikke måtte utlede hvilken modus som
+                // gjelder. `grunn` sier også fra når FLYT_AUTH er satt til noe
+                // som ikke er en kjent verdi — da er den i praksis «sas», og
+                // det er ikke åpenbart fra verdien alene.
+                flytAuth: flytAuthModus(),
                 request: {
                     host: request.headers.get('host') || null,
                     xForwardedHost: request.headers.get('x-forwarded-host') || null,

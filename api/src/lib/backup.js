@@ -33,6 +33,7 @@ const storage = require('./storage');
 const blobLager = require('./blob');
 const deltLager = require('./delt-lager');
 const backupKrypto = require('./backup-krypto');
+const { formatStorrelse } = require('./storrelse');
 
 // Tabeller vi tar backup av. Utsendinger + Hendelser inkluderes for full
 // gjenopprettelse; Hendelser filtreres til siste 90 dager for å begrense
@@ -143,7 +144,7 @@ async function eksporterContainer(navn, zip, log, fremdrift = () => {}, siden = 
             // som de er. JSON-filene komprimeres fortsatt.
             zip.file(`blobs/${navn}/${blob.name}`, buffer, { compression: 'STORE' });
             if (meta.length % 25 === 0) {
-                fremdrift(`container ${navn}: ${meta.length} blobs (${Math.round(totalBytes / 1024 / 1024)} MB)`);
+                fremdrift(`container ${navn}: ${meta.length} blobs (${formatStorrelse(totalBytes)})`);
             }
             meta.push({
                 navn: blob.name,
@@ -154,7 +155,7 @@ async function eksporterContainer(navn, zip, log, fremdrift = () => {}, siden = 
             totalBytes += buffer.length;
         }
         zip.file(`blobs/${navn}/_meta.json`, JSON.stringify(meta, null, 2));
-        log(`backup: container ${navn} — ${meta.length} blobs (${Math.round(totalBytes / 1024 / 1024 * 10) / 10} MB)`
+        log(`backup: container ${navn} — ${meta.length} blobs (${formatStorrelse(totalBytes)})`
             + (siden ? `, ${hoppetOver} uendret siden ${siden.slice(0, 10)}` : ''));
     } catch (e) {
         if (e.statusCode === 404) log(`backup: container ${navn} — finnes ikke (0 blobs)`);
@@ -424,8 +425,7 @@ async function byggOgKrypter(sink, log = () => {}, fremdrift = () => {}, opsjone
     tider.zipSek = Math.round((Date.now() - zipStart) / 1000);
 
     const varighetSek = Math.round((Date.now() - start) / 1000);
-    const mb = (b) => Math.round(b / 1024 / 1024 * 10) / 10;
-    log(`backup: ferdig — ${mb(klartekstBytes)} MB zip → ${mb(kryptertBytes)} MB kryptert `
+    log(`backup: ferdig — ${formatStorrelse(klartekstBytes)} zip → ${formatStorrelse(kryptertBytes)} kryptert `
         + `(${varighetSek}s: tabeller ${tider.tabellerSek}s, blobs ${tider.blobberSek}s, `
         + `komprimering+kryptering ${tider.zipSek}s)`);
 

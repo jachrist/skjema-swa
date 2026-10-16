@@ -16,6 +16,7 @@
 // samme spørsmål. Fallbacken og `lagerInfo()` sto tidligere i to kopier her og
 // der, og kopiene svarte feil i et miljø som går på managed identity.
 const dl = require('./delt-lager');
+const { formatStorrelse } = require('./storrelse');
 
 const TABELL = 'TodoPunkter';
 const PK = 'Todo';
@@ -400,7 +401,7 @@ async function lagreVedlegg(nummer, { filnavn, buffer, contentType }) {
     }
     if (!buffer?.length) throw new Error('Filen er tom');
     if (buffer.length > VEDLEGG_MAKS) {
-        throw new Error(`Filen er ${Math.round(buffer.length / 1024)} kB — maks ${VEDLEGG_MAKS / 1024 / 1024} MB`);
+        throw new Error(`Filen er ${formatStorrelse(buffer.length)} — maks ${formatStorrelse(VEDLEGG_MAKS)}`);
     }
     const c = await vedleggContainer();
     // Content-Type settes fra filnavnet, ikke fra det klienten oppgir: en

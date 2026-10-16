@@ -34,6 +34,14 @@ function sjekk(navn, faktisk, forventet) {
 const fil = path.join(__dirname, '..', 'src', 'functions', 'mi-diagnose.js');
 const rå = fs.readFileSync(fil, 'utf8');
 const kode = utenKommentarer(rå);
+
+// Tokenveien flyttet til `lib/plattform-token.js` 16.10.2026, da
+// `lib/flyt-auth.js` begynte å bruke den samme. Sjekkene som gjelder DEN
+// leser den fila; resten leser prøven. Prøven skal måle den ekte veien, og
+// det kan den bare hvis den faktisk bruker den.
+const tokenFil = path.join(__dirname, '..', 'src', 'lib', 'plattform-token.js');
+const tokenRå = fs.readFileSync(tokenFil, 'utf8');
+const tokenKode = utenKommentarer(tokenRå);
 // claimsFra leser CLAIMS_VI_VISER, som er en konstant på modulnivå.
 // hentEksport henter funksjoner, ikke konstanter, så den må med separat —
 // ellers kaster funksjonen og testen måler feilhåndteringen i stedet for
@@ -235,7 +243,7 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
 // including trailing slashes.» SDK-en klipper skråstreken av underveis.
 // Derfor finnes `tokenkilde=plattform`, og derfor måles det her.
 {
-    const tidspunkt = hentEksport(rå, 'tidspunkt');
+    const tidspunkt = hentEksport(tokenRå, 'tidspunkt');
     sjekk('tidspunkt: epoch-sekunder', tidspunkt(1700000000),
         new Date(1700000000 * 1000).toISOString());
     // Feltet skal ALLTID settes. JSON.stringify dropper undefined, og da er
@@ -252,23 +260,26 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
 
     // Hele poenget med den nye veien: ressursen går ORDRETT videre.
     sjekk('resource sendes ordrett',
-        /u\.searchParams\.set\('resource', ressurs\)/.test(kode), true);
+        /u\.searchParams\.set\('resource', ressurs\)/.test(tokenKode), true);
     sjekk('ingen normalisering av ressursen underveis',
-        /ressurs\.replace\(/.test(kode), false);
+        /ressurs\.replace\(/.test(tokenKode), false);
+    // Og prøven bygger den ikke selv lenger — den importerer den.
+    sjekk('prøven bruker den delte tokenveien',
+        /require\('\.\.\/lib\/plattform-token'\)/.test(kode), true);
 
     // IDENTITY_HEADER er legitimasjon på linje med tokenet.
     sjekk('nøkkelen går bare i headeren',
-        /headers: \{ 'X-IDENTITY-HEADER': nokkel \}/.test(kode), true);
+        /headers: \{ 'X-IDENTITY-HEADER': nokkel \}/.test(tokenKode), true);
     // Den ene lovlige bruken er headeren over. Klippes den bort, skal det
     // ikke finnes noe annet sted nøkkelen settes inn i et objekt.
-    const utenHeader = kode.replace(/headers: \{ 'X-IDENTITY-HEADER': nokkel \}/g, '');
+    const utenHeader = tokenKode.replace(/headers: \{ 'X-IDENTITY-HEADER': nokkel \}/g, '');
     sjekk('nøkkelen havner ikke i svaret', /(^|[^$])[:,{]\s*nokkel\s*[,}]/.test(utenHeader), false);
-    sjekk('nøkkelen tilordnes ikke svaret', /svar\.\w+\s*=\s*nokkel\s*;/.test(kode), false);
-    sjekk('nøkkelen havner ikke i en feilmelding', /\$\{nokkel\}/.test(kode), false);
+    sjekk('nøkkelen tilordnes ikke svaret', /svar\.\w+\s*=\s*nokkel\s*;/.test(tokenKode), false);
+    sjekk('nøkkelen havner ikke i en feilmelding', /\$\{nokkel\}/.test(tokenKode), false);
     sjekk('variablene er erklært ett sted',
-        /const SATT_AV_PLATTFORMEN = \['IDENTITY_ENDPOINT', 'IDENTITY_HEADER'\];/.test(kode), true);
+        /const SATT_AV_PLATTFORMEN = \['IDENTITY_ENDPOINT', 'IDENTITY_HEADER'\];/.test(tokenKode), true);
     sjekk('feilmeldingen bygges fra erklæringen, ikke skrevet av på nytt',
-        /SATT_AV_PLATTFORMEN\.join\(/.test(kode), true);
+        /SATT_AV_PLATTFORMEN\.join\(/.test(tokenKode), true);
 }
 
 // ---------- blobprøven ----------
@@ -427,10 +438,10 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
     // Den ekte tokenFraPlattformen, kjørt uten identiteten. Meldingen må
     // navngi BEGGE variablene — «det gikk galt» er ikke til å skille fra
     // «koden er ikke deployet», og det er nettopp det som skal avgjøres.
-    const konst = rå.match(/const SATT_AV_PLATTFORMEN = \[[^\]]*\];/)[0];
-    const fra = rå.indexOf('async function tokenFraPlattformen(');
+    const konst = tokenRå.match(/const SATT_AV_PLATTFORMEN = \[[^\]]*\];/)[0];
+    const fra = tokenRå.indexOf('async function tokenFraPlattformen(');
     const tokenFraPlattformen = new Function(
-        `${konst}\n${rå.slice(fra, rå.indexOf('\n}', fra) + 2)}\nreturn tokenFraPlattformen;`
+        `${konst}\n${tokenRå.slice(fra, tokenRå.indexOf('\n}', fra) + 2)}\nreturn tokenFraPlattformen;`
     )();
 
     // KJØRT, ikke lest. Første versjon lette etter strengen
@@ -438,9 +449,9 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
     // fortsatt da mutasjonen pakket den inn i `if (false)`. Testen var grønn
     // mens prøven var ødelagt, altså nøyaktig feilen den skulle fange.
     {
-        const konst = rå.match(/const SATT_AV_PLATTFORMEN = \[[^\]]*\];/)[0];
-        const fraT = rå.indexOf('function tidspunkt(');
-        const fraP = rå.indexOf('async function tokenFraPlattformen(');
+        const konst = tokenRå.match(/const SATT_AV_PLATTFORMEN = \[[^\]]*\];/)[0];
+        const fraT = tokenRå.indexOf('function tidspunkt(');
+        const fraP = tokenRå.indexOf('async function tokenFraPlattformen(');
         let bruktUrl = null;
         const fakeFetch = async (u) => {
             bruktUrl = String(u);
@@ -449,8 +460,8 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
         };
         const lag = new Function('fetch',
             `${konst}\n`
-            + `${rå.slice(fraT, rå.indexOf('\n}', fraT) + 2)}\n`
-            + `${rå.slice(fraP, rå.indexOf('\n}', fraP) + 2)}\n`
+            + `${tokenRå.slice(fraT, tokenRå.indexOf('\n}', fraT) + 2)}\n`
+            + `${tokenRå.slice(fraP, tokenRå.indexOf('\n}', fraP) + 2)}\n`
             + 'return tokenFraPlattformen;')(fakeFetch);
 
         const GUID_FOR_URLTEST = 'cedbbeb7-4726-4330-931f-cf679a142ca6';

@@ -51,8 +51,19 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 - Ingen hemmeligheter i kode eller i env-JSON. Kun Key Vault-referanser (`{"keyvault": "secret-navn"}`) eller ikke-sensitive verdier (`{"value": "...", "public": true|false}`).
 - Ikke-hemmelige verdier med `"public": true` eksponeres til frontend via `frontend/js/config.js` (bygget av `scripts/build-config.js`).
 - Timer-triggere støttes ikke i SWA Managed Functions — bruk GitHub Actions cron mot HTTP-endepunkter (`.github/workflows/refresh-fs.yml`).
+- **Utgående flyt-kall** går alltid gjennom `flytHeadere()` i
+  `lib/flyt-kaller.js` — aldri håndskrevne headere. Den er `async`, og setter
+  `x-flow-key` (det er oss) og, når `FLYT_AUTH=entra`, `Authorization: Bearer`
+  (vi har lov). Tokenveien bor i `lib/plattform-token.js`, og ressursen må ha
+  skråstrek bakerst. Standard er uendret: uten `FLYT_AUTH` ser kallet ut som
+  før, og pilot og prod har ingen identitet å hente et token med.
 - Autorisasjon på ruter håndteres primært deklarativt i `staticwebapp.config.json`. Fininnstilt admin-sjekk gjøres i handler via `erAdmin(upn)`.
 - HTML-filene har inline CSS/JS — samme mønster som referanse-appen. Ikke trekk ut felles CSS uten eksplisitt avtale.
+- Felles JS som flere sider trenger, bor som ES-modul i `frontend/js/` og
+  importeres — `escape.js` og `storrelse.js` er der fordi de samme reglene
+  fanst i fem og ni eksemplarer som svarte ulikt. Trenger backend den samme
+  regelen, får den en tvilling i `api/src/lib/` og en test som kjører BEGGE og
+  krever samme svar.
 - Tester: `npm test` fra `api/` kjører alt via `scripts/kjor-tester.js` — alle
   `*.test.js` i `api/test/` og `frontend/test/`. Testene skal kunne kjøre **uten**
   `node_modules`; derfor lastes Azure-SDK-ene lat i `storage.js` og `blob.js`.

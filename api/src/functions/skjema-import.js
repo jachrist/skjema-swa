@@ -26,6 +26,7 @@
  * 270 e-poster.
  */
 const { app } = require('@azure/functions');
+const { formatStorrelse } = require('../lib/storrelse');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
@@ -78,7 +79,7 @@ app.http('importerSkjemaer', {
             }
             const buffer = Buffer.from(await fil.arrayBuffer());
             if (buffer.length > MAKS_IMPORTFIL) {
-                return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (maks ${MAKS_IMPORTFIL / 1024 / 1024} MB)` } };
+                return { status: 413, jsonBody: { status: 'feil', melding: `For stor fil (maks ${formatStorrelse(MAKS_IMPORTFIL)})` } };
             }
 
             const bekreft = String(formData.get('bekreft') || '') === 'true';

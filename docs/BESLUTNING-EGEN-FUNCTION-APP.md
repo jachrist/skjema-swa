@@ -335,7 +335,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
-| 7 | ✅ **Bevist 15.10.2026** — se 8f. Entra-auth på flytene, `sig=` ut av trigger-URL-ene | Flyten svarer 200 på et MI-token, og URL-en har ingen signatur |
+| 7 | ✅ **Bevist 15.10.2026, i koden 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Flyten svarer 200 på et MI-token, og URL-en har ingen signatur. Dev kaller flytene slik fra 16.10.2026 |
 
 Steg 1 og 2 var de eneste som måtte gjøres i rekkefølge, og begge er gjort.
 
@@ -1595,7 +1595,9 @@ Går det galt: sett tilkoblingsstrengen tilbake. Reversibelt uten deploy.
 
 ### Egne beslutninger, ikke en del av rekkefølgen
 
-- [ ] **7.1** Entra-auth per flyt — bevist, men hver flyt er en egen avgjørelse
+- [x] **7.1** Entra-auth per flyt — koden kan det fra 16.10.2026 (`FLYT_AUTH`,
+      se 8l). Dev kjører på det. Hver flyt i pilot og prod er fortsatt en egen
+      avgjørelse, og bryteren er per MILJØ, ikke per flyt — se 8l
 - [ ] **7.2** Graph-approller på MI-en — **ikke kjørt**, må prøves i dev først
 
 ## 8i. Utfallet av steg 0 — dev-miljøet står
@@ -1936,22 +1938,140 @@ Nedlastingslenken i **Historikk** er en rå `<a href>` rett til SAS-URL-en, og
 et klikk der er hele prøven. Et `403 AuthenticationFailed` der ville vært
 signeringen, ikke rollen — rollen er allerede bevist av punktet over.
 
-### En visning som avrunder for hardt
+### En visning som avrundet for hardt — rettet 16.10.2026
 
 Backupen viste «0 MB kryptert» og «0 MB bekreftet av Graph». Den så tom ut og
 var det ikke: hendelsesloggen (`backup.kjort` → `Detaljer`) bar hele
 manifestet, med rader på `Skjemaer` og `Skjemadefinisjoner`.
 
-Alle størrelsene i admin-panelet formateres som
-`Math.round(bytes / 1024 / 1024 * 10) / 10`, altså én desimal, så alt under
-~50 kB leses som «0 MB». I pilot og prod, der en backup er titalls megabyte,
-er det usynlig. I et nytt miljø er det nøyaktig når man trenger å se
-forskjellen på «noen få kB» og «ingenting» — og formelen står i åtte
-eksemplarer i `frontend/admin.html`.
+Formelen `Math.round(bytes / 1024 / 1024 * 10) / 10` ga én desimal i MB, så
+alt under ~50 kB leste som «0 MB». I pilot og prod, der en backup er titalls
+megabyte, er det usynlig. I et nytt miljø er det nøyaktig når man trenger å se
+forskjellen på «noen få kB» og «ingenting».
 
-Rettes ved å vise kB under 1 MB, fra ÉN hjelpefunksjon. Åtte kopier av samme
-formatering er den samme feilklassen som resten av dette kapitlet handler om,
-bare i det billigste hjørnet av den.
+Den sto i **ni eksemplarer i `frontend/admin.html`** og ni til i backend, i
+flere varianter: én uten MB-trinn, én med `toFixed(1)`, én med
+`Math.max(1, …)`. De svarte ikke likt på samme tall.
+
+Nå velges enheten etter tallet — B, kB, MB, GB, TB — fra én funksjon.
+«0 B» betyr da virkelig tomt, og kan ikke forveksles med noe annet. Den
+samme kjøringen ville vist «4,1 kB kryptert».
+
+**Funksjonen finnes i to eksemplarer, og det er med vilje.**
+`frontend/js/storrelse.js` og `api/src/lib/storrelse.js`: frontend kan ikke
+importere fra `api/`, og backend kan ikke importere en ES-modul fra
+`frontend/` uten et byggsteg. `api/test/storrelse.test.js` kjører BEGGE mot
+samme verditabell og krever samme svar — og krever i tillegg at
+funksjonskroppene er tegn for tegn like. En tabell på tretti verdier kan ikke
+utelukke at to utgaver skiller lag på den trettiførste.
+
+Testen fant også et hull som ikke hadde med formateringen å gjøre: en fil kan
+kalle funksjonen uten å importere den, og hele testsuiten forblir grønn fordi
+ingen test laster den fila. Det skjedde i `ai-analyser.js` mens dette ble
+skrevet. Feilen ville dukket opp som en `ReferenceError` i en 413-melding om
+at en fil er for stor — altså en kodesti som nesten aldri kjøres. Testen
+krever nå at hver fil som kaller `formatStorrelse` har den i scope.
+
+## 8l. Utfallet av steg 7 — Entra-token på flyt-kallene
+
+**16.10.2026.** Flytene i dev-tenanten er satt opp til å kreve et Entra-token,
+og koden sender det. Dev kaller dem uten at signaturen i URL-en betyr noe.
+
+### Hvorfor det er verdt noe
+
+Signaturen i en flyt-URL (`sig=`) gjør **adressen til legitimasjonen**. Den som
+har lenken kan kalle flyten med hvilken som helst payload — og siden
+e-postteksten bygges av felter i payloaden, betyr det en melding som ser ut til
+å komme fra skjemasystemet, med en lenke til hva som helst. At mottakeren ikke
+får opp et ekte skjema hjelper lite; verdien for en angriper ligger i
+avsenderinntrykket.
+
+Det er grunnen til at flyt-URL-ene ikke tåler å stå i en e-post, en sak eller
+en logg — svakhet 9.1 i overleveringsdokumentet. Krever flyten et token, er
+adressen ikke lenger en hemmelighet.
+
+### Bryteren er en app-setting, ikke noe vi utleder
+
+`FLYT_AUTH=entra` slår den på. Alt annet, inkludert usatt, er `sas` — dagens
+oppførsel.
+
+Valget KAN ikke utledes. «Flyten krever Entra» er en egenskap ved *flyten*, og
+ingenting i vår konfigurasjon forteller oss det. Det er forskjellen fra
+`lagringsvalg.js`, der miljøets egne app settings faktisk avgjør hvilken vei
+koden må gå.
+
+Bare strengen `entra` slår den på — samme konvensjon som `VARSLING_DEAKTIVERT`.
+En tastefeil gir `sas`, og det er den trygge retningen: kallet går som før, og
+en Entra-beskyttet flyt avviser det med 401. Motsatt vei ville et token blitt
+sendt til en flyt som ikke venter det. `/api/system/info` viser modusen under
+`flytAuth`, med en `grunn` som også sier fra når verdien er ukjent.
+
+**Bryteren er per MILJØ, ikke per flyt.** Et token som legges på en flyt som
+ikke krever det, blir ignorert — så en gradvis omlegging går fint: sett
+`FLYT_AUTH=entra` først når *alle* flytene i miljøet krever Entra, eller aksepter
+at de som ennå ikke gjør det bare ser en header de ikke leser.
+
+### Skråstreken, igjen
+
+`FLYT_RESSURS` er `https://service.flow.microsoft.com/` — **med skråstrek
+bakerst**. Microsoft: «Audience values must be an exact match, including
+trailing slashes.» Uten den svarer flyten `MisMatchingOAuthClaims`, målt
+15.10.2026.
+
+Derfor kan tokenet ikke hentes med `DefaultAzureCredential`: SDK-en tar et
+*scope*, klipper `/.default` av for å lage plattformens `resource`, og mister
+skråstreken på veien. `lib/plattform-token.js` kaller `IDENTITY_ENDPOINT` med
+`resource` ordrett — og sender `client_id`, som en user-assigned identitet
+krever også når det bare finnes én.
+
+Den koden lå i `functions/mi-diagnose.js`. Den er flyttet til lib-en, og prøven
+importerer den nå. En prøve som bygger sin egen tokenvei kan bli grønn mens
+den ekte er rød — og to utgaver ville skilt lag på nøyaktig det ene tegnet
+dette handler om.
+
+### Feilen forteller hva som gikk galt
+
+Er modusen `entra` og tokenet ikke kan hentes, **kastes det** — kallet går ikke
+videre uten header. Alternativet var en 401 fra flyten, og da er «vi har ingen
+managed identity» ikke til å skille fra «flyten avviste oss». Meldingen bærer
+begge deler: `FLYT_AUTH=entra, men tokenet kunne ikke hentes: IDENTITY_ENDPOINT
+/ IDENTITY_HEADER er ikke satt`.
+
+Tokenet caches til fem minutter før utløp. Uten det ville hvert flyt-kall
+kostet en ekstra rundtur, og med et for raust vindu kunne et token rekke å dø
+mellom cachen og flytens validering.
+
+### De to sperrene er uavhengige
+
+`x-flow-key` sier at det er OSS; tokenet sier at vi har LOV. Begge sendes når
+begge er konfigurert. Den ene erstatter ikke den andre: nøkkelen er den samme
+som flytene sender inn til oss, og den virker også mot flyter som ikke har
+Entra.
+
+### En kopi som manglet begge
+
+`ekstern-flyt.js` bygde sine egne headere — `{ 'Content-Type':
+'application/json' }` — og sendte derfor verken nøkkelen eller tokenet. Den har
+gjort det siden den ble skrevet, og ingen test kunne se forskjell på den og en
+som gjorde det riktig. Den bruker `flytHeadere()` nå.
+
+Testen som skulle fange slike, fanget den **ikke** i første utgave: den lette
+etter `FLOW_URL` i fila først, og `ekstern-flyt.js` får adressen som argument
+fra `Flyt_url` på steget. Mutasjonen som satte de håndskrevne headerne tilbake,
+ga grønt. Default er nå snudd: enhver håndskreven JSON-header på et utgående
+kall i `api/src` er mistenkt, og de fire som ikke er flyt-kall er erklært med
+hvorfor.
+
+### Hva som gjenstår
+
+* **Pilot og prod er uendret.** De har ingen managed identity koden kan hente
+  et token med, så `FLYT_AUTH` står usatt der. Omleggingen hører til 5b og 6.
+* `flytHeadere()` er `async` nå. Et glemt `await` gir et kall uten noen
+  headere i det hele tatt — testen teller dem.
+* De andre flytene i dev (`OTP_FLOW_URL`, `TEAM_FLOW_URL`, `SP_LISTE_FLOW_URL`,
+  `DIAGNOSE_FLOW_URL`, `BACKUP_FLOW_URL`, de to TEAM-ene) må også kreve Entra
+  før signaturen kan fjernes fra URL-ene deres. Til da er `FLYT_AUTH=entra`
+  harmløs for dem: de ignorerer headeren.
 
 ## 9. Risiko
 
