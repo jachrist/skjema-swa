@@ -10,6 +10,12 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 // om de er satt eller ikke, evt. lengde/prefiks for identifisering.
 const OFFENTLIGE_ENV = [
     'MILJO', 'SWA_URL', 'STORAGE_ACCOUNT_NAME', 'KEYVAULT_NAME',
+    // VISES I SIN HELHET, med vilje. En clientId er en offentlig
+    // identifikator, ikke en hemmelighet — og en managed identity har TRE
+    // GUID-er som ligner. Å maskere den til «lengde: 36» ville skjult
+    // nøyaktig verdien hvis forveksling koster mest tid (se 8g). Endepunktet
+    // krever admin.
+    'AZURE_CLIENT_ID',
     'FS_API_URL', 'FS_EIER_ORG_KODE', 'ADMIN_UPNS',
     // Hvor backupen lastes opp. Ikke hemmelig, og det som oftest er feil
     // konfigurert når kopien ikke dukker opp der noen leter etter den.
@@ -112,6 +118,23 @@ const MILJO_ALIAS = { production: 'pilot' };
  */
 const KJENTE_MILJOER = new Set(['dev', 'pilot', 'prod', 'lokal']);
 
+/**
+ * Miljøer der PLATTFORMEN løser `@Microsoft.KeyVault(...)`-referanser.
+ *
+ * SWA Managed Functions gjør det ikke — prøvd i pilot 12.10.2026, appen fikk
+ * referansestrengen på 109 tegn. En frittstående Function App gjør det —
+ * prøvd 14.10.2026, se 8d i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
+ *
+ * Forskjellen gjør at SAMME symptom har to ulike årsaker, og dermed to ulike
+ * råd. Uten dette skillet ga helsesjekken i dev 16.10.2026 et råd som var
+ * aktivt feil — «lim inn verdien som klartekst» — mens referansene der
+ * faktisk virket og det som manglet var én secret i vaulten. Et råd som
+ * sender feilsøkingen i gal retning er verre enn ingen melding.
+ *
+ * Lista utvides i steg 6, når pilot og prod også kjører på Function Apps.
+ */
+const LØSER_KEYVAULT_REFERANSER = new Set(['dev']);
+
 function miljonavn() {
     const raatt = String(process.env.MILJO || '').trim().toLowerCase();
     return MILJO_ALIAS[raatt] || raatt;
@@ -132,6 +155,29 @@ function medForventning(navn, info) {
     return { ...info, gjelderHer: false, merknad: regel.merknad };
 }
 
+/**
+ * Hvorfor en Key Vault-referanse står uløst — og det avhenger av miljøet.
+ *
+ * Et ukjent miljønavn får BEGGE årsakene, ikke den ene gjettet. Samme regel
+ * som KJENTE_MILJOER over: vi vet ikke nok til å peke én vei, og et feil råd
+ * koster mer enn et vagt.
+ */
+function uloestReferanse() {
+    const her = miljonavn();
+    if (LØSER_KEYVAULT_REFERANSER.has(her)) {
+        return 'Key Vault-referanse ble ikke løst. Plattformen her LØSER dem, så '
+            + 'årsaken er en annen: secreten finnes ikke i vaulten, identiteten mangler '
+            + 'Key Vault Secrets User, eller keyVaultReferenceIdentity er ikke satt på appen.';
+    }
+    if (KJENTE_MILJOER.has(her)) {
+        return 'Key Vault-referanse i en app-setting — SWA Managed Functions løser dem ikke. '
+            + 'Lim inn verdien som klartekst i SWA Configuration. Rolletildeling hjelper ikke.';
+    }
+    return 'Key Vault-referanse ble ikke løst, og miljøet er ukjent. To mulige årsaker: '
+        + 'plattformen løser dem ikke (SWA Managed Functions), eller den gjør det og '
+        + 'secreten/tilgangen mangler (Function App).';
+}
+
 function maskLengde(verdi) {
     if (!verdi) return { satt: false };
     const s = String(verdi);
@@ -145,11 +191,7 @@ function maskLengde(verdi) {
     // rolletildeling. Prøvd i pilot 12.10.2026 på TEAM_SOK_EKSTERNT_FLOW_URL:
     // appen fikk referansestrengen på 109 tegn.
     if (/^@Microsoft\.KeyVault\(/i.test(s.trim())) {
-        return {
-            satt: true, lengde: s.length,
-            feil: 'Key Vault-referanse i en app-setting — SWA Managed Functions løser dem ikke. '
-                + 'Lim inn verdien som klartekst i SWA Configuration. Rolletildeling hjelper ikke.'
-        };
+        return { satt: true, lengde: s.length, feil: uloestReferanse() };
     }
     return { satt: true, lengde: s.length };
 }
@@ -218,4 +260,6 @@ app.http('systemInfo', {
 
 // Eksporteres for test. Miljøskillet er lett å reversere ved en opprydding,
 // og feilen det gir er stille: en tom verdi leses som en mangel.
-module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO, _miljonavn: miljonavn };
+module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO, _miljonavn: miljonavn,
+    _maskLengde: maskLengde, _uloestReferanse: uloestReferanse,
+    _LØSER_KEYVAULT_REFERANSER: LØSER_KEYVAULT_REFERANSER };

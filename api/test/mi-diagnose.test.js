@@ -322,6 +322,65 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
         (kode.match(/ble IKKE slettet og må fjernes manuelt/g) || []).length, 2);
 }
 
+// ---------- hvilken identitet prøven bruker ----------
+//
+// 16.10.2026: plattform-veien feilet med 400 «Unable to load the proper
+// Managed Identity» på en app der identiteten var riktig knyttet og Key
+// Vault-referansene løste seg. Årsaken lå i prøven: har appen BARE
+// user-assigned identiteter, må kallet si hvilken, via client_id.
+{
+    // KLIENTID er en konstant på modulnivå, og hentEksport tar bare
+    // funksjoner. Uten den kaster funksjonen, og testen måler
+    // feilhåndteringen i stedet for regelen — nøyaktig fellen claimsFra gikk
+    // i, og som CLAUDE.md advarer mot.
+    const konstKlient = rå.match(/const KLIENTID = \/[^\n]*\/i;/)[0];
+    const start = rå.indexOf('function klientIdFra(');
+    const klientIdFra = new Function(
+        `${konstKlient}\n${rå.slice(start, rå.indexOf('\n}', start) + 2)}\nreturn klientIdFra;`
+    )();
+    const medSpørring = (q) => ({ query: new URLSearchParams(q) });
+
+    const før = process.env.AZURE_CLIENT_ID;
+    const GUID = 'cedbbeb7-4726-4330-931f-cf679a142ca6';
+
+    delete process.env.AZURE_CLIENT_ID;
+    sjekk('ingen kilde gir tom streng', klientIdFra(medSpørring('')), '');
+
+    process.env.AZURE_CLIENT_ID = GUID;
+    sjekk('faller tilbake på AZURE_CLIENT_ID', klientIdFra(medSpørring('')), GUID);
+
+    // Overstyringen er hele poenget: uten den kan «identiteten virker ikke»
+    // ikke skilles fra «app settingen er feil».
+    const ANNEN = 'a9012a94-8bc6-444e-9c3f-3994e13cd1d3';
+    sjekk('?klientId= overstyrer app settingen',
+        klientIdFra(medSpørring({ klientId: ANNEN })), ANNEN);
+
+    // Verdien går inn i en URL mot identity-endepunktet. Alt som ikke er en
+    // GUID avvises FØR det kommer dit — null betyr «avvis kallet».
+    sjekk('søppel i ?klientId= avvises',
+        klientIdFra(medSpørring({ klientId: 'ikke-en-guid' })), null);
+    sjekk('forsøk på å smugle inn en parameter avvises',
+        klientIdFra(medSpørring({ klientId: GUID + '&resource=noe' })), null);
+    // En ugyldig app setting skal ikke sendes videre heller.
+    process.env.AZURE_CLIENT_ID = 'tull';
+    sjekk('ugyldig AZURE_CLIENT_ID brukes ikke', klientIdFra(medSpørring('')), '');
+
+    if (før === undefined) delete process.env.AZURE_CLIENT_ID;
+    else process.env.AZURE_CLIENT_ID = før;
+
+    // Og i koden: client_id MÅ settes på plattformkallet, og alle fire
+    // endepunktene må velge identitet på samme måte.
+    sjekk('alle fire endepunktene velger identitet likt',
+        (kode.match(/const klientId = klientIdFra\(request\);/g) || []).length, 4);
+    sjekk('ugyldig klientId gir 400 i alle fire',
+        (kode.match(/if \(klientId === null\)/g) || []).length, 4);
+    // SDK-veien må få den samme identiteten — ellers måler de to veiene
+    // ulike ting, og sammenligningen mellom dem blir verdiløs.
+    sjekk('sdk-veien får identiteten', /legitimasjon\(klientId\)/.test(kode), true);
+    sjekk('ingen legitimasjon\(\) uten identitet igjen',
+        /legitimasjon\(\)/.test(kode), false);
+}
+
 // ---------- hentToken kjørt for ekte, med stubbede kilder ----------
 //
 // Den ekte funksjonen, ikke en kopi av regelen: det var nettopp en
@@ -373,6 +432,54 @@ const TOKEN = `${b64({ alg: 'RS256' })}.${b64(NYTTELAST)}.signaturdelen-her`;
     const tokenFraPlattformen = new Function(
         `${konst}\n${rå.slice(fra, rå.indexOf('\n}', fra) + 2)}\nreturn tokenFraPlattformen;`
     )();
+
+    // KJØRT, ikke lest. Første versjon lette etter strengen
+    // `searchParams.set('client_id', klientId)` i kilden — og den sto der
+    // fortsatt da mutasjonen pakket den inn i `if (false)`. Testen var grønn
+    // mens prøven var ødelagt, altså nøyaktig feilen den skulle fange.
+    {
+        const konst = rå.match(/const SATT_AV_PLATTFORMEN = \[[^\]]*\];/)[0];
+        const fraT = rå.indexOf('function tidspunkt(');
+        const fraP = rå.indexOf('async function tokenFraPlattformen(');
+        let bruktUrl = null;
+        const fakeFetch = async (u) => {
+            bruktUrl = String(u);
+            return { ok: true, status: 200, text: async () => JSON.stringify({
+                access_token: 'a.b.c', expires_on: '1700000000', resource: 'r' }) };
+        };
+        const lag = new Function('fetch',
+            `${konst}\n`
+            + `${rå.slice(fraT, rå.indexOf('\n}', fraT) + 2)}\n`
+            + `${rå.slice(fraP, rå.indexOf('\n}', fraP) + 2)}\n`
+            + 'return tokenFraPlattformen;')(fakeFetch);
+
+        const GUID_FOR_URLTEST = 'cedbbeb7-4726-4330-931f-cf679a142ca6';
+        const før = { e: process.env.IDENTITY_ENDPOINT, h: process.env.IDENTITY_HEADER };
+        process.env.IDENTITY_ENDPOINT = 'https://eksempel.invalid/msi/token';
+        process.env.IDENTITY_HEADER = 'hemmelig';
+
+        await lag('https://storage.azure.com/', GUID_FOR_URLTEST);
+        {
+            const u = new URL(bruktUrl);
+            sjekk('client_id settes på identity-kallet', u.searchParams.get('client_id'), GUID_FOR_URLTEST);
+            sjekk('resource går ordrett med', u.searchParams.get('resource'),
+                'https://storage.azure.com/');
+            // Uten identitet skal parameteren ikke være der i det hele tatt —
+            // en tom client_id er ikke det samme som ingen.
+            bruktUrl = null;
+        }
+        await lag('https://storage.azure.com/', '');
+        {
+            sjekk('ingen client_id når ingen identitet er valgt',
+                new URL(bruktUrl).searchParams.has('client_id'), false);
+            if (før.e === undefined) delete process.env.IDENTITY_ENDPOINT;
+            else process.env.IDENTITY_ENDPOINT = før.e;
+            if (før.h === undefined) delete process.env.IDENTITY_HEADER;
+            else process.env.IDENTITY_HEADER = før.h;
+        }
+    }
+    // Tell BRUKEN, ikke definisjonen: `function klientIdFra(request)` treffer
+    // det samme mønsteret, og da ble fasiten 5 for fire endepunkter.
 
     const før = { e: process.env.IDENTITY_ENDPOINT, h: process.env.IDENTITY_HEADER };
     delete process.env.IDENTITY_ENDPOINT;

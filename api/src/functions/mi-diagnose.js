@@ -30,11 +30,30 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 // SDK-ene lastes først ved kall, samme grunn som i storage.js: testene skal
 // kunne kjøre uten node_modules.
 let DefaultAzureCredential = null;
-function legitimasjon() {
+function legitimasjon(klientId) {
     if (!DefaultAzureCredential) {
         ({ DefaultAzureCredential } = require('@azure/identity'));
     }
-    return new DefaultAzureCredential();
+    // Uten clientId leter SDK-en etter system-assigned, som ikke finnes her.
+    return new DefaultAzureCredential(klientId ? { managedIdentityClientId: klientId } : undefined);
+}
+
+/**
+ * Hvilken identitet prøven skal bruke — ÉTT sted, for alle fire endepunktene.
+ *
+ * `?klientId=` overstyrer `AZURE_CLIENT_ID`. Det er hele poenget: uten en
+ * overstyring kan «identiteten virker ikke» ikke skilles fra «app settingen
+ * er feil», og 16.10.2026 brukte vi flere runder på nettopp den forskjellen.
+ *
+ * Formatet valideres fordi verdien går inn i en URL mot identity-endepunktet.
+ * En GUID er en GUID; alt annet avvises før det kommer dit.
+ */
+const KLIENTID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function klientIdFra(request) {
+    const fra = (request.query.get('klientId') || '').trim();
+    if (fra) return KLIENTID.test(fra) ? fra : null;
+    const env = String(process.env.AZURE_CLIENT_ID || '').trim();
+    return env && KLIENTID.test(env) ? env : '';
 }
 
 let TableClient = null;
@@ -134,7 +153,7 @@ const SATT_AV_PLATTFORMEN = ['IDENTITY_ENDPOINT', 'IDENTITY_HEADER'];
  *
  * `IDENTITY_HEADER` er en hemmelighet og skal ALDRI ut herfra.
  */
-async function tokenFraPlattformen(ressurs) {
+async function tokenFraPlattformen(ressurs, klientId) {
     const endepunkt = process.env.IDENTITY_ENDPOINT;
     const nokkel = process.env.IDENTITY_HEADER;
     if (!endepunkt || !nokkel) {
@@ -147,6 +166,14 @@ async function tokenFraPlattformen(ressurs) {
     const u = new URL(endepunkt);
     u.searchParams.set('api-version', '2019-08-01');
     u.searchParams.set('resource', ressurs);
+    // HAR APPEN BARE USER-ASSIGNED IDENTITETER, MÅ KALLET SI HVILKEN.
+    //
+    // Uten `client_id` svarer endepunktet 400 «Unable to load the proper
+    // Managed Identity» — også når appen har nøyaktig én. Målt 16.10.2026 på
+    // fa-skjema-3-dev, der identiteten var riktig knyttet til appen og Key
+    // Vault-referansene løste seg fint. Prøven feilet altså på seg selv, og
+    // meldingen pekte mot oppsettet.
+    if (klientId) u.searchParams.set('client_id', klientId);
 
     const res = await fetch(u, { headers: { 'X-IDENTITY-HEADER': nokkel } });
     const tekst = await res.text();
@@ -184,12 +211,12 @@ function tidspunkt(verdi) {
 }
 
 /** Ett sted som vet hvordan et token hentes, for begge prøvene. */
-async function hentToken(ressurs, kilde) {
-    if (kilde === 'plattform') return tokenFraPlattformen(ressurs);
+async function hentToken(ressurs, kilde, klientId) {
+    if (kilde === 'plattform') return tokenFraPlattformen(ressurs, klientId);
 
     // `scope` er audience + «/.default» for en applikasjonsidentitet.
     const scope = ressurs.endsWith('/') ? `${ressurs}.default` : `${ressurs}/.default`;
-    const t = await legitimasjon().getToken(scope);
+    const t = await legitimasjon(klientId).getToken(scope);
     if (!t || !t.token) return null;
     return {
         token: t.token,
@@ -217,15 +244,24 @@ app.http('miTokenDiagnose', {
             return { status: 400, jsonBody: { status: 'feil',
                 melding: `tokenkilde må være en av: ${TOKENKILDER.join(', ')}` } };
         }
+        const klientId = klientIdFra(request);
+        if (klientId === null) {
+            return { status: 400, jsonBody: { status: 'feil',
+                melding: 'klientId må være en GUID' } };
+        }
         const svar = {
             ressurs,
             tokenkilde: kilde,
+            // Ikke hemmelig: en clientId er en offentlig identifikator. Og
+            // uten den i svaret er «hvilken identitet ble egentlig brukt» et
+            // spørsmål ingen kan svare på etterpå.
+            klientIdBrukt: klientId || '(ingen — SDK-en leter etter system-assigned)',
             betydning: KJENTE[ressurs] || '(ikke en av de kjente ressursene)',
             kjenteRessurser: Object.keys(KJENTE)
         };
 
         try {
-            const t = await hentToken(ressurs, kilde);
+            const t = await hentToken(ressurs, kilde, klientId);
             if (!t) {
                 svar.ok = false;
                 svar.feil = 'tokenkilden returnerte ingenting — ingen feil, men heller ingen token';
@@ -315,10 +351,15 @@ app.http('miTabellDiagnose', {
             } };
         }
 
-        const svar = { konto, tabell, skrivingPrøvd: skriv };
+        const klientId = klientIdFra(request);
+        if (klientId === null) {
+            return { status: 400, jsonBody: { status: 'feil',
+                melding: 'klientId må være en GUID' } };
+        }
+        const svar = { konto, tabell, skrivingPrøvd: skriv, klientIdBrukt: klientId || '(ingen)' };
         let klient;
         try {
-            klient = new (tabellKlasse())(`https://${konto}.table.core.windows.net`, tabell, legitimasjon());
+            klient = new (tabellKlasse())(`https://${konto}.table.core.windows.net`, tabell, legitimasjon(klientId));
         } catch (e) {
             svar.lese = { ok: false, feil: e?.message || String(e) };
             return { jsonBody: svar };
@@ -413,12 +454,18 @@ app.http('miFlytDiagnose', {
             return { status: 400, jsonBody: { status: 'feil',
                 melding: `tokenkilde må være en av: ${TOKENKILDER.join(', ')}` } };
         }
+        const klientId = klientIdFra(request);
+        if (klientId === null) {
+            return { status: 400, jsonBody: { status: 'feil',
+                melding: 'klientId må være en GUID' } };
+        }
         svar.ressurs = ressurs;
         svar.tokenkilde = kilde;
+        svar.klientIdBrukt = klientId || '(ingen)';
 
         let token;
         try {
-            const t = await hentToken(ressurs, kilde);
+            const t = await hentToken(ressurs, kilde, klientId);
             if (!t) {
                 svar.token = { ok: false, feil: 'tokenkilden returnerte ingenting' };
                 return { jsonBody: svar };
@@ -509,12 +556,17 @@ app.http('miBlobDiagnose', {
             } };
         }
 
-        const svar = { konto, container, skrivingPrøvd: skriv };
+        const klientId = klientIdFra(request);
+        if (klientId === null) {
+            return { status: 400, jsonBody: { status: 'feil',
+                melding: 'klientId må være en GUID' } };
+        }
+        const svar = { konto, container, skrivingPrøvd: skriv, klientIdBrukt: klientId || '(ingen)' };
         const vert = `https://${konto}.blob.core.windows.net`;
         let tjeneste, containerKlient;
         try {
             const { BlobServiceClient } = blobPakke();
-            tjeneste = new BlobServiceClient(vert, legitimasjon());
+            tjeneste = new BlobServiceClient(vert, legitimasjon(klientId));
             containerKlient = tjeneste.getContainerClient(container);
         } catch (e) {
             svar.lese = { ok: false, feil: e?.message || String(e) };
@@ -624,5 +676,5 @@ app.http('miBlobDiagnose', {
     }
 });
 
-module.exports = { claimsFra, beskrivUrl, tidspunkt, CLAIMS_VI_VISER, KJENTE, FLYTVAR,
-    TOKENKILDER, SATT_AV_PLATTFORMEN, DELEGERING_VI_VISER };
+module.exports = { claimsFra, beskrivUrl, tidspunkt, klientIdFra, CLAIMS_VI_VISER, KJENTE, FLYTVAR,
+    TOKENKILDER, SATT_AV_PLATTFORMEN, DELEGERING_VI_VISER, KLIENTID };
