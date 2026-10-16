@@ -330,7 +330,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | **0** | ✅ **Gjort 16.10.2026** — dev-miljøet står. Se 8i | `/api/ping` med riktig SHA, pålogging gir riktig UPN, hemmelighetene løses fra Key Vault, og begge MI-prøvene er grønne. Pilot og prod urørt |
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
-| 3 | ✅ **Gjort 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Hele testsuiten grønn, også uten `node_modules`. Gjenstår å måle i dev: sett `STORAGE_ACCOUNT_NAME` og les/skriv et skjema. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
+| 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke **i dev** i et døgn |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
@@ -1549,14 +1549,18 @@ Del 2 (8k):
 - [x] De delte listene faller tilbake til miljøets eget lager uten
       `TODO_STORAGE_CONNECTION_STRING` — `lib/delt-lager.js`
 
-Gjenstår å måle i dev:
+Målt i dev 16.10.2026 (8k):
 
-- [ ] `STORAGE_ACCOUNT_NAME` satt på `fa-skjema-3-dev`
-- [ ] `/api/system/info` viser `lagring.maate = managed-identity` i dev
-- [ ] `/api/hello-storage` grønn i dev — den går gjennom den ekte koden
-- [ ] Les og skriv et skjema **i dev**
-- [ ] Ta en backup i dev og last den ned via lenken i admin-panelet — det er
-      SAS-veien, og den eneste som krever `Storage Blob Delegator`
+- [x] `STORAGE_ACCOUNT_NAME` satt på `fa-skjema-3-dev`
+- [x] `/api/system/info` viser `lagring.maate = managed-identity`
+- [x] `/api/hello-storage` grønn — den går gjennom den ekte koden
+- [x] Les og skriv et skjema
+- [x] Backup kjørt: zip bygget fra tabellene, kryptert, skrevet til blob,
+      lastet opp via Graph og lest tilbake fra blob-storage som gyldig zip
+- [x] Delegeringsnøkkelen utstedt — `lagSasUrl()` kjører før opplastingen, så
+      en grønn kjøring beviser at `Storage Blob Delegator` virker
+- [ ] **Klikk «Last ned» i Historikk.** Det eneste som ikke er målt: om Azure
+      GODTAR signaturen. Graph leser blobben direkte og rører ikke SAS-en
 
 ### Steg 4 — én cron-jobb
 
@@ -1903,13 +1907,51 @@ Underveis falt to ting ut som ikke var planlagt: `serviceKlient` var importert
 i `functions/backup.js` uten å brukes, og `tilkoblingsstreng`-parsing fanst i
 to utgaver. Begge er borte.
 
-### Hva som gjenstår for å kalle steg 3 ferdig MÅLT
+### Målt i dev, 16.10.2026
 
-Koden er på plass; dev har ikke fått `STORAGE_ACCOUNT_NAME` ennå. Når den
-settes, er det fire ting som skal sjekkes, og backup-nedlastingen er den
-viktigste — den er den eneste som krever `Storage Blob Delegator`, og den
-eneste veien prøven ikke har gått gjennom med den ekte koden. Lista står i
-8h.
+`STORAGE_ACCOUNT_NAME=stskjema3dev` satt på `fa-skjema-3-dev`, API-et
+deployet, og `/api/ping` sjekket for riktig SHA først.
+
+* `/api/system/info` → `lagring.maate = managed-identity`, riktig konto.
+* `/api/hello-storage` grønn — tabellrad og blob skrevet og lest tilbake
+  gjennom `tabellKlient()` og `containerKlient()`, altså den ekte koden.
+* Skjema lest og skrevet i appen.
+* **Backup grønn:** zip bygget fra tabellene, kryptert, skrevet til blob,
+  lastet opp via Graph til SharePoint og bekreftet der, og deretter lest
+  tilbake fra blob-storage som en gyldig zip. AES-GCM autentiserer hver byte,
+  så «gyldig zip» er en ekte kontroll på at fila kom hel fram.
+* **Delegeringsnøkkelen ble utstedt.** `lagSasUrl()` kjøres inne i try-blokken
+  FØR opplastingen, så en grønn kjøring beviser at `getUserDelegationKey()`
+  svarte — altså at `Storage Blob Delegator` er på plass. Feilet den, ville
+  statusen vært `feil`, ikke `ok`.
+
+**Dermed kjører dev helt uten delt nøkkel mot sin egen lagringskonto.** Det er
+det steg 3 skulle svare på.
+
+### Det ene som ikke er målt
+
+Om Azure **godtar** signaturen. Graph leser blobben direkte gjennom
+blob-klienten og rører aldri SAS-URL-en, så den er bygget og aldri brukt.
+Nedlastingslenken i **Historikk** er en rå `<a href>` rett til SAS-URL-en, og
+et klikk der er hele prøven. Et `403 AuthenticationFailed` der ville vært
+signeringen, ikke rollen — rollen er allerede bevist av punktet over.
+
+### En visning som avrunder for hardt
+
+Backupen viste «0 MB kryptert» og «0 MB bekreftet av Graph». Den så tom ut og
+var det ikke: hendelsesloggen (`backup.kjort` → `Detaljer`) bar hele
+manifestet, med rader på `Skjemaer` og `Skjemadefinisjoner`.
+
+Alle størrelsene i admin-panelet formateres som
+`Math.round(bytes / 1024 / 1024 * 10) / 10`, altså én desimal, så alt under
+~50 kB leses som «0 MB». I pilot og prod, der en backup er titalls megabyte,
+er det usynlig. I et nytt miljø er det nøyaktig når man trenger å se
+forskjellen på «noen få kB» og «ingenting» — og formelen står i åtte
+eksemplarer i `frontend/admin.html`.
+
+Rettes ved å vise kB under 1 MB, fra ÉN hjelpefunksjon. Åtte kopier av samme
+formatering er den samme feilklassen som resten av dette kapitlet handler om,
+bare i det billigste hjørnet av den.
 
 ## 9. Risiko
 
