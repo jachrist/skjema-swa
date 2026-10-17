@@ -50,7 +50,14 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 
 - Ingen hemmeligheter i kode eller i env-JSON. Kun Key Vault-referanser (`{"keyvault": "secret-navn"}`) eller ikke-sensitive verdier (`{"value": "...", "public": true|false}`).
 - Ikke-hemmelige verdier med `"public": true` eksponeres til frontend via `frontend/js/config.js` (bygget av `scripts/build-config.js`).
-- Timer-triggere støttes ikke i SWA Managed Functions — bruk GitHub Actions cron mot HTTP-endepunkter (`.github/workflows/refresh-fs.yml`).
+- Timer-triggere støttes ikke i SWA Managed Functions. Pilot og prod kjører
+  derfor de åtte cron-jobbene fra GitHub Actions, mot HTTP-endepunkter med
+  `SCHEDULER_KEY`. **Dev kjører den første av dem på timer** (steg 4):
+  `postnumre/refresh-bring`. Vakten er `stotterTimere()` i `lib/plattform.js`,
+  og den står rundt `app.timer(...)` ved modullast — en timer registrert på en
+  vert som ikke støtter dem kan velte oppstarten for hele appen. Jobben selv
+  ligger i en lib med bokføringen i seg, slik at HTTP-veien og timeren skriver
+  samme statusrad.
 - **Utgående flyt-kall** går alltid gjennom `flytHeadere()` i
   `lib/flyt-kaller.js` — aldri håndskrevne headere. Den er `async`, og setter
   `x-flow-key` (det er oss) og, når `FLYT_AUTH=entra`, `Authorization: Bearer`

@@ -7,6 +7,11 @@ const os = require('os');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { lagringsvalg } = require('../lib/lagringsvalg');
 const { flytAuthModus } = require('../lib/flyt-auth');
+// Miljønavnet og plattformens evner bor i lib-en, sammen med timer-vakten
+// i postnumre.js. Samme type liste, samme dag de endres.
+const {
+    MILJO_ALIAS, KJENTE_MILJOER, miljonavn, LØSER_KEYVAULT_REFERANSER
+} = require('../lib/plattform');
 
 // SWA-safe env-vars å vise. Aldri eksponer hemmeligheter — bare
 // om de er satt eller ikke, evt. lengde/prefiks for identifisering.
@@ -114,64 +119,7 @@ const KUN_I_MILJO = {
     }
 };
 
-/**
- * Normaliser MILJO til ett navn per miljø.
- *
- * `production` er det GAMLE navnet på pilot — ikke et annet ord for prod.
- * `config/env.pilot.json` setter `MILJO=production` den dag i dag, og
- * `scripts/build-config.js` gjør den samme oversettelsen ved bygg
- * («alias production → pilot»). Prod setter `MILJO=prod`.
- *
- * Skillet er ikke kosmetisk. Leses `production` som prod, arver pilot prodens
- * unntak — og en manglende `AAD_CLIENT_SECRET`, som tar ned innloggingen helt,
- * meldes da som «forventet tom her» i det ene miljøet som faktisk trenger den.
- * Det er nøyaktig feilen KUN_I_MILJO er laget for å unngå, speilvendt.
- *
- * Et ukjent navn sendes uendret videre, og medForventning() behandler det som
- * «vet ikke» — se KJENTE_MILJOER der.
- */
-const MILJO_ALIAS = { production: 'pilot' };
 
-// `development` sto her til 15.10.2026, som alias for pilot. Da `dev` ble et
-// ekte miljø, ville det navnet pekt på feil sted — og det er den samme fellen
-// aliaset selv ble laget for å unngå, speilvendt. Det er fjernet også i
-// scripts/build-config.js; et alias som bare finnes ett av stedene, er verre
-// enn ingen.
-
-/**
- * Miljøene vi kjenner. Et navn utenfor denne mengden er «vet ikke», ikke
- * «gjelder ikke».
- *
- * `KUN_I_MILJO.miljoer` er en positivliste: står miljøet ikke der, blir en tom
- * verdi friskmeldt. Det er riktig for prod, som vi vet ikke trenger
- * `AAD_CLIENT_SECRET` — men det var også grunnen til at `production` arvet
- * prodens unntak, og det ville gjort det samme for et hvilket som helst nytt
- * miljønavn. En hemmelighet som mangler i et miljø vi ikke kjenner skal meldes,
- * ikke ties i hjel.
- */
-const KJENTE_MILJOER = new Set(['dev', 'pilot', 'prod', 'lokal']);
-
-/**
- * Miljøer der PLATTFORMEN løser `@Microsoft.KeyVault(...)`-referanser.
- *
- * SWA Managed Functions gjør det ikke — prøvd i pilot 12.10.2026, appen fikk
- * referansestrengen på 109 tegn. En frittstående Function App gjør det —
- * prøvd 14.10.2026, se 8d i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
- *
- * Forskjellen gjør at SAMME symptom har to ulike årsaker, og dermed to ulike
- * råd. Uten dette skillet ga helsesjekken i dev 16.10.2026 et råd som var
- * aktivt feil — «lim inn verdien som klartekst» — mens referansene der
- * faktisk virket og det som manglet var én secret i vaulten. Et råd som
- * sender feilsøkingen i gal retning er verre enn ingen melding.
- *
- * Lista utvides i steg 6, når pilot og prod også kjører på Function Apps.
- */
-const LØSER_KEYVAULT_REFERANSER = new Set(['dev']);
-
-function miljonavn() {
-    const raatt = String(process.env.MILJO || '').trim().toLowerCase();
-    return MILJO_ALIAS[raatt] || raatt;
-}
 
 /**
  * Beriker en env-rapport med hvilke miljøer variabelen gjelder for.
