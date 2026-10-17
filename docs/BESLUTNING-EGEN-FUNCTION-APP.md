@@ -256,6 +256,60 @@ rotere: hverken flyt-URL eller client secret.
 Cyberforsvaret bekreftet 15.10.2026 at dette er mulig, og at det er å
 foretrekke framfor en «løs» app-registrering som ingen eier.
 
+#### Hvor langt bør det gå?
+
+Spørsmålet kom opp 17.10.2026: skal MI-en få alle Graph-rettighetene som
+trengs for å erstatte flytene med kode?
+
+**Svaret er ja som erstatning for en app-registrering, og nei som en samlet
+tildeling i forkant.** Avgjørelsen hører hjemme per tillatelse, ikke per
+arkitektur — og den bør tas av oppdragsgiver med begrunnelsen synlig, ikke bli
+en default underveis.
+
+Grunnen er en omramming det er lett å gå glipp av: **flytene ER
+privilegiegrensen i dag.** Appen holder en URL og en delt nøkkel; *flyten*
+holder rettighetene, og den kan bare gjøre den ene tingen den er bygget for.
+Flyttes logikken inn i koden, flyttes privilegiet over på app-identiteten. Et
+kompromiss av appen går da fra «kan trigge disse flytene med disse
+payloadene» til «kan sende e-post som hvem som helst i tenanten».
+
+Ett argument trekker likevel motsatt vei, og det er konkret: **flytkoblingene
+kjører som en PERSON.** Office 365-koblingen sender som den som eide
+koblingen, Teams-koblingen handler som vedkommende. Varslingene går altså i
+dag med et menneskes delegerte myndighet — som slutter å virke den dagen
+personen slutter, og som er vanskelig å revidere. En managed identity med en
+snevert avgrenset approlle er *bedre* enn det.
+
+Rangert etter hvor godt tillatelsen lar seg avgrense:
+
+| Kapabilitet | Avgrensning | Vurdering |
+|---|---|---|
+| SharePoint-opplasting (backup) | `Sites.Selected` — per område | **Flytt.** Allerede planen |
+| Teams-kanalmelding, team-oppslag | RSC — per team | **Flytt**, hvis RSC dekker behovet |
+| E-post | `Mail.Send` er tenant-vid, men kan snevres med en Application Access Policy til bestemte postbokser | **Flytt, men bare med policyen på plass** |
+| Planner-oppgaver | `Tasks.ReadWrite.All`. Usikkert om det finnes en per-gruppe-variant | **Sjekk før beslutning** |
+| Team-medlemskap (synk) | `TeamMember.ReadWrite.All` — tenant-vid, ingen avgrensning | **Behold i flyten** |
+| SMS (OTP) | Finnes ikke i Graph | **Kan ikke flyttes** |
+
+**Team-synken er den som bør holdes igjen.** Den er destruktiv — den melder
+folk *ut* — og `team-synk.js` har allerede to sperrer mot en kort liste fra en
+feilet Excel-import: tom liste sendes aldri, og et stort fall siden forrige
+vellykkede kjøring stopper jobben. I dag er de sperrene et sikkerhetsnett over
+en flyt som uansett bare kan røre ett team. Med en tenant-vid skriverettighet
+på app-identiteten blir de det eneste som står mellom en importfeil og alle
+team i tenanten. Det er for mye vekt på en vakt i vår egen kode.
+
+Tre arbeidsregler som følger av dette:
+
+* **Tildel ved bruk, ikke i forkant.** En rettighet som ligger der «til vi
+  trenger den» er ren eksponering uten motytelse.
+* **Én identitet er ikke en lov.** En ekstra user-assigned MI koster
+  ingenting. Skal backup-opplasting og varsling ha svært ulikt
+  privilegienivå, er to identiteter billigere enn å argumentere for den
+  høyeste.
+* **Si gevinsten presist.** Du fjerner en klienthemmelighet med utløpsdato.
+  Du reduserer ikke rettighetsomfanget med et eneste klikk.
+
 **Mekanismen.** En managed identity har en tjenestehovedstol i Entra, akkurat
 som en app-registrering, og approller tildeles den direkte. For
 `Sites.Selected` er det to trinn, som ellers:
@@ -1599,7 +1653,9 @@ Går det galt: sett tilkoblingsstrengen tilbake. Reversibelt uten deploy.
       se 8l), og **varslingene kom fram i dev samme dag**, gjennom en flyt uten
       `sig=` i adressen. Hver flyt i pilot og prod er fortsatt en egen
       avgjørelse, og bryteren er per MILJØ, ikke per flyt — se 8l
-- [ ] **7.2** Graph-approller på MI-en — **ikke kjørt**, må prøves i dev først
+- [ ] **7.2** Graph-approller på MI-en — **ikke kjørt**, må prøves i dev først.
+      Avveiningen om HVOR LANGT det bør gå er skrevet ned i 7.2 (17.10.2026):
+      per tillatelse, ikke samlet, og team-synken bør bli værende i flyten
 
 ## 8i. Utfallet av steg 0 — dev-miljøet står
 
