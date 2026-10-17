@@ -273,21 +273,68 @@ Flyttes logikken inn i koden, flyttes privilegiet over på app-identiteten. Et
 kompromiss av appen går da fra «kan trigge disse flytene med disse
 payloadene» til «kan sende e-post som hvem som helst i tenanten».
 
-Ett argument trekker likevel motsatt vei, og det er konkret: **flytkoblingene
-kjører som en PERSON.** Office 365-koblingen sender som den som eide
-koblingen, Teams-koblingen handler som vedkommende. Varslingene går altså i
-dag med et menneskes delegerte myndighet — som slutter å virke den dagen
-personen slutter, og som er vanskelig å revidere. En managed identity med en
-snevert avgrenset approlle er *bedre* enn det.
+#### Hva flytkoblingene faktisk kjører som
+
+Dette avsnittet sa først at koblingene kjører som en PERSON, og at en managed
+identity derfor uansett er bedre. **Det stemmer ikke for prod**, og
+korreksjonen er verdt mer enn påstanden var (17.10.2026):
+
+* **I prod eies koblingene av en SERVICE-BRUKER**, ikke av et menneske.
+  Argumentet om at tilgangen ryker den dagen noen slutter, gjelder altså ikke
+  der.
+* **Service-brukeren har ingen rettigheter ut over en vanlig bruker.** For å
+  opprette Planner-oppgaver eller skrive i en Teams-kanal må den meldes
+  eksplisitt inn som **medlem av teamet**.
+
+Det siste punktet er det viktigste i hele denne vurderingen, og det snur
+konklusjonen for to av radene under.
+
+**Dagens prod-modell er allerede minste privilegium — ved konstruksjon.**
+Tilgangen gis ved å melde service-brukeren inn i et team, og trekkes tilbake
+ved å melde den ut. Omfanget er per team, det står i teamets egen
+medlemsliste, og teameieren ser det uten å spørre noen. Ingen approlle, ingen
+samtykkerunde, ingen hemmelighet.
+
+En approlle som `Tasks.ReadWrite.All` eller `TeamMember.ReadWrite.All` ville
+**utvidet** privilegiet i forhold til det — fra «medlem av tre team» til «kan
+skrive i hver eneste gruppe i tenanten». Det er en vesentlig utvidelse, ikke
+en innstramming, og den bør ikke skje ved et uhell fordi man var på vei mot
+«færre hemmeligheter».
+
+Sammenligningen er altså ikke «MI mot person». Den er:
+
+| | Omfang | Legitimasjon |
+|---|---|---|
+| Service-bruker (i dag, prod) | Per team, via medlemskap | Har passord og kan logge på. Lisensiert konto, ofte med unntak i betinget tilgang |
+| MI med tenant-vid approlle | Hele tenanten | Ingen — kan ikke logge på, har ingen hemmelighet |
+| **MI med RSC** | **Per team** | **Ingen** |
+
+Den tredje raden er den eneste som er bedre enn dagens på begge akser, og
+**det er derfor RSC — ikke de tenant-vide approllene — er målet for Teams og
+Planner.** Dekker ikke RSC behovet, er dagens service-bruker et fullgodt
+alternativ, og da er det ingen grunn til å flytte.
+
+Service-brukeren har riktignok sine egne svakheter: den har en legitimasjon
+som må forvaltes, den kan i prinsippet logge på, og slike kontoer får lett et
+unntak i betinget tilgang som ingen rydder opp i. Det er en reell kostnad —
+men den veier ikke opp for å bytte et medlemskapsbasert omfang mot et
+tenant-vidt.
+
+Merk også at `Sites.Selected` har **nøyaktig samme form** som medlemskapet:
+en tildeling per område, synlig der ressursen er. Mønsteret er altså ikke nytt
+for løsningen — det er det samme som service-brukeren allerede bruker, bare
+uten en konto.
+
+#### Rangeringen
 
 Rangert etter hvor godt tillatelsen lar seg avgrense:
 
 | Kapabilitet | Avgrensning | Vurdering |
 |---|---|---|
 | SharePoint-opplasting (backup) | `Sites.Selected` — per område | **Flytt.** Allerede planen |
-| Teams-kanalmelding, team-oppslag | RSC — per team | **Flytt**, hvis RSC dekker behovet |
+| Teams-kanalmelding, team-oppslag | RSC — per team | **Flytt kun med RSC.** Uten RSC er dagens service-bruker bedre: medlemskap er snevrere enn en tenant-vid approlle |
 | E-post | `Mail.Send` er tenant-vid, men kan snevres med en Application Access Policy til bestemte postbokser | **Flytt, men bare med policyen på plass** |
-| Planner-oppgaver | `Tasks.ReadWrite.All`. Usikkert om det finnes en per-gruppe-variant | **Sjekk før beslutning** |
+| Planner-oppgaver | `Tasks.ReadWrite.All`. Usikkert om det finnes en per-gruppe-variant | **Sjekk om RSC dekker det.** Gjør den ikke det, bli værende — dagens medlemskap er snevrere |
 | Team-medlemskap (synk) | `TeamMember.ReadWrite.All` — tenant-vid, ingen avgrensning | **Behold i flyten** |
 | SMS (OTP) | Finnes ikke i Graph | **Kan ikke flyttes** |
 
@@ -308,7 +355,12 @@ Tre arbeidsregler som følger av dette:
   privilegienivå, er to identiteter billigere enn å argumentere for den
   høyeste.
 * **Si gevinsten presist.** Du fjerner en klienthemmelighet med utløpsdato.
-  Du reduserer ikke rettighetsomfanget med et eneste klikk.
+  Du reduserer ikke rettighetsomfanget med et eneste klikk — og mot en
+  medlemskapsbasert service-bruker kan du komme til å utvide det.
+* **Sammenlign mot det som faktisk står der.** Det var feilen i første utgave
+  av dette avsnittet: alternativet ble antatt å være en person med delegert
+  myndighet, og var i prod en service-bruker med medlemskap. Den antakelsen
+  gjorde en utvidelse av privilegiet til å se ut som en innstramming.
 
 **Mekanismen.** En managed identity har en tjenestehovedstol i Entra, akkurat
 som en app-registrering, og approller tildeles den direkte. For
