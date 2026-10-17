@@ -35,7 +35,13 @@ const OFFENTLIGE_ENV = [
     // et symptom som ellers ser likt ut fra begge kanter: en 401 fra flyten
     // betyr noe helt annet når modusen er «sas» enn når den er «entra».
     'FLYT_AUTH',
-    'PURRE_MAKS_DAGER', 'PURRE_MIN_DAGER_MELLOM'
+    'PURRE_MAKS_DAGER', 'PURRE_MIN_DAGER_MELLOM',
+    // Overstyring av timer-schedulen (lib/jobber.js). Ikke hemmelig, og den
+    // forklarer en jobb som kjører til et annet tidspunkt enn koden sier.
+    // Verdien leses ved REGISTRERING, så en endring her og en kjørende timer
+    // kan være uenige helt til appen starter på nytt — GET /api/jobber viser
+    // hvilken som faktisk gjelder.
+    'POSTNUMRE_SCHEDULE'
 ];
 /**
  * Vist i helsesjekken, men IKKE lest av api/src.

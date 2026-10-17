@@ -437,7 +437,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
-| 4 | 🔶 **Koden er på plass 17.10.2026** — `postnumre/refresh-bring` har timer-trigger i dev, bak `stotterTimere()`. Se 8m | Gjenstår å måle: at timeren fyrer i dev. Pilot og prod er uendret — `app.timer` kalles aldri der |
+| 4 | 🔶 **Koden er på plass 17.10.2026** — `postnumre/refresh-bring` har timer-trigger i dev, bak `stotterTimere()`. Se 8m | Gjenstår å måle: at timeren fyrer i dev — settes med `POSTNUMRE_SCHEDULE` + omstart, ikke med en commit. Pilot og prod er uendret — `app.timer` kalles aldri der |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
@@ -2250,7 +2250,7 @@ Team-synken er den motsatte enden av skalaen og blir stående lengst.
 
 ```js
 if (stotterTimere()) {
-    app.timer('postnumreTimer', { schedule: '0 30 4 15 1,7 *', handler: … });
+    app.timer('postnumreTimer', { schedule: jobbSchedule(jobb).schedule, handler: … });
 }
 ```
 
@@ -2272,6 +2272,66 @@ BEGGE filene og krever at timerens uttrykk er workflowens med `0 ` foran.
 
 Endres den ene uten den andre, kjører dev og prod på ulik klokke — og
 ingenting feiler, det skjer bare til feil tid.
+
+### Schedulen bor i `lib/jobber.js` — og kan overstyres
+
+Tidspunktet sto som en literal i `functions/postnumre.js`. Det holdt så lenge
+det var én jobb; sju jobber til i steg 5, og den samme jobben ville hatt
+tidspunktet sitt på tre steder: i `app.timer(...)`, i cron-workflowen som
+kjører den mot pilot og prod, og i det admin-panelet viser.
+
+`lib/jobber.js` er den ene lista: id, navn, rute, statusraden (lest fra
+`postnummer-jobb.js`, ikke kopiert), `standardSchedule`, navnet på
+app-settingen som kan overstyre den, og hvilken workflow som kjører den samme
+jobben i miljøene uten timere. Testen leser `standardSchedule` mot cron-en i
+den workflowen og krever at de beskriver samme tidspunkt.
+
+**Overstyringen er `POSTNUMRE_SCHEDULE`.** Den finnes av én grunn: den ekte
+planen er 15. januar og 15. juli, så å SE timeren fyre krever et annet
+tidspunkt — og før dette måtte literalen endres, committes og deployes, mens
+testen gjorde bygget rødt så lenge den sto der. Nå settes app-settingen i
+stedet, og standarden i koden er uendret.
+
+Tre ting følger av hvordan Azure leser den:
+
+* **Verdien leses ved REGISTRERING**, altså ved modullast. En endret
+  app-setting slår inn ved neste omstart av Function App-en, ikke med en gang.
+* **Et uttrykk Azure ikke kan tolke feiler nettopp ved registrering** — og en
+  timer-registrering som feiler kan velte oppstarten for hele appen, slik at
+  HTTP-rutene blir borte også. `gyldigNcrontab()` er derfor en vakt, ikke en
+  parser: den krever seks felt og slipper feltinnholdet gjennom. Det den
+  fanger er den feilen som faktisk skjer — fem felt limt inn fra en
+  GitHub-workflow.
+* **En avvist verdi forsvinner ikke i stillhet.** `jobbSchedule()` svarer med
+  `avvist` og `grunn`, og registreringen logger dem. «Jeg satte den, og jobben
+  kjører fortsatt på gammel tid» ser ellers likt ut enten verdien ble avvist,
+  aldri lest, eller satt i feil miljø.
+
+App-settingen står i inventaret i alle tre miljøfilene og vises i
+`/api/system/info`. I pilot og prod har den ingen virkning — plattformen
+kjører ingen timere der — og merknaden i inventaret sier det.
+
+Navnet leses med `process.env.POSTNUMRE_SCHEDULE` skrevet ut, i en `switch` på
+`scheduleVar`. `process.env[jobb.scheduleVar]` hadde vært kortere og gjort
+`env-inventar.test.js` blind for app-settingen; prisen er at en ny jobb i steg
+5 kan få en `scheduleVar` uten en `case`, og da er overstyringen en stille
+no-op. Testen setter derfor env-varen for HVER jobb i lista og krever at den
+leses.
+
+### Ingen redigering av schedule i admin
+
+Admin får en **lesefane** over jobbene, ikke en editor. To grunner, og de er
+ikke smakssak:
+
+* En lagret schedule blir en andre kilde ved siden av git. Da finnes «når
+  kjører jobben» på to steder som kan svare ulikt — den feilklassen dette
+  repoet lager flest av.
+* Azure leser `schedule` ved registrering. En lagret verdi ville ikke tatt
+  effekt før en omstart, så panelet ville vist en schedule som ikke kjører.
+  Det er en oversikt som er aktivt feil, og den er verre enn ingen.
+
+Veien for et engangstilfelle er app-settingen over: synlig i Azure, synlig i
+helsesjekken, og med en standard i koden som ikke flyttet seg.
 
 ### Én jobb, to innganger
 
@@ -2305,8 +2365,10 @@ Det er den verste typen tidsinnstilt feil: plantet nå, oppdaget av noen andre.
 ### Hva som gjenstår
 
 * **Se timeren fyre i dev.** Den ekte planen er 15. januar og 15. juli, så en
-  observasjon krever en midlertidig schedule — og testen gjør bygget rødt
-  mens den står der, med vilje.
+  observasjon krever et annet tidspunkt. Det settes nå i app-settingen
+  `POSTNUMRE_SCHEDULE` (f.eks. `0 */5 * * * *`), uten en commit og uten at
+  bygget blir rødt. Function App-en må startes på nytt for at verdien skal
+  leses, og settes tilbake etterpå.
 * **Steg 5** er de sju andre jobbene, og rekkefølgen bør følge den samme
   risikoordenen: `oppslaglister` og `refresh-fs` før de som sender noe, og
   `team-synk` sist.
