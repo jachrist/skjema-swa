@@ -157,6 +157,41 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
         jobbMerknader2({ scheduleVar: 'X', trigger: 'github-actions', registrert: null }).length, 0);
 }
 
+// ---------- 2c. «sist kjørt» gjelder ÉN kjøring ----------
+//
+// Statusraden bærer felter fra TO kjøringer mens en jobb går: `Kilde` og
+// `Startet` fra den nye, `SistOppdatert` fra forrige fullførte. FS-jobben
+// viste nettopp det 17.10.2026 — «Sist kjørt 16:27» ved siden av «startet av
+// timer», der 16:27 var forrige kjøring og timer-kjøringen pågikk. To sanne
+// felter som til sammen sa noe usant.
+{
+    const jobbSistKjort = bygg('jobbSistKjort');
+
+    const pagar = jobbSistKjort({ siste: {
+        status: 'kjører', startet: '2026-10-17T17:10:00Z', sistOppdatert: '2026-10-17T16:27:00Z'
+    } });
+    sjekk('pågående kjøring viser STARTET, ikke forrige',
+        pagar.hoved.includes('DATO(2026-10-17T17:10:00Z)'), true);
+    sjekk('og sier at den pågår', /pågår/.test(pagar.hoved), true);
+    sjekk('forrige fullførte står for seg', pagar.forrige, '2026-10-17T16:27:00Z');
+    sjekk('og forrige blandes ikke inn i hovedlinja',
+        pagar.hoved.includes('16:27'), false);
+
+    // Pågår den uten at vi vet når den startet, skal den ikke låne forrige
+    // kjørings klokkeslett for å se komplett ut.
+    const uvisst = jobbSistKjort({ siste: { status: 'kjører', sistOppdatert: '2026-10-17T16:27:00Z' } });
+    sjekk('ukjent starttid gir «pågår nå»', uvisst.hoved, 'pågår nå');
+    sjekk('og forrige står fortsatt for seg', uvisst.forrige, '2026-10-17T16:27:00Z');
+
+    const ferdig = jobbSistKjort({ siste: { status: 'ok', sistOppdatert: '2026-10-17T16:27:00Z' } });
+    sjekk('fullført kjøring viser tidspunktet',
+        ferdig.hoved.includes('DATO(2026-10-17T16:27:00Z)'), true);
+    sjekk('og har ingen «forrige»-linje', ferdig.forrige, null);
+
+    sjekk('aldri kjørt gir tankestrek', jobbSistKjort({ siste: null }).hoved, '—');
+    sjekk('og ingen forrige', jobbSistKjort({ siste: null }).forrige, null);
+}
+
 // ---------- 3. fargeskalaen ----------
 {
     sjekk('ok', jobbStatusFarge('ok'), 'success');
@@ -168,7 +203,7 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
 
 // ---------- 4. ingenting havner uescapet i HTML-en ----------
 {
-    const jobbRadHtml = bygg('jobbRadHtml', 'jobbTriggerTekst', 'jobbRegistrertTekst', 'jobbMerknader', 'jobbStatusFarge');
+    const jobbRadHtml = bygg('jobbRadHtml', 'jobbTriggerTekst', 'jobbRegistrertTekst', 'jobbSistKjort', 'jobbMerknader', 'jobbStatusFarge');
     const ondt = '<img src=x onerror=alert(1)>';
     const html = jobbRadHtml({
         id: ondt, navn: ondt, beskrivelse: ondt, rute: ondt,
