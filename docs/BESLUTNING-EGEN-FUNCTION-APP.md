@@ -437,7 +437,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
-| 4 | 🔶 **Koden er på plass 17.10.2026** — `postnumre/refresh-bring` har timer-trigger i dev, bak `stotterTimere()`. Se 8m | Gjenstår å måle: at timeren fyrer i dev — settes med `POSTNUMRE_SCHEDULE` + omstart, ikke med en commit. Pilot og prod er uendret — `app.timer` kalles aldri der |
+| 4 | ✅ **Målt 17.10.2026** — timeren fyrte i dev kl. 10:15:40, aktør `timer`, 5112 rader på 40 s. Se 8m | Pilot og prod er uendret — `app.timer` kalles aldri der. Neste er steg 5: de sju andre jobbene |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
@@ -2228,8 +2228,19 @@ eller 403 ville vært det.
 
 ## 8m. Utfallet av steg 4 — første timer-trigger
 
-**17.10.2026.** `postnumre/refresh-bring` kjører på timer i dev. Koden er på
-plass; at timeren faktisk fyrer gjenstår å se.
+**17.10.2026. Målt, ikke antatt.** `postnumre/refresh-bring` kjører på timer i
+dev, og timeren har fyrt:
+
+> `postnumre.bring-oppdatert` — 2026-10-17 10:15:40, aktør **`timer`**,
+> 5112 hentet, 5112 skrevet, 0 slettet, 0 avvist, 40 sekunder.
+
+Aktøren er det som gjør dette til en måling. `kilde` er det ENESTE som skiller
+de to inngangsportene — HTTP-veien setter UPN-en til den som trykket, timeren
+setter `timer` — og raden fra 08:55 samme morgen står med en UPN. Den samme
+jobben, startet av to ulike veier, bokført likt.
+
+Kjøringen ble utløst med `POSTNUMRE_SCHEDULE` satt midlertidig og en omstart av
+Function App-en. Den ekte planen (15. januar og 15. juli) er uendret i koden.
 
 ### Hvorfor akkurat den jobben først
 
@@ -2350,6 +2361,15 @@ Jobber-fanen.
 «Kjør nå» går mot jobbens egen HTTP-rute — den samme GitHub Actions kaller. Det
 som prøves fra panelet er altså det som faktisk kjører om natta.
 
+**To deploys, to SHA-er — og symptomet er en fane som ikke finnes.** Første
+gang fanen ble sett etter i dev, var den borte: API-et var rullet ut (timeren
+fyrte), frontend ikke. Det så ut som en feil i fanen, og var en halv deploy.
+Kjennetegnet er at de ANDRE endringene fra samme commit også mangler — her
+sto den fjernede setningen «Full import fra Bring skjer 2 ganger i året …»
+fortsatt i Postnumre-fanen. To ting fra samme commit som begge mangler, er
+ikke to feil; det er én deploy. `/api/ping` og `/js/config.js` bærer hver sin
+SHA nettopp for dette.
+
 ### Ingen redigering av schedule i admin
 
 Fanen er **lesende**, ikke en editor. To grunner, og de er ikke smakssak:
@@ -2395,11 +2415,12 @@ Det er den verste typen tidsinnstilt feil: plantet nå, oppdaget av noen andre.
 
 ### Hva som gjenstår
 
-* **Se timeren fyre i dev.** Den ekte planen er 15. januar og 15. juli, så en
-  observasjon krever et annet tidspunkt. Det settes nå i app-settingen
-  `POSTNUMRE_SCHEDULE` (f.eks. `0 */5 * * * *`), uten en commit og uten at
-  bygget blir rødt. Function App-en må startes på nytt for at verdien skal
-  leses, og settes tilbake etterpå.
+* ~~Se timeren fyre i dev.~~ **Gjort 17.10.2026** — se målingen øverst i dette
+  kapittelet. Framgangsmåten er `POSTNUMRE_SCHEDULE` (f.eks. `0 */5 * * * *`)
+  pluss en omstart av Function App-en, uten en commit og uten at bygget blir
+  rødt. App-settingen fjernes etterpå, og appen startes på nytt igjen — står
+  den igjen, kjører jobben hvert femte minutt i all framtid, og Jobber-fanen
+  er det eneste stedet det synes.
 * **Steg 5** er de sju andre jobbene, og rekkefølgen bør følge den samme
   risikoordenen: `oppslaglister` og `refresh-fs` før de som sender noe, og
   `team-synk` sist.
