@@ -12,7 +12,7 @@ Tilgangen avgjøres i to lag, og tabellene under viser begge:
 * **Handleren** avgjør resten. Hvert endepunkt har minst én vakt her; se
   `docs/SIKKERHET-OG-ARKITEKTUR.md` for hva hver vakt innebærer.
 
-137 endepunkter, hvorav 39 er anonyme i gatewayen.
+138 endepunkter, hvorav 39 er anonyme i gatewayen.
 
 ## Anonyme i gatewayen
 
@@ -93,6 +93,7 @@ SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.
 | `/api/innstillinger` | POST | authenticated | admin, innlogget |
 | `/api/innstillinger/{nokkel}` | GET | authenticated | admin, innlogget |
 | `/api/innstillinger/{nokkel}` | DELETE | authenticated | admin, innlogget |
+| `/api/jobber` | GET | authenticated | admin, innlogget |
 | `/api/logoer` | GET | authenticated | innlogget |
 | `/api/logoer` | POST | authenticated | admin, innlogget |
 | `/api/logoer/{filnavn}` | DELETE | authenticated | admin, innlogget |

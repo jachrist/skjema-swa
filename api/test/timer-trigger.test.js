@@ -24,6 +24,13 @@
  *   handler, ville admin-panelet fått to litt ulike bilder av samme jobb
  *   avhengig av hvem som startet den.
  *
+ *   **Overstyringen må kunne skrives feil uten å ta ned appen.**
+ *   `POSTNUMRE_SCHEDULE` kommer fra app settings og kan inneholde hva som
+ *   helst — og et uttrykk Azure ikke kan tolke feiler nettopp VED
+ *   REGISTRERING. Vakten i `lib/jobber.js` prøves begge veier, og den
+ *   avviste verdien skal stå i svaret: en verdi som bare forsvinner er
+ *   umulig å feilsøke.
+ *
  * Kjøres med:  node api/test/timer-trigger.test.js
  */
 const fs = require('fs');
@@ -90,37 +97,48 @@ const plattform = require('../src/lib/plattform');
 // Den ekte modulen lastes, med en stubbet @azure/functions som teller
 // registreringene. Det er forskjellen på å lese koden og å kjøre den: en vakt
 // som står inne i handleren i stedet for rundt `app.timer` ser nesten lik ut.
-{
-    const sti = require.resolve('../src/functions/postnumre.js');
-    const lastMed = (miljo) => {
-        const timere = [];
-        const ruter = [];
-        const ekte = Module._load;
-        Module._load = function (forespurt, ...r) {
-            if (forespurt === '@azure/functions') {
-                return {
-                    app: {
-                        http: (navn, opts) => ruter.push({ navn, opts }),
-                        timer: (navn, opts) => timere.push({ navn, opts })
-                    }
-                };
-            }
-            return ekte.call(this, forespurt, ...r);
-        };
-        const foer = process.env.MILJO;
-        process.env.MILJO = miljo;
-        delete require.cache[sti];
-        // plattform.js leser MILJO ved kall, ikke ved last, så den trenger
-        // ingen cache-tømming — men postnumre.js gjør vakten ved LAST.
-        try { require(sti); } finally {
-            Module._load = ekte;
-            if (foer === undefined) delete process.env.MILJO;
-            else process.env.MILJO = foer;
-            delete require.cache[sti];
+//
+// Lasteren brukes av både 2 og 3: den gir den EKTE formen — opsjonene Azure
+// faktisk ville fått — i stedet for et regulæruttrykk mot kildekoden. Den tar
+// derfor også overstyringen, slik at `POSTNUMRE_SCHEDULE` kan prøves på veien
+// den virkelig går: lest ved modullast, inne i vakten.
+const stiPostnumre = require.resolve('../src/functions/postnumre.js');
+const lastMed = (miljo, overstyring) => {
+    const timere = [];
+    const ruter = [];
+    const ekte = Module._load;
+    Module._load = function (forespurt, ...r) {
+        if (forespurt === '@azure/functions') {
+            return {
+                app: {
+                    http: (navn, opts) => ruter.push({ navn, opts }),
+                    timer: (navn, opts) => timere.push({ navn, opts })
+                }
+            };
         }
-        return { timere, ruter };
+        return ekte.call(this, forespurt, ...r);
     };
+    const foer = process.env.MILJO;
+    const foerSchedule = process.env.POSTNUMRE_SCHEDULE;
+    process.env.MILJO = miljo;
+    if (overstyring === undefined) delete process.env.POSTNUMRE_SCHEDULE;
+    else process.env.POSTNUMRE_SCHEDULE = overstyring;
+    delete require.cache[stiPostnumre];
+    // plattform.js og jobber.js leser env ved KALL, ikke ved last, så de
+    // trenger ingen cache-tømming — men postnumre.js gjør vakten og
+    // schedule-oppslaget ved LAST.
+    try { require(stiPostnumre); } finally {
+        Module._load = ekte;
+        if (foer === undefined) delete process.env.MILJO;
+        else process.env.MILJO = foer;
+        if (foerSchedule === undefined) delete process.env.POSTNUMRE_SCHEDULE;
+        else process.env.POSTNUMRE_SCHEDULE = foerSchedule;
+        delete require.cache[stiPostnumre];
+    }
+    return { timere, ruter };
+};
 
+{
     const dev = lastMed('dev');
     sjekk('dev registrerer én timer', dev.timere.length, 1);
     sjekk('og den heter noe gjenkjennelig', dev.timere[0]?.navn, 'postnumreTimer');
@@ -135,29 +153,135 @@ const plattform = require('../src/lib/plattform');
 }
 
 // ---------- 3. NCRONTAB mot GitHub-cron ----------
+//
+// Tidspunktet står i `lib/jobber.js` fra 17.10.2026, og det er DET registeret
+// som leses her — ikke et regulæruttrykk mot `schedule:` i postnumre.js. Den
+// linja er ikke et uttrykk lenger, den er et oppslag, og en test som leter
+// etter en literal der ville blitt grønn av å finne ingenting.
 {
-    const kode = les('api', 'src', 'functions', 'postnumre.js');
-    const m = /schedule: '([^']+)'/.exec(kode);
-    sjekk('fant schedule', !!m, true);
-    const ncrontab = m?.[1] || '';
-    sjekk('NCRONTAB har seks felt', ncrontab.split(/\s+/).length, 6);
+    const { JOBBER, jobbSchedule, gyldigNcrontab, overstyring } = require('../src/lib/jobber');
+    sjekk('registeret har jobber', JOBBER.length > 0, true);
 
-    const wf = les('.github', 'workflows', 'refresh-postnumre.yml');
-    const w = /- cron: '([^']+)'/.exec(wf);
-    sjekk('fant cron i workflowen', !!w, true);
-    const github = w?.[1] || '';
-    sjekk('GitHub-cron har fem felt', github.split(/\s+/).length, 5);
+    for (const jobb of JOBBER) {
+        sjekk(`${jobb.id}: standardSchedule har seks felt`,
+            String(jobb.standardSchedule).split(/\s+/).length, 6);
 
-    // DEN EGENTLIGE SJEKKEN. De to skal beskrive samme tidspunkt, og i dette
-    // tilfellet betyr det bokstavelig talt samme uttrykk med «0 » foran.
-    // Endres den ene uten den andre, kjører dev og prod på ulik klokke — og
-    // ingenting feiler, det bare skjer til feil tid.
-    sjekk('timeren og workflowen beskriver samme tidspunkt', ncrontab, `0 ${github}`);
+        // DEN EGENTLIGE SJEKKEN. Timeren i dev og cron-workflowen mot pilot og
+        // prod skal beskrive SAMME tidspunkt, og i dette tilfellet betyr det
+        // bokstavelig talt samme uttrykk med «0 » foran. Endres den ene uten
+        // den andre, kjører miljøene på ulik klokke — og ingenting feiler, det
+        // bare skjer til feil tid.
+        if (!jobb.workflow) continue;
+        const wf = les('.github', 'workflows', jobb.workflow);
+        const w = /- cron: '([^']+)'/.exec(wf);
+        sjekk(`${jobb.id}: fant cron i ${jobb.workflow}`, !!w, true);
+        const github = w?.[1] || '';
+        sjekk(`${jobb.id}: GitHub-cron har fem felt`, github.split(/\s+/).length, 5);
+        sjekk(`${jobb.id}: timeren og workflowen beskriver samme tidspunkt`,
+            jobb.standardSchedule, `0 ${github}`);
+    }
 
     // Kommentarene må bort: ordet står i forklaringen rett over schedulen, og
     // en sjekk på at noe IKKE finnes blir ellers rød av sin egen begrunnelse.
     sjekk('runOnStartup er ikke satt',
-        /runOnStartup/.test(utenKommentarer(kode)), false);
+        /runOnStartup/.test(utenKommentarer(les('api', 'src', 'functions', 'postnumre.js'))), false);
+
+    // ---- vakten mot et uttrykk Azure ikke kan tolke ----
+    //
+    // Verdien kommer fra en app-setting, og `app.timer(...)` feiler VED
+    // REGISTRERING på et uttrykk den ikke forstår — altså på den måten som
+    // kan ta ned hele appen. Vakten må derfor holde, og den må holde på det
+    // som faktisk skrives feil: fem felt limt inn fra en GitHub-workflow.
+    sjekk('seks felt er gyldig', gyldigNcrontab('0 30 4 15 1,7 *'), true);
+    sjekk('fem felt er ikke', gyldigNcrontab('30 4 15 1,7 *'), false);
+    sjekk('sju felt er ikke', gyldigNcrontab('0 0 30 4 15 1,7 *'), false);
+    sjekk('tom er ikke', gyldigNcrontab(''), false);
+    sjekk('udefinert er ikke', gyldigNcrontab(undefined), false);
+    sjekk('intervallformen er gyldig', gyldigNcrontab('0 */5 * * * *'), true);
+    sjekk('ukedagsnavn er gyldig', gyldigNcrontab('0 0 9 * * MON-FRI'), true);
+    sjekk('slingrende mellomrom teller ikke', gyldigNcrontab('  0  30 4 15 1,7 * '), true);
+    sjekk('søppeltegn er ikke gyldig', gyldigNcrontab('0 30 4 15 1,7 ;rm'), false);
+
+    // ---- overstyringen leses, for HVER jobb i lista ----
+    //
+    // `overstyring()` er en switch på `scheduleVar`, fordi navnet må stå
+    // SKREVET UT for at env-inventaret skal se app-settingen. Prisen er at en
+    // ny jobb i steg 5 kan få en `scheduleVar` uten en `case` — og da er
+    // overstyringen en stille no-op. Her settes env-varen for hver jobb i
+    // lista, og det kreves at den leses.
+    for (const jobb of JOBBER) {
+        sjekk(`${jobb.id}: har en scheduleVar`, typeof jobb.scheduleVar, 'string');
+        const foer = process.env[jobb.scheduleVar];
+        process.env[jobb.scheduleVar] = 'prøveverdi-fra-testen';
+        try {
+            sjekk(`${jobb.id}: ${jobb.scheduleVar} leses`,
+                overstyring(jobb), 'prøveverdi-fra-testen');
+        } finally {
+            if (foer === undefined) delete process.env[jobb.scheduleVar];
+            else process.env[jobb.scheduleVar] = foer;
+        }
+    }
+
+    // ---- og den avviste verdien forsvinner ikke i stillhet ----
+    //
+    // «Jeg satte den, og jobben kjører fortsatt på gammel tid» ser likt ut
+    // enten verdien ble avvist, aldri lest, eller satt i feil miljø. Da må
+    // svaret bære årsaken.
+    const medSchedule = (verdi, jobb) => {
+        const foer = process.env[jobb.scheduleVar];
+        if (verdi === undefined) delete process.env[jobb.scheduleVar];
+        else process.env[jobb.scheduleVar] = verdi;
+        try { return jobbSchedule(jobb); } finally {
+            if (foer === undefined) delete process.env[jobb.scheduleVar];
+            else process.env[jobb.scheduleVar] = foer;
+        }
+    };
+    const postnumre = JOBBER.find(j => j.id === 'postnumre-bring');
+    sjekk('fant postnummerjobben', !!postnumre, true);
+
+    const uten = medSchedule(undefined, postnumre);
+    sjekk('uten overstyring gjelder standarden', uten.schedule, postnumre.standardSchedule);
+    sjekk('og kilden sier det', uten.kilde, 'standard');
+    sjekk('og ingenting er avvist', uten.avvist, null);
+
+    const tom = medSchedule('   ', postnumre);
+    sjekk('bare mellomrom er ingen overstyring', tom.kilde, 'standard');
+    sjekk('og det er ikke en avvist verdi heller', tom.avvist, null);
+
+    const gyldig = medSchedule('0 */5 * * * *', postnumre);
+    sjekk('en gyldig overstyring gjelder', gyldig.schedule, '0 */5 * * * *');
+    sjekk('og kilden navngir app-settingen', gyldig.kilde, postnumre.scheduleVar);
+
+    const ugyldig = medSchedule('30 4 15 1,7 *', postnumre);
+    sjekk('en ugyldig overstyring faller tilbake', ugyldig.schedule, postnumre.standardSchedule);
+    sjekk('og sier at den ble avvist', ugyldig.avvist, '30 4 15 1,7 *');
+    // `String(... || '')`: en mutasjon som fjerner `grunn` skal gjøre DENNE
+    // sjekken rød, ikke velte hele testfila før de neste rekker å kjøre.
+    sjekk('og navngir app-settingen i grunnen',
+        String(ugyldig.grunn || '').includes(postnumre.scheduleVar), true);
+    sjekk('og peker på sekundfeltet', /sekund/i.test(ugyldig.grunn), true);
+
+    // ---- HELE VEIEN: det Azure faktisk ville fått ----
+    //
+    // Resolveren kan svare riktig mens registreringen fortsatt sender
+    // standarden — det er to ting, og det er den siste som bestemmer når
+    // jobben kjører. Her leses opsjonene `app.timer` ble kalt med.
+    sjekk('registrert schedule uten overstyring',
+        lastMed('dev').timere[0]?.opts?.schedule, postnumre.standardSchedule);
+    sjekk('registrert schedule MED overstyring',
+        lastMed('dev', '0 */5 * * * *').timere[0]?.opts?.schedule, '0 */5 * * * *');
+    sjekk('registrert schedule med en ugyldig overstyring',
+        lastMed('dev', '30 4 15 1,7 *').timere[0]?.opts?.schedule, postnumre.standardSchedule);
+
+    // Og app-settingen må stå i inventaret — ellers er den usynlig for den
+    // som setter opp miljøet. `env-inventar.test.js` krever det av alt koden
+    // leser; her kreves det at den leses med navnet skrevet ut, som er det
+    // scanneren der ser.
+    const jobberKilde = utenKommentarer(les('api', 'src', 'lib', 'jobber.js'));
+    for (const jobb of JOBBER) {
+        sjekk(`${jobb.id}: ${jobb.scheduleVar} leses med navnet skrevet ut`,
+            jobberKilde.includes(`process.env.${jobb.scheduleVar}`), true);
+    }
 }
 
 // ---------- 4. én jobb, to innganger ----------
@@ -175,8 +299,20 @@ const plattform = require('../src/lib/plattform');
     // skrivingen, ikke på at rowkeyen nevnes.
     sjekk('handleren skriver ingen statusrad', /upsertEntity\(/.test(fn), false);
     sjekk('jobben gjør det', /upsertEntity\(/.test(jobb), true);
-    sjekk('og handleren leser den fortsatt',
-        /getEntity\('Meta', 'Postnumre-Bring'\)/.test(fn), true);
+    // Statusraden LESES fortsatt av handleren — det er GET
+    // /api/postnumre/status — men gjennom den DELTE leseren, og raden pekes
+    // ut av registeret. Står 'Meta' / 'Postnumre-Bring' skrevet inn i
+    // handleren igjen, er feltnavnene og radnøkkelen tilbake i to
+    // eksemplarer, og de to admin-fanene kan bli uenige om samme jobb.
+    sjekk('handleren leser raden gjennom den delte leseren',
+        /lesStatusrad\(/.test(fn), true);
+    sjekk('og peker den ut via registeret',
+        /jobbForId\('postnumre-bring'\)\.statusrad/.test(fn), true);
+    sjekk('radnøkkelen står ikke skrevet inn i handleren',
+        /'Postnumre-Bring'/.test(fn), false);
+    sjekk('og leseren bor i registeret',
+        /getEntity\(statusrad\.partisjon, statusrad\.rad\)/.test(
+            utenKommentarer(les('api', 'src', 'lib', 'jobber.js'))), true);
     sjekk('hendelsesloggingen bare i jobben', /postnumre\.bring-oppdatert/.test(fn), false);
     sjekk('og den skjer der', /postnumre\.bring-oppdatert/.test(jobb), true);
 

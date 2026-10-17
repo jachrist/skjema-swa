@@ -9,6 +9,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const postnumreStorage = require('../lib/postnumre-storage');
 const { stotterTimere } = require('../lib/plattform');
+const { jobbForId, jobbSchedule, lesStatusrad } = require('../lib/jobber');
 
 app.http('postnumreSok', {
     methods: ['GET'],
@@ -112,16 +113,28 @@ app.http('postnumreRefreshBring', {
 // miljøene har timere.
 //
 // NCRONTAB har SEKS felt — sekund først. GitHub-cron har fem. Skrives
-// GitHub-uttrykket rett inn her, blir «30 4 15 1,7 *» lest som
+// GitHub-uttrykket rett inn, blir «30 4 15 1,7 *» lest som
 // sekund-minutt-time-dag-måned og kjører 1,7 ganger i uka i stedet for to
-// ganger i året. api/test/timer-trigger.test.js krever at de to er det samme
-// uttrykket, med et sekundfelt foran.
+// ganger i året. Uttrykket står i `lib/jobber.js`, og
+// api/test/timer-trigger.test.js krever at det er det samme som cron-en i
+// workflowen, med et sekundfelt foran.
 if (stotterTimere()) {
+    // Tidspunktet står i `lib/jobber.js`, ikke her — sammen med ruta,
+    // statusraden og navnet på workflowen som kjører den samme jobben mot
+    // pilot og prod. `POSTNUMRE_SCHEDULE` kan overstyre det uten en deploy,
+    // men leses VED REGISTRERING: en endret app-setting slår inn ved neste
+    // omstart av appen.
+    const jobb = jobbForId('postnumre-bring');
+    const valgt = jobbSchedule(jobb);
+    // Logges ved modullast, fordi en overstyring som bare forsvinner er
+    // umulig å feilsøke. Den gjeldende verdien står også i GET /api/jobber.
+    if (valgt.avvist) console.warn(`postnumre-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
+    else if (valgt.kilde !== 'standard') console.log(`postnumre-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
+
     app.timer('postnumreTimer', {
-        // 04:30 UTC den 15. januar og 15. juli — samme klokkeslett som
-        // workflowen. `runOnStartup` settes IKKE: den ville kjørt jobben ved
-        // hver eneste deploy og omstart.
-        schedule: '0 30 4 15 1,7 *',
+        // `runOnStartup` settes IKKE: den ville kjørt jobben ved hver eneste
+        // deploy og omstart.
+        schedule: valgt.schedule,
         handler: async (timer, context) => {
             const { kjorBringOppdatering } = require('../lib/postnummer-jobb');
             const jobbLog = (...a) => context.log(...a);
@@ -143,27 +156,12 @@ app.http('postnumreStatus', {
         if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
         try {
             const antall = await postnumreStorage.hentAntall();
-            // Hent Bring-import-metadata hvis finnes
-            const { tabellKlient } = require('../lib/storage');
-            let bring = null;
-            try {
-                const t = tabellKlient('CacheMetadata');
-                const e = await t.getEntity('Meta', 'Postnumre-Bring');
-                bring = {
-                    status: e.Status || 'ukjent',
-                    sistOppdatert: e.SistOppdatert || null,
-                    antallRader: e.AntallRader ?? null,
-                    antallSlettet: e.AntallSlettet ?? null,
-                    varighetSekunder: e.VarighetSekunder ?? null,
-                    startet: e.Startet || null,
-                    ferdig: e.Ferdig || null,
-                    kilde: e.Kilde || null,
-                    sistFeil: e.SistFeil || ''
-                };
-            } catch (err) {
-                if (err.statusCode !== 404) throw err;
-                bring = { status: 'aldri kjørt' };
-            }
+            // Statusraden leses av DEN SAMME leseren som GET /api/jobber
+            // bruker, og raden pekes ut av registeret — ikke av en 'Meta' /
+            // 'Postnumre-Bring' skrevet inn her. To kopier av feltnavnene
+            // ville gitt to admin-faner som er uenige om samme jobb, og den
+            // uenigheten er taus: den ene viser «aldri kjørt».
+            const bring = await lesStatusrad(jobbForId('postnumre-bring').statusrad);
             return { jsonBody: { antall, bring } };
         } catch (e) {
             context.log('postnumre/status FEIL:', e.message);

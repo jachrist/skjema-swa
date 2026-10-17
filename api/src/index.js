@@ -43,6 +43,7 @@ require('./functions/samtale');
 require('./functions/skjematype-oversikt');
 require('./functions/arkiv');
 require('./functions/team-synk');
+require('./functions/jobber');
 
 // Etter hvert:
 // require('./functions/skjema');
