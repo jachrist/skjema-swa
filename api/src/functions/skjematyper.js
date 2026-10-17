@@ -18,6 +18,8 @@ const { hentDropdownVerdier } = require('../lib/oppslag');
 const { erTilgjengeligNaa } = require('../lib/periode');
 const rollerStorage = require('../lib/roller-storage');
 const hendelser = require('../lib/hendelser-storage');
+const pakke = require('../lib/skjematype-pakke');
+const { miljonavn } = require('../lib/plattform');
 const gevinstSjekk = require('../lib/gevinst-sjekk');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const svarReparasjon = require('../lib/svar-reparasjon');
@@ -642,3 +644,159 @@ app.http('slettSkjematype', {
 // Eksporteres for test. Dette er tilgangslogikk, og den skal ikke kunne
 // utvides eller fjernes uten at noe sier fra.
 module.exports = { _erBehandlerPaaSkjema: erBehandlerPaaSkjema };
+
+// ==================== EKSPORT / IMPORT AV SKJEMATYPER ====================
+//
+// Laget for å fylle et nytt miljø med noen sentrale skjematyper fra et
+// eksisterende. `scripts/migrer/` kopierer HELE tabeller mellom
+// lagringskonti og kjøres lokalt med tilkoblingsstrenger; denne går gjennom
+// admin-panelet, tar et utvalg, og krever ingen nøkler.
+//
+// **BEGGE KREVER ADMIN.** Eksporten gir ut hver definisjon i sin helhet —
+// felter, behandlingssteg, eiere, varslingstekster — og importen skriver.
+//
+// Hva pakken IKKE inneholder (svar, krypteringsnøkler, rolletildelinger,
+// oppslagslister) står i lib/skjematype-pakke.js, sammen med reglene.
+//
+// **RUTENE LIGGER UNDER `skjematyper/pakke/`, ikke `skjematyper/eksport`.**
+// Den korte formen har nøyaktig samme form som `skjematyper/{id}`, og hvilken
+// av dem verten velger avhenger av en presedensregel vi ikke har målt. Går
+// den feil vei, blir `eksport` lest som en skjematype-ID og svaret en 404 som
+// ikke forklarer noe. Med et ekstra ledd finnes det ingen mal å forveksle
+// dem med: ingen rute heter `skjematyper/{id}/eksport`.
+
+app.http('skjematyperEksport', {
+    methods: ['GET'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/pakke/eksport',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
+
+        try {
+            const url = new URL(request.url);
+            const bedtOm = String(url.searchParams.get('ider') || '')
+                .split(',').map(s => s.trim()).filter(Boolean);
+
+            const alle = await skjemaStorage.hentAlleSkjematyper();
+            const valgte = bedtOm.length === 0
+                ? alle
+                : alle.filter(t => bedtOm.includes(String(t.id)));
+
+            // EN ID SOM IKKE FINNES SKAL SIES FRA OM, ikke bare utelates.
+            // En pakke med fire typer når du ba om fem, ser helt riktig ut
+            // til den dagen den femte mangler i målmiljøet.
+            const ukjente = bedtOm.filter(id => !alle.some(t => String(t.id) === id));
+
+            const data = pakke.byggPakke(valgte, { fraMiljo: miljonavn() || 'ukjent', av: upn });
+            context.log(`skjematyper/eksport: ${upn} eksporterte ${data.antall} skjematype(r)`);
+            hendelser.logg({
+                Type: 'skjematype.eksport', Aktor: upn,
+                ObjektType: 'skjematype', ObjektId: '',
+                Melding: `Eksporterte ${data.antall} skjematype(r)`,
+                Detaljer: { ider: valgte.map(t => t.id), ukjente }
+            });
+            return { jsonBody: { ...data, ukjente } };
+        } catch (e) {
+            context.log('skjematyper/eksport FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+app.http('skjematyperImport', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjematyper/pakke/import',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
+
+        try {
+            const url = new URL(request.url);
+            const torr = url.searchParams.get('tort') === '1';
+            const overskriv = url.searchParams.get('overskriv') === '1';
+            const kropp = await request.json().catch(() => null);
+
+            const lest = pakke.lesPakke(kropp);
+            if (!lest.ok) {
+                return { status: 400, jsonBody: { status: 'feil', feil: lest.feil } };
+            }
+
+            const alle = await skjemaStorage.hentAlleSkjematyper();
+            let lister = [];
+            try {
+                lister = (await require('../lib/oppslagsliste-storage')
+                    .hentOppsett(() => {})).map(l => l.Navn);
+            } catch (_) {
+                // Oppslagslistene er en ADVARSEL, ikke en forutsetning.
+                // Kan de ikke leses, skal importen gå videre — men da uten å
+                // påstå at listene mangler.
+                lister = null;
+            }
+
+            const planer = pakke.vurderImport({
+                skjematyper: lest.skjematyper,
+                finnesIder: alle.map(t => t.id),
+                finnesLister: lister || [],
+                overskriv
+            });
+
+            // Kunne vi ikke lese listene, fjernes advarselen om dem — en
+            // advarsel vi ikke har grunnlag for er verre enn ingen.
+            if (lister === null) {
+                for (const p of planer) {
+                    p.manglendeLister = [];
+                    p.advarsler = p.advarsler.filter(a => !a.startsWith('Peker på oppslagsliste'));
+                    p.advarsler.push('Kunne ikke lese oppslagslistene her — avhengigheter er ikke kontrollert.');
+                }
+            }
+
+            if (torr) {
+                return { jsonBody: { status: 'ok', 'tørrkjør': true, fraMiljo: kropp?.fraMiljo || '', planer } };
+            }
+
+            const skrevet = [];
+            const feilet = [];
+            for (const plan of planer) {
+                if (plan.handling === 'hopper-over') continue;
+                const def = lest.skjematyper.find(d => String(d.Skjematype_id) === plan.id);
+                try {
+                    await skjemaStorage.lagreSkjematype(def);
+                    skrevet.push(plan.id);
+                } catch (e) {
+                    // Én type som feiler stopper ikke de andre — samme regel
+                    // som i oppslagslistejobben, og av samme grunn.
+                    feilet.push({ id: plan.id, navn: plan.navn, melding: e.message });
+                }
+            }
+
+            context.log(`skjematyper/import: ${upn} importerte ${skrevet.length}, ${feilet.length} feilet`);
+            hendelser.logg({
+                Type: 'skjematype.import', Aktor: upn,
+                ObjektType: 'skjematype', ObjektId: '',
+                Melding: `Importerte ${skrevet.length} skjematype(r)`
+                    + (feilet.length ? `, ${feilet.length} feilet` : '')
+                    + (overskriv ? ' (med overskriving)' : ''),
+                Detaljer: { skrevet, feilet: feilet.map(f => `${f.id}: ${f.melding}`), fraMiljo: kropp?.fraMiljo || '' }
+            });
+
+            // Delvis utfall gir 207, som oppslagslistene: jobben gjorde noe,
+            // men ikke alt, og en 200 ville sett ut som at alt gikk inn.
+            const status = feilet.length === 0 ? 200 : (skrevet.length > 0 ? 207 : 500);
+            return {
+                status,
+                jsonBody: {
+                    status: feilet.length ? 'delvis' : 'ok',
+                    fraMiljo: kropp?.fraMiljo || '',
+                    antallSkrevet: skrevet.length, skrevet, feilet, planer
+                }
+            };
+        } catch (e) {
+            context.log('skjematyper/import FEIL:', e.message, e.stack);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});

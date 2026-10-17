@@ -2435,6 +2435,183 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
             }
         };
 
+        // ==================== DEFINISJONSPAKKE (eksport/import) ====================
+        //
+        // Fyller et nytt miljø med skjematyper fra et eksisterende. Pakken
+        // inneholder BARE definisjonene — det står i panelet, fordi det er
+        // det noen vil lure på når det nye miljøet er tomt.
+        //
+        // Importen viser ALLTID en forhåndsvisning før den skriver. En
+        // skjematype som peker på en oppslagsliste som ikke finnes her, gir
+        // et tomt nedtrekk, og det er umulig å skille fra «ingenting er
+        // godkjent ennå» — derfor skal det sees før, ikke oppdages etter.
+        let pakkeState = { pakke: null, filnavn: '' };
+        const PAKKE_STILER = new Set(['info', 'advarsel', 'feil', 'suksess']);
+
+        /**
+         * Banner over forhåndsvisningen. Kallerne escaper innholdet, som i
+         * resten av fila.
+         *
+         * **PARAMETEREN HAR ET UNIKT NAVN MED VILJE.**
+         * `scripts/html-injeksjon.js` slår opp lokale variabler på NAVN
+         * alene, og tar den FØRSTE erklæringen i fila. Hette den `klasse`,
+         * ville den skygget for backup-panelets `klasse` lenger ned — og
+         * DEN resolveren er grunnen til at `st.status === 'feil'` står i
+         * GODTATT. Skyggingen gjorde ikke denne koden utrygg, men den gjorde
+         * backup-panelet umulig å vurdere: enhver senere endring der ville
+         * blitt lest som literalen «info» herfra.
+         *
+         * `type` og `nivaa` kolliderte på samme måte med andre steder i fila.
+         */
+        function pakkeMelding(html, pakkeKlasse = 'info') {
+            const el = document.getElementById('pakke-melding');
+            if (!el) return;
+            // KLASSEN SETTES MED classList, IKKE INTERPOLERT.
+            //
+            // En parameter har ingen erklæring `scripts/html-injeksjon.js`
+            // kan slå opp, så den leses som utrygg uansett hvor trygg den er;
+            // et navn som finnes andre steder i fila gjør det motsatte, og
+            // skygger for en helt annen vurdering. Begge deler er galt å
+            // bygge på.
+            //
+            // Utenfor en sink finnes problemet ikke. Og verdien er dessuten
+            // begrenset til fire kjente stiler her, så en ukjent verdi fra en
+            // kaller kan ikke bli til noe annet enn «info».
+            el.innerHTML = `<div class="banner">${html}</div>`;
+            const stil = PAKKE_STILER.has(pakkeKlasse) ? pakkeKlasse : 'info';
+            if (el.firstElementChild) el.firstElementChild.classList.add(stil);
+        }
+
+        /** Én linje per skjematype i forhåndsvisningen. */
+        function pakkePlanRad(p) {
+            const farge = p.handling === 'hopper-over' ? 'text-secondary'
+                : (p.handling === 'overskriv' ? 'warning' : 'success');
+            const merke = p.handling === 'hopper-over' ? 'hoppes over'
+                : (p.handling === 'overskriv' ? 'OVERSKRIVES' : 'ny');
+            return `
+                <div class="innehaver-rad" style="grid-template-columns: 70px 1fr 130px; gap: 12px; align-items: start;">
+                    <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">${escHtml(p.id)}</div>
+                    <div>
+                        <strong>${escHtml(p.navn || '(uten navn)')}</strong>
+                        ${p.fase ? `<span style="font-size: 11px; color: var(--text-secondary);"> · ${escHtml(p.fase)}</span>` : ''}
+                        ${p.grunn ? `<div style="font-size: 12px; color: var(--text-secondary);">${escHtml(p.grunn)}</div>` : ''}
+                        ${(p.advarsler || []).map(a => `<div style="font-size: 12px; color: var(--warning);">⚠ ${escHtml(a)}</div>`).join('')}
+                    </div>
+                    <div style="font-size: 12px; color: var(--${farge});">${escHtml(merke)}</div>
+                </div>`;
+        }
+
+        function pakkeTegnPlan(planer, overskriv) {
+            const el = document.getElementById('pakke-plan');
+            if (!el) return;
+            const nye = planer.filter(p => p.handling === 'ny').length;
+            const over = planer.filter(p => p.handling === 'overskriv').length;
+            const hopp = planer.filter(p => p.handling === 'hopper-over').length;
+            el.innerHTML = `
+                <div class="panel" style="margin: 0 0 12px 0;">
+                    <h2>Forhåndsvisning — ${escHtml(String(planer.length))} skjematype(r)</h2>
+                    <div style="font-size: 13px; margin-bottom: 8px;">
+                        ${escHtml(String(nye))} ny(e), ${escHtml(String(over))} overskrives,
+                        ${escHtml(String(hopp))} hoppes over
+                    </div>
+                    <div class="innehaver-header" style="grid-template-columns: 70px 1fr 130px; gap: 12px;">
+                        <div>ID</div><div>Skjematype</div><div>Handling</div>
+                    </div>
+                    ${planer.map(p => pakkePlanRad(p)).join('')}
+                    <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp primær" onclick="pakkeImporter(false)">Importer ${escHtml(String(nye + over))}</button>
+                        ${hopp > 0 && !overskriv
+                            ? '<button class="knapp" onclick="pakkeImporter(true)">Importer og overskriv de som finnes</button>'
+                            : ''}
+                        <button class="knapp mini" onclick="pakkeAvbryt()">Avbryt</button>
+                    </div>
+                </div>`;
+        }
+
+        window.pakkeEksport = async () => {
+            pakkeMelding('Henter definisjoner…');
+            try {
+                const svar = await api.get('/api/skjematyper/pakke/eksport');
+                const navn = `skjematyper-${svar.fraMiljo || 'ukjent'}-${new Date().toISOString().slice(0, 10)}.json`;
+                const blob = new Blob([JSON.stringify(svar, null, 2)], { type: 'application/json' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = navn;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                pakkeMelding(`✓ ${escHtml(String(svar.antall))} skjematype(r) lastet ned som ${escHtml(navn)}`, 'suksess');
+            } catch (e) {
+                pakkeMelding(escHtml(e.message), 'feil');
+            }
+        };
+
+        window.pakkeVelgFil = async (ev) => {
+            const fil = ev.target.files && ev.target.files[0];
+            ev.target.value = '';           // samme fil skal kunne velges igjen
+            if (!fil) return;
+            pakkeMelding('Leser fila…');
+            try {
+                const tekst = await fil.text();
+                pakkeState = { pakke: JSON.parse(tekst), filnavn: fil.name };
+            } catch (e) {
+                pakkeMelding(`Fila kunne ikke leses som JSON: ${escHtml(e.message)}`, 'feil');
+                return;
+            }
+            await pakkeForhandsvis(false);
+        };
+
+        async function pakkeForhandsvis(overskriv) {
+            try {
+                const svar = await api.post(`/api/skjematyper/pakke/import?tort=1${overskriv ? '&overskriv=1' : ''}`, pakkeState.pakke);
+                pakkeMelding(`Fra miljø <strong>${escHtml(svar.fraMiljo || 'ukjent')}</strong>, fila ${escHtml(pakkeState.filnavn)}. Ingenting er skrevet ennå.`);
+                pakkeTegnPlan(svar.planer || [], overskriv);
+            } catch (e) {
+                document.getElementById('pakke-plan').innerHTML = '';
+                pakkeMelding(escHtml(e.message), 'feil');
+            }
+        }
+
+        window.pakkeImporter = async (overskriv) => {
+            if (!pakkeState.pakke) { pakkeMelding('Ingen fil er valgt.', 'feil'); return; }
+            if (!confirm(overskriv
+                ? 'Importere OG OVERSKRIVE skjematyper som finnes fra før?'
+                : 'Importere skjematypene som ikke finnes fra før?')) return;
+            pakkeMelding('Importerer…');
+            try {
+                // Variabelen heter `svar`, ikke `d`. Se kommentaren ved
+                // pakkeMelding: injeksjons-skanneren slår opp lokale navn på
+                // tvers av hele fila, og korte navn som `d` finnes mange
+                // steder — da havner feil uttrykk i feil rapport.
+                const svar = await api.post(`/api/skjematyper/pakke/import${overskriv ? '?overskriv=1' : ''}`, pakkeState.pakke);
+                // `feiledeTyper`, ikke `feilet`: backup-panelet har en lokal
+                // `feilet`, og skanneren slår opp på navn alene og tar den
+                // FØRSTE i fila. Et gjenbrukt navn her flyttet backup-panelets
+                // vurdering over på denne koden — og gjorde en GODTATT-
+                // oppføring der død. Det var testen «ingen død oppføring» som
+                // fanget det, ikke øyet.
+                const feiledeTyper = svar.feilet || [];
+                const feilliste = feiledeTyper
+                    .map(f => `• ${escHtml(f.navn || f.id)}: ${escHtml(f.melding)}`)
+                    .join('<br>');
+                pakkeMelding(
+                    `✓ Importerte ${escHtml(String(svar.antallSkrevet))} skjematype(r)`
+                    + (feiledeTyper.length
+                        ? `, ${escHtml(String(feiledeTyper.length))} feilet:<br>${feilliste}`
+                        : '.'),
+                    feiledeTyper.length ? 'advarsel' : 'suksess');
+                pakkeAvbryt();
+                rendrSkjematyper();
+            } catch (e) {
+                pakkeMelding(escHtml(e.message), 'feil');
+            }
+        };
+
+        window.pakkeAvbryt = () => {
+            pakkeState = { pakke: null, filnavn: '' };
+            const el = document.getElementById('pakke-plan');
+            if (el) el.innerHTML = '';
+        };
+
         // ==================== JOBBER-FANE ====================
         //
         // Hva som trigger bakgrunnsjobbene i DETTE miljøet, når de kjører, og
@@ -2790,6 +2967,21 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     <div class="knapp-rad" style="margin-bottom: 12px;">
                         <button class="knapp" onclick="eksporterSkjematyper()" id="skjematyper-eksport">📊 Eksporter til Excel</button>
                         <span id="skjematyper-eksport-status" style="font-size: 12px; color: var(--text-secondary);"></span>
+                    </div>
+                    <div class="knapp-rad" style="margin-bottom: 12px;">
+                        <button class="knapp" onclick="pakkeEksport()">📦 Eksporter definisjoner (JSON)</button>
+                        <label class="knapp" style="cursor: pointer;">
+                            📥 Importer definisjoner…
+                            <input type="file" accept="application/json,.json" style="display: none;" onchange="pakkeVelgFil(event)">
+                        </label>
+                    </div>
+                    <div id="pakke-melding" style="margin-bottom: 10px;"></div>
+                    <div id="pakke-plan"></div>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+                        Definisjonspakken inneholder <strong>bare malene</strong> — ingen innsendte
+                        skjemaer, ingen krypteringsnøkler, ingen rolletildelinger og ingen
+                        oppslagslister. Den er laget for å fylle et nytt miljø. Importen viser
+                        alltid en forhåndsvisning først.
                     </div>
                     <div class="oversikt-ramme">${byggOversiktTabell(data.rader || [])}</div>
                 </div>`;
