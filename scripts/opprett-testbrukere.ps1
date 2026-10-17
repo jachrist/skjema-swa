@@ -28,7 +28,21 @@
     Rollemedlemskap og Publikum/Eiere. Ingen av dem tildeles av skriptet.
 
     Bruker Azure CLI mot Microsoft Graph (`az rest`), så ingen ekstra
-    PowerShell-moduler trengs. Krever Global Administrator i tenanten.
+    PowerShell-moduler trengs.
+
+    NØDVENDIGE ROLLER
+
+    **User Administrator** dekker alt skriptet gjør: opprette brukere, sette
+    engangspassord og tildele lisens. Global Administrator er IKKE nødvendig,
+    og sto her tidligere fordi den som skrev det hadde den.
+
+    Lisenslista (-VisLisenser, og tellingen av ledige seter) leses fra
+    /subscribedSkus. Det er en katalog-lesning, som medlemmer har som
+    standard — men en tenant kan ha slått av lesetilgang for medlemmer, og da
+    trengs «Directory Readers» i tillegg.
+
+    Rollen gjelder KATALOGEN, ikke et abonnement: skriptet logger inn med
+    --allow-no-subscriptions og rører ingen Azure-ressurs.
 
 .PARAMETER Domene
     Det verifiserte domenet brukerne skal ligge under, f.eks.

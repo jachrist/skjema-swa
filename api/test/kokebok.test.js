@@ -270,5 +270,44 @@ sjekk('dokumentet har kodeblokker', alle.length > 5, true);
     sjekk('ingen fortsettelsesfelle i .ps1-skriptene', funn, []);
 }
 
+// ---------- 10. rollene står likt i skriptet og i kokeboka ----------
+//
+// 3.2 ber deg kontrollere at rollene er på plass, og lister hvilke. Skriptet
+// tildeler dem. To kilder til samme regel — og den som leser dokumentet i et
+// arbeidsmøte har ingen måte å se at skriptet er endret. Her leses BEGGE.
+{
+    const skript = fs.readFileSync(path.join(rot, 'scripts', 'steg1-funcapp.ps1'), 'utf8');
+
+    // Skriptet tildeler på to former: en løkke over tre storage-roller, og én
+    // literal for Key Vault. Begge må med — leser vi bare den ene, blir en
+    // forsvunnet rolle usynlig.
+    const fraSkript = new Set();
+    for (const m of skript.matchAll(/'--role'\s*,\s*'([^']+)'/g)) fraSkript.add(m[1]);
+    const lokke = /foreach\s*\(\s*\$rolle\s+in\s+@\(([^)]*)\)\s*\)/.exec(skript);
+    sjekk('fant løkka over storage-rollene i steg1-funcapp.ps1', !!lokke, true);
+    // ... og at løkkevariabelen faktisk er den som sendes til --role. Uten
+    // denne ville navnene i @(...) blitt lest selv om løkka ikke tildelte noe.
+    sjekk('løkkevariabelen sendes til --role', /'--role'\s*,\s*\$rolle/.test(skript), true);
+    for (const m of (lokke?.[1] || '').matchAll(/'([^']+)'/g)) fraSkript.add(m[1]);
+
+    // Dokumentet: tabellen rett etter ankeret i 3.2.
+    const etter = tekst.split('<!-- roller-fra-steg1 -->')[1] || '';
+    sjekk('ankeret <!-- roller-fra-steg1 --> finnes i kokeboka', etter !== '', true);
+    const fraDok = [];
+    for (const linje of etter.split('\n')) {
+        if (!linje.startsWith('|')) { if (fraDok.length) break; else continue; }
+        const m = /^\|\s*`([^`]+)`\s*\|/.exec(linje);
+        if (m) fraDok.push(m[1]);
+    }
+
+    sjekk('kokeboka lister rollene', fraDok.length > 2, true);
+    sjekk('skriptet og kokeboka lister de samme rollene',
+        fraDok.slice().sort(), [...fraSkript].sort());
+
+    // Og ingen av dem er «Contributor» — den er poenget i både skript og doc.
+    sjekk('ingen av rollene er Contributor',
+        [...fraSkript].filter(r => r === 'Contributor'), []);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
