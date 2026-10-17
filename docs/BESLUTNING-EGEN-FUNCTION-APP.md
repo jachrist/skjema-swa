@@ -2782,6 +2782,19 @@ og den er billig helt til dataene flyttes.
 Kokeboka ligger i `KOKEBOK-PROD-V3.md`, med kommandoene i dokumentet, slik at
 oppsettet kan gjøres i ett arbeidsmøte med driftsmiljøet.
 
+**Den er PowerShell hele veien, og ingen kommando er delt over flere linjer.**
+Første utgave blandet bash-blokker med bakstrek og PowerShell-blokker med
+backtick. `\` fortsetter ikke en linje i PowerShell — den leses som et tegn i
+argumentet, og feilen peker et helt annet sted. En backtick er heller ikke
+trygg: den er usynlig, og et mellomrom etter den slår den av, så klipp-og-lim
+ødelegger kommandoen uten at noe ser galt ut.
+
+Lange kommandoer står derfor på én linje eller som en argumentliste i
+parentes, som holder uttrykket åpent uten noe tegn på slutten.
+`api/test/kokebok.test.js` krever formen, og fanger i tillegg
+bash-ismer (`VAR=verdi`, `for … do … done`, `xargs`, `| sort`) som ser like ut
+i de to skallene og oppfører seg ulikt.
+
 ### Det som kan gjøre skade, og rekkefølgen som hindrer det
 
 **Begge stakkene mot samme lagring kjører hver jobb to ganger.** v2 trigges av
