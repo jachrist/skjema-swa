@@ -16,6 +16,8 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const lagring = require('../lib/oppslagsliste-storage');
 const jobb = require('../lib/oppslagsliste-jobb');
 const hendelser = require('../lib/hendelser-storage');
+const { stotterTimere } = require('../lib/plattform');
+const { jobbForId, jobbSchedule } = require('../lib/jobber');
 
 /** Samme to veier inn som refresh-fs: admin-cookie eller scheduler-nøkkel. */
 function autorisert(request) {
@@ -95,27 +97,59 @@ app.http('oppslaglisterOppdater', {
         const bareNavn = url.searchParams.get('liste');
         const tørr = url.searchParams.get('tort') === '1';
 
-        try {
-            const res = await jobb.byggAlle({ bareNavn, tørr, log: (m) => context.log(`oppslagsliste: ${m}`) });
-            if (!tørr) {
-                hendelser.logg({
-                    Type: 'oppslagsliste.oppdater', Aktor: auth.aktor,
-                    ObjektType: 'oppslagsliste', ObjektId: bareNavn || '',
-                    Melding: `Oppdaterte ${res.resultater.length} av ${res.antallLister} oppslagsliste(r)`
-                        + (res.feil.length ? `, ${res.feil.length} feilet` : ''),
-                    Detaljer: {
-                        resultater: res.resultater.map(r => `${r.navn}: ${r.antall} rader`),
-                        feil: res.feil.map(f => `${f.navn}: ${f.melding}`)
-                    }
-                }).catch(() => {});
+        const log = (m) => context.log(`oppslagsliste: ${m}`);
+
+        // TØRRKJØRING BOKFØRES IKKE. Forhåndsvisningen skriver ingenting, og
+        // en statusrad etter en forhåndsvisning ville vært en påstand om data
+        // som aldri ble skrevet. Den veien går derfor rett på byggAlle.
+        if (tørr) {
+            try {
+                const res = await jobb.byggAlle({ bareNavn, tørr: true, log });
+                return { status: 200, jsonBody: { status: 'ok', ...res } };
+            } catch (e) {
+                context.log('oppslaglister forhåndsvisning FEIL:', e.message);
+                return { status: 400, jsonBody: { status: 'feil', melding: e.message } };
             }
-            // Feil i én liste gir 207: jobben gjorde noe, men ikke alt. En
-            // 200 ville gjort at cron-jobben så grønn ut med en død liste.
-            const status = res.feil.length > 0 ? (res.resultater.length > 0 ? 207 : 500) : 200;
-            return { status, jsonBody: { status: res.feil.length ? 'delvis' : 'ok', ...res } };
-        } catch (e) {
-            context.log('oppslaglister oppdater FEIL:', e.message);
-            return { status: 400, jsonBody: { status: 'feil', melding: e.message } };
         }
+
+        // Bokføringen — statusraden og hendelsen — skjer inne i jobben, slik
+        // at timeren i dev og HTTP-veien her gir admin-panelet det SAMME
+        // bildet av den samme kjøringen. Se lib/oppslagsliste-jobb.js.
+        const res = await jobb.kjorOppslagslister({ kilde: auth.aktor, bareNavn, log });
+        if (res.kastet) {
+            return { status: 400, jsonBody: { status: 'feil', melding: res.melding } };
+        }
+        // Feil i én liste gir 207: jobben gjorde noe, men ikke alt. En
+        // 200 ville gjort at cron-jobben så grønn ut med en død liste.
+        const status = res.utfall === 'ok' ? 200 : (res.utfall === 'delvis' ? 207 : 500);
+        return {
+            status,
+            jsonBody: { status: res.utfall === 'ok' ? 'ok' : 'delvis', ...res.resultat }
+        };
     }
 });
+
+// ==================== TIMER-TRIGGER (steg 5) ====================
+//
+// Samme vakt, samme form og samme begrunnelse som i postnumre.js og
+// refresh-fs.js: vakten står rundt REGISTRERINGEN, og tidspunktet bor i
+// lib/jobber.js. Testen krever at det er cron-en i refresh-oppslagsliste.yml
+// med et sekundfelt foran.
+//
+// Timeren kjører ALDRI tørt: en forhåndsvisning uten noen som ser på er
+// bortkastet arbeid, og den ville ikke skrevet noe uansett.
+if (stotterTimere()) {
+    const jobbDef = jobbForId('oppslaglister');
+    const valgt = jobbSchedule(jobbDef);
+    if (valgt.avvist) console.warn(`oppslaglister-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
+    else if (valgt.kilde !== 'standard') console.log(`oppslaglister-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
+
+    app.timer('oppslaglisterTimer', {
+        schedule: valgt.schedule,
+        handler: async (timer, context) => {
+            const log = (m) => context.log(`oppslagsliste: ${m}`);
+            if (timer?.isPastDue) log('oppslaglister-timer: forsinket kjøring');
+            await jobb.kjorOppslagslister({ kilde: 'timer', log });
+        }
+    });
+}

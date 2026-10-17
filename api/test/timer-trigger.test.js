@@ -22,7 +22,8 @@
  *
  *   **Begge inngangsportene kjører den SAMME jobben.** Lå bokføringen i hver
  *   handler, ville admin-panelet fått to litt ulike bilder av samme jobb
- *   avhengig av hvem som startet den.
+ *   avhengig av hvem som startet den. HVA jobben skriver, prøves i
+ *   `jobb-bokforing.test.js`; her prøves at begge veiene kaller den.
  *
  *   **Overstyringen må kunne skrives feil uten å ta ned appen.**
  *   `POSTNUMRE_SCHEDULE` kommer fra app settings og kan inneholde hva som
@@ -102,8 +103,18 @@ const plattform = require('../src/lib/plattform');
 // faktisk ville fått — i stedet for et regulæruttrykk mot kildekoden. Den tar
 // derfor også overstyringen, slik at `POSTNUMRE_SCHEDULE` kan prøves på veien
 // den virkelig går: lest ved modullast, inne i vakten.
-const stiPostnumre = require.resolve('../src/functions/postnumre.js');
-const lastMed = (miljo, overstyring) => {
+/**
+ * Hvilke funksjonsfiler registrerer en timer?
+ *
+ * LESES AV DISKEN, ikke skrevet ned her. En liste i testen ville vært en
+ * fjerde kopi av «hvilke jobber finnes», og den som la til jobb nummer fire
+ * ville fått grønt på en timer ingen prøvde.
+ */
+const timerFiler = fs.readdirSync(path.join(rot, 'api', 'src', 'functions'))
+    .filter(n => n.endsWith('.js'))
+    .filter(n => /app\.timer\(/.test(utenKommentarer(les('api', 'src', 'functions', n))));
+
+const lastFil = (fil, miljo, overstyring) => {
     const timere = [];
     const ruter = [];
     const ekte = Module._load;
@@ -123,32 +134,70 @@ const lastMed = (miljo, overstyring) => {
     process.env.MILJO = miljo;
     if (overstyring === undefined) delete process.env.POSTNUMRE_SCHEDULE;
     else process.env.POSTNUMRE_SCHEDULE = overstyring;
-    delete require.cache[stiPostnumre];
+    const sti = require.resolve(`../src/functions/${fil}`);
+    delete require.cache[sti];
     // plattform.js og jobber.js leser env ved KALL, ikke ved last, så de
-    // trenger ingen cache-tømming — men postnumre.js gjør vakten og
+    // trenger ingen cache-tømming — men funksjonsfilene gjør vakten og
     // schedule-oppslaget ved LAST.
-    try { require(stiPostnumre); } finally {
+    try { require(sti); } finally {
         Module._load = ekte;
         if (foer === undefined) delete process.env.MILJO;
         else process.env.MILJO = foer;
         if (foerSchedule === undefined) delete process.env.POSTNUMRE_SCHEDULE;
         else process.env.POSTNUMRE_SCHEDULE = foerSchedule;
-        delete require.cache[stiPostnumre];
+        delete require.cache[sti];
+    }
+    return { timere, ruter };
+};
+
+/** Postnumre-fila alene — brukt der sjekken handler om akkurat den. */
+const lastMed = (miljo, overstyring) => lastFil('postnumre.js', miljo, overstyring);
+
+/** Alle timer-filene, samlet. */
+const lastAlle = (miljo) => {
+    const timere = [];
+    const ruter = [];
+    for (const fil of timerFiler) {
+        const m = lastFil(fil, miljo);
+        timere.push(...m.timere);
+        ruter.push(...m.ruter);
     }
     return { timere, ruter };
 };
 
 {
-    const dev = lastMed('dev');
-    sjekk('dev registrerer én timer', dev.timere.length, 1);
-    sjekk('og den heter noe gjenkjennelig', dev.timere[0]?.navn, 'postnumreTimer');
+    const { JOBBER, jobbSchedule } = require('../src/lib/jobber');
+
+    const dev = lastAlle('dev');
+    sjekk('det finnes timer-filer i det hele tatt', timerFiler.length > 0, true);
+    sjekk('dev registrerer én timer per jobb i registeret', dev.timere.length, JOBBER.length);
+    sjekk('og alle har et navn', dev.timere.every(t => typeof t.navn === 'string' && t.navn), true);
+    sjekk('navnene er unike', new Set(dev.timere.map(t => t.navn)).size, dev.timere.length);
     sjekk('dev registrerer rutene også', dev.ruter.length > 0, true);
 
+    // HVER registrert schedule skal komme fra registeret, og HVER jobb i
+    // registeret skal ha en timer. Uten begge retningene kan en jobb legges
+    // inn i registeret uten at noen registrerer den — den vises da i
+    // Jobber-fanen som «Timer i appen» og kjører aldri.
+    const registrerte = dev.timere.map(t => t.opts?.schedule).sort();
+    const forventede = JOBBER.map(j => jobbSchedule(j).schedule).sort();
+    sjekk('de registrerte schedulene er registerets', registrerte, forventede);
+
     for (const miljo of ['production', 'prod', 'staging']) {
-        const m = lastMed(miljo);
+        const m = lastAlle(miljo);
         sjekk(`${miljo} registrerer INGEN timer`, m.timere.length, 0);
         // Og rutene er uberørt — vakten skal ikke ha slått ut noe annet.
         sjekk(`${miljo} har like mange ruter som dev`, m.ruter.length, dev.ruter.length);
+    }
+
+    // Vakten må stå i HVER fil. En fil som registrerer timeren sin uten
+    // `stotterTimere()` tar ned hele appen i pilot — og de andre filenes
+    // vakter skjuler det ikke.
+    for (const fil of timerFiler) {
+        sjekk(`${fil}: registrerer i dev`, lastFil(fil, 'dev').timere.length > 0, true);
+        sjekk(`${fil}: men ikke i pilot`, lastFil(fil, 'pilot').timere.length, 0);
+        sjekk(`${fil}: vakten står rundt registreringen`,
+            /if \(stotterTimere\(\)\) \{/.test(utenKommentarer(les('api', 'src', 'functions', fil))), true);
     }
 }
 
@@ -285,20 +334,71 @@ const lastMed = (miljo, overstyring) => {
 }
 
 // ---------- 4. én jobb, to innganger ----------
+//
+// Tabellen er erklært, og det er en påstand testen kontrollerer: hver jobb i
+// REGISTERET må stå her. En jobb som legges til uten en rad her ville sluppet
+// unna hele seksjonen — og det er nettopp bokføringen som skiller «jobben
+// kjørte» fra «noen trykket på en knapp».
+const INNGANGER = [
+    {
+        id: 'postnumre-bring', fn: 'postnumre.js', jobbfil: 'postnummer-jobb.js',
+        kall: 'kjorBringOppdatering', hendelse: 'postnumre.bring-oppdatert',
+        radnokkel: "'Postnumre-Bring'"
+    },
+    {
+        id: 'refresh-fs', fn: 'refresh-fs.js', jobbfil: 'refresh-fs-jobb.js',
+        kall: 'kjorRefreshFs', hendelse: 'refresh-fs.oppdatert',
+        // 'FS-Emner' står fortsatt i refresh-fs.js, i GET /status, som leser
+        // FIRE kilderader med sine egne kolonner (klasse-diagnostikken). Det
+        // er FS-fanens egen visning, ikke en kopi av jobbens bokføring — og
+        // derfor er radnøkkelsjekken ikke med for denne.
+        radnokkel: null
+    },
+    {
+        id: 'oppslaglister', fn: 'oppslagsliste.js', jobbfil: 'oppslagsliste-jobb.js',
+        kall: 'kjorOppslagslister', hendelse: 'oppslagsliste.oppdater',
+        radnokkel: "'Jobb-Oppslaglister'"
+    }
+];
+
+{
+    const { JOBBER } = require('../src/lib/jobber');
+    sjekk('hver jobb i registeret står i tabellen',
+        JOBBER.map(j => j.id).filter(id => !INNGANGER.some(i => i.id === id)), []);
+    sjekk('og ingen rad i tabellen er en rest',
+        INNGANGER.map(i => i.id).filter(id => !JOBBER.some(j => j.id === id)), []);
+
+    for (const i of INNGANGER) {
+        const f = utenKommentarer(les('api', 'src', 'functions', i.fn));
+        const j = utenKommentarer(les('api', 'src', 'lib', i.jobbfil));
+
+        // To kall: HTTP-handleren og timeren. Destruktureringen teller ikke —
+        // den har ingen parentes.
+        sjekk(`${i.id}: begge innganger kaller jobben`,
+            (f.match(new RegExp(`${i.kall}\\(`, 'g')) || []).length, 2);
+
+        // Bokføringen SKRIVES bare i jobben.
+        sjekk(`${i.id}: handleren skriver ingen statusrad`, /upsertEntity\(/.test(f), false);
+        sjekk(`${i.id}: jobben gjør det`, /upsertEntity\(/.test(j), true);
+
+        // Og hendelsen logges bare der. Lå den i handleren, ville en
+        // timer-kjøring ikke dukket opp i Hendelser — og det er DEN raden
+        // som beviser at timeren kjørte, ikke en logglinje som ruller forbi.
+        sjekk(`${i.id}: hendelsen logges i jobben`, f.includes(i.hendelse), false);
+        sjekk(`${i.id}: og den skjer der`, j.includes(i.hendelse), true);
+        // Kilden må følge med inn, ellers står «startet av» tomt.
+        sjekk(`${i.id}: jobben bokfører hvem som startet den`, /Kilde: kilde/.test(j), true);
+
+        if (i.radnokkel) {
+            sjekk(`${i.id}: radnøkkelen står ikke skrevet inn i handleren`,
+                f.includes(i.radnokkel), false);
+        }
+    }
+}
+
 {
     const fn = utenKommentarer(les('api', 'src', 'functions', 'postnumre.js'));
     const jobb = utenKommentarer(les('api', 'src', 'lib', 'postnummer-jobb.js'));
-
-    // To kall: HTTP-handleren og timeren. Destruktureringen teller ikke —
-    // den har ingen parentes.
-    sjekk('begge innganger kaller jobben',
-        (fn.match(/kjorBringOppdatering\(/g) || []).length, 2);
-
-    // Bokføringen SKRIVES bare i jobben. Statusraden LESES fortsatt i
-    // handleren — det er GET /api/postnumre/status — så sjekken må være på
-    // skrivingen, ikke på at rowkeyen nevnes.
-    sjekk('handleren skriver ingen statusrad', /upsertEntity\(/.test(fn), false);
-    sjekk('jobben gjør det', /upsertEntity\(/.test(jobb), true);
     // Statusraden LESES fortsatt av handleren — det er GET
     // /api/postnumre/status — men gjennom den DELTE leseren, og raden pekes
     // ut av registeret. Står 'Meta' / 'Postnumre-Bring' skrevet inn i
@@ -313,66 +413,13 @@ const lastMed = (miljo, overstyring) => {
     sjekk('og leseren bor i registeret',
         /getEntity\(statusrad\.partisjon, statusrad\.rad\)/.test(
             utenKommentarer(les('api', 'src', 'lib', 'jobber.js'))), true);
-    sjekk('hendelsesloggingen bare i jobben', /postnumre\.bring-oppdatert/.test(fn), false);
-    sjekk('og den skjer der', /postnumre\.bring-oppdatert/.test(jobb), true);
-
     // Handleren skal ikke kalle Bring direkte lenger.
     sjekk('handleren kaller ikke Bring selv', /oppdaterFraBring\(/.test(fn), false);
 }
 
-// ---------- 5. jobben kaster aldri ----------
-//
-// Timeren VENTER på den. Kaster den, blir det en uhåndtert feil i hosten i
-// stedet for en statusrad som sier hva som gikk galt.
-async function jobbsjekk() {
-    const sti = require.resolve('../src/lib/postnummer-jobb.js');
-    const skrevet = [];
-    const kjor = async (bringSvar) => {
-        skrevet.length = 0;
-        const ekte = Module._load;
-        Module._load = function (forespurt, ...r) {
-            if (forespurt === './bring-postnummer') return { oppdaterFraBring: bringSvar };
-            if (forespurt === './storage') {
-                return { tabellKlient: () => ({
-                    createTable: async () => {},
-                    upsertEntity: async (e) => { skrevet.push(e); }
-                }) };
-            }
-            if (forespurt === './hendelser-storage') return { logg: () => {} };
-            return ekte.call(this, forespurt, ...r);
-        };
-        delete require.cache[sti];
-        try {
-            const { kjorBringOppdatering } = require(sti);
-            return await kjorBringOppdatering({ kilde: 'test' });
-        } finally {
-            Module._load = ekte;
-            delete require.cache[sti];
-        }
-    };
+// Bokføringen — statusraden, hendelsen og «kaster aldri» — lå her til
+// 17.10.2026. Den bor nå i `api/test/jobb-bokforing.test.js`, for ALLE tre
+// jobbene: denne fila handler om REGISTRERINGEN, den om hva jobben skriver.
 
-    const godt = await kjor(async () => ({ antallSkrevet: 5, antallSlettet: 0, varighetSekunder: 1 }));
-    sjekk('vellykket kjøring gir ok', godt.status, 'ok');
-    sjekk('og tallene følger med', godt.antallSkrevet, 5);
-    sjekk('statusraden går fra kjører til ok',
-        skrevet.map(e => e.Status), ['kjører', 'ok']);
-
-    let kastet = null;
-    let vondt = null;
-    try {
-        vondt = await kjor(async () => { throw new Error('Bring svarte ikke'); });
-    } catch (e) { kastet = e.message; }
-    sjekk('en feilet kjøring kaster ikke', kastet, null);
-    sjekk('den returnerer status feil', vondt?.status, 'feil');
-    sjekk('med årsaken i seg', /Bring svarte ikke/.test(vondt?.melding || ''), true);
-    // Og årsaken står i statusraden, ikke bare i returverdien — det er den
-    // admin-panelet leser.
-    sjekk('statusraden ender på feil', skrevet.map(e => e.Status), ['kjører', 'feil']);
-    sjekk('og bærer feilteksten',
-        /Bring svarte ikke/.test(skrevet[skrevet.length - 1]?.SistFeil || ''), true);
-}
-
-jobbsjekk().then(() => {
-    console.log(`\n${ok} OK, ${feil} feil`);
-    process.exit(feil ? 1 : 0);
-}).catch((e) => { console.log('TESTEN KRASJET:', e.stack); process.exit(1); });
+console.log(`\n${ok} OK, ${feil} feil`);
+process.exit(feil ? 1 : 0);

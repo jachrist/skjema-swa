@@ -287,7 +287,14 @@ for (const miljo of MILJOER) {
     // ---- 5. hver oppføring har en kjent form ----
     // Uten dette kan en tastefeil («keyvalut») gi en oppføring som verken er
     // en verdi eller en referanse, og som ingen sjekk over fanger.
-    const FORMER = ['keyvault', 'value', 'valgfri', 'settes_i_swa'];
+    //
+    // `kun_dokumentasjon` kom til 17.10.2026. Den har stått i `_kommentar` i
+    // alle tre filene som en av FEM former hele tiden, mens denne lista
+    // godtok FIRE — to beskrivelser av den samme regelen som svarte ulikt.
+    // Uenigheten var taus fordi ingen oppføring brukte formen ALENE; den
+    // første som gjorde det (`AzureFunctionsJobHost__functionTimeout`) ble
+    // avvist som «ukjent form» selv om fila selv beskriver den.
+    const FORMER = ['keyvault', 'value', 'valgfri', 'settes_i_swa', 'kun_dokumentasjon'];
     const formløse = nokler.filter(n => {
         const e = d[n];
         return !e || typeof e !== 'object' || !FORMER.some(f => f in e);
