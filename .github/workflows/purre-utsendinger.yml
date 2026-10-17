@@ -4,6 +4,17 @@ name: Purre utsendinger
 # Denne workflowen kaller /api/utsending/purre daglig.
 # Kjører mot både pilot og prod hvis begge env-vars er satt.
 
+#
+# DEV ER IKKE I MATRISEN, og skal ikke inn i den: der kjører jobben på en
+# timer-trigger i Function App-en (steg 5, se 8o i
+# docs/BESLUTNING-EGEN-FUNCTION-APP.md). Legges dev inn her, kjører den samme
+# jobben to ganger — og denne jobben SENDER til eksterne mottakere.
+#
+# Klokkeslettet under og `standardSchedule` for jobben i api/src/lib/jobber.js
+# skal beskrive SAMME tidspunkt. NCRONTAB har et sekundfelt foran, så
+# uttrykkene er ikke identiske — api/test/timer-trigger.test.js leser begge og
+# krever at de stemmer. Endres det ene, skal det andre endres samtidig.
+
 on:
   schedule:
     - cron: '0 6 * * *' # 06:00 UTC daglig

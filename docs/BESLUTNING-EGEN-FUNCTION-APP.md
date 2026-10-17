@@ -438,7 +438,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | ✅ **Målt 17.10.2026** — timeren fyrte i dev kl. 10:15:40, aktør `timer`, 5112 rader på 40 s. Se 8m | Pilot og prod er uendret — `app.timer` kalles aldri der. Neste er steg 5: de sju andre jobbene |
-| 5 | 🔶 **Fire av sju flyttet 17.10.2026** — `refresh-fs` og `oppslaglister` er målt (8n); `team-synk` og `sjekk-nokler` er på plass (8o). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
+| 5 | 🔶 **Sju av sju flyttet 17.10.2026** (backup gjenstår, den har to kadenser) — `refresh-fs` og `oppslaglister` er målt (8n); `team-synk`, `sjekk-nokler` og de to utsendingsjobbene er på plass (8o). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
 | 7 | ✅ **Bevist, i koden og målt 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Varslingene kom fram i dev gjennom en flyt uten `sig=` i adressen: kvittering og behandlervarsling på en innsending |
@@ -1683,8 +1683,8 @@ Målt i dev 16.10.2026 (8k):
       Begge observert å fyre med aktør `timer` 17.10.2026
 - [x] `team-synk` (04:30) og `sjekk-nokler` (07:00) — 8o. Begge sender noe
       utenfor vår egen lagring, og vernene er prøvd med mutasjoner
-- [ ] `send-utsendinger`, `purre-utsendinger` — krever en hard sperre mot å
-      sende lenker uten `SWA_URL`, se 8o
+- [x] `send-utsendinger` (05:00) og `purre-utsendinger` (06:00) — 8o.
+      `baseUrl()` kaster nå heller enn å sende lenker uten adresse
 - [ ] `backup` — to kadenser, full og delta. Krever to registreringer
 - [ ] De åtte workflowene fjernet
 - [ ] `SCHEDULER_KEY` ute av koden, miljøfilene og helsesjekken
@@ -2654,13 +2654,42 @@ sjekkene over leser lib-en, og begge filene er navngitt.
   Merk at nøkkelsjekken som regel ikke sender noe — den sender bare når noe
   har passert et NYTT trinn, så en gjentatt kjøring er stille etter den
   første.
-* **`send-utsendinger` og `purre-utsendinger`** står igjen. De sender til
-  EKSTERNE mottakere, og de har en teknisk hindring de andre ikke har: lenkene
-  i e-posten bygges fra `baseUrl(request)`, og en timer har ingen request.
-  Uten `SWA_URL` ville timeren sendt e-post med døde lenker — stille, til ekte
-  folk. Det må være en hard sperre, ikke en standardverdi.
+* **`backup`** — se under.
 * **`backup`** har to kadenser i én workflow og velger modus ved å lese sin
   egen cron. Den trenger to registreringer.
+
+### Utsendingene: en timer har ingen request
+
+`send-utsendinger` (05:00) og `purre-utsendinger` (06:00) kjører også på timer
+i dev. De sender til **eksterne mottakere** — folk utenfor huset, som ikke kan
+gjøre noe med en feil — og de hadde en teknisk hindring de seks andre ikke har.
+
+Lenkene i e-posten bygges fra `baseUrl(request)`. Den foretrakk `SWA_URL` og
+falt tilbake på vertsnavnet i requesten. **En timer har ingen request.** Uten
+`SWA_URL` ville den gamle koden bygget `https://` med tom vert og sendt e-post
+med døde lenker — stille, til ekte folk, og uopprettelig: lenka er brukt opp,
+mottakeren fikk den, og ingenting plukker den opp igjen.
+
+`baseUrl()` KASTER nå i stedet. Det er en sperre, ikke en standardverdi:
+mangler både `SWA_URL` og en brukbar request, feiler jobben FØR noe sendes,
+og årsaken står i statusraden. Mutasjonen som ga tom vert i stedet, ga ni
+røde sjekker.
+
+Den gamle forskjellen mellom de to jobbene er bevart, og den er verdt å gjenta:
+purringen markerer som purret når kallet **kom fram**, også om flyten så
+feilet — den kan ha rukket å sende til halve lista, og én tapt purring er
+bedre enn en dobbel til alle. Utsendingen markerer bare ved `ok`, for der
+ville det samme betydd at mottakeren aldri fikk lenka.
+
+### Hullet i testen som en mutasjon fant
+
+Første utgave av bokføringstesten for purringen hadde ingen sak der kallet
+**aldri kom fram**. Stubben svarte at det kom fram uansett, så grenen som
+nekter å markere var uprøvbar — og en mutasjon som markerte purring selv når
+ingenting gikk ut, var **grønn**.
+
+Det er nøyaktig det anti-spam-hensynet hviler på å unngå: en purring brukt opp
+i stillhet. Saken er lagt til, og mutasjonen er nå rød.
 
 ## 9. Risiko
 

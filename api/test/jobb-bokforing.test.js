@@ -374,12 +374,139 @@ async function teamSjekk() {
 }
 let resultatTeller = 0;
 
+// ==================== utsendingene (SENDER TIL EKSTERNE) ====================
+//
+// Den viktigste sjekken her er at ingenting sendes når adressen mangler.
+// Timeren har ingen request, og uten SWA_URL fantes det før ingenting å
+// utlede verten fra — e-posten ville båret «https://» med tom vert, til ekte
+// mottakere, og lenka ville vært brukt opp.
+async function utsendingSjekk() {
+    const kjor = async (hvilken, { kandidater = [], flytSvar = { ok: true }, swaUrl = 'https://skjema.example.no', request = null, komFram = true } = {}) => {
+        const f = fangst();
+        const markert = [];
+        const kalt = [];
+        const foer = process.env.SWA_URL;
+        if (swaUrl === null) delete process.env.SWA_URL; else process.env.SWA_URL = swaUrl;
+        const stubber = {
+            ...f.stubber,
+            './utsending-storage': {
+                listForfalteUtsendinger: async () => kandidater,
+                listUbesvarte: async () => kandidater,
+                markerSendt: async (b, m) => { markert.push(['sendt', b, m]); },
+                markerPurret: async (b, m) => { markert.push(['purret', b, m]); }
+            },
+            './utsending-token': { utsted: () => 'token-123' },
+            './flyt-utfall': { svarKomFram: () => komFram },
+            './flyt-kaller': { miljo: () => 'dev', flytHeadere: async () => ({}) },
+            './skjema-storage': { hentSkjematype: async () => ({ navn: 'Skjema', JSON: {} }) }
+        };
+        try {
+            const res = await medStubber('../src/lib/utsending-jobb.js', stubber, async (m) => {
+                // `fetch` stubbes, ikke `kallUtsendingsflyt`. Jobbene kaller
+                // den funksjonen direkte inne i modulen, så en erstatning på
+                // eksportobjektet ville ikke virket — og testen ville sett ut
+                // til å måle at ingenting ble sendt, uansett hva koden gjorde.
+                // Dette er det ekte kallet, og `kalt` er derfor et ekte svar
+                // på «gikk det noe ut?».
+                const ekteFetch = global.fetch;
+                global.fetch = async (url, opts) => {
+                    kalt.push(JSON.parse(opts.body).handling);
+                    if (flytSvar.ok) return { ok: true, status: 200, text: async () => '' };
+                    return { ok: false, status: flytSvar.status || 500, text: async () => 'nei' };
+                };
+                const foerFlyt = process.env.VARSLING_FLOW_URL;
+                process.env.VARSLING_FLOW_URL = flytSvar.mangler ? '' : 'https://flyt.example.no/x';
+                try {
+                    return hvilken === 'send'
+                        ? await m.kjorSendForfalte({ kilde: 'timer', request })
+                        : await m.kjorPurring({ kilde: 'timer', request });
+                } finally {
+                    global.fetch = ekteFetch;
+                    if (foerFlyt === undefined) delete process.env.VARSLING_FLOW_URL;
+                    else process.env.VARSLING_FLOW_URL = foerFlyt;
+                }
+            });
+            return { res, markert, kalt, ...f };
+        } finally {
+            if (foer === undefined) delete process.env.SWA_URL; else process.env.SWA_URL = foer;
+        }
+    };
+
+    const kandidat = [{ BatchId: 'b1', Mottaker: 'a@b.no', SkjematypeId: 'st-1' }];
+
+    // ---- den harde sperren ----
+    const utenUrl = await kjor('send', { kandidater: kandidat, swaUrl: null, request: null });
+    sjekk('utsending: uten SWA_URL og uten request feiler jobben', utenUrl.res.utfall, 'feil');
+    sjekk('utsending: INGENTING ble sendt', utenUrl.kalt, []);
+    sjekk('utsending: og ingenting markert', utenUrl.markert, []);
+    sjekk('utsending: årsaken navngir SWA_URL',
+        /SWA_URL/.test(utenUrl.res.melding || ''), true);
+    sjekk('utsending: og står i statusraden',
+        /SWA_URL/.test(utenUrl.skrevet.at(-1)?.SistFeil || ''), true);
+    sjekk('utsending: statusraden ender på feil',
+        utenUrl.skrevet.map(e => e.Status), ['kjører', 'feil']);
+
+    // Samme sperre for purringen.
+    const purreUtenUrl = await kjor('purre', { kandidater: kandidat, swaUrl: null, request: null });
+    sjekk('purring: uten SWA_URL feiler jobben', purreUtenUrl.res.utfall, 'feil');
+    sjekk('purring: INGENTING ble sendt', purreUtenUrl.kalt, []);
+    sjekk('purring: og ingenting markert', purreUtenUrl.markert, []);
+
+    // ---- normalveien ----
+    const sendt = await kjor('send', { kandidater: kandidat });
+    sjekk('utsending: vellykket kjøring gir ok', sendt.res.utfall, 'ok');
+    sjekk('utsending: flyten ble kalt med riktig handling', sendt.kalt, ['sendUtsendinger']);
+    sjekk('utsending: og mottakeren ble markert', sendt.markert, [['sendt', 'b1', 'a@b.no']]);
+    sjekk('utsending: kilden bokføres', sendt.skrevet[0]?.Kilde, 'timer');
+
+    const purret = await kjor('purre', { kandidater: kandidat });
+    sjekk('purring: vellykket kjøring gir ok', purret.res.utfall, 'ok');
+    sjekk('purring: riktig handling', purret.kalt, ['purreUtsendinger']);
+    sjekk('purring: og mottakeren ble markert', purret.markert, [['purret', 'b1', 'a@b.no']]);
+
+    // ---- ingenting å gjøre ----
+    const tomt = await kjor('send', { kandidater: [] });
+    sjekk('utsending: ingen kandidater gir eget utfall', tomt.res.utfall, 'ingenting');
+    sjekk('utsending: og ingen flyt ble kalt', tomt.kalt, []);
+
+    // ---- flyten feiler ----
+    //
+    // DEN AVGJØRENDE FORSKJELLEN MELLOM DE TO: utsendingen markerer ingenting
+    // når flyten feiler (mottakeren fikk aldri lenka), mens purringen
+    // markerer når kallet KOM FRAM (flyten kan ha rukket å sende til noen).
+    const sendFeil = await kjor('send', { kandidater: kandidat, flytSvar: { ok: false, status: 500 } });
+    sjekk('utsending: feilet flyt gir eget utfall', sendFeil.res.utfall, 'flyt-feilet');
+    sjekk('utsending: og INGENTING markeres som sendt', sendFeil.markert, []);
+
+    const purreFeil = await kjor('purre', { kandidater: kandidat, flytSvar: { ok: false, status: 500 } });
+    sjekk('purring: kallet kom fram, så den markeres likevel',
+        purreFeil.markert, [['purret', 'b1', 'a@b.no']]);
+    sjekk('purring: men utfallet er delvis, ikke ok', purreFeil.res.utfall, 'delvis');
+
+    // ---- og når kallet ALDRI kom fram ----
+    //
+    // DENNE SAKEN MANGLET I FØRSTE UTGAVE AV TESTEN, og hullet var usynlig:
+    // stubben svarte at kallet kom fram uansett, så grenen under var
+    // uprøvbar. En mutasjon som markerte purring selv når kallet aldri gikk
+    // ut var GRØNN. Det er nøyaktig den feilen anti-spam-hensynet hviler på
+    // å unngå — en purring brukt opp i stillhet, uten at noen fikk e-post.
+    const kom_ikke = await kjor('purre', {
+        kandidater: kandidat, flytSvar: { ok: false, status: 500 }, komFram: false
+    });
+    sjekk('purring: kallet kom aldri fram gir eget utfall', kom_ikke.res.utfall, 'kom-ikke-fram');
+    sjekk('purring: og INGENTING markeres da', kom_ikke.markert, []);
+    sjekk('purring: statusraden ender på feil',
+        kom_ikke.skrevet.map(e => e.Status), ['kjører', 'feil']);
+}
+
+
 (async () => {
     await postnumreSjekk();
     await fsSjekk();
     await oppslagSjekk();
     await nokkelSjekk();
     await teamSjekk();
+    await utsendingSjekk();
     console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 })().catch((e) => { console.log('TESTEN KRASJET:', e.stack); process.exit(1); });
