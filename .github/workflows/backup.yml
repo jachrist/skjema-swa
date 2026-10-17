@@ -11,6 +11,18 @@ name: Backup
 # vedlegg som kom til i mellomtiden, kjøres deltaene imellom etterpå — de
 # fyller på uten å slette.
 
+#
+# DEV ER IKKE I MATRISEN, og skal ikke inn i den: der kjører backupen på TO
+# timer-triggere i Function App-en, én per modus (steg 5, se 8p i
+# docs/BESLUTNING-EGEN-FUNCTION-APP.md). En timer kan ikke lese sin egen cron
+# slik denne workflowen gjør, så modusen følger av hvilken timer som fyrte.
+#
+# BEGGE klokkeslettene under og `standardSchedule` for backup-full og
+# backup-delta i api/src/lib/jobber.js skal beskrive SAMME tidspunkt.
+# NCRONTAB har et sekundfelt foran. `workflowCron` i registeret sier hvilken
+# av de to linjene hver jobb svarer til, og api/test/timer-trigger.test.js
+# krever at hver linje her er krevd av en jobb.
+
 on:
   schedule:
     - cron: '0 2 * * 0'   # søndag 02:00 UTC — full

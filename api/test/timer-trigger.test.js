@@ -264,12 +264,42 @@ const lastAlle = (miljo) => {
         // bare skjer til feil tid.
         if (!jobb.workflow) continue;
         const wf = les('.github', 'workflows', jobb.workflow);
-        const w = /- cron: '([^']+)'/.exec(wf);
-        sjekk(`${jobb.id}: fant cron i ${jobb.workflow}`, !!w, true);
-        const github = w?.[1] || '';
+        const alle = [...wf.matchAll(/- cron: '([^']+)'/g)].map(m => m[1]);
+        sjekk(`${jobb.id}: fant cron i ${jobb.workflow}`, alle.length > 0, true);
+
+        // BACKUP HAR TO CRON-LINJER i samme workflow — full om søndagen,
+        // delta ellers. Uten `workflowCron` ville begge jobbene blitt
+        // sammenlignet mot den FØRSTE linja, og en drift i deltaet hadde gått
+        // upåaktet hen: sjekken ville vært grønn mens deltaet kjørte til feil
+        // tid i dev.
+        if (alle.length > 1) {
+            sjekk(`${jobb.id}: flertydig workflow krever workflowCron`, !!jobb.workflowCron, true);
+        }
+        const github = jobb.workflowCron || alle[0];
+        sjekk(`${jobb.id}: workflowCron står faktisk i workflowen`, alle.includes(github), true);
         sjekk(`${jobb.id}: GitHub-cron har fem felt`, github.split(/\s+/).length, 5);
         sjekk(`${jobb.id}: timeren og workflowen beskriver samme tidspunkt`,
             jobb.standardSchedule, `0 ${github}`);
+    }
+
+    // OG MOTSATT: hver cron-linje i en workflow må være krevd av en jobb.
+    // En kadens i GitHub Actions som ingen timer dekker, er en jobb som
+    // slutter å kjøre i dev den dagen workflowen fjernes — og ingenting
+    // sier fra.
+    {
+        const perWorkflow = new Map();
+        for (const j of JOBBER) {
+            if (!j.workflow) continue;
+            if (!perWorkflow.has(j.workflow)) perWorkflow.set(j.workflow, new Set());
+            perWorkflow.get(j.workflow).add(j.workflowCron || null);
+        }
+        for (const [wfNavn, krevde] of perWorkflow) {
+            const alle = [...les('.github', 'workflows', wfNavn)
+                .matchAll(/- cron: '([^']+)'/g)].map(m => m[1]);
+            if (alle.length === 1) continue;   // entydig, workflowCron trengs ikke
+            sjekk(`${wfNavn}: hver cron-linje er krevd av en jobb`,
+                alle.filter(c => !krevde.has(c)).sort(), []);
+        }
     }
 
     // Kommentarene må bort: ordet står i forklaringen rett over schedulen, og
@@ -383,12 +413,12 @@ const lastAlle = (miljo) => {
 // kjørte» fra «noen trykket på en knapp».
 const INNGANGER = [
     {
-        id: 'postnumre-bring', fn: 'postnumre.js', jobbfil: 'postnummer-jobb.js',
+        ider: ['postnumre-bring'], fn: 'postnumre.js', jobbfil: 'postnummer-jobb.js',
         kall: 'kjorBringOppdatering', hendelse: 'postnumre.bring-oppdatert',
         radnokkel: "'Postnumre-Bring'"
     },
     {
-        id: 'refresh-fs', fn: 'refresh-fs.js', jobbfil: 'refresh-fs-jobb.js',
+        ider: ['refresh-fs'], fn: 'refresh-fs.js', jobbfil: 'refresh-fs-jobb.js',
         kall: 'kjorRefreshFs', hendelse: 'refresh-fs.oppdatert',
         // 'FS-Emner' står fortsatt i refresh-fs.js, i GET /status, som leser
         // FIRE kilderader med sine egne kolonner (klasse-diagnostikken). Det
@@ -397,62 +427,107 @@ const INNGANGER = [
         radnokkel: null
     },
     {
-        id: 'oppslaglister', fn: 'oppslagsliste.js', jobbfil: 'oppslagsliste-jobb.js',
+        ider: ['oppslaglister'], fn: 'oppslagsliste.js', jobbfil: 'oppslagsliste-jobb.js',
         kall: 'kjorOppslagslister', hendelse: 'oppslagsliste.oppdater',
         radnokkel: "'Jobb-Oppslaglister'"
     },
     {
-        id: 'team-synk', fn: 'team-synk.js', jobbfil: 'team-synk-jobb.js',
+        ider: ['team-synk'], fn: 'team-synk.js', jobbfil: 'team-synk-jobb.js',
         kall: 'kjorTeamSynk', hendelse: 'team.synk.ok',
         radnokkel: "'Jobb-Team-Synk'"
     },
     {
-        id: 'sjekk-nokler', fn: 'nokkelkalender.js', jobbfil: 'nokkelkalender-jobb.js',
+        ider: ['sjekk-nokler'], fn: 'nokkelkalender.js', jobbfil: 'nokkelkalender-jobb.js',
         kall: 'kjorNokkelsjekk', hendelse: 'nokkelkalender.varsel',
         radnokkel: "'Jobb-Nokkelsjekk'"
     },
     {
-        id: 'send-utsendinger', fn: 'utsending.js', jobbfil: 'utsending-jobb.js',
+        ider: ['send-utsendinger'], fn: 'utsending.js', jobbfil: 'utsending-jobb.js',
         kall: 'kjorSendForfalte', hendelse: 'utsending.send-forfalte',
         radnokkel: "'Jobb-Utsending-Send'"
     },
     {
-        id: 'purre-utsendinger', fn: 'utsending.js', jobbfil: 'utsending-jobb.js',
+        ider: ['purre-utsendinger'], fn: 'utsending.js', jobbfil: 'utsending-jobb.js',
         kall: 'kjorPurring', hendelse: 'utsending.purre',
         radnokkel: "'Jobb-Utsending-Purre'"
+    },
+    {
+        // BACKUP ER UNNTAKET, og det er erklært her med grunn: jobben ble
+        // aldri flyttet til en lib, fordi begge inngangsportene allerede
+        // delte `kjorBackupJobb` I SAMME FIL. Egenskapen vi er ute etter —
+        // én jobb, én bokføring — holder altså allerede. En flytting for
+        // formens skyld ville rørt 1135 linjer uten å gjøre noe sannere.
+        //
+        // To id-er, én rad: full og delta er to kadenser av den samme
+        // jobben, og de kaller den samme funksjonen med ulik modus.
+        ider: ['backup-full', 'backup-delta'],
+        fn: 'backup.js', jobbfil: null,
+        kall: 'kjorBackupJobb', hendelse: 'backup.kjort',
+        radnokkel: null
     }
 ];
 
 {
     const { JOBBER } = require('../src/lib/jobber');
+    const alleIder = INNGANGER.flatMap(i => i.ider);
     sjekk('hver jobb i registeret står i tabellen',
-        JOBBER.map(j => j.id).filter(id => !INNGANGER.some(i => i.id === id)), []);
+        JOBBER.map(j => j.id).filter(id => !alleIder.includes(id)), []);
     sjekk('og ingen rad i tabellen er en rest',
-        INNGANGER.map(i => i.id).filter(id => !JOBBER.some(j => j.id === id)), []);
+        alleIder.filter(id => !JOBBER.some(j => j.id === id)), []);
 
     for (const i of INNGANGER) {
+        const merke = i.ider.join('+');
         const f = utenKommentarer(les('api', 'src', 'functions', i.fn));
+
+        if (!i.jobbfil) {
+            // Jobben bor i funksjonsfila — se begrunnelsen i tabellen. Da er
+            // det den SAMME egenskapen som prøves, bare innenfor én fil:
+            // begge veier går gjennom den ene funksjonen, og bokføringen
+            // skjer der, ikke per inngang.
+            sjekk(`${merke}: jobben finnes som egen funksjon`,
+                new RegExp(`async function ${i.kall}\\(`).test(f), true);
+            // NAVNET telles, ikke kallet. Timeren går gjennom bokførings-
+            // innpakningen, som tar jobben som parameter med en standardverdi
+            // (`kjor = kjorBackupJobb`) — og en standardverdi har ingen
+            // parentes. Første utgave av denne sjekken krevde tre KALL og ble
+            // rød av nettopp den sømmen, med en melding som pekte feil vei.
+            //
+            // Tre forekomster: definisjonen, HTTP-veiens kall, og
+            // standardverdien timer-veien går gjennom.
+            sjekk(`${merke}: begge innganger går gjennom den`,
+                (f.match(new RegExp(`\\b${i.kall}\\b`, 'g')) || []).length >= 3, true);
+            // Og innpakningen må faktisk ha den som standard — ikke bare ta
+            // en parameter som kalleren kan sende hva som helst inn i.
+            sjekk(`${merke}: innpakningen har jobben som standard`,
+                new RegExp(`=\\s*${i.kall}\\b`).test(f), true);
+            // Hendelsen logges ÉN gang, inne i den delte funksjonen — ikke
+            // en gang per inngangsport.
+            sjekk(`${merke}: hendelsen logges ett sted`,
+                (f.match(new RegExp(i.hendelse.replace('.', '\\.'), 'g')) || []).length, 1);
+            continue;
+        }
+
         const j = utenKommentarer(les('api', 'src', 'lib', i.jobbfil));
 
         // To kall: HTTP-handleren og timeren. Destruktureringen teller ikke —
         // den har ingen parentes.
-        sjekk(`${i.id}: begge innganger kaller jobben`,
+        sjekk(`${merke}: begge innganger kaller jobben`,
             (f.match(new RegExp(`${i.kall}\\(`, 'g')) || []).length, 2);
 
         // Bokføringen SKRIVES bare i jobben.
-        sjekk(`${i.id}: handleren skriver ingen statusrad`, /upsertEntity\(/.test(f), false);
-        sjekk(`${i.id}: jobben gjør det`, /upsertEntity\(/.test(j), true);
+        sjekk(`${merke}: handleren skriver ingen statusrad`, /upsertEntity\(/.test(f), false);
+        sjekk(`${merke}: jobben gjør det`, /upsertEntity\(/.test(j), true);
 
         // Og hendelsen logges bare der. Lå den i handleren, ville en
         // timer-kjøring ikke dukket opp i Hendelser — og det er DEN raden
         // som beviser at timeren kjørte, ikke en logglinje som ruller forbi.
-        sjekk(`${i.id}: hendelsen logges i jobben`, f.includes(i.hendelse), false);
-        sjekk(`${i.id}: og den skjer der`, j.includes(i.hendelse), true);
+        sjekk(`${merke}: hendelsen logges i jobben`, f.includes(i.hendelse), false);
+        sjekk(`${merke}: og den skjer der`, j.includes(i.hendelse), true);
         // Kilden må følge med inn, ellers står «startet av» tomt.
-        sjekk(`${i.id}: jobben bokfører hvem som startet den`, /Kilde: kilde/.test(j), true);
+        sjekk(`${merke}: jobben bokfører hvem som startet den`, /Kilde: kilde/.test(j), true);
 
         if (i.radnokkel) {
-            sjekk(`${i.id}: radnøkkelen står ikke skrevet inn i handleren`,
+            sjekk(`${merke}: radnøkkelen står ikke skrevet inn i handleren`,
                 f.includes(i.radnokkel), false);
         }
     }

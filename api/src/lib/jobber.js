@@ -123,6 +123,36 @@ const JOBBER = [
         standardSchedule: '0 0 6 * * *',
         scheduleVar: 'PURRE_UTSENDINGER_SCHEDULE',
         workflow: 'purre-utsendinger.yml'
+    },
+    // BACKUP ER TO JOBBER, ikke én. Workflowen har to cron-linjer og velger
+    // modus ved å lese sin egen cron; en timer kan ikke det. To oppføringer
+    // er også det ærligste i panelet: «når gikk siste FULLE backup» er
+    // spørsmålet som avgjør om en gjenoppretting er mulig.
+    //
+    // `workflowCron` sier HVILKEN av de to cron-linjene i workflowen denne
+    // raden svarer til. Uten den ville testen sammenlignet begge mot den
+    // første linja, og en drift i deltaet hadde gått upåaktet hen.
+    {
+        id: 'backup-full',
+        navn: 'Backup (full)',
+        beskrivelse: 'Alt: tabeller, delte tabeller, postnumre og alle blobber.',
+        rute: 'backup/kjor',
+        statusrad: { partisjon: 'Meta', rad: 'Jobb-Backup-Full' },
+        standardSchedule: '0 0 2 * * 0',
+        workflowCron: '0 2 * * 0',
+        scheduleVar: 'BACKUP_FULL_SCHEDULE',
+        workflow: 'backup.yml'
+    },
+    {
+        id: 'backup-delta',
+        navn: 'Backup (delta)',
+        beskrivelse: 'Alle dynamiske tabeller, men bare blobber som er kommet til siden siste fulle.',
+        rute: 'backup/kjor',
+        statusrad: { partisjon: 'Meta', rad: 'Jobb-Backup-Delta' },
+        standardSchedule: '0 0 2 * * 1-6',
+        workflowCron: '0 2 * * 1-6',
+        scheduleVar: 'BACKUP_DELTA_SCHEDULE',
+        workflow: 'backup.yml'
     }
 ];
 
@@ -200,6 +230,8 @@ function overstyring(jobb) {
         case 'NOKKELSJEKK_SCHEDULE': return process.env.NOKKELSJEKK_SCHEDULE;
         case 'SEND_UTSENDINGER_SCHEDULE': return process.env.SEND_UTSENDINGER_SCHEDULE;
         case 'PURRE_UTSENDINGER_SCHEDULE': return process.env.PURRE_UTSENDINGER_SCHEDULE;
+        case 'BACKUP_FULL_SCHEDULE': return process.env.BACKUP_FULL_SCHEDULE;
+        case 'BACKUP_DELTA_SCHEDULE': return process.env.BACKUP_DELTA_SCHEDULE;
         default: return undefined;
     }
 }
