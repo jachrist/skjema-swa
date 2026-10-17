@@ -2769,6 +2769,60 @@ peker ikke på årsaken.
 kjører mot pilot og prod; dev er ute av alle matrisene. Først når pilot og
 prod også har timere, i steg 6, kan workflowene og `SCHEDULER_KEY` fjernes.
 
+## 8q. Prod v3 — en parallell stakk i stedet for en bytting
+
+**17.10.2026.** Steg 6 slik det sto skrevet, var en ENDRING I STEDET: pilot og
+prod flyttes over til identitetsbasert lagring, og gaffelen i
+`lagringsvalg.js` rives. Forslaget fra oppdragsgiversiden er bedre, og
+erstatter det: **sett opp en ny produksjonsstakk ved siden av den som kjører.**
+
+Forskjellen er tilbakeveien. En bytting har ingen; en parallell stakk har én,
+og den er billig helt til dataene flyttes.
+
+Kokeboka ligger i `KOKEBOK-PROD-V3.md`, med kommandoene i dokumentet, slik at
+oppsettet kan gjøres i ett arbeidsmøte med driftsmiljøet.
+
+### Det som kan gjøre skade, og rekkefølgen som hindrer det
+
+**Begge stakkene mot samme lagring kjører hver jobb to ganger.** v2 trigges av
+GitHub Actions-cron, v3 av timere. Fire av de åtte jobbene sender ut av huset:
+utsending og purring ville gått dobbelt til eksterne mottakere.
+
+Derfor må **prod ut av matrisene i de åtte workflowene i SAMME operasjon** som
+v3 kobles på ekte lagring — ikke etterpå. Repoet har allerede mønsteret («DEV
+ER IKKE I MATRISEN»), og den samme regelen gjelder v3. Som belte roteres
+`SCHEDULER_KEY` på v2, så et gjenglemt cron-kall får 401 i stedet for å kjøre.
+
+### To cutovers, ikke én
+
+| Form | Datakopi | Frys | Tilbakevei |
+|---|---|---|---|
+| **Ompeking** — v3 peker på v2 sin konto | nei | nei | pek v2 tilbake |
+| **Migrering** — `scripts/migrer/` kopierer til ny konto | ja | 24 t | v2 sine data er urørt |
+
+Frysen hører bare til den andre. Blandes de, betaler man kostnaden for begge
+og får fordelen av én.
+
+**Cutover bør være et domenebytte**, ikke en ny URL: da er tilbakeveien én
+DNS-endring. Et eget domene gir dessuten adresser per versjon.
+
+### Hva v3 trenger som v2 ikke har
+
+* **MI-en må ha rollene på den kontoen v3 faktisk bruker** — og igjen på v2
+  sin konto før en ompeking. Rolletildelinger følger ikke med en ompeking.
+* **Flytene må være de nye versjonene** med `https://service.flow.microsoft.com/`
+  som audience, skråstrek bakerst, og MI-ens `oid` i allow-lista.
+* **`VARSLING_DEAKTIVERT=true` fra dag én.** Flytene i prod-tenanten skriver
+  til ekte Teams og sender ekte e-post, uansett hvor blank lagringen er.
+* **Skjematypene fylles med definisjonspakken** (`skjematyper/pakke/*`), som
+  advarer om oppslagslister og kryptering som ikke følger med.
+
+### Steg 6 er omskrevet, ikke strøket
+
+Gaffelen i `lagringsvalg.js` rives fortsatt — men etter at v3 er i drift, ikke
+som veien dit. Da er det en opprydding i noe som allerede virker, i stedet for
+en endring i noe som er i bruk.
+
 ## 9. Risiko
 
 | Risiko | Hvor alvorlig | Hva vi gjør |
