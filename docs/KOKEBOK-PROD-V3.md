@@ -53,7 +53,7 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 | Avklart? | Hva | Hvorfor det må være avklart først |
 |---|---|---|
 | ☐ | Abonnement og ressursgruppe | Alle kommandoene peker på dem |
-| ☐ | Hvem som kan tildele RBAC-roller | `Owner` eller `User Access Administrator`. Uten dette stopper trinn 3 |
+| ☐ | Hvem som kan tildele RBAC-roller, og hvem som har Entra-rollene | **Se 0.1 — hele matrisen.** Uten avklaringen stopper møtet på trinn 3, 6 eller 8 |
 | ☐ | Key Vault: gjenbruk `fhs-kv-01`, eller ny `kv-skjema-3-prod`? | Se 3.1 — valget avgjør én kommando |
 | ☐ | Flytene er kopiert til prod-tenanten med **Entra-autentisering** | Se trinn 7. Uten dette sender v3 ingenting |
 | ☐ | Domene/subdomene bestemt | Se 10. Ikke nødvendig for oppsettet, men avgjør cutover |
@@ -62,6 +62,125 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 az login --tenant <prod-tenant-id>
 az account set --subscription <abonnements-id>
 az account show --query "{abonnement:name, id:id, tenant:tenantId}" -o table
+```
+
+---
+
+### 0.1 Rettigheter: hva du gjør selv, og hva som må bestilles
+
+Tre myndigheter er i spill, og de henger **ikke** sammen. Eier på
+ressursgruppa gir deg ingenting i katalogen, og en Global Administrator har
+ikke automatisk tilgang til en eneste ressurs. Det er her et arbeidsmøte
+stopper: alt i Azure går, og så står man fast på én app-registrering.
+
+**A. Azure RBAC inne i `rg-skjema-3-prod` — dette gjør du selv**
+
+| Trinn | Operasjon | Minsterolle |
+|---|---|---|
+| 2 | `storage account create` (to kontoer) | Contributor |
+| 3 | `functionapp create`, `identity create`, `identity assign` | Contributor |
+| 3 | `functionapp update --set keyVaultReferenceIdentity` | Contributor |
+| 3 | `role assignment create` på **datalagringen** | **Owner** eller **User Access Administrator** |
+| 4 | `functionapp config appsettings set` | Contributor |
+| 5 | `staticwebapp create`, `secrets list`, `backends link` | Contributor |
+| 5 | `webapp auth update --enabled false` | Contributor |
+| 9 | all verifikasjon | Reader |
+| 11 | riving | Owner |
+
+`Contributor` dekker alt unntatt én ting: **å tildele en rolle er en egen
+rett**, og den følger ikke med. Den krever `Owner` eller `User Access
+Administrator` på nøyaktig det scopet rollen skal gjelde.
+
+`identity assign` med en user-assigned identitet trenger i tillegg
+`Managed Identity Operator` på identiteten — den ligger inne i `Owner` på
+ressursgruppa, så i praksis merker du den ikke.
+
+**B. Azure RBAC utenfor ressursgruppa — må bestilles**
+
+| Operasjon | Hvorfor den faller utenfor | Minsterolle, og hvor |
+|---|---|---|
+| `az group create` | **Ressursgruppa finnes ikke ennå** — du kan ikke eie den før den er opprettet | Contributor på **abonnementet** |
+| Første `functionapp create` i et nytt abonnement | `Microsoft.Web`, `Microsoft.Storage` og `Microsoft.ManagedIdentity` må være registrert som ressursleverandører | Contributor på **abonnementet** |
+| `Key Vault Secrets User` på `fhs-kv-01` (3.1) | Vaulten ligger ikke i din ressursgruppe | Owner/UAA på **vaulten** |
+| Rollene SWA-ens plattformidentitet trenger (6) | Samme scope | Owner/UAA på **vaulten** |
+| DNS-postene (10) | Sonen ligger hos registraren, eller i en annen ressursgruppe | `DNS Zone Contributor` på sonen, eller tilgang hos registraren |
+
+**Be om to ting: `Owner` på ressursgruppa, og `User Access Administrator`
+avgrenset til den ene vaulten.** Det er mindre enn det ser ut som, og det er
+forskjellen mellom å kjøre kokeboka selv og å bestille fire kjøringer.
+
+**C. Entra-roller — her hjelper ressursgruppa deg ikke**
+
+| Trinn | Operasjon | Rolle som faktisk kreves |
+|---|---|---|
+| 6 | App-registrering for innlogging, eller ny redirect-URI på v2 sin | **Application Administrator**, *eller* å stå som **eier av den ene app-registreringen** |
+| 8 | `az ad sp create-for-rbac`, app-registreringsdelen | **Application Administrator** (eller at tenanten tillater at brukere registrerer apper) |
+| 8 | `az ad sp create-for-rbac`, `--role contributor --scopes <rg>` | Owner/UAA på ressursgruppa — altså A, ikke C |
+| backup | `Sites.Selected` med administrator-samtykke | **Privileged Role Administrator** eller **Global Administrator** |
+| backup | Skriverett på ett SharePoint-område | **SharePoint Administrator** eller Global Administrator |
+
+Tre merknader som har kostet tid:
+
+1. **`az ad sp create-for-rbac` er to operasjoner i én kommando**, med
+   rettigheter fra hver sin verden. Mangler du den ene, feiler den halvveis
+   — enten står app-registreringen igjen uten rolletildeling, eller omvendt.
+   Kan du ikke registrere apper: la en administrator opprette
+   tjenestehovedobjektet, og tildel rollen på ressursgruppa selv etterpå.
+2. **`Application Administrator` kan ikke gi samtykke til
+   applikasjonsrettigheter på Microsoft Graph.** Rollen dekker samtykke til
+   det meste annet, men har et uttrykkelig unntak for nettopp disse. Det er
+   derfor backup-appen trenger en høyere rolle enn resten — se
+   `scripts/opprett-backup-app.ps1`, som deler jobben i steg og sier hvilken
+   rolle hvert steg mangler.
+3. **Den billigste veien rundt Application Administrator** er å bli ført opp
+   som *eier* av den ene app-registreringen. En eier kan legge til
+   redirect-URI-er og hemmeligheter på sin egen app uten noen katalogrolle.
+   Trenger du bare trinn 6, spør om det i stedet for en rolle.
+
+**D. Myndigheter som ikke er Azure i det hele tatt**
+
+| Operasjon | Hvem |
+|---|---|
+| `gh secret set` (5.1 og 8) | Admin på GitHub-repoet |
+| Import av flytløsningen, `SwaBaseUrl` (7) | Power Platform-miljøadministrator |
+| Identitetens `oid` inn i flytenes allow-liste (7) | Eieren av flyten |
+| Servicebrukeren meldt inn i teamet (7) | Teameieren |
+| DNS-poster (10) | Den som eier sonen |
+
+### 0.2 Key Vault: fire tilgangsbehov, og én felle
+
+Fire prinsipaler trenger noe av vaulten, og de blandes lett:
+
+| Hvem | Hva den gjør | Rolle på vaulten |
+|---|---|---|
+| **Du**, når verdiene limes inn | Skriver hemmeligheter | `Key Vault Secrets Officer`, pluss `Reader` på ressursen så verktøyet finner den |
+| **`mi-skjema-3-prod`** | Løser `@Microsoft.KeyVault(...)` i app settings | `Key Vault Secrets User` |
+| **SWA-ens plattformidentitet** | Henter auth-sertifikatet via `clientSecretCertificateKeyVaultReference` | `Key Vault Secrets User` **og** `Key Vault Certificate User` |
+| **Den som tildeler de tre over** | Rolletildeling | `Owner` eller `User Access Administrator` på vaulten |
+
+`Key Vault Administrator` dekker alt — og gir samtidig rett til å lese hver
+hemmelighet i vaulten. `fhs-kv-01` deles med v2, så hold deg til de smale.
+
+> **Fella: RBAC eller tilgangspolicy.** En vault kjører på én av to modeller.
+> Står den på **tilgangspolicyer**, gjør en `Key Vault Secrets User`-tildeling
+> ingenting: kommandoen lykkes, rollen står i lista, og oppslaget feiler
+> likevel. Samme feilklasse som resten av dette repoet — to kilder, og begge
+> tause. Sjekk først:
+
+```powershell
+az keyvault show --name $KV --query properties.enableRbacAuthorization
+```
+
+> `true` → rollene i tabellen over. `false` → det er en tilgangspolicy som
+> skal settes (`az keyvault set-policy --secret-permissions get list`), og
+> rollene er pynt.
+
+Og et nettverksforbehold: står vaulten med `defaultAction: Deny`, feiler
+referansene uansett rolle, fordi Function App-en ikke slipper gjennom
+brannmuren.
+
+```powershell
+az keyvault show --name $KV --query "properties.networkAcls" -o json
 ```
 
 ---
@@ -224,9 +343,18 @@ en ny vault betyr at hver verdi må kopieres — altså innom noens skjerm.
 az role assignment list --assignee-object-id $PRINCIPAL --all --query "[].{rolle:roleDefinitionName, scope:scope}" -o table
 ```
 
-Forventet: `Storage Table Data Contributor`, `Storage Blob Data Contributor`
-og `Storage Blob Delegator` på `stskjema3prod`, pluss `Key Vault Secrets User`
-på vaulten.
+Forventet er rollene `scripts/steg1-funcapp.ps1` tildeler. Tabellen under og
+lista i skriptet er to kilder til det samme, så `api/test/kokebok.test.js`
+leser begge og krever likt svar:
+
+<!-- roller-fra-steg1 -->
+
+| Rolle | Scope |
+|---|---|
+| `Storage Table Data Contributor` | datalagringen `stskjema3prod` |
+| `Storage Blob Data Contributor` | datalagringen `stskjema3prod` |
+| `Storage Blob Delegator` | datalagringen `stskjema3prod` |
+| `Key Vault Secrets User` | vaulten |
 
 **Ingen av dem heter «Contributor».** Den rollen gir ikke tilgang til en
 eneste tabellrad, men gir rett til å liste kontonøklene — full datatilgang
@@ -463,6 +591,108 @@ hvor ren koden er.
 Med et eget domene kan versjonene adresseres hver for seg — `fskjema.no` for
 gjeldende prod, `v3.fskjema.no` mens den testes, `dev.fskjema.no` for dev.
 Må avtales med Cyberforsvaret.
+
+### Domenet: DNS, egendefinert domene og CORS
+
+Et eget domene er det som gjør cutover til én DNS-endring. Oppsettet er tre
+ting, og den tredje er at det ikke er noe å gjøre.
+
+**1. Postene. CNAME på subdomenene, ALIAS eller ANAME på apex.**
+
+En CNAME kan ikke stå på sonens apex — det er DNS-standarden, ikke Azure. Så:
+
+| Navn | Posttype | Peker på |
+|---|---|---|
+| `pilot.fskjema.no` | CNAME | pilot-SWA-ens `*.azurestaticapps.net` |
+| `dev.fskjema.no` | CNAME | dev-SWA-ens `*.azurestaticapps.net` |
+| `v3.fskjema.no` | CNAME | `swa-skjema-3-prod` sin `*.azurestaticapps.net` |
+| `fskjema.no` (apex) | ALIAS / ANAME | samme vertsnavn — se under |
+
+Apex har tre veier, i synkende renhet:
+
+1. **Sonen i Azure DNS.** Da opprettes TXT-posten for validering og
+   ALIAS-posten automatisk når domenet legges til, forutsatt at den som gjør
+   det har `DNS Zone Contributor` på sonen. Dette er den eneste varianten der
+   cutover og tilbakevei er samme kommando med to forskjellige verdier.
+2. **ALIAS eller ANAME hos registraren**, om den støtter det. Flere norske
+   registrarer gjør det. Fungerer, men flyttingen skjer i registrarens panel.
+3. **A-post mot en IP — ikke gjør dette.** To grunner: SWA garanterer ingen
+   statisk IP, og en A-post sender all trafikk til én region, så den globale
+   distribusjonen forsvinner.
+
+Apex krever **TXT-token-validering** (`dns-txt-token`), ikke
+CNAME-delegering. Les host-verdien ut av portalen eller kommandoen under —
+noen leverandører vil ha hosten uten domenesuffikset, og det er den vanligste
+grunnen til at valideringen står og henger i to døgn. Bekreft at posten er
+synlig *før* du begynner å vente:
+
+```powershell
+Resolve-DnsName -Name _dnsauth.fskjema.no -Type TXT -Server 8.8.8.8
+```
+
+Har sonen en CAA-post, må den slippe inn **DigiCert**. Har den ingen CAA, er
+det ingenting å gjøre.
+
+**2. Egendefinert domene settes på SWA-ressursen, én gang per miljø.**
+
+```powershell
+az staticwebapp hostname set --name $SWA --resource-group $RG --hostname v3.fskjema.no --validation-method cname-delegation
+az staticwebapp hostname show --name $SWA --resource-group $RG --hostname v3.fskjema.no -o table
+```
+
+Apex tar `--validation-method dns-txt-token` i stedet. Sjekk flaggene mot
+`az staticwebapp hostname set --help` først — CLI-en har endret dem før.
+
+Standardnavnet `*.azurestaticapps.net` forsvinner ikke; det svarer videre,
+parallelt. Sertifikatet utsteder og fornyer SWA selv. Kvoten er to
+egendefinerte domener på Free og seks på Standard, og v3 er Standard uansett
+fordi lenkede backends ikke finnes på Free.
+
+**3. CORS: ingenting å sette opp — og ingenting som skal settes opp.**
+
+Frontend og API er **samme origin**. Alle kall i `frontend/js/api-client.js`
+går til relative stier (`/api/...`), og SWA-fronten proxer dem videre til den
+lenkede Function App-en server-til-server. Nettleseren snakker aldri med
+`*.azurewebsites.net`. Det finnes derfor ingen preflight og ingen
+`Access-Control-Allow-Origin` å sette, og CSP-en kan stå med
+`connect-src 'self'` gjennom et domenebytte — `'self'` følger dokumentets
+origin, uansett hva det heter.
+
+Tre konsekvenser:
+
+- **Ikke åpne CORS på Function App-en.** Den skal bare ta imot fra
+  SWA-fronten; en CORS-liste der er en vei inn som omgår lenkingens
+  Easy Auth. Kontroller at lista er tom:
+
+```powershell
+az functionapp cors show --name $FA --resource-group $RG -o json
+```
+
+- **Krever noe CORS, er det et symptom.** Da kaller noe et absolutt vertsnavn
+  i stedet for en relativ sti, og rettelsen er å fjerne vertsnavnet.
+- Inngående kall fra Power Automate og Power BI-connectoren er
+  server-til-server. CORS gjelder dem ikke i noen retning.
+
+**4. Det som må følge etter vertsnavnet**
+
+Dette er delen som brekker stille:
+
+| Hva | Hvor | Merknad |
+|---|---|---|
+| Redirect-URI `https://<nytt-navn>/.auth/login/aad/callback` | App-registreringen i Entra | **Behold den gamle.** Flere URI-er er greit; fjerner du den gamle, ryker innloggingen på den adressen midt i testingen |
+| `SWA_URL` | App setting på Function App-en | Adressen e-postlenker og flyt-callbacks bygges fra |
+| `SwaBaseUrl` | Miljøvariabel i Power Platform-løsningen | Det inngående flytene bygger URL-er fra. Se `docs/FLYTER.md` |
+
+**Under testing skal `SWA_URL` peke på v3 sitt eget navn**, ikke på det
+offentlige. Ellers sender testkjøringene eksterne mottakere til kjørende prod.
+
+```powershell
+az functionapp config appsettings set --name $FA --resource-group $RG --settings SWA_URL=https://v3.fskjema.no --output none
+```
+
+Ved cutover settes den til `https://fskjema.no` på v3 — og **bort** fra det
+navnet på v2, slik at bare én stabel påstår å være den offentlige adressen.
+
 
 ---
 
