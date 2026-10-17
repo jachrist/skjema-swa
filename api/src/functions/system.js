@@ -41,7 +41,9 @@ const OFFENTLIGE_ENV = [
     // Verdien leses ved REGISTRERING, så en endring her og en kjørende timer
     // kan være uenige helt til appen starter på nytt — GET /api/jobber viser
     // hvilken som faktisk gjelder.
-    'POSTNUMRE_SCHEDULE', 'REFRESH_FS_SCHEDULE', 'OPPSLAGLISTER_SCHEDULE'
+    'POSTNUMRE_SCHEDULE', 'REFRESH_FS_SCHEDULE', 'OPPSLAGLISTER_SCHEDULE',
+    'TEAM_SYNK_SCHEDULE', 'NOKKELSJEKK_SCHEDULE',
+    'SEND_UTSENDINGER_SCHEDULE', 'PURRE_UTSENDINGER_SCHEDULE'
 ];
 /**
  * Vist i helsesjekken, men IKKE lest av api/src.

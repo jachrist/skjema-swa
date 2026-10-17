@@ -438,7 +438,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | ✅ **Målt 17.10.2026** — timeren fyrte i dev kl. 10:15:40, aktør `timer`, 5112 rader på 40 s. Se 8m | Pilot og prod er uendret — `app.timer` kalles aldri der. Neste er steg 5: de sju andre jobbene |
-| 5 | 🔶 **To av sju flyttet og MÅLT 17.10.2026** — `refresh-fs` og `oppslaglister` fyrte på timer i dev (8n). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
+| 5 | 🔶 **Sju av sju flyttet 17.10.2026** (backup gjenstår, den har to kadenser) — `refresh-fs` og `oppslaglister` er målt (8n); `team-synk`, `sjekk-nokler` og de to utsendingsjobbene er på plass (8o). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
 | 7 | ✅ **Bevist, i koden og målt 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Varslingene kom fram i dev gjennom en flyt uten `sig=` i adressen: kvittering og behandlervarsling på en innsending |
@@ -1681,7 +1681,10 @@ Målt i dev 16.10.2026 (8k):
 
 - [x] `refresh-fs` (04:00) og `oppslaglister` (05:30) på timer i dev — 8n.
       Begge observert å fyre med aktør `timer` 17.10.2026
-- [ ] `send-utsendinger`, `purre-utsendinger`, `sjekk-nokler`, `team-synk`
+- [x] `team-synk` (04:30) og `sjekk-nokler` (07:00) — 8o. Begge sender noe
+      utenfor vår egen lagring, og vernene er prøvd med mutasjoner
+- [x] `send-utsendinger` (05:00) og `purre-utsendinger` (06:00) — 8o.
+      `baseUrl()` kaster nå heller enn å sende lenker uten adresse
 - [ ] `backup` — to kadenser, full og delta. Krever to registreringer
 - [ ] De åtte workflowene fjernet
 - [ ] `SCHEDULER_KEY` ute av koden, miljøfilene og helsesjekken
@@ -2585,6 +2588,108 @@ Jobber-fanen er eneste sted det synes.
 * **`backup`** har to kadenser i én workflow, full om søndagen og delta ellers,
   og velger modus ved å lese sin egen cron. En timer kan ikke det, så den
   trenger to registreringer. Formen avklares før den skrives.
+
+## 8o. Steg 5, andre runde — de som sender
+
+**17.10.2026.** `team-synk` (04:30) og `sjekk-nokler` (07:00) kjører på timer i
+dev. Disse to er på feil side av en grense de fire første ikke var i nærheten
+av: **de gjør noe utenfor vår egen lagring.** Nøkkelsjekken sender e-post til
+`ADMIN_UPNS`, og team-synken oppdaterer Teams-medlemskap destruktivt.
+
+Mønsteret er det samme. Det som er nytt, er hva som måtte vernes.
+
+### Den negative regelen i nøkkelsjekken
+
+Avkryssingen skjer bare når varselet FAKTISK gikk ut. Feiler flyten, merkes
+ingenting, og neste kjøring prøver på nytt.
+
+Det er lett å skrive feil vei rundt, og feilen er stille i den dyre retningen:
+en hemmelighet som står som «varslet» i bokføringen og som ingen har fått
+e-post om, dukker aldri opp igjen. Den oppdages den dagen sertifikatet ryker.
+Mutasjonen som merket av uansett ga fire røde sjekker.
+
+Utfallene er fem, ikke to, fordi de betyr ulike ting for den som leser:
+
+| Utfall | HTTP | Hva det betyr |
+|---|---|---|
+| `ingenting` | 200 | Ingenting passerte et nytt trinn. Helt normalt |
+| `ok` | 200 | Varselet gikk ut, radene er merket av |
+| `tørrkjørt` | 200 | Viste hva som ville blitt sendt. **Bokføres ikke** |
+| `mangler-mottakere` | 500 | `ADMIN_UPNS` er ikke satt — en konfigurasjonsfeil |
+| `varsling-feilet` | 502 | Flyten svarte ikke ok. **Ingenting er merket av** |
+
+502-en er ikke kosmetikk: cron-jobben i GitHub Actions blir rød på den, og et
+varsel som ikke ble sendt skal ikke se ut som en vellykket kjøring.
+
+### `tillatFall` sendes aldri fra en automatisk kjøring
+
+Team-synken har en sperre mot store fall i medlemstall. Gikk rolleimporten
+galt og lista ble kort, skal teamet stå urørt heller enn å bli tømt.
+
+`tillatFall` overstyrer den sperren, og finnes for ett formål: et menneske som
+har sett tallet og vet at fallet er riktig. Den kommer fra `POST
+/api/team-synk/{rolle}`, og HTTP-ruta nekter allerede en scheduler å sette den.
+**Timeren og «kjør alle» sender den ikke i det hele tatt** — testen leser
+`kjorTeamSynk` med kommentarene fjernet og krever at ordet ikke finnes der.
+
+At kommentarene må fjernes er ikke en detalj: første utgave av den sjekken var
+rød fordi ordet står i forklaringen av hvorfor det ikke sendes. En sjekk på at
+noe IKKE finnes blir rød av sin egen begrunnelse.
+
+### To tester leste en fil som flyttet
+
+`synkroniserGruppe` og e-postbyggingen flyttet fra `functions/` til `lib/`.
+Tre tester leste kildekoden på de gamle stedene, og de ble røde med en gang —
+som de skulle.
+
+Men én av dem ble nesten grønn på feil grunnlag: sjekken «scheduler kan ikke
+overstyre» leser en regel som fortsatt bor i HTTP-ruta, og en blankoerstatning
+av filstien ville latt den lese lib-en i stedet — der uttrykket ikke finnes, og
+der et fravær ville sett ut som en bestått sjekk. Den leser nå ruta, mens
+sjekkene over leser lib-en, og begge filene er navngitt.
+
+### Hva som gjenstår
+
+* **Se de to fyre i dev.** `TEAM_SYNK_SCHEDULE` og `NOKKELSJEKK_SCHEDULE`.
+  Merk at nøkkelsjekken som regel ikke sender noe — den sender bare når noe
+  har passert et NYTT trinn, så en gjentatt kjøring er stille etter den
+  første.
+* **`backup`** — se under.
+* **`backup`** har to kadenser i én workflow og velger modus ved å lese sin
+  egen cron. Den trenger to registreringer.
+
+### Utsendingene: en timer har ingen request
+
+`send-utsendinger` (05:00) og `purre-utsendinger` (06:00) kjører også på timer
+i dev. De sender til **eksterne mottakere** — folk utenfor huset, som ikke kan
+gjøre noe med en feil — og de hadde en teknisk hindring de seks andre ikke har.
+
+Lenkene i e-posten bygges fra `baseUrl(request)`. Den foretrakk `SWA_URL` og
+falt tilbake på vertsnavnet i requesten. **En timer har ingen request.** Uten
+`SWA_URL` ville den gamle koden bygget `https://` med tom vert og sendt e-post
+med døde lenker — stille, til ekte folk, og uopprettelig: lenka er brukt opp,
+mottakeren fikk den, og ingenting plukker den opp igjen.
+
+`baseUrl()` KASTER nå i stedet. Det er en sperre, ikke en standardverdi:
+mangler både `SWA_URL` og en brukbar request, feiler jobben FØR noe sendes,
+og årsaken står i statusraden. Mutasjonen som ga tom vert i stedet, ga ni
+røde sjekker.
+
+Den gamle forskjellen mellom de to jobbene er bevart, og den er verdt å gjenta:
+purringen markerer som purret når kallet **kom fram**, også om flyten så
+feilet — den kan ha rukket å sende til halve lista, og én tapt purring er
+bedre enn en dobbel til alle. Utsendingen markerer bare ved `ok`, for der
+ville det samme betydd at mottakeren aldri fikk lenka.
+
+### Hullet i testen som en mutasjon fant
+
+Første utgave av bokføringstesten for purringen hadde ingen sak der kallet
+**aldri kom fram**. Stubben svarte at det kom fram uansett, så grenen som
+nekter å markere var uprøvbar — og en mutasjon som markerte purring selv når
+ingenting gikk ut, var **grønn**.
+
+Det er nøyaktig det anti-spam-hensynet hviler på å unngå: en purring brukt opp
+i stillhet. Saken er lagt til, og mutasjonen er nå rød.
 
 ## 9. Risiko
 

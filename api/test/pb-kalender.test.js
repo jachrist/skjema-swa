@@ -107,7 +107,10 @@ const rad = (over) => pbKalender.somKalenderRader([token(over)], {
 
     const les = (...d) => utenKommentarer(
         fs.readFileSync(path.join(__dirname, '..', 'src', ...d), 'utf8'));
-    const endepunkt = les('functions', 'nokkelkalender.js');
+    // Varslingen flyttet fra `functions/nokkelkalender.js` til
+    // `lib/nokkelkalender-jobb.js` 17.10.2026, da jobben fikk en timer.
+    // Reglene er de samme; de leses bare ett annet sted.
+    const endepunkt = les('lib', 'nokkelkalender-jobb.js');
     sjekk('varslingen skiller de to lagrene',
         /if \(pbKalender\.erPbRad\(f\.rad\)\) \{\s*await pbToken\.markerVarslet\(f\.rad\._pb\.upn, f\.rad\._pb\.guid, f\.trinn\);/.test(endepunkt), true);
     sjekk('og bruker kalenderen for resten',

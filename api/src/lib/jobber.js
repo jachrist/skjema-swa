@@ -18,6 +18,9 @@
 const postnummerJobb = require('./postnummer-jobb');
 const refreshFsJobb = require('./refresh-fs-jobb');
 const oppslaglisteJobb = require('./oppslagsliste-jobb');
+const nokkelsjekkJobb = require('./nokkelkalender-jobb');
+const teamSynkJobb = require('./team-synk-jobb');
+const utsendingJobb = require('./utsending-jobb');
 
 /**
  * NCRONTAB har SEKS felt — sekund først. GitHub-cron har fem.
@@ -74,6 +77,52 @@ const JOBBER = [
         standardSchedule: '0 30 5 * * *',
         scheduleVar: 'OPPSLAGLISTER_SCHEDULE',
         workflow: 'refresh-oppslagsliste.yml'
+    },
+    {
+        id: 'team-synk',
+        navn: 'Team-synkronisering',
+        beskrivelse: 'Melder rolleinnehavere inn og ut av Teams-teamene.',
+        rute: 'team-synk',
+        statusrad: { partisjon: teamSynkJobb.PK, rad: teamSynkJobb.RK },
+        // 04:30 UTC daglig — før arbeidsdagen, etter de nattlige importene.
+        standardSchedule: '0 30 4 * * *',
+        scheduleVar: 'TEAM_SYNK_SCHEDULE',
+        workflow: 'team-synk.yml'
+    },
+    {
+        id: 'sjekk-nokler',
+        navn: 'Nøkkelkalender (utløpsvarsler)',
+        beskrivelse: 'Varsler ADMIN_UPNS om hemmeligheter som nærmer seg utløp.',
+        rute: 'nokkelkalender/sjekk',
+        statusrad: { partisjon: nokkelsjekkJobb.PK, rad: nokkelsjekkJobb.RK },
+        // 07:00 UTC daglig — sist av nattjobbene, så varselet ikke drukner
+        // i det de andre skriver.
+        standardSchedule: '0 0 7 * * *',
+        scheduleVar: 'NOKKELSJEKK_SCHEDULE',
+        workflow: 'sjekk-nokler.yml'
+    },
+    {
+        id: 'send-utsendinger',
+        navn: 'Utsendinger (send forfalte)',
+        beskrivelse: 'Sender skjemalenker for batcher der utsendingsdatoen er passert.',
+        rute: 'utsending/send-forfalte',
+        statusrad: { partisjon: utsendingJobb.SEND_PK, rad: utsendingJobb.SEND_RK },
+        // 05:00 UTC daglig — før purringen 06:00, så en lenke som sendes i dag
+        // ikke purres i samme kjøringsrunde.
+        standardSchedule: '0 0 5 * * *',
+        scheduleVar: 'SEND_UTSENDINGER_SCHEDULE',
+        workflow: 'send-utsendinger.yml'
+    },
+    {
+        id: 'purre-utsendinger',
+        navn: 'Utsendinger (purring)',
+        beskrivelse: 'Purrer mottakere som ikke har svart.',
+        rute: 'utsending/purre',
+        statusrad: { partisjon: utsendingJobb.PURRE_PK, rad: utsendingJobb.PURRE_RK },
+        // 06:00 UTC daglig — etter utsendingen.
+        standardSchedule: '0 0 6 * * *',
+        scheduleVar: 'PURRE_UTSENDINGER_SCHEDULE',
+        workflow: 'purre-utsendinger.yml'
     }
 ];
 
@@ -147,6 +196,10 @@ function overstyring(jobb) {
         case 'POSTNUMRE_SCHEDULE': return process.env.POSTNUMRE_SCHEDULE;
         case 'REFRESH_FS_SCHEDULE': return process.env.REFRESH_FS_SCHEDULE;
         case 'OPPSLAGLISTER_SCHEDULE': return process.env.OPPSLAGLISTER_SCHEDULE;
+        case 'TEAM_SYNK_SCHEDULE': return process.env.TEAM_SYNK_SCHEDULE;
+        case 'NOKKELSJEKK_SCHEDULE': return process.env.NOKKELSJEKK_SCHEDULE;
+        case 'SEND_UTSENDINGER_SCHEDULE': return process.env.SEND_UTSENDINGER_SCHEDULE;
+        case 'PURRE_UTSENDINGER_SCHEDULE': return process.env.PURRE_UTSENDINGER_SCHEDULE;
         default: return undefined;
     }
 }

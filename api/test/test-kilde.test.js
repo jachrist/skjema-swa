@@ -102,7 +102,7 @@ function sjekk(navn, faktisk, forventet) {
         ['frontend/index.html', 'svargrenseTillater'],
         ['frontend/kvittering.html', 'byggSamtale('],
         ['api/src/functions/skjemaer.js', 'svargrense.maaSjekkes('],
-        ['api/src/functions/team-synk.js', 'kallTeamSynkFlyt(']
+        ['api/src/lib/team-synk-jobb.js', 'kallTeamSynkFlyt(']
     ];
     for (const [f, m] of markorer) {
         sjekk(`${f}: «${m}» overlever`, utenKommentarer(les(f)).includes(m), true);

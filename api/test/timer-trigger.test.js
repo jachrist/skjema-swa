@@ -400,6 +400,26 @@ const INNGANGER = [
         id: 'oppslaglister', fn: 'oppslagsliste.js', jobbfil: 'oppslagsliste-jobb.js',
         kall: 'kjorOppslagslister', hendelse: 'oppslagsliste.oppdater',
         radnokkel: "'Jobb-Oppslaglister'"
+    },
+    {
+        id: 'team-synk', fn: 'team-synk.js', jobbfil: 'team-synk-jobb.js',
+        kall: 'kjorTeamSynk', hendelse: 'team.synk.ok',
+        radnokkel: "'Jobb-Team-Synk'"
+    },
+    {
+        id: 'sjekk-nokler', fn: 'nokkelkalender.js', jobbfil: 'nokkelkalender-jobb.js',
+        kall: 'kjorNokkelsjekk', hendelse: 'nokkelkalender.varsel',
+        radnokkel: "'Jobb-Nokkelsjekk'"
+    },
+    {
+        id: 'send-utsendinger', fn: 'utsending.js', jobbfil: 'utsending-jobb.js',
+        kall: 'kjorSendForfalte', hendelse: 'utsending.send-forfalte',
+        radnokkel: "'Jobb-Utsending-Send'"
+    },
+    {
+        id: 'purre-utsendinger', fn: 'utsending.js', jobbfil: 'utsending-jobb.js',
+        kall: 'kjorPurring', hendelse: 'utsending.purre',
+        radnokkel: "'Jobb-Utsending-Purre'"
     }
 ];
 

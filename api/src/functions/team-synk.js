@@ -15,10 +15,11 @@
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
-const rollerStorage = require('../lib/roller-storage');
 const gruppeStorage = require('../lib/rollegruppe-storage');
 const teamSynk = require('../lib/team-synk');
-const { kallTeamSynkFlyt, miljo } = require('../lib/flyt-kaller');
+const { synkroniserGruppe, kjorTeamSynk } = require('../lib/team-synk-jobb');
+const { stotterTimere } = require('../lib/plattform');
+const { jobbForId, jobbSchedule, meldTimer } = require('../lib/jobber');
 const hendelser = require('../lib/hendelser-storage');
 
 function avvis(status, melding) {
@@ -41,98 +42,6 @@ function schedulerEllerAdmin(request) {
     const gitt = request.headers.get('x-scheduler-key');
     if (konfigurert && gitt === konfigurert) return { upn: 'scheduler' };
     return admin(request);
-}
-
-/**
- * Kjør synkroniseringen for én gruppe.
- *
- * Returnerer alltid et resultatobjekt, aldri et kast: kalleren kjører mange
- * grupper etter hverandre, og én gruppe som feiler skal ikke ta med seg
- * resten.
- */
-async function synkroniserGruppe(gruppe, { tillatFall = false, aktor = 'scheduler', log = () => {} }) {
-    const { Rolle, Omfang, Team } = gruppe;
-    const merkelapp = `${Rolle}${Omfang ? `(${Omfang})` : ''}`;
-
-    const rolleStreng = Omfang ? `${Rolle}(${Omfang})` : Rolle;
-    const innehavere = await rollerStorage.hentInnehavere(rolleStreng);
-    const upner = teamSynk.upnListe(innehavere);
-
-    // Eierne som skal vernes. Samme omfang som gruppen selv — se
-    // `eierRolleFor` for hvorfor omfanget ikke kan velges fritt.
-    //
-    // Feiler oppslaget, STOPPER vi. Å fortsette uten eierlista ville meldt
-    // ut nettopp dem vernet finnes for, og det er en verre utgang enn å la
-    // teamet stå urørt et døgn til.
-    const eierRolle = teamSynk.eierRolleFor(gruppe);
-    let eiere = [];
-    if (eierRolle) {
-        const eierStreng = Omfang ? `${eierRolle}(${Omfang})` : eierRolle;
-        try {
-            eiere = teamSynk.upnListe(await rollerStorage.hentInnehavere(eierStreng));
-        } catch (e) {
-            const melding = `Kunne ikke lese eier-rollen ${eierStreng}: ${e.message}. `
-                + 'Synkronisering stoppet — uten eierlista kunne eierne blitt meldt ut.';
-            log(`team-synk: ${merkelapp} STOPPET — ${melding}`);
-            await gruppeStorage.settResultat(Rolle, Omfang, { status: 'stoppet', melding });
-            return { rolle: Rolle, omfang: Omfang, team: Team, status: 'stoppet', grunn: 'eier-oppslag-feilet', antall: upner.length, melding };
-        }
-    }
-
-    // Sperrene teller MEDLEMMENE alene, ikke det sammenslåtte. Gikk
-    // medlemsimporten galt og lista ble tom mens eier-rollen har folk, ville
-    // en telling av det sammenslåtte ikke sett noe galt — og teamet ville
-    // blitt synkronisert ned til bare eierne, i stillhet.
-    const dom = teamSynk.vurderSynk({
-        antallNaa: upner.length,
-        forrigeAntall: gruppe.SisteAntall,
-        tillatFall
-    });
-
-    if (!dom.ok) {
-        log(`team-synk: ${merkelapp} STOPPET (${dom.grunn}) — ${dom.melding}`);
-        await gruppeStorage.settResultat(Rolle, Omfang, { status: 'stoppet', melding: dom.melding });
-        try {
-            await hendelser.logg({
-                Type: 'team.synk.stoppet', Aktor: aktor,
-                ObjektType: 'rollegruppe', ObjektId: merkelapp,
-                Melding: `${dom.grunn}: ${dom.melding}`
-            });
-        } catch (_) { /* logging skal ikke velte kjøringen */ }
-        return { rolle: Rolle, omfang: Omfang, team: Team, status: 'stoppet', grunn: dom.grunn, antall: upner.length, melding: dom.melding };
-    }
-
-    // Eierne slås inn i medlemslista her — etter at sperrene har sagt ja.
-    const payload = teamSynk.byggPayload({
-        rolle: Rolle, omfang: Omfang, team: Team, upner, eiere, miljo: miljo()
-    });
-    const res = await kallTeamSynkFlyt(payload, log);
-
-    // `SisteAntall` oppdateres bare ved 'ok' — se rollegruppe-storage.js for
-    // hvorfor en stoppet kjøring ikke får flytte grunnlaget for fall-sperren.
-    await gruppeStorage.settResultat(Rolle, Omfang, {
-        status: res.status === 'ok' ? 'ok' : res.status,
-        melding: res.melding || dom.grunn,
-        antall: upner.length
-    });
-    try {
-        await hendelser.logg({
-            Type: res.status === 'ok' ? 'team.synk.ok' : 'team.synk.feil', Aktor: aktor,
-            ObjektType: 'rollegruppe', ObjektId: merkelapp,
-            Melding: `${upner.length} medlemmer${eiere.length ? ` + ${eiere.length} eier(e)` : ''} `
-                + `→ "${Team}" (${res.status}${dom.grunn === 'stort-fall-overstyrt' ? ', fall overstyrt' : ''})`
-        });
-    } catch (_) { /* logging skal ikke velte kjøringen */ }
-
-    return {
-        rolle: Rolle, omfang: Omfang, team: Team,
-        status: res.status, grunn: dom.grunn,
-        // `antall` er medlemmene — det tallet sperrene gjelder. `sendt` er
-        // hva teamet faktisk får. De to er ulike når eiere er vernet, og et
-        // grensesnitt som bare viser ett av dem forklarer ikke differansen.
-        antall: upner.length, antallEiere: eiere.length, sendt: payload.Antall,
-        melding: res.melding || ''
-    };
 }
 
 app.http('teamSynkStatus', {
@@ -224,29 +133,42 @@ app.http('teamSynkAlle', {
     handler: async (request, context) => {
         const a = schedulerEllerAdmin(request);
         if (a.svar) return a.svar;
-        try {
-            const grupper = (await gruppeStorage.hentAlle()).filter(teamSynk.harTeam);
-            if (grupper.length === 0) {
-                return { jsonBody: { status: 'ok', kjort: 0, resultater: [] } };
+        // Bokføringen bor i jobbmodulen, slik at timeren i dev og denne veien
+        // gir admin-panelet SAMME bilde av samme kjøring.
+        const res = await kjorTeamSynk({ kilde: a.upn, log: (m) => context.log(m) });
+        if (res.kastet) return avvis(500, 'Synkronisering feilet');
+        return {
+            jsonBody: {
+                status: res.utfall === 'ok' ? 'ok' : res.utfall,
+                kjort: res.kjort, stoppet: res.stoppet, resultater: res.resultater
             }
-            const resultater = [];
-            for (const g of grupper) {
-                try {
-                    resultater.push(await synkroniserGruppe(g, {
-                        aktor: a.upn, log: (m) => context.log(m)
-                    }));
-                } catch (e) {
-                    // Én gruppe som feiler skal ikke stoppe de andre.
-                    context.log(`team-synk: ${g.Rolle}(${g.Omfang}) kastet — ${e.message}`);
-                    resultater.push({ rolle: g.Rolle, omfang: g.Omfang, status: 'feil', melding: e.message });
-                }
-            }
-            const stoppet = resultater.filter(r => r.status === 'stoppet').length;
-            context.log(`team-synk: ${resultater.length} grupper, ${stoppet} stoppet`);
-            return { jsonBody: { status: 'ok', kjort: resultater.length, stoppet, resultater } };
-        } catch (e) {
-            context.log('team-synk alle FEIL:', e.message);
-            return avvis(500, 'Synkronisering feilet');
-        }
+        };
     }
 });
+
+// ==================== TIMER-TRIGGER (steg 5) ====================
+//
+// Samme vakt og samme form som de andre jobbene. Tidspunktet står i
+// lib/jobber.js, og testen krever at det er cron-en i team-synk.yml med et
+// sekundfelt foran.
+//
+// **FLYTEN OPPDATERER TEAMET DESTRUKTIVT**, og timeren sender derfor ALDRI
+// `tillatFall`. Den overstyrer sperren mot store fall i medlemstall, og en
+// overstyring uten at et menneske har sett tallet er nettopp det sperren
+// finnes for å hindre. Veien dit går gjennom POST /api/team-synk/{rolle}.
+if (stotterTimere()) {
+    const jobbDef = jobbForId('team-synk');
+    const valgt = jobbSchedule(jobbDef);
+    if (valgt.avvist) console.warn(`team-synk-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
+    else if (valgt.kilde !== 'standard') console.log(`team-synk-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
+
+    meldTimer('team-synk', 'teamSynkTimer', valgt.schedule);
+    app.timer('teamSynkTimer', {
+        schedule: valgt.schedule,
+        handler: async (timer, context) => {
+            const log = (m) => context.log(m);
+            if (timer?.isPastDue) log('team-synk-timer: forsinket kjøring');
+            await kjorTeamSynk({ kilde: 'timer', log });
+        }
+    });
+}
