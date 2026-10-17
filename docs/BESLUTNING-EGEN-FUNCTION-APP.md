@@ -438,7 +438,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | ✅ **Målt 17.10.2026** — timeren fyrte i dev kl. 10:15:40, aktør `timer`, 5112 rader på 40 s. Se 8m | Pilot og prod er uendret — `app.timer` kalles aldri der. Neste er steg 5: de sju andre jobbene |
-| 5 | 🔶 **To av sju flyttet 17.10.2026** — `refresh-fs` og `oppslaglister` har timer i dev (8n). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
+| 5 | 🔶 **To av sju flyttet og MÅLT 17.10.2026** — `refresh-fs` og `oppslaglister` fyrte på timer i dev (8n). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
 | 7 | ✅ **Bevist, i koden og målt 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Varslingene kom fram i dev gjennom en flyt uten `sig=` i adressen: kvittering og behandlervarsling på en innsending |
@@ -1679,7 +1679,8 @@ Målt i dev 16.10.2026 (8k):
 
 ### Steg 5 — resten av cron-jobbene
 
-- [x] `refresh-fs` (04:00) og `oppslaglister` (05:30) på timer i dev — 8n
+- [x] `refresh-fs` (04:00) og `oppslaglister` (05:30) på timer i dev — 8n.
+      Begge observert å fyre med aktør `timer` 17.10.2026
 - [ ] `send-utsendinger`, `purre-utsendinger`, `sjekk-nokler`, `team-synk`
 - [ ] `backup` — to kadenser, full og delta. Krever to registreringer
 - [ ] De åtte workflowene fjernet
@@ -2537,12 +2538,48 @@ listen. Står navnet der og jobben likevel ikke fyrer, er det den andre, og
 `AzureWebJobsStorage` er første sted å se (se også 8g punkt 6, som har stått
 åpent siden steg 1).
 
-### Hva som gjenstår
+### Målt 17.10.2026
 
-* **Se de to fyre i dev.** `REFRESH_FS_SCHEDULE` og `OPPSLAGLISTER_SCHEDULE`,
-  en omstart, og så Jobber-fanen. FS-jobben er den eneste som kan treffe
-  funksjonsgrensen, så den bør prøves med `AzureFunctionsJobHost__functionTimeout`
-  satt.
+Begge fyrte, med `0 */5 * * * *` i app-settingen og en omstart:
+
+| Jobb | Observert | Varighet |
+|---|---|---|
+| `oppslaglister` | 17:10, aktør `timer` | 1 s |
+| `refresh-fs` | 16:27 og utover, aktør `timer` | 93 s |
+
+Jobber-fanen viste `registrert: oppslaglisterTimer` og `registrert:
+refreshFsTimer` — registreringen var altså gjort i prosessen som kjørte.
+
+**Dette avklarer også tvilen om steg 4.** Postnumre-timeren fyrte én gang
+10:15, og én kjøring alene kunne like gjerne vært en etterslepskjøring ved
+oppstart som en fungerende plan. Nå er timere observert å fyre gjentatte
+ganger på plan i dev, så målingen i 8m står.
+
+**Hvorfor det første forsøket ikke fyrte, vet vi ikke.** Det ble ikke
+reprodusert etter deployet som la inn `registrert`, og en årsak vi ikke har
+sett skal ikke skrives ned som om vi hadde det. Det panelet KAN gjøre nå, er å
+skille de to tilstandene neste gang.
+
+### «Sist kjørt» gjaldt to kjøringer samtidig
+
+FS-raden sa «Sist kjørt 16:27» og «startet av timer» ved siden av hverandre,
+mens status sto på «kjører». Begge feltene var sanne, og til sammen sa de noe
+usant: 16:27 var forrige FULLFØRTE kjøring, mens `Kilde` og `Startet` tilhørte
+den som pågikk.
+
+Statusraden bærer nemlig felter fra to kjøringer mens en jobb går — `Kilde` og
+`Startet` settes når den nye starter, `SistOppdatert` står på forrige til den
+nye er ferdig. Cella viser nå STARTTIDEN når jobben pågår, merket «pågår», med
+forrige fullførte på egen linje under.
+
+### Etterpå: fjern overstyringene
+
+`REFRESH_FS_SCHEDULE` på `0 */5 * * * *` betyr 288 FS-importer i døgnet mot
+det ekte FS-API-et. Begge app-settingene fjernes etter målingen, og appen
+startes på nytt — verdien leses ved registrering, så den står til det er gjort.
+Jobber-fanen er eneste sted det synes.
+
+### Hva som gjenstår
 * **De fire som sender** — `send-utsendinger`, `purre-utsendinger`,
   `sjekk-nokler`, `team-synk`. En feil der går ut av huset.
 * **`backup`** har to kadenser i én workflow, full om søndagen og delta ellers,

@@ -2523,6 +2523,32 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
             return ut;
         }
 
+        /**
+         * Hva «Sist kjørt» skal si — og for HVILKEN kjøring.
+         *
+         * Statusraden bærer felter fra TO kjøringer samtidig mens en jobb går:
+         * `Kilde` og `Startet` settes når den nye starter, mens `SistOppdatert`
+         * fortsatt står på forrige fullførte. Den første versjonen av denne
+         * cella viste `SistOppdatert` ved siden av `Kilde`, og leste da som
+         * «kjøringen 16:27 ble startet av timer» — to sanne felter som til
+         * sammen sa noe usant. FS-jobben viste nettopp det 17.10.2026: en
+         * timer-kjøring som pågikk, med forrige kjørings klokkeslett foran seg.
+         *
+         * Pågår den, er klokkeslettet som betyr noe NÅR DEN STARTET. Forrige
+         * fullførte står under, merket som nettopp det.
+         */
+        function jobbSistKjort(j) {
+            const s = (j && j.siste) || {};
+            if (s.status === 'kjører') {
+                return {
+                    hoved: s.startet ? `${formatDato(s.startet)} · pågår` : 'pågår nå',
+                    forrige: s.sistOppdatert || null
+                };
+            }
+            const sist = s.sistOppdatert || s.ferdig || s.startet || null;
+            return { hoved: sist ? formatDato(sist) : '—', forrige: null };
+        }
+
         /** Fargevariabelen for en jobbstatus. Samme skala som FS- og postnummer-tabellene. */
         function jobbStatusFarge(status) {
             if (status === 'ok') return 'success';
@@ -2535,7 +2561,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
 
         function jobbRadHtml(j) {
             const s = j.siste || {};
-            const sist = s.sistOppdatert || s.ferdig || s.startet || null;
+            const sistKjort = jobbSistKjort(j);
             const merknader = jobbMerknader(j);
             return `
                 <div class="innehaver-rad" style="grid-template-columns: ${JOBB_KOLONNER}; gap: 12px; align-items: start;">
@@ -2556,8 +2582,9 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         </div>
                     </div>
                     <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">
-                        ${sist ? formatDato(sist) : '—'}
+                        ${escHtml(sistKjort.hoved)}
                         ${s.kilde ? `<div style="font-size: 11px; color: var(--text-secondary); font-family: inherit;">startet av ${escHtml(s.kilde)}</div>` : ''}
+                        ${sistKjort.forrige ? `<div style="font-size: 11px; color: var(--text-secondary); font-family: inherit;">forrige: ${formatDato(sistKjort.forrige)}</div>` : ''}
                     </div>
                     <div style="font-size: 12px; color: var(--${jobbStatusFarge(s.status)});">
                         ${escHtml(j.statusFeil ? 'ukjent' : (s.status || 'aldri kjørt'))}
