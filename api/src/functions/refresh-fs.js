@@ -15,7 +15,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { tabellKlient } = require('../lib/storage');
 const { stotterTimere } = require('../lib/plattform');
-const { jobbForId, jobbSchedule } = require('../lib/jobber');
+const { jobbForId, jobbSchedule, meldTimer } = require('../lib/jobber');
 
 function autorisert(request) {
     const schedulerKey = request.headers.get('x-scheduler-key');
@@ -80,6 +80,10 @@ if (stotterTimere()) {
     if (valgt.avvist) console.warn(`refresh-fs-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
     else if (valgt.kilde !== 'standard') console.log(`refresh-fs-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
 
+    // Meld fra om at registreringen SKJEDDE, slik at Jobber-fanen kan si
+    // forskjell på «ingen timer er registrert» og «registrert, men fyrer
+    // ikke». De to krever helt ulik feilsøking.
+    meldTimer('refresh-fs', 'refreshFsTimer', valgt.schedule);
     app.timer('refreshFsTimer', {
         // `runOnStartup` settes IKKE: den ville kjørt en 2-4 minutters jobb
         // ved hver eneste deploy og omstart.

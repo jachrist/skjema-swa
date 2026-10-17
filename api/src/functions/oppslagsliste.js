@@ -17,7 +17,7 @@ const lagring = require('../lib/oppslagsliste-storage');
 const jobb = require('../lib/oppslagsliste-jobb');
 const hendelser = require('../lib/hendelser-storage');
 const { stotterTimere } = require('../lib/plattform');
-const { jobbForId, jobbSchedule } = require('../lib/jobber');
+const { jobbForId, jobbSchedule, meldTimer } = require('../lib/jobber');
 
 /** Samme to veier inn som refresh-fs: admin-cookie eller scheduler-nøkkel. */
 function autorisert(request) {
@@ -144,6 +144,10 @@ if (stotterTimere()) {
     if (valgt.avvist) console.warn(`oppslaglister-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
     else if (valgt.kilde !== 'standard') console.log(`oppslaglister-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
 
+    // Meld fra om at registreringen SKJEDDE, slik at Jobber-fanen kan si
+    // forskjell på «ingen timer er registrert» og «registrert, men fyrer
+    // ikke». De to krever helt ulik feilsøking.
+    meldTimer('oppslaglister', 'oppslaglisterTimer', valgt.schedule);
     app.timer('oppslaglisterTimer', {
         schedule: valgt.schedule,
         handler: async (timer, context) => {

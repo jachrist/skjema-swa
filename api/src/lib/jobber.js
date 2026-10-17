@@ -77,6 +77,36 @@ const JOBBER = [
     }
 ];
 
+/**
+ * Timere som FAKTISK ble registrert i denne prosessen.
+ *
+ * Jobber-fanen sa «Timer i appen» fordi `stotterTimere()` svarer ja i dev.
+ * Det er en påstand om MILJØET, ikke om prosessen: en jobb kan stå i
+ * registeret uten at noen kaller `app.timer` for den, og da viser panelet en
+ * timer som ikke finnes. 17.10.2026 var det nettopp det spørsmålet som ikke
+ * lot seg besvare da oppslagslistejobben ikke fyrte — «er den registrert?» og
+ * «er den registrert, men fyrer ikke?» krever helt ulik feilsøking, og
+ * panelet skilte dem ikke.
+ *
+ * `meldTimer()` kalles av hver funksjonsfil rett etter `app.timer(...)`.
+ *
+ * **Den sier at KALLET ble gjort, ikke at verten godtok det.** Verten kan
+ * fortsatt avvise en timer den ikke klarer å planlegge — mangler
+ * `AzureWebJobsStorage`, eller identiteten rollene på den kontoen, har
+ * timeren ingen plass å lagre hvor den er i planen. Men to av tre mulige
+ * årsaker lar seg skille med dette, og i dag lot ingen av dem seg skille.
+ */
+const REGISTRERTE = new Map();
+
+function meldTimer(jobbId, navn, schedule) {
+    REGISTRERTE.set(jobbId, { navn, schedule, tidspunkt: new Date().toISOString() });
+}
+
+/** Bare for test: glem det som er meldt. */
+function glemTimere() {
+    REGISTRERTE.clear();
+}
+
 function jobbForId(id) {
     return JOBBER.find(j => j.id === id) || null;
 }
@@ -185,6 +215,9 @@ function jobbOversikt() {
             return {
                 ...felles,
                 trigger: 'timer',
+                // Alltid satt: `null` betyr «ingen har meldt fra om en
+                // registrering», og det er et svar, ikke et manglende felt.
+                registrert: REGISTRERTE.get(jobb.id) || null,
                 schedule: valgt.schedule,
                 scheduleKilde: valgt.kilde,
                 avvist: valgt.avvist,
@@ -195,6 +228,10 @@ function jobbOversikt() {
         return {
             ...felles,
             trigger: 'github-actions',
+            // Ingen timer registreres her, så feltet er alltid null. Det
+            // STÅR likevel, slik at frontend ikke må gjette om fraværet
+            // betyr «ikke registrert» eller «gammelt API».
+            registrert: null,
             schedule: jobb.standardSchedule,
             scheduleKilde: 'workflow',
             avvist: null,
@@ -245,5 +282,5 @@ async function lesStatusrad(statusrad) {
 
 module.exports = {
     JOBBER, jobbForId, jobbSchedule, gyldigNcrontab, overstyring, FELT_I_NCRONTAB,
-    jobbOversikt, lesStatusrad, TOM_STATUS
+    jobbOversikt, lesStatusrad, TOM_STATUS, meldTimer, _glemTimere: glemTimere
 };

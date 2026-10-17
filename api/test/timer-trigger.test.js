@@ -190,6 +190,48 @@ const lastAlle = (miljo) => {
         sjekk(`${miljo} har like mange ruter som dev`, m.ruter.length, dev.ruter.length);
     }
 
+    // ---- registreringen MELDES, og meldingen stemmer ----
+    //
+    // Jobber-fanen sier «Timer i appen» av at miljøet kjører timere. Uten en
+    // melding fra selve registreringen kan den ikke skille «ingen timer er
+    // registrert» fra «registrert, men fyrer ikke» — to tilstander med helt
+    // ulik feilsøking. Her lastes filene for ekte, og det kreves at HVER jobb
+    // i registeret har meldt seg.
+    {
+        const jobber = require('../src/lib/jobber');
+        // MILJO må stå til dev mens oversikten LESES, ikke bare mens filene
+        // lastes: i et miljø uten timere er `registrert` null per definisjon,
+        // og den første versjonen av denne sjekken leste nettopp den grenen
+        // og trodde registreringen manglet.
+        const iDev = (fn) => {
+            const foer = process.env.MILJO;
+            process.env.MILJO = 'dev';
+            try { return fn(); } finally {
+                if (foer === undefined) delete process.env.MILJO;
+                else process.env.MILJO = foer;
+            }
+        };
+        jobber._glemTimere();
+        lastAlle('dev');
+        const oversikt = iDev(() => jobber.jobbOversikt());
+        const uregistrerte = oversikt.filter(j => !j.registrert).map(j => j.id);
+        sjekk('hver jobb melder fra om timeren sin', uregistrerte, []);
+        sjekk('og navnet stemmer med det som ble registrert',
+            oversikt.map(j => j.registrert?.navn).sort(),
+            dev.timere.map(t => t.navn).sort());
+        sjekk('og schedulen også',
+            oversikt.map(j => j.registrert?.schedule).sort(), registrerte);
+
+        // Og motsatt: uten en last er feltet null, ikke borte. «Ingen har
+        // meldt fra» er et svar; et manglende felt er det ikke.
+        jobber._glemTimere();
+        const tomme = iDev(() => jobber.jobbOversikt());
+        sjekk('uten registrering er feltet null', tomme.every(j => j.registrert === null), true);
+        sjekk('men feltet finnes', tomme.every(j => 'registrert' in j), true);
+        // Legg dem tilbake, så resten av fila ser samme tilstand som før.
+        lastAlle('dev');
+    }
+
     // Vakten må stå i HVER fil. En fil som registrerer timeren sin uten
     // `stotterTimere()` tar ned hele appen i pilot — og de andre filenes
     // vakter skjuler det ikke.
