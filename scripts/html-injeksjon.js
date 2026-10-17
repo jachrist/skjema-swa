@@ -70,12 +70,17 @@ const GODTATT_GRUPPER = [
     },
     {
         fil: 'frontend/admin.html',
-        grunn: 'Jobber-fanen setter radene gjennom jobbRadHtml(), som står i HTML_PRODUSENTER '
+        grunn: 'Jobber-fanen og definisjonspakkens forhåndsvisning setter radene gjennom '
+            + 'jobbRadHtml() og pakkePlanRad(). Begge er lest: hver tekstverdi går gjennom '
+            + 'escHtml, tallene gjennom escHtml(String(...)), jobb-id-en i onclick-attributtet '
+            + 'gjennom escapeJsIAttributt, og datoene gjennom formatDato. jobbRadHtml står i '
+            + 'HTML_PRODUSENTER '
             + 'og er lest: hver tekstverdi fra API-et går gjennom escHtml, tallene gjennom '
             + 'escHtml(String(...)), jobb-id-en i onclick-attributtet gjennom escapeJsIAttributt, '
             + 'og datoene gjennom formatDato. Produsentregelen treffer bare et direkte kall, '
             + 'ikke et kall inne i en .map() — derfor står formen her i stedet.',
-        uttrykk: ["jobberState.jobber.map(j => jobbRadHtml(j)).join('')"]
+        uttrykk: ["jobberState.jobber.map(j => jobbRadHtml(j)).join('')",
+            "planer.map(p => pakkePlanRad(p)).join('')"]
     },
     {
         fil: 'frontend/admin.html',
