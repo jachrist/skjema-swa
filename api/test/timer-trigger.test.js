@@ -242,11 +242,11 @@ const lastMed = (miljo, overstyring) => {
     const uten = medSchedule(undefined, postnumre);
     sjekk('uten overstyring gjelder standarden', uten.schedule, postnumre.standardSchedule);
     sjekk('og kilden sier det', uten.kilde, 'standard');
-    sjekk('og ingenting er avvist', 'avvist' in uten, false);
+    sjekk('og ingenting er avvist', uten.avvist, null);
 
     const tom = medSchedule('   ', postnumre);
     sjekk('bare mellomrom er ingen overstyring', tom.kilde, 'standard');
-    sjekk('og det er ikke en avvist verdi heller', 'avvist' in tom, false);
+    sjekk('og det er ikke en avvist verdi heller', tom.avvist, null);
 
     const gyldig = medSchedule('0 */5 * * * *', postnumre);
     sjekk('en gyldig overstyring gjelder', gyldig.schedule, '0 */5 * * * *');
@@ -299,8 +299,20 @@ const lastMed = (miljo, overstyring) => {
     // skrivingen, ikke på at rowkeyen nevnes.
     sjekk('handleren skriver ingen statusrad', /upsertEntity\(/.test(fn), false);
     sjekk('jobben gjør det', /upsertEntity\(/.test(jobb), true);
-    sjekk('og handleren leser den fortsatt',
-        /getEntity\('Meta', 'Postnumre-Bring'\)/.test(fn), true);
+    // Statusraden LESES fortsatt av handleren — det er GET
+    // /api/postnumre/status — men gjennom den DELTE leseren, og raden pekes
+    // ut av registeret. Står 'Meta' / 'Postnumre-Bring' skrevet inn i
+    // handleren igjen, er feltnavnene og radnøkkelen tilbake i to
+    // eksemplarer, og de to admin-fanene kan bli uenige om samme jobb.
+    sjekk('handleren leser raden gjennom den delte leseren',
+        /lesStatusrad\(/.test(fn), true);
+    sjekk('og peker den ut via registeret',
+        /jobbForId\('postnumre-bring'\)\.statusrad/.test(fn), true);
+    sjekk('radnøkkelen står ikke skrevet inn i handleren',
+        /'Postnumre-Bring'/.test(fn), false);
+    sjekk('og leseren bor i registeret',
+        /getEntity\(statusrad\.partisjon, statusrad\.rad\)/.test(
+            utenKommentarer(les('api', 'src', 'lib', 'jobber.js'))), true);
     sjekk('hendelsesloggingen bare i jobben', /postnumre\.bring-oppdatert/.test(fn), false);
     sjekk('og den skjer der', /postnumre\.bring-oppdatert/.test(jobb), true);
 

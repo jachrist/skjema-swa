@@ -70,6 +70,15 @@ const GODTATT_GRUPPER = [
     },
     {
         fil: 'frontend/admin.html',
+        grunn: 'Jobber-fanen setter radene gjennom jobbRadHtml(), som står i HTML_PRODUSENTER '
+            + 'og er lest: hver tekstverdi fra API-et går gjennom escHtml, tallene gjennom '
+            + 'escHtml(String(...)), jobb-id-en i onclick-attributtet gjennom escapeJsIAttributt, '
+            + 'og datoene gjennom formatDato. Produsentregelen treffer bare et direkte kall, '
+            + 'ikke et kall inne i en .map() — derfor står formen her i stedet.',
+        uttrykk: ["jobberState.jobber.map(j => jobbRadHtml(j)).join('')"]
+    },
+    {
+        fil: 'frontend/admin.html',
         grunn: 'formatStorrelse() fra js/storrelse.js. Den slipper ALDRI inndata gjennom: '
             + 'returverdien er enten null eller en streng bygget av sifre, ett komma, ett '
             + 'mellomrom og en enhet fra en fast liste i funksjonen. En markup-bærende verdi '
@@ -177,6 +186,11 @@ const HTML_PRODUSENTER = [
     'rollerImportOmrade', 'rollerImportFeilliste', 'rollerImportListe',
     'nokkelVerdiTabell', 'sysHemmeligeTabell', 'byggOversiktTabell',
     'oversiktRad', 'tegnArkivSletting', 'tegnArkivHistorikk',
+    // Jobber-fanen, lest 17.10.2026: hver tekstverdi fra API-et går gjennom
+    // escHtml, tallene gjennom escHtml(String(...)), og jobb-id-en i
+    // onclick-attributtet gjennom escapeJsIAttributt. Datoene kommer fra
+    // formatDato, som står lenger ned i samme liste.
+    'jobbRadHtml',
     // Dato formatert fra et Date-objekt — kan ikke bære markup.
     'formatDato', 'kortDato', 'formatTid',
     // js/behandling-kommentar.js: tar escape-funksjonen som argument og

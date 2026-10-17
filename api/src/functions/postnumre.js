@@ -9,7 +9,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const postnumreStorage = require('../lib/postnumre-storage');
 const { stotterTimere } = require('../lib/plattform');
-const { jobbForId, jobbSchedule } = require('../lib/jobber');
+const { jobbForId, jobbSchedule, lesStatusrad } = require('../lib/jobber');
 
 app.http('postnumreSok', {
     methods: ['GET'],
@@ -156,27 +156,12 @@ app.http('postnumreStatus', {
         if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
         try {
             const antall = await postnumreStorage.hentAntall();
-            // Hent Bring-import-metadata hvis finnes
-            const { tabellKlient } = require('../lib/storage');
-            let bring = null;
-            try {
-                const t = tabellKlient('CacheMetadata');
-                const e = await t.getEntity('Meta', 'Postnumre-Bring');
-                bring = {
-                    status: e.Status || 'ukjent',
-                    sistOppdatert: e.SistOppdatert || null,
-                    antallRader: e.AntallRader ?? null,
-                    antallSlettet: e.AntallSlettet ?? null,
-                    varighetSekunder: e.VarighetSekunder ?? null,
-                    startet: e.Startet || null,
-                    ferdig: e.Ferdig || null,
-                    kilde: e.Kilde || null,
-                    sistFeil: e.SistFeil || ''
-                };
-            } catch (err) {
-                if (err.statusCode !== 404) throw err;
-                bring = { status: 'aldri kjørt' };
-            }
+            // Statusraden leses av DEN SAMME leseren som GET /api/jobber
+            // bruker, og raden pekes ut av registeret — ikke av en 'Meta' /
+            // 'Postnumre-Bring' skrevet inn her. To kopier av feltnavnene
+            // ville gitt to admin-faner som er uenige om samme jobb, og den
+            // uenigheten er taus: den ene viser «aldri kjørt».
+            const bring = await lesStatusrad(jobbForId('postnumre-bring').statusrad);
             return { jsonBody: { antall, bring } };
         } catch (e) {
             context.log('postnumre/status FEIL:', e.message);

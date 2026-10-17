@@ -2318,10 +2318,41 @@ Navnet leses med `process.env.POSTNUMRE_SCHEDULE` skrevet ut, i en `switch` på
 no-op. Testen setter derfor env-varen for HVER jobb i lista og krever at den
 leses.
 
+### Lesefanen: Administrasjon → ⏱ Jobber
+
+`GET /api/jobber` (admin) svarer på tre spørsmål som ellers krever tre steder å
+lete: hva som TRIGGER jobben i dette miljøet, NÅR den kjører, og hvordan det
+gikk sist. Fanen tegner svaret og regner ingenting ut selv — regnet den ut
+«timer» av at `MILJO=dev`, ville den svart feil den dagen listene i
+`lib/plattform.js` endres i steg 6.
+
+Tre tilfeller får en egen merknad under raden, og alle tre er tilfeller der noe
+*ser* riktig ut:
+
+* **En avvist overstyring** — uttrykket var ikke en NCRONTAB, og standarden
+  kjører.
+* **En overstyring satt i et miljø uten timere.** Da vises standarden, og
+  verdien står i `overstyringIgnorert`. Ellers er «jeg satte
+  `POSTNUMRE_SCHEDULE` i pilot og ingenting skjedde» en stille feil.
+* **En statusrad som ikke kunne leses.** Status vises som «ukjent», ikke «aldri
+  kjørt» — de to ser ellers helt like ut, og det ene betyr at vi ikke vet.
+
+Statusraden leses av **én** leser (`lesStatusrad` i `lib/jobber.js`).
+`GET /api/postnumre/status` leste den samme raden med sin egen feltmapping, og
+to kopier av «hva heter kolonnene her» ville gitt to admin-faner som er uenige
+om samme jobb — der den ene viser «aldri kjørt».
+
+Setningen «Full import fra Bring skjer 2 ganger i året (15. jan og 15. jul) via
+GitHub Actions» sto håndskrevet i Postnumre-fanen. Den ble feil i dev samme dag
+timeren kom, og ingenting sa fra. Den er erstattet med en henvisning til
+Jobber-fanen.
+
+«Kjør nå» går mot jobbens egen HTTP-rute — den samme GitHub Actions kaller. Det
+som prøves fra panelet er altså det som faktisk kjører om natta.
+
 ### Ingen redigering av schedule i admin
 
-Admin får en **lesefane** over jobbene, ikke en editor. To grunner, og de er
-ikke smakssak:
+Fanen er **lesende**, ikke en editor. To grunner, og de er ikke smakssak:
 
 * En lagret schedule blir en andre kilde ved siden av git. Da finnes «når
   kjører jobben» på to steder som kan svare ulikt — den feilklassen dette

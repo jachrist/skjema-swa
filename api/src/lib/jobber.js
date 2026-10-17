@@ -104,7 +104,11 @@ function overstyring(jobb) {
  */
 function jobbSchedule(jobb) {
     const raatt = String(overstyring(jobb) ?? '').trim();
-    const standard = { schedule: jobb.standardSchedule, kilde: 'standard' };
+    // `avvist` og `grunn` er ALLTID satt, med null når ingenting ble avvist.
+    // JSON.stringify dropper `undefined`, og da er «ingenting galt» umulig å
+    // skille fra «feltet finnes ikke i denne versjonen av API-et» for den som
+    // leser svaret i admin.
+    const standard = { schedule: jobb.standardSchedule, kilde: 'standard', avvist: null, grunn: null };
     if (!raatt) return standard;
     if (!gyldigNcrontab(raatt)) {
         return {
@@ -115,9 +119,100 @@ function jobbSchedule(jobb) {
                 + 'et sekundfelt foran?'
         };
     }
-    return { schedule: raatt, kilde: jobb.scheduleVar };
+    return { schedule: raatt, kilde: jobb.scheduleVar, avvist: null, grunn: null };
+}
+
+/**
+ * Hva som TRIGGER jobbene her, og når — uten å røre lagringen.
+ *
+ * Svaret avhenger av miljøet, og det er hele grunnen til at det regnes ut ett
+ * sted: i dev registrerer appen en timer, i pilot og prod kjører GitHub
+ * Actions den samme jobben over HTTP. Står den regelen i admin-sida i tillegg,
+ * får panelet og appen hver sin mening om hva som faktisk kjører.
+ *
+ * **I et miljø uten timere har overstyringen ingen virkning.** Da vises
+ * standarden, og en verdi som likevel er satt står i `overstyringIgnorert` —
+ * ellers er «jeg satte POSTNUMRE_SCHEDULE i pilot og ingenting skjedde» en
+ * stille feil, og den er nettopp en man bruker en time på.
+ */
+function jobbOversikt() {
+    const { stotterTimere } = require('./plattform');
+    const timer = stotterTimere();
+    return JOBBER.map((jobb) => {
+        const felles = {
+            id: jobb.id,
+            navn: jobb.navn,
+            beskrivelse: jobb.beskrivelse,
+            rute: jobb.rute,
+            statusrad: jobb.statusrad,
+            standardSchedule: jobb.standardSchedule,
+            scheduleVar: jobb.scheduleVar,
+            workflow: jobb.workflow || null
+        };
+        if (timer) {
+            const valgt = jobbSchedule(jobb);
+            return {
+                ...felles,
+                trigger: 'timer',
+                schedule: valgt.schedule,
+                scheduleKilde: valgt.kilde,
+                avvist: valgt.avvist,
+                grunn: valgt.grunn,
+                overstyringIgnorert: null
+            };
+        }
+        return {
+            ...felles,
+            trigger: 'github-actions',
+            schedule: jobb.standardSchedule,
+            scheduleKilde: 'workflow',
+            avvist: null,
+            grunn: null,
+            overstyringIgnorert: String(overstyring(jobb) || '').trim() || null
+        };
+    });
+}
+
+/**
+ * Statusraden for en jobb, i den formen admin-panelet leser.
+ *
+ * ÉN leser, ikke to. `GET /api/postnumre/status` leste den samme raden med sin
+ * egen feltmapping; to kopier av «hva heter feltene i denne raden» ville gitt
+ * et admin-panel som viser «aldri kjørt» for en jobb som har kjørt, fordi den
+ * ene kopien stavet et kolonnenavn annerledes.
+ *
+ * Alle feltene er alltid med, også når raden ikke finnes. Et felt som
+ * forsvinner gjør «jobben har aldri kjørt» umulig å skille fra «denne
+ * versjonen av API-et svarer ikke på det».
+ */
+const TOM_STATUS = {
+    status: 'aldri kjørt', sistOppdatert: null, antallRader: null, antallSlettet: null,
+    varighetSekunder: null, startet: null, ferdig: null, kilde: null, sistFeil: ''
+};
+
+async function lesStatusrad(statusrad) {
+    const { tabellKlient } = require('./storage');
+    const t = tabellKlient('CacheMetadata');
+    try {
+        const e = await t.getEntity(statusrad.partisjon, statusrad.rad);
+        return {
+            status: e.Status || 'ukjent',
+            sistOppdatert: e.SistOppdatert || null,
+            antallRader: e.AntallRader ?? null,
+            antallSlettet: e.AntallSlettet ?? null,
+            varighetSekunder: e.VarighetSekunder ?? null,
+            startet: e.Startet || null,
+            ferdig: e.Ferdig || null,
+            kilde: e.Kilde || null,
+            sistFeil: e.SistFeil || ''
+        };
+    } catch (err) {
+        if (err.statusCode !== 404) throw err;
+        return { ...TOM_STATUS };
+    }
 }
 
 module.exports = {
-    JOBBER, jobbForId, jobbSchedule, gyldigNcrontab, overstyring, FELT_I_NCRONTAB
+    JOBBER, jobbForId, jobbSchedule, gyldigNcrontab, overstyring, FELT_I_NCRONTAB,
+    jobbOversikt, lesStatusrad, TOM_STATUS
 };

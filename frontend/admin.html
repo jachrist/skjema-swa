@@ -348,6 +348,7 @@
                 <a class="fane" data-fane="backup" href="#backup">💾 Backup</a>
                 <a class="fane" data-fane="arkiv" href="#arkiv">🗄 Arkivering</a>
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
+                <a class="fane" data-fane="jobber" href="#jobber">⏱ Jobber</a>
                 <a class="fane" data-fane="system" href="#system">⚙️ System</a>
             </nav>
             <div class="innhold" id="innhold">
@@ -453,6 +454,7 @@
                 case 'backup':      rendrBackup(); break;
                 case 'arkiv':       rendrArkiv(); break;
                 case 'logoer':      rendrLogoer(); break;
+                case 'jobber':      rendrJobber(); break;
                 case 'system':      rendrSystem(); break;
                 default: rendrRoller();
             }
@@ -2301,8 +2303,10 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     </div>
                     <div id="pn-melding" style="margin-top: 10px;"></div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
-                        Full import fra Bring skjer 2 ganger i året (15. jan og 15. jul) via GitHub Actions.
-                        Manuell trigger tar 30-90 sekunder å kjøre asynkront.
+                        Manuell trigger tar 30-90 sekunder å kjøre asynkront. Hva som trigger
+                        importen automatisk — og når — står under
+                        <a href="#jobber">Jobber</a>: det er ikke det samme i alle miljøene, og
+                        en setning her ville vært en kopi som drev fra virkeligheten.
                     </div>
                 </div>
             `;
@@ -2426,6 +2430,180 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                 const res = await api.post('/api/postnumre/seed', {});
                 m.innerHTML = `<div class="banner suksess">✓ Seedet ${res.antall} postnumre</div>`;
                 await pnStatusLast();
+            } catch (e) {
+                m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+            }
+        };
+
+        // ==================== JOBBER-FANE ====================
+        //
+        // Hva som trigger bakgrunnsjobbene i DETTE miljøet, når de kjører, og
+        // hvordan det gikk sist. Svaret kommer ferdig avgjort fra
+        // /api/jobber — denne sida regner ingenting ut selv.
+        //
+        // **LESEFANE, med vilje.** Det finnes ingen vei herfra til å endre en
+        // schedule: en lagret schedule blir en andre kilde ved siden av git,
+        // og Azure leser `schedule` ved REGISTRERING — en lagret verdi ville
+        // ikke tatt effekt før en omstart, og panelet ville vist en plan som
+        // ikke kjører. Se 8m i docs/BESLUTNING-EGEN-FUNCTION-APP.md.
+        //
+        // «Kjør nå» går mot jobbens egen HTTP-rute — den samme GitHub Actions
+        // kaller. Ingen egen admin-vei inn til jobben, så det som prøves her
+        // er det som faktisk kjører om natta.
+        let jobberState = { jobber: [] };
+
+        /** Hva som trigger jobben her. Teksten skal navngi hvem som eier planen. */
+        function jobbTriggerTekst(j) {
+            if (!j) return '';
+            if (j.trigger === 'timer') return 'Timer i appen';
+            return j.workflow ? `GitHub Actions · ${j.workflow}` : 'GitHub Actions';
+        }
+
+        /**
+         * Merknadene som må stå under raden.
+         *
+         * Alle tre er tilfeller der noe SER riktig ut og ikke er det, og de er
+         * grunnen til at fanen finnes:
+         *
+         *   en overstyring som ble avvist (uttrykket var ikke en NCRONTAB),
+         *   en overstyring satt i et miljø som ikke kjører timere, og
+         *   en statusrad som ikke kunne leses — «aldri kjørt» og «storage
+         *   svarte ikke» ser ellers helt like ut.
+         */
+        function jobbMerknader(j) {
+            if (!j) return [];
+            const ut = [];
+            if (j.avvist) {
+                ut.push({
+                    nivaa: 'feil',
+                    tekst: `${j.scheduleVar} er satt til «${j.avvist}», og ble avvist. `
+                        + `Standarden kjører i stedet. ${j.grunn || ''}`.trim()
+                });
+            }
+            if (j.overstyringIgnorert) {
+                ut.push({
+                    nivaa: 'advarsel',
+                    tekst: `${j.scheduleVar} er satt til «${j.overstyringIgnorert}», men har ingen `
+                        + 'virkning her: plattformen i dette miljøet kjører ikke timere. '
+                        + 'Tidspunktet styres av cron i GitHub Actions.'
+                });
+            }
+            if (j.statusFeil) {
+                ut.push({
+                    nivaa: 'feil',
+                    tekst: `Kunne ikke lese statusraden: ${j.statusFeil}. Vi vet altså ikke om `
+                        + 'jobben har kjørt — dette er ikke det samme som at den ikke har det.'
+                });
+            }
+            return ut;
+        }
+
+        /** Fargevariabelen for en jobbstatus. Samme skala som FS- og postnummer-tabellene. */
+        function jobbStatusFarge(status) {
+            if (status === 'ok') return 'success';
+            if (status === 'feil') return 'danger';
+            if (status === 'kjører') return 'warning';
+            return 'text-secondary';
+        }
+
+        const JOBB_KOLONNER = 'minmax(180px, 1.4fr) 150px 155px 145px 110px 90px';
+
+        function jobbRadHtml(j) {
+            const s = j.siste || {};
+            const sist = s.sistOppdatert || s.ferdig || s.startet || null;
+            const merknader = jobbMerknader(j);
+            return `
+                <div class="innehaver-rad" style="grid-template-columns: ${JOBB_KOLONNER}; gap: 12px; align-items: start;">
+                    <div>
+                        <strong>${escHtml(j.navn || j.id || '')}</strong>
+                        <div style="font-size: 12px; color: var(--text-secondary);">${escHtml(j.beskrivelse || '')}</div>
+                        <div style="font-size: 11px; color: var(--text-secondary); font-family: 'SF Mono', Menlo, monospace;">/api/${escHtml(j.rute || '')}</div>
+                    </div>
+                    <div style="font-size: 12px;">${escHtml(jobbTriggerTekst(j))}</div>
+                    <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">
+                        ${escHtml(j.schedule || '')}
+                        <div style="font-size: 11px; color: var(--text-secondary); font-family: inherit;">
+                            ${escHtml(j.scheduleKilde === 'standard' ? 'standard i koden'
+                                : (j.scheduleKilde === 'workflow' ? 'cron i workflowen' : `fra ${j.scheduleKilde || ''}`))}
+                        </div>
+                    </div>
+                    <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">
+                        ${sist ? formatDato(sist) : '—'}
+                        ${s.kilde ? `<div style="font-size: 11px; color: var(--text-secondary); font-family: inherit;">startet av ${escHtml(s.kilde)}</div>` : ''}
+                    </div>
+                    <div style="font-size: 12px; color: var(--${jobbStatusFarge(s.status)});">
+                        ${escHtml(j.statusFeil ? 'ukjent' : (s.status || 'aldri kjørt'))}
+                        ${s.varighetSekunder != null ? `<div style="font-size: 11px; color: var(--text-secondary);">${escHtml(String(s.varighetSekunder))}s</div>` : ''}
+                        ${s.antallRader != null ? `<div style="font-size: 11px; color: var(--text-secondary);">${escHtml(String(s.antallRader))} rader</div>` : ''}
+                    </div>
+                    <div>
+                        <button class="knapp mini" onclick="jobberKjorNa('${escapeJsIAttributt(j.id || '')}')">Kjør nå</button>
+                    </div>
+                </div>
+                ${s.sistFeil ? `<div class="innehaver-rad" style="display: block; padding-top: 0; border-top: 0;">
+                    <div style="font-size: 12px; color: var(--danger);">Sist feil: ${escHtml(s.sistFeil)}</div>
+                </div>` : ''}
+                ${merknader.map(m => `<div class="innehaver-rad" style="display: block; padding-top: 0; border-top: 0;">
+                    <div class="banner ${m.nivaa === 'feil' ? 'feil' : 'advarsel'}" style="margin: 0;">${escHtml(m.tekst)}</div>
+                </div>`).join('')}
+            `;
+        }
+
+        function rendrJobber() {
+            document.getElementById('innhold').innerHTML = `
+                <div class="panel">
+                    <h2>Bakgrunnsjobber</h2>
+                    <div id="jobber-merknad" style="font-size: 13px; color: var(--text-secondary); margin-bottom: 10px;"></div>
+                    <div id="jobber-liste"><div class="laster">Laster…</div></div>
+                    <div class="knapp-rad" style="margin-top: 12px;">
+                        <button class="knapp mini" onclick="jobberLast()">Oppdater</button>
+                    </div>
+                    <div id="jobber-melding" style="margin-top: 10px;"></div>
+                    <div style="margin-top: 10px; font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
+                        Alle tidspunkt er i UTC. Schedulen endres i koden
+                        (<code>api/src/lib/jobber.js</code>) — den kan overstyres midlertidig med
+                        app-settingen jobben oppgir, og den leses da ved oppstart, så appen må
+                        startes på nytt. Denne fanen er lesende med vilje: en lagret schedule ville
+                        vært en andre kilde, og den ville ikke kjørt før en omstart.
+                    </div>
+                </div>
+            `;
+            jobberLast();
+        }
+
+        window.jobberLast = async () => {
+            const liste = document.getElementById('jobber-liste');
+            try {
+                const d = await api.get('/api/jobber');
+                jobberState.jobber = d.jobber || [];
+                document.getElementById('jobber-merknad').textContent =
+                    `Miljø: ${d.miljø || 'ukjent'}. ${d.merknad || ''}`;
+                if (jobberState.jobber.length === 0) {
+                    liste.innerHTML = '<div class="tom-melding">Ingen jobber registrert.</div>';
+                    return;
+                }
+                liste.innerHTML = `
+                    <div class="innehaver-header" style="grid-template-columns: ${JOBB_KOLONNER}; gap: 12px;">
+                        <div>Jobb</div><div>Trigget av</div><div>Schedule (UTC)</div><div>Sist kjørt</div><div>Status</div><div></div>
+                    </div>
+                    ${jobberState.jobber.map(j => jobbRadHtml(j)).join('')}
+                `;
+            } catch (e) {
+                liste.innerHTML = `<div class="feilmelding">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.jobberKjorNa = async (id) => {
+            const j = jobberState.jobber.find(x => x.id === id);
+            const m = document.getElementById('jobber-melding');
+            if (!j) { m.innerHTML = '<div class="banner feil">Fant ikke jobben. Trykk Oppdater.</div>'; return; }
+            if (!confirm(`Kjøre «${j.navn}» nå? Jobben kjører asynkront.`)) return;
+            m.innerHTML = '<div class="banner info">Starter jobben…</div>';
+            try {
+                const res = await api.post(`/api/${j.rute}`, {});
+                m.innerHTML = `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. `
+                    + 'Trykk Oppdater om et par minutter for å se utfallet.</div>';
+                setTimeout(jobberLast, 3000);
             } catch (e) {
                 m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
