@@ -16,6 +16,8 @@
  * `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
  */
 const postnummerJobb = require('./postnummer-jobb');
+const refreshFsJobb = require('./refresh-fs-jobb');
+const oppslaglisteJobb = require('./oppslagsliste-jobb');
 
 /**
  * NCRONTAB har SEKS felt — sekund først. GitHub-cron har fem.
@@ -45,6 +47,33 @@ const JOBBER = [
         // lenge plattformen der ikke har timere. Testen leser cron-en i denne
         // fila og krever at den stemmer med `standardSchedule`.
         workflow: 'refresh-postnumre.yml'
+    },
+    {
+        id: 'refresh-fs',
+        navn: 'FS-data (emner, studenter)',
+        beskrivelse: 'Henter emner, studenter, filterstudenter og klasser fra FS.',
+        rute: 'refresh-fs',
+        // `FS-Emner` er både jobbens rad og én av kildene FS-fanen viser — se
+        // begrunnelsen i refresh-fs-jobb.js.
+        statusrad: { partisjon: refreshFsJobb.PK, rad: refreshFsJobb.RK },
+        // 04:00 UTC daglig. Først av nattjobbene: team-synken 04:30 og
+        // oppslagslistene 05:30 leser data den skriver.
+        standardSchedule: '0 0 4 * * *',
+        scheduleVar: 'REFRESH_FS_SCHEDULE',
+        workflow: 'refresh-fs.yml'
+    },
+    {
+        id: 'oppslaglister',
+        navn: 'Oppslagslister',
+        beskrivelse: 'Bygger nedtrekkslistene fra innsendte skjemaer.',
+        rute: 'oppslaglister/oppdater',
+        // JOBBENS rad, ikke de per-liste radene. De heter
+        // `Oppslagsliste-<navn>` og vises i Oppslagslister-fanen.
+        statusrad: { partisjon: oppslaglisteJobb.JOBB_PK, rad: oppslaglisteJobb.JOBB_RK },
+        // 05:30 UTC daglig — etter FS-refreshen, som listene leser fra.
+        standardSchedule: '0 30 5 * * *',
+        scheduleVar: 'OPPSLAGLISTER_SCHEDULE',
+        workflow: 'refresh-oppslagsliste.yml'
     }
 ];
 
@@ -86,6 +115,8 @@ function gyldigNcrontab(uttrykk) {
 function overstyring(jobb) {
     switch (jobb && jobb.scheduleVar) {
         case 'POSTNUMRE_SCHEDULE': return process.env.POSTNUMRE_SCHEDULE;
+        case 'REFRESH_FS_SCHEDULE': return process.env.REFRESH_FS_SCHEDULE;
+        case 'OPPSLAGLISTER_SCHEDULE': return process.env.OPPSLAGLISTER_SCHEDULE;
         default: return undefined;
     }
 }

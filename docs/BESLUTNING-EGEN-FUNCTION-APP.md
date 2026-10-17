@@ -438,7 +438,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | ✅ **Målt 17.10.2026** — timeren fyrte i dev kl. 10:15:40, aktør `timer`, 5112 rader på 40 s. Se 8m | Pilot og prod er uendret — `app.timer` kalles aldri der. Neste er steg 5: de sju andre jobbene |
-| 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
+| 5 | 🔶 **To av sju flyttet 17.10.2026** — `refresh-fs` og `oppslaglister` har timer i dev (8n). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
 | 7 | ✅ **Bevist, i koden og målt 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Varslingene kom fram i dev gjennom en flyt uten `sig=` i adressen: kvittering og behandlervarsling på en innsending |
@@ -1673,13 +1673,15 @@ Målt i dev 16.10.2026 (8k):
 - [x] Én jobb flyttet til timer-trigger — `postnumre/refresh-bring`
 - [x] Vakt rundt registreringen, ikke inne i handleren
 - [x] Jobben i en lib, med bokføringen i seg — én statusrad uansett inngang
-- [ ] Kjørt på klokke i dev. **Merk at den ekte planen er 15. januar og
-      15. juli** — vil du se den fyre før det, sett `schedule` midlertidig
-      til noe nært og tilbakestill etterpå. Testen krever at den stemmer med
-      workflowen, så en midlertidig endring gjør bygget rødt med vilje
+- [x] Kjørt på klokke i dev — 17.10.2026 kl. 10:15:40, aktør `timer`.
+      Den ekte planen er 15. januar og 15. juli; kjøringen ble utløst med
+      app-settingen `POSTNUMRE_SCHEDULE` og en omstart, uten en commit
 
 ### Steg 5 — resten av cron-jobbene
 
+- [x] `refresh-fs` (04:00) og `oppslaglister` (05:30) på timer i dev — 8n
+- [ ] `send-utsendinger`, `purre-utsendinger`, `sjekk-nokler`, `team-synk`
+- [ ] `backup` — to kadenser, full og delta. Krever to registreringer
 - [ ] De åtte workflowene fjernet
 - [ ] `SCHEDULER_KEY` ute av koden, miljøfilene og helsesjekken
 - [ ] `node scripts/api-oversikt.js` viser færre anonyme endepunkter
@@ -2427,6 +2429,93 @@ Det er den verste typen tidsinnstilt feil: plantet nå, oppdaget av noen andre.
 * Først når alle miljøene har timere kan workflowene og `SCHEDULER_KEY` bort.
   Til da er dev unntatt fra matrisene, og det står som en kommentar i
   `refresh-postnumre.yml`.
+
+## 8n. Steg 5, første runde — `refresh-fs` og `oppslaglister`
+
+**17.10.2026.** To jobber til kjører på timer i dev. Rekkefølgen er valgt
+etter hva de kan ødelegge: begge leser og skriver bare miljøets egne tabeller,
+og ingen av dem sender noe. De som sender — utsending, purring, nøkkelvarsler
+— og `team-synk` står igjen.
+
+Mønsteret fra steg 4 ble gjenbrukt uendret: vakten rundt registreringen,
+tidspunktet i `lib/jobber.js`, bokføringen i en jobbmodul begge inngangsportene
+kaller. Det som er NYTT, er de tre tingene de to jobbene ikke delte med
+postnumre.
+
+### FS-refreshen venter, og ventetiden er en funksjonskjøring
+
+HTTP-veien svarer 202 og lar jobben gå videre i bakgrunnen — den måtte, fordi
+SWA-proxyen gir opp etter ~45 sekunder. **Timeren gjør ikke det.** Den venter
+på hele kjøringen, og hele ventetiden er én funksjonskjøring.
+
+Jobben tar 2-4 minutter. `host.json` setter ingen `functionTimeout`, så
+standarden på Consumption gjelder — **fem minutter**. Marginen er reell, men
+den er ikke stor, og den krymper med antall studenter.
+
+`host.json` er IKKE stedet å heve den. Den fila deployes også til SWA Managed
+Functions i pilot og prod, og en verdi den verten ikke godtar tar ned hele
+appen der — nøyaktig den feilklassen timer-vakten finnes for å unngå. I stedet
+settes app-settingen på Function App-en i dev alene:
+
+```
+AzureFunctionsJobHost__functionTimeout = 00:10:00
+```
+
+Den står i `config/env.dev.json` som `kun_dokumentasjon`: koden leser den
+ikke, verten gjør. Settes den ikke, er symptomet synlig og ikke stille —
+statusraden står igjen på «kjører», og Jobber-fanen viser det.
+
+### Oppslagslistene har per-liste rader fra før, og trengte en jobbrad
+
+Statusradene for oppslagslistene heter `Oppslagsliste-<navn>`, én per liste,
+og `hentStatus()` leser dem på nettopp det prefikset. Jobben som helhet hadde
+ingen rad — admin-panelet kunne si hvordan det gikk med hver liste, men ikke
+om døgnjobben kjørte.
+
+Jobbraden heter derfor `Jobb-Oppslaglister`, og avstanden til prefikset er med
+vilje større enn én bokstav: `Oppslaglister-Jobb` ville vært ett tegn fra å
+matche, og da hadde admin-panelet vist en oppslagsliste ved navn «Jobb» — en
+liste ingen har definert, og ingen tør slette. Testen prøver det.
+
+### Tre utfall, ikke to
+
+En døgnjobb som bygger flere lister kan ende tre steder, og de skal ikke se
+like ut i panelet:
+
+* **`ok`** — alle listene bygget.
+* **`delvis`** — noen feilet, andre gikk. HTTP-svaret er 207. En død liste gir
+  et tomt nedtrekk, og et tomt nedtrekk er umulig å skille fra «ingenting er
+  godkjent ennå».
+* **`feil`** — ingen ble bygget, eller jobben kom aldri i gang (`kastet`).
+
+**Tørrkjøringen bokføres ikke.** Forhåndsvisningen i admin skriver ingenting,
+og en statusrad etter den ville vært en påstand om data som aldri ble skrevet.
+Den veien går derfor utenom jobbmodulen, rett på `byggAlle`.
+
+### Inventaret hadde to beskrivelser av seg selv
+
+`config/env.*.json` har en `_kommentar` som lister FEM former en oppføring kan
+ha. `env-inventar.test.js` godtok FIRE. Uenigheten hadde stått siden begge ble
+skrevet, og var taus fordi ingen oppføring brukte `kun_dokumentasjon` alene —
+den første som gjorde det (`AzureFunctionsJobHost__functionTimeout`) ble avvist
+som «ukjent form» av en test, mot en fil som beskriver formen i sin egen
+innledning.
+
+Testen er rettet, ikke fila: formen er dokumentert, brukt og nyttig. En
+tastefeil i formen fanges fortsatt — prøvd ved å skrive `kun_dokumentasjn`, som
+ga to røde sjekker.
+
+### Hva som gjenstår
+
+* **Se de to fyre i dev.** `REFRESH_FS_SCHEDULE` og `OPPSLAGLISTER_SCHEDULE`,
+  en omstart, og så Jobber-fanen. FS-jobben er den eneste som kan treffe
+  funksjonsgrensen, så den bør prøves med `AzureFunctionsJobHost__functionTimeout`
+  satt.
+* **De fire som sender** — `send-utsendinger`, `purre-utsendinger`,
+  `sjekk-nokler`, `team-synk`. En feil der går ut av huset.
+* **`backup`** har to kadenser i én workflow, full om søndagen og delta ellers,
+  og velger modus ved å lese sin egen cron. En timer kan ikke det, så den
+  trenger to registreringer. Formen avklares før den skrives.
 
 ## 9. Risiko
 

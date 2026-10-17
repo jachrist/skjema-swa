@@ -107,4 +107,95 @@ async function byggAlle({ bareNavn = null, tørr = false, log = () => {} } = {})
     return { antallLister: valgte.length, resultater, feil, tørr };
 }
 
-module.exports = { byggEn, byggAlle, FORHANDSVIS_ANTALL };
+/**
+ * Jobbens egen statusrad.
+ *
+ * De per-liste radene heter `Oppslagsliste-<navn>` og leses av
+ * `hentStatus()` i oppslagsliste-storage, som filtrerer på nettopp det
+ * prefikset. Jobbraden må derfor IKKE begynne på «Oppslagsliste-»: gjorde
+ * den det, ville den dukket opp i admin-panelet som en liste ved navn «Jobb»,
+ * med status og alt — en liste ingen har definert, som ingen tør slette.
+ *
+ * Derfor `Jobb-` foran. Avstanden til «Oppslagsliste-» er med vilje større
+ * enn én bokstav; `Oppslaglister-Jobb` ville vært ett tegn fra å matche.
+ */
+const JOBB_PK = 'Meta';
+const JOBB_RK = 'Jobb-Oppslaglister';
+
+/**
+ * Kjør døgnjobben og bokfør utfallet. Kaster aldri.
+ *
+ * To inngangsporter, én bokføring — samme form som `postnummer-jobb.js` og
+ * `refresh-fs-jobb.js`. Statusraden her er på JOBBNIVÅ: «kjørte jobben, når,
+ * startet av hvem, hvor mange lister». De per-liste radene er uendret, og det
+ * er fortsatt de Oppslagslister-fanen viser.
+ *
+ * **Tørrkjøring bokføres ikke, og skal ikke.** Forhåndsvisningen skriver
+ * ingenting, og en statusrad som sa «kjørt 12:04» etter en forhåndsvisning
+ * ville vært en påstand om data som aldri ble skrevet.
+ *
+ * `utfall` skiller tre ting som alle er «ikke grønt» på hver sin måte:
+ *   `delvis` — noen lister feilet, andre ble bygget. En død liste gir et tomt
+ *              nedtrekk, og det er ikke «ok».
+ *   `feil`   — ingen lister ble bygget.
+ *   `kastet` — jobben kom aldri i gang (oppsettet kunne ikke leses).
+ */
+async function kjorOppslagslister({ kilde, bareNavn = null, log = () => {} } = {}) {
+    const { tabellKlient } = require('./storage');
+    const hendelser = require('./hendelser-storage');
+
+    const startTid = new Date().toISOString();
+    const settStatus = async (felter) => {
+        try {
+            const t = tabellKlient('CacheMetadata');
+            await t.upsertEntity({ partitionKey: JOBB_PK, rowKey: JOBB_RK, ...felter }, 'Merge');
+        } catch (_) { /* statusraden er ikke kritisk */ }
+    };
+
+    await settStatus({ Status: 'kjører', Startet: startTid, Kilde: kilde, SistFeil: '' });
+    log(`oppslaglister: trigget av ${kilde}`);
+
+    let res;
+    try {
+        res = await byggAlle({ bareNavn, tørr: false, log });
+    } catch (e) {
+        const melding = String(e.message || e);
+        log(`oppslaglister FEIL: ${melding}`);
+        await settStatus({
+            Status: 'feil', Ferdig: new Date().toISOString(),
+            SistFeil: melding.slice(0, 500)
+        });
+        hendelser.logg({
+            Type: 'oppslagsliste.feil', Aktor: kilde,
+            ObjektType: 'oppslagsliste', ObjektId: bareNavn || '',
+            Melding: `Oppslagslistejobben kom ikke i gang: ${melding}`.slice(0, 500)
+        });
+        return { utfall: 'feil', kastet: true, melding, resultat: null };
+    }
+
+    const utfall = res.feil.length === 0 ? 'ok' : (res.resultater.length > 0 ? 'delvis' : 'feil');
+    await settStatus({
+        Status: utfall,
+        Ferdig: new Date().toISOString(),
+        SistOppdatert: new Date().toISOString(),
+        AntallLister: res.antallLister,
+        AntallFeilet: res.feil.length,
+        VarighetSekunder: Math.round((Date.now() - Date.parse(startTid)) / 1000),
+        SistFeil: res.feil.map(f => `${f.navn}: ${f.melding}`).join(' | ').slice(0, 500)
+    });
+    hendelser.logg({
+        Type: 'oppslagsliste.oppdater', Aktor: kilde,
+        ObjektType: 'oppslagsliste', ObjektId: bareNavn || '',
+        Melding: `Oppdaterte ${res.resultater.length} av ${res.antallLister} oppslagsliste(r)`
+            + (res.feil.length ? `, ${res.feil.length} feilet` : ''),
+        Detaljer: {
+            resultater: res.resultater.map(r => `${r.navn}: ${r.antall} rader`),
+            feil: res.feil.map(f => `${f.navn}: ${f.melding}`)
+        }
+    });
+    return { utfall, kastet: false, melding: null, resultat: res };
+}
+
+module.exports = {
+    byggEn, byggAlle, kjorOppslagslister, FORHANDSVIS_ANTALL, JOBB_PK, JOBB_RK
+};

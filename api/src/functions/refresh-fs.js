@@ -13,8 +13,9 @@
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
-const { refreshFS } = require('../lib/refresh-fs');
 const { tabellKlient } = require('../lib/storage');
+const { stotterTimere } = require('../lib/plattform');
+const { jobbForId, jobbSchedule } = require('../lib/jobber');
 
 function autorisert(request) {
     const schedulerKey = request.headers.get('x-scheduler-key');
@@ -38,53 +39,13 @@ app.http('refreshFs', {
         }
 
         // Fire-and-forget: SWA-proxyen har ~45 s response timeout og full FS-refresh
-        // tar 2-4 min. Vi markerer status='kjører' og starter jobben uten å await —
-        // Function-hosten holder prosessen i live til den asynkrone jobben er ferdig.
+        // tar 2-4 min. Vi svarer 202 og lar hosten holde prosessen i live.
+        // Bokføringen skjer inne i jobben — se lib/refresh-fs-jobb.js.
         // Status leses via GET /api/refresh-fs/status.
+        const { kjorRefreshFs } = require('../lib/refresh-fs-jobb');
         const startTid = new Date().toISOString();
-        try {
-            const t = tabellKlient('CacheMetadata');
-            await t.upsertEntity({
-                partitionKey: 'Meta',
-                rowKey: 'FS-Emner',
-                Status: 'kjører',
-                Startet: startTid,
-                Kilde: auth.kilde,
-                SistFeil: ''
-            }, 'Merge');
-        } catch (_) { /* ikke-kritisk */ }
-
-        // Start jobben asynkront (ikke await!)
         const jobbLog = (...a) => context.log(...a);
-        jobbLog(`refresh-fs: trigget av ${auth.kilde} (fire-and-forget)`);
-        refreshFS(jobbLog)
-            .then(async res => {
-                jobbLog(`refresh-fs: OK — ${JSON.stringify(res)}`);
-                try {
-                    const t = tabellKlient('CacheMetadata');
-                    await t.upsertEntity({
-                        partitionKey: 'Meta',
-                        rowKey: 'FS-Emner',
-                        Status: 'ok',
-                        Ferdig: new Date().toISOString(),
-                        VarighetSekunder: res.varighetSekunder,
-                        Terminer: (res.terminer || []).join(',')
-                    }, 'Merge');
-                } catch (_) { /* ikke-kritisk */ }
-            })
-            .catch(async e => {
-                jobbLog(`refresh-fs FEIL: ${e.message}`);
-                try {
-                    const t = tabellKlient('CacheMetadata');
-                    await t.upsertEntity({
-                        partitionKey: 'Meta',
-                        rowKey: 'FS-Emner',
-                        Status: 'feil',
-                        Ferdig: new Date().toISOString(),
-                        SistFeil: String(e.message || e).slice(0, 500)
-                    }, 'Merge');
-                } catch (_) { /* ignorer sekundærfeil */ }
-            });
+        kjorRefreshFs({ kilde: auth.kilde, log: jobbLog });
 
         return {
             status: 202,
@@ -96,6 +57,41 @@ app.http('refreshFs', {
         };
     }
 });
+
+// ==================== TIMER-TRIGGER (steg 5) ====================
+//
+// Samme vakt og samme form som postnumre — se kommentaren der og 8m/8n i
+// docs/BESLUTNING-EGEN-FUNCTION-APP.md. Vakten står rundt REGISTRERINGEN:
+// en timer på en vert som ikke støtter dem kan velte oppstarten for hele
+// appen, og da er HTTP-rutene borte også.
+//
+// Tidspunktet står i lib/jobber.js, ikke her, og testen krever at det er det
+// samme som cron-en i refresh-fs.yml med et sekundfelt foran.
+//
+// **DENNE VENTER, OG VENTINGEN ER LANG.** Jobben tar 2-4 minutter, og hele
+// den tiden er én funksjonskjøring. HTTP-veien slipper unna fordi den svarer
+// 202 med en gang; timeren gjør ikke det. `host.json` setter ingen
+// `functionTimeout`, så standarden på Consumption gjelder — fem minutter.
+// Blir kjøringen kuttet, står statusraden igjen på «kjører», og Jobber-fanen
+// viser det. Se 8n for app-settingen som hever grensen i dev alene.
+if (stotterTimere()) {
+    const jobb = jobbForId('refresh-fs');
+    const valgt = jobbSchedule(jobb);
+    if (valgt.avvist) console.warn(`refresh-fs-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
+    else if (valgt.kilde !== 'standard') console.log(`refresh-fs-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
+
+    app.timer('refreshFsTimer', {
+        // `runOnStartup` settes IKKE: den ville kjørt en 2-4 minutters jobb
+        // ved hver eneste deploy og omstart.
+        schedule: valgt.schedule,
+        handler: async (timer, context) => {
+            const { kjorRefreshFs } = require('../lib/refresh-fs-jobb');
+            const jobbLog = (...a) => context.log(...a);
+            if (timer?.isPastDue) jobbLog('refresh-fs-timer: forsinket kjøring');
+            await kjorRefreshFs({ kilde: 'timer', log: jobbLog });
+        }
+    });
+}
 
 app.http('refreshFsDiag', {
     methods: ['POST'],
