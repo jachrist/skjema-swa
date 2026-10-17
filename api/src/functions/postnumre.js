@@ -8,6 +8,7 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const postnumreStorage = require('../lib/postnumre-storage');
+const { stotterTimere } = require('../lib/plattform');
 
 app.http('postnumreSok', {
     methods: ['GET'],
@@ -76,61 +77,15 @@ app.http('postnumreRefreshBring', {
             return { status: 401, jsonBody: { status: 'feil', melding: 'Krever x-scheduler-key eller admin' } };
         }
 
-        const bring = require('../lib/bring-postnummer');
-        const { tabellKlient } = require('../lib/storage');
-        const hendelser = require('../lib/hendelser-storage');
+        const { kjorBringOppdatering } = require('../lib/postnummer-jobb');
         const kilde = schedulerOk ? 'scheduler' : upn;
         const startTid = new Date().toISOString();
-
-        // Marker som "kjører" i CacheMetadata
-        try {
-            const t = tabellKlient('CacheMetadata');
-            try { await t.createTable(); } catch (_) {}
-            await t.upsertEntity({
-                partitionKey: 'Meta', rowKey: 'Postnumre-Bring',
-                Status: 'kjører', Startet: startTid, Kilde: kilde, SistFeil: ''
-            }, 'Merge');
-        } catch (_) { /* ikke-kritisk */ }
-
         const jobbLog = (...a) => context.log(...a);
-        jobbLog(`postnumre/refresh-bring: trigget av ${kilde} (fire-and-forget)`);
 
-        // Fire-and-forget — kan ta 30-90 s
-        bring.oppdaterFraBring(jobbLog)
-            .then(async res => {
-                jobbLog(`postnumre/refresh-bring: OK — ${JSON.stringify(res)}`);
-                try {
-                    const t = tabellKlient('CacheMetadata');
-                    await t.upsertEntity({
-                        partitionKey: 'Meta', rowKey: 'Postnumre-Bring',
-                        Status: 'ok', SistOppdatert: new Date().toISOString(),
-                        AntallRader: res.antallSkrevet, AntallSlettet: res.antallSlettet,
-                        VarighetSekunder: res.varighetSekunder, SistFeil: ''
-                    }, 'Merge');
-                } catch (_) {}
-                hendelser.logg({
-                    Type: 'postnumre.bring-oppdatert', Aktor: kilde,
-                    ObjektType: 'postnumre', ObjektId: 'Bring',
-                    Melding: `Oppdaterte postnummerregister — ${res.antallSkrevet} skrevet, ${res.antallSlettet} slettet (${res.varighetSekunder}s)`,
-                    Detaljer: res
-                });
-            })
-            .catch(async e => {
-                jobbLog(`postnumre/refresh-bring FEIL: ${e.message}`);
-                try {
-                    const t = tabellKlient('CacheMetadata');
-                    await t.upsertEntity({
-                        partitionKey: 'Meta', rowKey: 'Postnumre-Bring',
-                        Status: 'feil', Ferdig: new Date().toISOString(),
-                        SistFeil: String(e.message || e).slice(0, 500)
-                    }, 'Merge');
-                } catch (_) {}
-                hendelser.logg({
-                    Type: 'postnumre.bring-feil', Aktor: kilde,
-                    ObjektType: 'postnumre', ObjektId: 'Bring',
-                    Melding: `Bring-oppdatering feilet: ${e.message}`.slice(0, 500)
-                });
-            });
+        // Fire-and-forget: SWA-proxyen har ~45 s response timeout, og jobben
+        // tar 30-90 s. Vi svarer 202 og lar hosten holde prosessen i live.
+        // Bokføringen skjer inne i jobben — se lib/postnummer-jobb.js.
+        kjorBringOppdatering({ kilde, log: jobbLog });
 
         return {
             status: 202,
@@ -138,6 +93,45 @@ app.http('postnumreRefreshBring', {
         };
     }
 });
+
+// ==================== TIMER-TRIGGER (steg 4) ====================
+//
+// Samme jobb, uten GitHub Actions i mellom. Første steg bort fra de åtte
+// cron-workflowene som kaller HTTP-endepunkter med en delt nøkkel — se steg 4
+// og 5 i docs/BESLUTNING-EGEN-FUNCTION-APP.md.
+//
+// **VAKTEN STÅR RUNDT REGISTRERINGEN, IKKE INNE I HANDLEREN.** SWA Managed
+// Functions støtter ikke timer-triggere, og en timer som registreres der er
+// ikke en stille no-op — den kan velte oppstarten for HELE appen, og da er
+// alle HTTP-rutene borte også. `stotterTimere()` leses ved modullast, og i
+// pilot og prod blir `app.timer` aldri kalt.
+//
+// GitHub Actions-workflowen kjører MOT pilot og prod, ikke mot dev (se
+// matrisen i .github/workflows/refresh-postnumre.yml), så jobben kan ikke
+// kjøre to ganger i samme miljø. Workflowen fjernes først i steg 5, når alle
+// miljøene har timere.
+//
+// NCRONTAB har SEKS felt — sekund først. GitHub-cron har fem. Skrives
+// GitHub-uttrykket rett inn her, blir «30 4 15 1,7 *» lest som
+// sekund-minutt-time-dag-måned og kjører 1,7 ganger i uka i stedet for to
+// ganger i året. api/test/timer-trigger.test.js krever at de to er det samme
+// uttrykket, med et sekundfelt foran.
+if (stotterTimere()) {
+    app.timer('postnumreTimer', {
+        // 04:30 UTC den 15. januar og 15. juli — samme klokkeslett som
+        // workflowen. `runOnStartup` settes IKKE: den ville kjørt jobben ved
+        // hver eneste deploy og omstart.
+        schedule: '0 30 4 15 1,7 *',
+        handler: async (timer, context) => {
+            const { kjorBringOppdatering } = require('../lib/postnummer-jobb');
+            const jobbLog = (...a) => context.log(...a);
+            if (timer?.isPastDue) jobbLog('postnumre-timer: forsinket kjøring');
+            // Her ventes det, i motsetning til HTTP-veien: ingen proxy med
+            // tidsavbrudd sitter og ser på. Da bærer også loggen hele kjøringen.
+            await kjorBringOppdatering({ kilde: 'timer', log: jobbLog });
+        }
+    });
+}
 
 app.http('postnumreStatus', {
     methods: ['GET'],

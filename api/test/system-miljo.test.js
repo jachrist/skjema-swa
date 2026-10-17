@@ -241,7 +241,10 @@ const SATT = { satt: true, lengde: 40 };
     const fs = require('fs');
     const path = require('path');
     const rot = path.join(__dirname, '..', '..');
-    const sysKilde = fs.readFileSync(path.join(rot, 'api', 'src', 'functions', 'system.js'), 'utf8');
+    // Miljønavnene flyttet fra functions/system.js til lib/plattform.js
+    // 17.10.2026, sammen med plattformens evner — det er den samme typen
+    // liste, og den endres på de samme dagene.
+    const sysKilde = fs.readFileSync(path.join(rot, 'api', 'src', 'lib', 'plattform.js'), 'utf8');
     const byggKilde = fs.readFileSync(path.join(rot, 'scripts', 'build-config.js'), 'utf8');
 
     const navnFra = (kilde, m) => {

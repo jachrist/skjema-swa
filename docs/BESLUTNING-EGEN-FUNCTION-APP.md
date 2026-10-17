@@ -437,7 +437,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 1 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 1» under | `/api/ping` svarer med riktig SHA, og et endepunkt som krever innlogging gir riktig UPN. **Dette beviser at `x-ms-client-principal` følger med gjennom proxyen** — hele migreringen hviler på det |
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
-| 4 | Flytt én cron-jobb til timer-trigger | Jobben kjører på klokke **i dev** i et døgn |
+| 4 | 🔶 **Koden er på plass 17.10.2026** — `postnumre/refresh-bring` har timer-trigger i dev, bak `stotterTimere()`. Se 8m | Gjenstår å måle: at timeren fyrer i dev. Pilot og prod er uendret — `app.timer` kalles aldri der |
 | 5 | Resten av cron-jobbene. Fjern `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
@@ -1668,10 +1668,15 @@ Målt i dev 16.10.2026 (8k):
 - [ ] **Klikk «Last ned» i Historikk.** Det eneste som ikke er målt: om Azure
       GODTAR signaturen. Graph leser blobben direkte og rører ikke SAS-en
 
-### Steg 4 — én cron-jobb
+### Steg 4 — én cron-jobb (8m)
 
-- [ ] Én jobb flyttet til timer-trigger
-- [ ] Kjørt på klokke i dev i et døgn
+- [x] Én jobb flyttet til timer-trigger — `postnumre/refresh-bring`
+- [x] Vakt rundt registreringen, ikke inne i handleren
+- [x] Jobben i en lib, med bokføringen i seg — én statusrad uansett inngang
+- [ ] Kjørt på klokke i dev. **Merk at den ekte planen er 15. januar og
+      15. juli** — vil du se den fyre før det, sett `schedule` midlertidig
+      til noe nært og tilbakestill etterpå. Testen krever at den stemmer med
+      workflowen, så en midlertidig endring gjør bygget rødt med vilje
 
 ### Steg 5 — resten av cron-jobbene
 
@@ -2220,6 +2225,94 @@ eller 403 ville vært det.
   `DIAGNOSE_FLOW_URL`, `BACKUP_FLOW_URL`, de to TEAM-ene) må også kreve Entra
   før signaturen kan fjernes fra URL-ene deres. Til da er `FLYT_AUTH=entra`
   harmløs for dem: de ignorerer headeren.
+
+## 8m. Utfallet av steg 4 — første timer-trigger
+
+**17.10.2026.** `postnumre/refresh-bring` kjører på timer i dev. Koden er på
+plass; at timeren faktisk fyrer gjenstår å se.
+
+### Hvorfor akkurat den jobben først
+
+Av de åtte cron-jobbene er dette den med minst å ødelegge:
+
+* **30–90 sekunder.** Ingen fare for å treffe funksjonstidsavbruddet —
+  `host.json` setter ingen `functionTimeout`, så standarden gjelder, og
+  `refresh-fs` på 2–4 minutter ligger ubehagelig nær en femminutters grense.
+* **Offentlige data fra Bring.** Ingen persondata, ingenting som sendes ut.
+* **`erstattAlt=true`** — idempotent av konstruksjon.
+* **Skriver bare til miljøets egen `Postnumre`-tabell.** Til sammenligning
+  skriver nøkkelkalenderen til en tabell pilot og prod DELER, så en kjøring i
+  dev ville merket en rad som varslet og dempet varselet i prod.
+
+Team-synken er den motsatte enden av skalaen og blir stående lengst.
+
+### Vakten står rundt REGISTRERINGEN
+
+```js
+if (stotterTimere()) {
+    app.timer('postnumreTimer', { schedule: '0 30 4 15 1,7 *', handler: … });
+}
+```
+
+En timer som registreres på en vert som ikke støtter dem er **ikke** en stille
+no-op — den kan velte oppstarten for hele appen, og da er alle HTTP-rutene
+borte også. Derfor leses `stotterTimere()` ved modullast, og i pilot og prod
+blir `app.timer` aldri kalt.
+
+Testen laster modulen med `MILJO` satt til hvert miljø og teller
+registreringene. Det er forskjellen på å lese koden og å kjøre den: en vakt som
+står inne i handleren i stedet for rundt kallet ser nesten lik ut.
+
+### NCRONTAB har seks felt
+
+GitHub-cron har fem. Skrives GitHub-uttrykket rett inn, leses
+`30 4 15 1,7 *` som sekund-minutt-time-dag-måned, og jobben kjører 1,7 ganger
+i uka i stedet for to ganger i året. `api/test/timer-trigger.test.js` leser
+BEGGE filene og krever at timerens uttrykk er workflowens med `0 ` foran.
+
+Endres den ene uten den andre, kjører dev og prod på ulik klokke — og
+ingenting feiler, det skjer bare til feil tid.
+
+### Én jobb, to innganger
+
+Bokføringen — statusraden i `CacheMetadata` og hendelsesloggen — lå inne i
+HTTP-handleren. Den er flyttet til `lib/postnummer-jobb.js`, som begge veiene
+kaller. Lå den i hver inngangsport, ville admin-panelet fått to litt ulike
+bilder av den samme jobben avhengig av hvem som startet den, og forskjellen
+ville vært usynlig til noen sammenlignet dem.
+
+Den ene forskjellen som står igjen er med vilje: HTTP-veien venter ikke
+(SWA-proxyen har ~45 sekunders tidsavbrudd), mens timeren venter — der sitter
+ingen og ser på en klokke, og da bærer loggen hele kjøringen.
+
+### `lib/plattform.js`
+
+Miljønavnet ble normalisert i `functions/system.js`, og evnelistene ville
+ellers fått hver sin fil. Det er den samme typen liste, og den endres på de
+samme dagene — steg 5b og 6. Begge bor nå i `lib/plattform.js`:
+`LØSER_KEYVAULT_REFERANSER` og `KJORER_TIMERE`.
+
+`gjelderHer(sett)` tar settet som argument, og det er ikke tilfeldig.
+**Aliaset må normaliseres FØR oppslaget:** `MILJO=production` er pilot, og en
+liste med `'pilot'` i må svare ja på den. En mutasjon som fjernet
+normaliseringen var grønn — ingen av de ekte listene inneholder et alias-mål
+ennå, så feilen ville først slått inn den dagen pilot legges inn i steg 6. Med
+settet som argument kan testen sende inn `new Set(['pilot'])` og kreve at
+`production` svarer ja, i dag.
+
+Det er den verste typen tidsinnstilt feil: plantet nå, oppdaget av noen andre.
+
+### Hva som gjenstår
+
+* **Se timeren fyre i dev.** Den ekte planen er 15. januar og 15. juli, så en
+  observasjon krever en midlertidig schedule — og testen gjør bygget rødt
+  mens den står der, med vilje.
+* **Steg 5** er de sju andre jobbene, og rekkefølgen bør følge den samme
+  risikoordenen: `oppslaglister` og `refresh-fs` før de som sender noe, og
+  `team-synk` sist.
+* Først når alle miljøene har timere kan workflowene og `SCHEDULER_KEY` bort.
+  Til da er dev unntatt fra matrisene, og det står som en kommentar i
+  `refresh-postnumre.yml`.
 
 ## 9. Risiko
 
