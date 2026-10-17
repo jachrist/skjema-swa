@@ -1,5 +1,5 @@
 /**
- * Kokeboka for prod v3 — kommandoene skal kunne limes inn og virke.
+ * Kommandoer folk klipper og limer — kokeboka, dokumentene og skriptene.
  *
  * Dokumentet skal kjøres i et arbeidsmøte, av noen som klipper og limer. Da
  * er en feil i formen like dyr som en feil i innholdet, og den oppdages på
@@ -26,6 +26,18 @@
  *
  *   **Hemmelighetene lekker ikke.** Hver `appsettings`-kommando som setter
  *   noe, har `--output none`.
+ *
+ * Fra 18.10.2026 dekker fila også RESTEN av repoet, med en mildere regel.
+ * Bakgrunnen er at den samme feilen fanst flere steder: tre umerkede
+ * kodeblokker i beslutningsdokumentet, der fortsettelsestegnet var eneste
+ * hint om hvilket skall som gjaldt — og de var ikke enige med hverandre.
+ * `steg1-funcapp.ps1` SKREV UT kommandoer med backtick-fortsettelse, og
+ * hjelpeteksten viste det samme.
+ *
+ * Den mildere regelen: en kodeblokk med en kommando i skal være MERKET med
+ * språk, og fortsettelsestegnet skal passe til merkingen. En `\` i bash er
+ * riktig; en backtick i PowerShell er riktig. Det er blandingen, og det
+ * umerkede, som koster tid.
  *
  * Kjøres med:  node api/test/kokebok.test.js
  */
@@ -171,6 +183,91 @@ sjekk('dokumentet har kodeblokker', alle.length > 5, true);
     sjekk('det finnes verdier å lekke i fila', verdier.length > 0, true);
     sjekk('og ingen av dem står i utskriften',
         verdier.filter(v => utskrift.includes(v)), []);
+}
+
+// ---------- 8. resten av repoet: merket, og i ett skall per blokk ----------
+{
+    const dokumenter = [];
+    const gaa = (katalog) => {
+        for (const n of fs.readdirSync(path.join(rot, katalog), { withFileTypes: true })) {
+            if (n.isDirectory()) continue;
+            if (n.name.endsWith('.md')) dokumenter.push(path.join(katalog, n.name));
+        }
+    };
+    gaa('docs');
+    gaa('.');
+    sjekk('det finnes dokumenter å sjekke', dokumenter.length > 5, true);
+
+    /** Ser linja ut som en kommando noen skal kjøre? */
+    // `\$\w+\s+=` krever MELLOMROM rundt likhetstegnet. Uten det traff
+    // regelen `$select=userPrincipalName,...` i TEAM-CACHE-KONTRAKT.md — et
+    // URL-fragment, ikke en kommando. En regel som melder falske treff blir
+    // en regel folk slår av.
+    const erKommando = (l) => /^\s*(az|gh|node|npm|curl|git|Connect-MgGraph|New-Mg|Get-Mg|Set-Az|\$\w+\s+=)/.test(l);
+
+    const umerket = [];
+    const feilTegn = [];
+    for (const d of dokumenter) {
+        const linjer = fs.readFileSync(path.join(rot, d), 'utf8').split('\n');
+        let aapen = null;
+        linjer.forEach((l, i) => {
+            const start = /^```(\w*)\s*$/.exec(l);
+            if (start && !aapen) { aapen = { sprak: start[1], linjer: [] }; return; }
+            if (/^```\s*$/.test(l) && aapen) {
+                if (aapen.linjer.some(x => erKommando(x.tekst)) && !aapen.sprak) {
+                    umerket.push(`${d}:${aapen.linjer[0]?.nr}`);
+                }
+                aapen = null;
+                return;
+            }
+            if (aapen) aapen.linjer.push({ nr: i + 1, tekst: l });
+            if (!aapen) return;
+            // Fortsettelsestegnet skal passe til merkingen.
+            if (aapen.sprak === 'powershell' && /\\[ \t]*$/.test(l)) {
+                feilTegn.push(`${d}:${i + 1}: bakstrek i powershell-blokk`);
+            }
+            if (aapen.sprak === 'bash' && /`[ \t]*$/.test(l)) {
+                feilTegn.push(`${d}:${i + 1}: backtick i bash-blokk`);
+            }
+            // Og aldri et fortsettelsestegn med mellomrom etter — det er
+            // usynlig, og slår tegnet av.
+            if (/[\\`][ \t]+$/.test(l)) {
+                feilTegn.push(`${d}:${i + 1}: fortsettelsestegn med mellomrom etter`);
+            }
+        });
+    }
+    sjekk('hver kodeblokk med en kommando er merket med språk', umerket, []);
+    sjekk('fortsettelsestegnet passer til merkingen', feilTegn, []);
+}
+
+// ---------- 9. .ps1-skriptene: ingen fortsettelse i det folk kopierer ----------
+{
+    const ps1 = fs.readdirSync(path.join(rot, 'scripts'))
+        .filter(n => n.endsWith('.ps1'));
+    sjekk('det finnes .ps1-skript', ps1.length > 2, true);
+
+    const funn = [];
+    for (const navn of ps1) {
+        const fil = `scripts/${navn}`;
+        const linjer = fs.readFileSync(path.join(rot, fil), 'utf8').split('\n');
+        let iHjelp = false;
+        linjer.forEach((l, i) => {
+            if (l.includes('<#')) iHjelp = true;
+            if (l.includes('#>')) { iHjelp = false; return; }
+
+            // En bakstrek fortsetter ingenting i PowerShell.
+            if (/\\[ \t]*$/.test(l)) funn.push(`${fil}:${i + 1}: bakstrek`);
+            // Mellomrom etter en backtick slår den av — usynlig.
+            if (/`[ \t]+$/.test(l)) funn.push(`${fil}:${i + 1}: backtick med mellomrom etter`);
+            // En DOBBEL backtick sist på linja er en escapet backtick — altså
+            // en fortsettelse i tekst skriptet SKRIVER UT, som noen skal
+            // kopiere. Samme felle, ett lag unna.
+            if (/``[ \t]*$/.test(l)) funn.push(`${fil}:${i + 1}: utskrevet fortsettelsestegn`);
+            // Og hjelpeteksten er ren klipp-og-lim.
+            if (iHjelp && /`[ \t]*$/.test(l)) funn.push(`${fil}:${i + 1}: fortsettelse i hjelpeteksten`);
+        });
+    }
+    sjekk('ingen fortsettelsesfelle i .ps1-skriptene', funn, []);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

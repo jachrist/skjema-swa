@@ -43,9 +43,21 @@
     Uten denne tørrkjører skriptet og viser bare hva det ville gjort.
 
 .EXAMPLE
-    .\steg1-funcapp.ps1 -Rg FHS-skjema -FuncApp testfapp -Lagring fastate01 `
-        -Swa swa-funcapp-proeve -KeyVault kv-fhsskjema-pilot -DataLagring <konto> `
-        -Identitet id-fhsskjema-dev -Kjor
+    # Parametrene samles i en hashtabell og brees ut med @p. Formen er
+    # valgt fordi den ikke trenger fortsettelsestegn: en backtick er
+    # usynlig, og et mellomrom etter den slår den av — klipp-og-lim
+    # ødelegger kommandoen uten at noe ser galt ut. Se «Om kommandoene» i
+    # docs/KOKEBOK-PROD-V3.md.
+    $p = @{
+        Rg          = 'FHS-skjema'
+        FuncApp     = 'testfapp'
+        Lagring     = 'fastate01'
+        DataLagring = '<konto>'
+        Identitet   = 'id-fhsskjema-dev'
+        KeyVault    = 'kv-fhsskjema-pilot'
+        Swa         = 'swa-funcapp-proeve'
+    }
+    .\steg1-funcapp.ps1 @p -Kjor
 
 .EXAMPLE
     # Bare lenkingen, etter at innholdet er bekreftet:
@@ -213,16 +225,14 @@ Write-Host @"
    Gjør dette først:
 
      1. Hent deploy-tokenet:
-          az staticwebapp secrets list --name $Swa --resource-group $Rg ``
-             --query "properties.apiKey" -o tsv
+          az staticwebapp secrets list --name $Swa --resource-group $Rg --query "properties.apiKey" -o tsv
 
      2. Legg det i GitHub-secreten SWA_PROEVE_TOKEN.
 
      3. Kjør arbeidsflyten «Deploy innhold til prøve-SWA (steg 1)».
 
      4. BEKREFT at rota viser «Prøve-SWA», ikke Azure sin standardside:
-          az staticwebapp environment list --name $Swa --resource-group $Rg ``
-             --query "[].{Navn:name,Status:status}" -o table
+          az staticwebapp environment list --name $Swa --resource-group $Rg --query "[].{Navn:name,Status:status}" -o table
         Status skal være Ready. Står den på Uploading, er deployen ikke
         ferdig, og lenking vil ikke hjelpe.
 

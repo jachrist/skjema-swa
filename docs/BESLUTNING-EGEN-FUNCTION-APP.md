@@ -700,9 +700,8 @@ funksjonene. `/api/ping` svarer 404 likevel.
 
 Det eneste som avslører det:
 
-```
-az staticwebapp environment list --name <swa> --resource-group <rg> \
-   --query "[].{Navn:name,Status:status}" -o table
+```powershell
+az staticwebapp environment list --name <swa> --resource-group <rg> --query "[].{Navn:name,Status:status}" -o table
 ```
 
 `Ready` er svaret. `Uploading` eller `WaitingForDeployment` betyr at lenking
@@ -759,10 +758,9 @@ fjerne dem er at de gjør IAM-bildet uleselig — og «hvem har tilgang til denn
 kontoen?» er et spørsmål en sikkerhetsevaluering stiller om nettopp
 `stfhsskjemapilot`.
 
-```
+```powershell
 # Rolletildelingene på PILOT-kontoen — gitt til prøveappens identitet
-az role assignment list --assignee <oid> --all \
-    --query "[].{rolle:roleDefinitionName, scope:scope, id:id}" -o table
+az role assignment list --assignee <oid> --all --query "[].{rolle:roleDefinitionName, scope:scope, id:id}" -o table
 
 # Slett på ID, én per rad. --scope uten --role fjerner ALLE tildelinger for
 # prinsipalen på det scopet, og da er det lett å ta med noe du ikke mente.
@@ -779,7 +777,7 @@ drift, ikke i prøveoppsettet.
 
 **3. Så selve ressursene:**
 
-```
+```powershell
 az staticwebapp backends unlink --name <swa> --resource-group <rg>
 az staticwebapp delete --name <swa> --resource-group <rg> --yes
 az functionapp delete --name <funcapp> --resource-group <rg>
@@ -790,7 +788,7 @@ az storage account delete --name <lagring> --resource-group <rg> --yes
 blir glemt — en tjenestehovedstol ingen har bruk for, er en nøkkel ingen
 passer på:
 
-```
+```powershell
 az ad sp delete --id <appId for sp-skjema-funcapp-proeve>
 ```
 
@@ -873,7 +871,7 @@ tyngste enkeltgevinsten i hele forslaget.
 **`appsettings set` alene løser ikke referansen.** Appen må restartes, eller
 referansene oppdateres eksplisitt:
 
-```
+```powershell
 az rest --method POST --uri "https://management.azure.com/<resourceId>/config/configreferences/appsettings/refresh?api-version=2022-03-01"
 ```
 
@@ -881,7 +879,7 @@ az rest --method POST --uri "https://management.azure.com/<resourceId>/config/co
 vesentlig forskjell fra SWA. Dette endepunktet gir status og årsak per
 referanse:
 
-```
+```powershell
 az rest --method GET --uri "https://management.azure.com/<resourceId>/config/configreferences/appsettings?api-version=2022-03-01"
 ```
 
@@ -1357,10 +1355,9 @@ Det ser ut som en manglende rettighet, og er det ikke. Prøvd 15.10.2026 på
 
 Rettes med en egenskap på selve appen — ikke en app setting:
 
-```
+```powershell
 $id = az identity show --name <identitet> --resource-group <rg> --query id -o tsv
-az functionapp update --name <funcapp> --resource-group <rg> `
-  --set keyVaultReferenceIdentity=$id --output none
+az functionapp update --name <funcapp> --resource-group <rg> --set keyVaultReferenceIdentity=$id --output none
 ```
 
 Den tar **ressurs-ID-en**, ikke `clientId`. Restart appen etterpå.
