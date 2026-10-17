@@ -30,6 +30,7 @@
  * Kjøres med:  node api/test/jobb-bokforing.test.js
  */
 const Module = require('module');
+const { utenKommentarer } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -220,10 +221,165 @@ async function oppslagSjekk() {
         /if \(tørr\) \{[\s\S]*?byggAlle\(/.test(fnKilde), true);
 }
 
+// ==================== nøkkelkalender (SENDER E-POST) ====================
+//
+// Den viktigste regelen her er NEGATIV: ingenting merkes av som varslet når
+// varselet ikke gikk ut. Merkes de likevel, er hemmeligheten varslet i
+// bokføringen og taus i virkeligheten — og neste kjøring prøver ikke igjen.
+async function nokkelSjekk() {
+    const kjor = async ({ rader = [], epostSvar = { status: 'ok' }, admins = 'a@b.no', torrkjor = false } = {}) => {
+        const f = fangst();
+        const varslet = [];
+        const foer = process.env.ADMIN_UPNS;
+        if (admins === null) delete process.env.ADMIN_UPNS; else process.env.ADMIN_UPNS = admins;
+        const sendt = [];
+        const stubber = {
+            ...f.stubber,
+            './nokkelkalender-storage': {
+                miljo: () => 'dev',
+                listAlle: async () => rader.map(r => ({ ...r })),
+                // Varsles alt som har et trinn satt i prøvedataene.
+                skalVarsles: (rad) => (rad.Trinn === undefined ? null : rad.Trinn),
+                markerVarslet: async (id, trinn) => { varslet.push([id, trinn]); }
+            },
+            './flyt-kaller': { sendEpostViaFlyt: async (args) => { sendt.push(args); return epostSvar; } },
+            './pb-token-storage': { listPbEierTokens: async () => [], markerVarslet: async () => {} },
+            './pb-kalender': { erPbRad: () => false, somKalenderRader: () => [] },
+            './skjema-storage': { hentSkjematype: async () => null }
+        };
+        try {
+            const res = await medStubber('../src/lib/nokkelkalender-jobb.js', stubber,
+                (m) => m.kjorNokkelsjekk({ kilde: 'timer', torrkjor }));
+            return { res, varslet, sendt, ...f };
+        } finally {
+            if (foer === undefined) delete process.env.ADMIN_UPNS; else process.env.ADMIN_UPNS = foer;
+        }
+    };
+
+    const forfalt = [{ Id: 'kv-1', Navn: 'Sertifikat', Trinn: 7, DagerIgjen: 7 }];
+
+    const tomt = await kjor({ rader: [{ Id: 'kv-1', Navn: 'Sertifikat' }] });
+    sjekk('nøkler: ingenting å varsle gir eget utfall', tomt.res.utfall, 'ingenting');
+    sjekk('nøkler: og ingen e-post', tomt.sendt.length, 0);
+    sjekk('nøkler: statusraden går fra kjører til ok', tomt.skrevet.map(e => e.Status), ['kjører', 'ok']);
+    sjekk('nøkler: og utfallet står i raden', tomt.skrevet.at(-1)?.Utfall, 'ingenting');
+
+    const godt = await kjor({ rader: forfalt });
+    sjekk('nøkler: varsel sendt gir ok', godt.res.utfall, 'ok');
+    sjekk('nøkler: én e-post', godt.sendt.length, 1);
+    sjekk('nøkler: og raden er merket av', godt.varslet, [['kv-1', 7]]);
+    sjekk('nøkler: kilden bokføres', godt.skrevet[0]?.Kilde, 'timer');
+    sjekk('nøkler: hendelsen bærer kilden', godt.hendelser[0]?.Aktor, 'timer');
+
+    // DEN NEGATIVE REGELEN.
+    const dottFlyt = await kjor({ rader: forfalt, epostSvar: { status: 'feil', melding: 'flyt nede' } });
+    sjekk('nøkler: flyten feilet gir eget utfall', dottFlyt.res.utfall, 'varsling-feilet');
+    sjekk('nøkler: INGENTING merkes av da', dottFlyt.varslet, []);
+    sjekk('nøkler: statusraden ender på feil', dottFlyt.skrevet.at(-1)?.Status, 'feil');
+    sjekk('nøkler: og bærer årsaken', /flyt nede/.test(dottFlyt.skrevet.at(-1)?.SistFeil || ''), true);
+
+    const ingenAdmin = await kjor({ rader: forfalt, admins: null });
+    sjekk('nøkler: uten mottakere er det en konfigurasjonsfeil', ingenAdmin.res.utfall, 'mangler-mottakere');
+    sjekk('nøkler: og ingenting merkes av', ingenAdmin.varslet, []);
+    sjekk('nøkler: og ingen e-post ble forsøkt', ingenAdmin.sendt.length, 0);
+
+    // Tørrkjøring skal ikke etterlate seg et eneste spor i statusraden.
+    const torr = await kjor({ rader: forfalt, torrkjor: true });
+    sjekk('nøkler: tørrkjøring gir eget utfall', torr.res.utfall, 'tørrkjørt');
+    sjekk('nøkler: og skriver INGEN statusrad', torr.skrevet.length, 0);
+    sjekk('nøkler: og sender ingenting', torr.sendt.length, 0);
+    sjekk('nøkler: men viser hva som ville blitt sendt', torr.res.villeVarslet?.length, 1);
+
+    let kastet = null, vondt = null;
+    try {
+        vondt = await kjor({ rader: null });   // listAlle kaster på null.map
+    } catch (e) { kastet = e.message; }
+    sjekk('nøkler: en kjøring som kaster, kaster ikke videre', kastet, null);
+    sjekk('nøkler: den melder feil', vondt?.res?.utfall, 'feil');
+}
+
+// ==================== team-synk (DESTRUKTIV FLYT) ====================
+async function teamSjekk() {
+    const kjor = async ({ grupper = [], flytSvar = async () => ({ status: 'ok' }), hentKaster = false } = {}) => {
+        const f = fangst();
+        const resultater = [];
+        const stubber = {
+            ...f.stubber,
+            './rollegruppe-storage': {
+                hentAlle: async () => {
+                    if (hentKaster) throw new Error('Tabellen svarte ikke');
+                    return grupper;
+                },
+                settResultat: async (rolle, omfang, felter) => { resultater.push({ rolle, ...felter }); }
+            },
+            './roller-storage': { hentInnehavere: async () => [{ Upn: 'a@b.no' }] },
+            './team-synk': {
+                harTeam: (g) => !!g.Team,
+                upnListe: (rader) => rader.map(r => r.Upn),
+                vurderSynk: ({ antallNaa }) => (antallNaa > 0
+                    ? { ok: true, grunn: '' }
+                    : { ok: false, grunn: 'tom-liste', melding: 'Ingen medlemmer' }),
+                byggPayload: ({ upner }) => ({ Antall: upner.length, Medlemmer: upner }),
+                eierRolleFor: () => null
+            },
+            './flyt-kaller': { kallTeamSynkFlyt: flytSvar, miljo: () => 'dev' }
+        };
+        const res = await medStubber('../src/lib/team-synk-jobb.js', stubber,
+            (m) => m.kjorTeamSynk({ kilde: 'timer' }));
+        return { res, resultater, ...f };
+    };
+
+    const g = (rolle, team = 'Team A') => ({ Rolle: rolle, Omfang: '', Team: team, SisteAntall: 1 });
+
+    const alt = await kjor({ grupper: [g('Behandler'), g('Leser')] });
+    sjekk('team: alle gikk gir ok', alt.res.utfall, 'ok');
+    sjekk('team: begge kjørte', alt.res.kjort, 2);
+    sjekk('team: statusraden går fra kjører til ok', alt.skrevet.map(e => e.Status), ['kjører', 'ok']);
+    sjekk('team: kilden bokføres', alt.skrevet[0]?.Kilde, 'timer');
+    sjekk('team: antallet grupper står i raden', alt.skrevet.at(-1)?.AntallGrupper, 2);
+    sjekk('team: og hendelsen bærer kilden', alt.hendelser[0]?.Aktor, 'timer');
+
+    // Én gruppe som kaster skal ikke ta de andre med seg.
+    const delvis = await kjor({
+        grupper: [g('Behandler'), g('Leser')],
+        flytSvar: async (payload) => {
+            if (payload.Medlemmer.length && resultatTeller++ === 1) throw new Error('flyten svarte ikke');
+            return { status: 'ok' };
+        }
+    });
+    sjekk('team: én som kaster gir delvis', delvis.res.utfall, 'delvis');
+    sjekk('team: men begge er forsøkt', delvis.res.kjort, 2);
+    sjekk('team: og feilen står i raden', delvis.skrevet.at(-1)?.AntallFeilet, 1);
+
+    // En STOPPET gruppe er ikke en feil i koden — teamet står urørt fordi
+    // sperren sa nei. Den telles for seg, og gjør ikke jobben rød.
+    const stoppet = await kjor({ grupper: [{ ...g('Behandler'), tom: true }] });
+    sjekk('team: stoppet gruppe teller for seg', typeof stoppet.skrevet.at(-1)?.AntallStoppet, 'number');
+
+    let kastet = null, aldri = null;
+    try { aldri = await kjor({ hentKaster: true }); } catch (e) { kastet = e.message; }
+    sjekk('team: en jobb som ikke kom i gang kaster ikke', kastet, null);
+    sjekk('team: den melder kastet', aldri?.res?.kastet, true);
+    sjekk('team: statusraden ender på feil', aldri?.skrevet.map(e => e.Status), ['kjører', 'feil']);
+
+    // tillatFall skal ALDRI sendes fra jobben. Sperren mot store fall er det
+    // eneste som står mellom en feilet rolleimport og et tømt team.
+    // Kommentarene MÅ bort: ordet står i forklaringen av hvorfor det ikke
+    // sendes, og en sjekk på at noe IKKE finnes blir ellers rød av sin egen
+    // begrunnelse. Det skjedde da denne sjekken ble skrevet.
+    const kilde = utenKommentarer(require('fs').readFileSync(
+        require('path').join(__dirname, '..', 'src', 'lib', 'team-synk-jobb.js'), 'utf8'));
+    const jobbDel = kilde.slice(kilde.indexOf('async function kjorTeamSynk'));
+    sjekk('team: jobben sender ikke tillatFall', /tillatFall/.test(jobbDel), false);
+}
+let resultatTeller = 0;
+
 (async () => {
     await postnumreSjekk();
     await fsSjekk();
     await oppslagSjekk();
+    await nokkelSjekk();
+    await teamSjekk();
     console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 })().catch((e) => { console.log('TESTEN KRASJET:', e.stack); process.exit(1); });

@@ -6,6 +6,17 @@ name: Sjekk nøkkelkalender
 # Hvert miljø behandler bare sine egne rader, så pilot og prod varsler ikke
 # dobbelt om samme hemmelighet.
 
+#
+# DEV ER IKKE I MATRISEN, og skal ikke inn i den: der kjører jobben på en
+# timer-trigger i Function App-en (steg 5, se 8o i
+# docs/BESLUTNING-EGEN-FUNCTION-APP.md). Legges dev inn her, kjører den samme
+# jobben to ganger.
+#
+# Klokkeslettet under og `standardSchedule` for jobben i api/src/lib/jobber.js
+# skal beskrive SAMME tidspunkt. NCRONTAB har et sekundfelt foran, så
+# uttrykkene er ikke identiske — api/test/timer-trigger.test.js leser begge og
+# krever at de stemmer. Endres det ene, skal det andre endres samtidig.
+
 on:
   schedule:
     - cron: '0 7 * * *' # 07:00 UTC daglig

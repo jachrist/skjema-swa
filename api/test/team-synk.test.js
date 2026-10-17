@@ -199,7 +199,9 @@ const { utenKommentarer } = require('../../scripts/test-kilde.js');
 {
     const les = (...d) => utenKommentarer(
         fs.readFileSync(path.join(__dirname, '..', 'src', ...d), 'utf8'));
-    const endepunkt = les('functions', 'team-synk.js');
+    // synkroniserGruppe flyttet fra `functions/team-synk.js` til
+    // `lib/team-synk-jobb.js` 17.10.2026, da jobben fikk en timer.
+    const endepunkt = les('lib', 'team-synk-jobb.js');
 
     // Rekkefølgen ER regelen. Slås eierne inn før vurderingen, er
     // tom-sperren verdiløs — og ingenting ville feilet.
@@ -252,7 +254,7 @@ const { utenKommentarer } = require('../../scripts/test-kilde.js');
     const les = (...d) => utenKommentarer(
         fs.readFileSync(path.join(__dirname, '..', 'src', ...d), 'utf8'));
 
-    const endepunkt = les('functions', 'team-synk.js');
+    const endepunkt = les('lib', 'team-synk-jobb.js');
     const flyt = les('lib', 'flyt-kaller.js');
 
     // Vurderingen må skje FØR flyten kalles, ikke etterpå.
@@ -262,8 +264,22 @@ const { utenKommentarer } = require('../../scripts/test-kilde.js');
         /if \(!dom\.ok\)[\s\S]{0,600}return \{/.test(endepunkt), true);
 
     // Den daglige kjøringen skal ikke kunne overstyre fallsperren.
+    //
+    // `tillatFall` kommer fra HTTP-ruta for ÉN gruppe, og den sjekken bor
+    // fortsatt i functions/team-synk.js. Den leses derfor derfra, ikke fra
+    // lib-en — en blanding av de to filene gjorde denne sjekken grønn på feil
+    // grunnlag da jobben ble flyttet ut 17.10.2026.
+    const ruta = les('functions', 'team-synk.js');
     sjekk('scheduler kan ikke overstyre',
-        /tillatFall = body\?\.tillatFall === true && a\.upn !== 'scheduler'/.test(endepunkt), true);
+        /tillatFall = body\?\.tillatFall === true && a\.upn !== 'scheduler'/.test(ruta), true);
+
+    // OG DEN NYE VEIEN: timeren og «kjør alle» går gjennom kjorTeamSynk, som
+    // ikke skal sende tillatFall i det hele tatt. Gjør den det, er sperren
+    // borte for den kjøringen ingen ser på — og det er den eneste kjøringen
+    // som skjer hver natt.
+    const jobbDel = endepunkt.slice(endepunkt.indexOf('async function kjorTeamSynk'));
+    sjekk('jobben sender ikke tillatFall', /tillatFall/.test(jobbDel), false);
+    sjekk('og den finnes i det hele tatt', jobbDel.length > 200, true);
 
     // Grunnlaget for neste sammenligning flyttes bare av en vellykket kjøring.
     const storage = les('lib', 'rollegruppe-storage.js');
