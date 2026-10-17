@@ -500,6 +500,81 @@ async function utsendingSjekk() {
 }
 
 
+// ==================== backup (TO KADENSER) ====================
+//
+// Backup er den eneste jobben med to kadenser, og den eneste der modusen som
+// BLE KJØRT kan være en annen enn den som ble bedt om: et delta uten en full
+// å bygge på kjøres som full. Jobbraden må vise det som faktisk skjedde —
+// «når gikk siste FULLE backup» er spørsmålet som avgjør om en
+// gjenoppretting er mulig.
+async function backupSjekk() {
+    const sti = require.resolve('../src/functions/backup.js');
+    const kjor = async (modus, utfall) => {
+        const skrevet = [];
+        const ekte = Module._load;
+        Module._load = function (forespurt, ...r) {
+            if (forespurt === '@azure/functions') return { app: { http() {}, timer() {} } };
+            if (forespurt === '../lib/storage') {
+                return {
+                    tabellKlient: () => ({ upsertEntity: async (e) => { skrevet.push(e); } }),
+                    sikreTabell: async () => ({ upsertEntity: async (e) => { skrevet.push(e); } }),
+                    odata: () => ''
+                };
+            }
+            return ekte.call(this, forespurt, ...r);
+        };
+        delete require.cache[sti];
+        try {
+            const m = require(sti);
+            const res = await m._kjorBackupMedBokforing('timer', () => {}, modus,
+                async () => {
+                    if (typeof utfall === 'function') return utfall();
+                    return utfall;
+                });
+            return { res, skrevet };
+        } finally {
+            Module._load = ekte;
+            delete require.cache[sti];
+        }
+    };
+
+    const full = await kjor('full', { status: 'ok', modus: 'full', filnavn: 'b-full.enc', varighetSekunder: 42 });
+    sjekk('backup: full skriver sin egen jobbrad',
+        full.skrevet.map(e => e.rowKey), ['Jobb-Backup-Full', 'Jobb-Backup-Full']);
+    sjekk('backup: statusraden går fra kjører til ok',
+        full.skrevet.map(e => e.Status), ['kjører', 'ok']);
+    sjekk('backup: kilden bokføres', full.skrevet[0]?.Kilde, 'timer');
+    sjekk('backup: filnavnet følger med', full.skrevet.at(-1)?.Filnavn, 'b-full.enc');
+
+    const delta = await kjor('delta', { status: 'ok', modus: 'delta', filnavn: 'b-delta.enc' });
+    sjekk('backup: delta skriver SIN rad, ikke fullens',
+        delta.skrevet.map(e => e.rowKey), ['Jobb-Backup-Delta', 'Jobb-Backup-Delta']);
+
+    // DEN VIKTIGE: bedt om delta, kjørt som full.
+    const oppgradert = await kjor('delta', { status: 'ok', modus: 'full', filnavn: 'b-full.enc' });
+    sjekk('backup: raden viser modusen som FAKTISK ble kjørt',
+        oppgradert.skrevet.at(-1)?.Modus, 'full');
+    sjekk('backup: og hva som ble bedt om', oppgradert.skrevet[0]?.BedtOmModus, 'delta');
+    sjekk('backup: men raden er fortsatt deltaets',
+        oppgradert.skrevet.at(-1)?.rowKey, 'Jobb-Backup-Delta');
+
+    const feilet = await kjor('full', { status: 'feil', modus: 'full', melding: 'blob-lageret svarte ikke' });
+    sjekk('backup: en feilet kjøring ender på feil', feilet.skrevet.at(-1)?.Status, 'feil');
+    sjekk('backup: og bærer årsaken',
+        /blob-lageret/.test(feilet.skrevet.at(-1)?.SistFeil || ''), true);
+
+    // Timeren VENTER på denne. Slipper noe gjennom, skal det bli en rad og
+    // ikke en uhåndtert feil i hosten.
+    let kastet = null, vondt = null;
+    try {
+        vondt = await kjor('full', () => { throw new Error('noe uventet'); });
+    } catch (e) { kastet = e.message; }
+    sjekk('backup: en jobb som kaster, kaster ikke videre', kastet, null);
+    sjekk('backup: den ender på feil', vondt?.skrevet.at(-1)?.Status, 'feil');
+    sjekk('backup: med årsaken i raden',
+        /noe uventet/.test(vondt?.skrevet.at(-1)?.SistFeil || ''), true);
+}
+
 (async () => {
     await postnumreSjekk();
     await fsSjekk();
@@ -507,6 +582,7 @@ async function utsendingSjekk() {
     await nokkelSjekk();
     await teamSjekk();
     await utsendingSjekk();
+    await backupSjekk();
     console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 })().catch((e) => { console.log('TESTEN KRASJET:', e.stack); process.exit(1); });

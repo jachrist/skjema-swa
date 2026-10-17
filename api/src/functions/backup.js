@@ -40,6 +40,8 @@
  *     Auth: admin. Historikk fra 'backups'-blob-container med SAS-URL per fil.
  */
 const { app } = require('@azure/functions');
+const { stotterTimere } = require('../lib/plattform');
+const { jobbForId, jobbSchedule, meldTimer } = require('../lib/jobber');
 const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const { flytHeadere } = require('../lib/flyt-kaller');
@@ -341,6 +343,18 @@ async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
             Melding: `Backup (${res.modus}) kjørt — ${formatStorrelse(res.storrelseKryptert)} kryptert. ${kanalNavn}: ${flytStatus}${flytMelding ? ' (' + flytMelding + ')' : ''}`,
             Detaljer: { ...res.manifest, storrelseBytes: res.storrelseKryptert, kanal, flytStatus, flytMelding, webUrl: graph?.webUrl || null }
         });
+
+        // Utfallet RETURNERES, ikke bare skrevet til statusraden. HTTP-veien
+        // bryr seg ikke (den svarte 202 for lenge siden), men timeren venter
+        // og skal bokføre i jobbraden sin — og den skal ikke måtte lese
+        // tilbake en rad den selv nettopp skrev for å vite hvordan det gikk.
+        return {
+            status: flytStatus === 'feilet' ? 'feil' : 'ok',
+            modus: res.modus, filnavn: res.filnavn,
+            storrelseBytes: res.storrelseKryptert,
+            varighetSekunder: res.varighetSekunder,
+            flytStatus, melding: flytMelding || ''
+        };
     } catch (e) {
         jobbLog(`backup/kjor FEIL: ${e.message}`);
         await settStatus({
@@ -353,6 +367,98 @@ async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
             Type: 'backup.feil', Aktor: aktor,
             ObjektType: 'backup', ObjektId: '',
             Melding: `Backup feilet: ${e.message}`.slice(0, 500)
+        });
+        return { status: 'feil', modus: onsketModus, melding: String(e.message || e) };
+    }
+}
+
+// ==================== TIMER-TRIGGERE (steg 5) ====================
+//
+// **BACKUP ER DEN ENESTE JOBBEN MED TO KADENSER.** Workflowen har to
+// cron-linjer og velger modus ved å LESE SIN EGEN cron:
+// `github.event.schedule == '0 2 * * 0'` betyr full, alt annet delta.
+//
+// En timer kan ikke spørre om det. Her er det derfor TO registreringer, én
+// per modus, hver med sin schedule og sin app-setting. Det er også det
+// ærligste i panelet: «når gikk siste FULLE backup» er spørsmålet som
+// avgjør om en gjenoppretting er mulig, og det skal kunne leses uten å
+// dekode en modus-kolonne.
+//
+// Jobbradene er egne av samme grunn. `Meta`/`Backup` er Backup-fanens
+// LEVENDE visning med hjerteslag — den gjelder kjøringen som pågår nå,
+// uansett modus — og den røres ikke.
+const JOBBRAD = { full: 'Jobb-Backup-Full', delta: 'Jobb-Backup-Delta' };
+
+/**
+ * Kjør backupen og bokfør den i jobbraden for modusen. Kaster aldri.
+ *
+ * `Modus` i raden er den som FAKTISK ble kjørt, ikke den som ble bedt om:
+ * et delta uten en full å bygge på kjøres som full, og en jobbrad som
+ * påsto «delta» ville da vært feil om nettopp det som betyr mest.
+ */
+async function kjorBackupMedBokforing(kilde, log, onsketModus, kjor = kjorBackupJobb) {
+    const rad = JOBBRAD[onsketModus] || JOBBRAD.full;
+    const startTid = new Date().toISOString();
+    const settJobbStatus = async (felter) => {
+        try {
+            const t = tabellKlient('CacheMetadata');
+            await t.upsertEntity({ partitionKey: STATUS_PK, rowKey: rad, ...felter }, 'Merge');
+        } catch (_) { /* jobbraden er ikke kritisk for selve backupen */ }
+    };
+
+    await settJobbStatus({
+        Status: 'kjører', Startet: startTid, Kilde: kilde,
+        BedtOmModus: onsketModus, SistFeil: ''
+    });
+
+    // `kjor` er `kjorBackupJobb` i drift. Den står som parameter av én
+    // grunn: bokføringen under er det timeren faktisk avhenger av, og uten
+    // en sømm her måtte en test av den dratt med seg kryptering, blob-lager
+    // og flyt-kall for å komme fram til én rad.
+    let res;
+    try {
+        res = await kjor(kilde, log, onsketModus);
+    } catch (e) {
+        // kjorBackupJobb fanger selv, men timeren VENTER på denne — slipper
+        // noe gjennom, skal det bli en rad og ikke en uhåndtert feil.
+        log(`backup-${onsketModus}: uventet feil — ${e.message}`);
+        res = { status: 'feil', modus: onsketModus, melding: String(e.message || e) };
+    }
+
+    await settJobbStatus({
+        Status: res.status,
+        Ferdig: new Date().toISOString(),
+        SistOppdatert: new Date().toISOString(),
+        // MODUSEN SOM FAKTISK BLE KJØRT, ikke den som ble bedt om: et delta
+        // uten en full å bygge på kjøres som full, og en jobbrad som påsto
+        // «delta» ville vært feil om nettopp det som avgjør om en
+        // gjenoppretting er mulig.
+        Modus: res.modus || onsketModus,
+        Filnavn: res.filnavn || '',
+        StorrelseBytes: res.storrelseBytes ?? null,
+        VarighetSekunder: res.varighetSekunder ?? null,
+        SistFeil: res.status === 'ok' ? '' : String(res.melding || '').slice(0, 500)
+    });
+    return res;
+}
+
+
+if (stotterTimere()) {
+    for (const modus of ['full', 'delta']) {
+        const jobbDef = jobbForId(`backup-${modus}`);
+        const valgt = jobbSchedule(jobbDef);
+        if (valgt.avvist) console.warn(`backup-${modus}-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
+        else if (valgt.kilde !== 'standard') console.log(`backup-${modus}-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
+
+        const navn = modus === 'full' ? 'backupFullTimer' : 'backupDeltaTimer';
+        meldTimer(`backup-${modus}`, navn, valgt.schedule);
+        app.timer(navn, {
+            schedule: valgt.schedule,
+            handler: async (timer, context) => {
+                const log = (...a) => context.log(...a);
+                if (timer?.isPastDue) log(`backup-${modus}-timer: forsinket kjøring`);
+                await kjorBackupMedBokforing('timer', log, modus);
+            }
         });
     }
 }
@@ -1132,4 +1238,15 @@ app.http('backupListe', {
     }
 });
 
-module.exports = { vurderKvittering };
+// `_kjorBackupMedBokforing` og `_JOBBRAD` eksporteres for test: bokføringen
+// er det timeren avhenger av, og den skal kunne prøves uten kryptering,
+// blob-lager og flyt-kall.
+//
+// ÉN module.exports i fila. Den andre utgaven sto et par hundre linjer
+// lenger opp og ble overskrevet av denne i stillhet — eksporten fantes, og
+// var likevel `undefined` hos den som importerte.
+module.exports = {
+    vurderKvittering,
+    _kjorBackupMedBokforing: kjorBackupMedBokforing,
+    _JOBBRAD: JOBBRAD
+};

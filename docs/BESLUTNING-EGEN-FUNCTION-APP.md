@@ -438,7 +438,7 @@ stemme. Et stabilt nummer er mer verdt enn et pent et.
 | 2 | ✅ **Gjort 14.10.2026** — se «Utfallet av steg 2» under | `/api/system/info` viser riktig lengde og vertsnavn, ikke referansestrengen. Dette er den samme prøven som avslørte problemet 12.10.2026, bare motsatt vei |
 | 3 | ✅ **Gjort og målt 16.10.2026** — `storage.js`, `blob.js` og SAS-signeringen har begge veier, valget står i `lib/lagringsvalg.js`. Se 8j (del 1) og 8k (del 2) | Testsuiten grønn uten `node_modules`, og **dev kjører uten tilkoblingsstreng**: skjema lest og skrevet, backup bygget, kryptert, lastet opp og lest tilbake. Pilot og prod er uendret fordi tilkoblingsstrengen vinner så lenge den er satt |
 | 4 | ✅ **Målt 17.10.2026** — timeren fyrte i dev kl. 10:15:40, aktør `timer`, 5112 rader på 40 s. Se 8m | Pilot og prod er uendret — `app.timer` kalles aldri der. Neste er steg 5: de sju andre jobbene |
-| 5 | 🔶 **Sju av sju flyttet 17.10.2026** (backup gjenstår, den har to kadenser) — `refresh-fs` og `oppslaglister` er målt (8n); `team-synk`, `sjekk-nokler` og de to utsendingsjobbene er på plass (8o). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
+| 5 | ✅ **Alle åtte flyttet 17.10.2026** — ni timere i dev (backup teller to, 8p). — `refresh-fs` og `oppslaglister` er målt (8n); `team-synk`, `sjekk-nokler` og de to utsendingsjobbene er på plass (8o). Resten av cron-jobbene, så `SCHEDULER_KEY` og de åtte workflowene | `node scripts/api-oversikt.js` viser færre anonyme endepunkter. `env-inventar.test.js` feiler hvis `SCHEDULER_KEY` henger igjen ett sted |
 | **5b** | **Ta i bruk i pilot.** Sett `STORAGE_ACCOUNT_NAME`, fjern `STORAGE_CONNECTION_STRING`, tildel rollene. **Ingen kodeendring** | Et skjema leses og skrives i pilot. Går det galt, settes tilkoblingsstrengen tilbake — reversibelt på et minutt, uten deploy |
 | 6 | Samme i **prod**, etter at pilot har stått i minst to uker | Alt over, i prod |
 | 7 | ✅ **Bevist, i koden og målt 16.10.2026** — se 8f og 8l. `FLYT_AUTH=entra` legger på et Bearer-token; standard er uendret | Varslingene kom fram i dev gjennom en flyt uten `sig=` i adressen: kvittering og behandlervarsling på en innsending |
@@ -1685,7 +1685,7 @@ Målt i dev 16.10.2026 (8k):
       utenfor vår egen lagring, og vernene er prøvd med mutasjoner
 - [x] `send-utsendinger` (05:00) og `purre-utsendinger` (06:00) — 8o.
       `baseUrl()` kaster nå heller enn å sende lenker uten adresse
-- [ ] `backup` — to kadenser, full og delta. Krever to registreringer
+- [x] `backup` — to kadenser, to registreringer. 8p
 - [ ] De åtte workflowene fjernet
 - [ ] `SCHEDULER_KEY` ute av koden, miljøfilene og helsesjekken
 - [ ] `node scripts/api-oversikt.js` viser færre anonyme endepunkter
@@ -2690,6 +2690,84 @@ ingenting gikk ut, var **grønn**.
 
 Det er nøyaktig det anti-spam-hensynet hviler på å unngå: en purring brukt opp
 i stillhet. Saken er lagt til, og mutasjonen er nå rød.
+
+## 8p. Steg 5 ferdig — backup, jobben med to kadenser
+
+**17.10.2026.** Alle åtte cron-jobbene kjører på timer i dev. Backup var sist,
+og den eneste som ikke passet i malen.
+
+### Workflowen leser sin egen cron. En timer kan ikke det.
+
+```yaml
+MODUS: ${{ github.event_name == 'workflow_dispatch' && inputs.modus
+       || (github.event.schedule == '0 2 * * 0' && 'full' || 'delta') }}
+```
+
+Søndagskjøringen er full, resten delta — avgjort av HVILKEN cron-linje som
+utløste kjøringen. Det finnes ikke noe tilsvarende for en timer: den vet ikke
+hvilken plan den står i.
+
+Derfor **to registreringer**, én per modus, hver med sin schedule og sin
+app-setting. Modusen følger av hvilken timer som fyrte, ikke av et oppslag.
+
+Det er også det ærligste i panelet. «Når gikk siste FULLE backup» er
+spørsmålet som avgjør om en gjenoppretting er mulig, og med én rad måtte det
+leses ut av en modus-kolonne på den siste kjøringen — som like gjerne kan ha
+vært et delta.
+
+### `workflowCron`: hvilken linje er min?
+
+Testen tok før den FØRSTE `- cron:`-linja i workflowen. Med to linjer ville
+begge jobbene blitt sammenlignet mot søndagsplanen, og en drift i deltaet gått
+upåaktet hen — sjekken grønn mens deltaet kjørte til feil tid.
+
+Registeret sier derfor hvilken linje hver jobb svarer til, og testen krever to
+ting: at `workflowCron` finnes i workflowen, og — motsatt vei — at **hver
+cron-linje i en workflow er krevd av en jobb**. En kadens som ingen timer
+dekker, er en jobb som slutter å kjøre den dagen workflowen fjernes, uten at
+noe sier fra.
+
+### Modusen som ble kjørt, ikke den som ble bedt om
+
+Et delta krever en full å bygge på. Finnes ingen — første kjøring, eller
+statusraden er borte — kjøres en full i stedet. Det er gammel oppførsel, og
+riktig: alternativet er en deltafil som ikke kan gjenopprettes alene.
+
+Jobbraden fører derfor **begge**: `BedtOmModus` og `Modus`. En rad som påsto
+«delta» når en full faktisk ble tatt, ville vært feil om nettopp det som betyr
+mest. Mutasjonen som skrev den ønskede modusen i stedet, ble rød.
+
+### Unntaket som er erklært, ikke oversett
+
+Backup er den eneste jobben som IKKE fikk en egen `*-jobb.js`. Grunnen står i
+tabellen i testen: begge inngangsportene delte allerede `kjorBackupJobb` i
+samme fil, så egenskapen vi er ute etter — én jobb, én bokføring — holdt fra
+før. En flytting for formens skyld ville rørt 1135 linjer uten å gjøre noe
+sannere.
+
+Bokføringsinnpakningen tar jobben som parameter med `kjorBackupJobb` som
+standardverdi. Det er en søm for testen, og den er liten med vilje: uten den
+måtte en prøve av bokføringen dratt med seg kryptering, blob-lager og
+flyt-kall for å komme fram til én rad.
+
+**Den sømmen gjorde en test rød med en gal melding.** Sjekken «begge innganger
+går gjennom den» telte KALL, og en standardverdi har ingen parentes. Den
+teller nå navnet, og krever i tillegg at standardverdien faktisk er jobben —
+ellers kunne en kaller sendt hva som helst inn.
+
+### Og en `module.exports` som overskrev en annen
+
+`backup.js` hadde allerede en `module.exports` på slutten. Den nye sto et par
+hundre linjer lenger opp og ble overskrevet i stillhet: eksporten fantes i
+koden, og var likevel `undefined` hos den som importerte. Testen fanget det
+med en gang, men symptomet — «is not a function» på noe du nettopp skrev —
+peker ikke på årsaken.
+
+### Steg 5 er ferdig
+
+Åtte jobber, ni timere (backup teller to). Workflowene står fortsatt, og
+kjører mot pilot og prod; dev er ute av alle matrisene. Først når pilot og
+prod også har timere, i steg 6, kan workflowene og `SCHEDULER_KEY` fjernes.
 
 ## 9. Risiko
 
