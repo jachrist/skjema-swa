@@ -2460,6 +2460,22 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
         }
 
         /**
+         * Navnet på timeren som FAKTISK ble registrert i prosessen, eller null.
+         *
+         * «Timer i appen» er en påstand om MILJØET — at plattformen her kjører
+         * timere. Den sier ingenting om at nettopp denne jobbens timer ble
+         * registrert. 17.10.2026 var det akkurat det spørsmålet som ikke lot
+         * seg besvare da oppslagslistejobben ikke fyrte: «ikke registrert» og
+         * «registrert, men fyrer ikke» krever helt ulik feilsøking, og panelet
+         * skilte dem ikke.
+         */
+        function jobbRegistrertTekst(j) {
+            if (!j || j.trigger !== 'timer') return null;
+            if (j.registrert?.navn) return `registrert: ${j.registrert.navn}`;
+            return 'IKKE registrert i appen';
+        }
+
+        /**
          * Merknadene som må stå under raden.
          *
          * Alle tre er tilfeller der noe SER riktig ut og ikke er det, og de er
@@ -2486,6 +2502,15 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     tekst: `${j.scheduleVar} er satt til «${j.overstyringIgnorert}», men har ingen `
                         + 'virkning her: plattformen i dette miljøet kjører ikke timere. '
                         + 'Tidspunktet styres av cron i GitHub Actions.'
+                });
+            }
+            if (j.trigger === 'timer' && !j.registrert) {
+                ut.push({
+                    nivaa: 'feil',
+                    tekst: 'Jobben står oppført med timer, men ingen timer er registrert i appen '
+                        + 'som kjører nå. Da fyrer den aldri. Vanligste årsaker: API-et er ikke '
+                        + 'deployet med denne jobben, eller registreringen feilet ved oppstart — '
+                        + 'se loggen for appen.'
                 });
             }
             if (j.statusFeil) {
@@ -2519,7 +2544,10 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         <div style="font-size: 12px; color: var(--text-secondary);">${escHtml(j.beskrivelse || '')}</div>
                         <div style="font-size: 11px; color: var(--text-secondary); font-family: 'SF Mono', Menlo, monospace;">/api/${escHtml(j.rute || '')}</div>
                     </div>
-                    <div style="font-size: 12px;">${escHtml(jobbTriggerTekst(j))}</div>
+                    <div style="font-size: 12px;">
+                        ${escHtml(jobbTriggerTekst(j))}
+                        ${jobbRegistrertTekst(j) ? `<div style="font-size: 11px; color: var(--${j.registrert ? 'text-secondary' : 'danger'});">${escHtml(jobbRegistrertTekst(j))}</div>` : ''}
+                    </div>
                     <div style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;">
                         ${escHtml(j.schedule || '')}
                         <div style="font-size: 11px; color: var(--text-secondary); font-family: inherit;">

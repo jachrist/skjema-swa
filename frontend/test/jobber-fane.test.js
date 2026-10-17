@@ -126,6 +126,37 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
     sjekk('tre samtidig gir tre merknader', alle.length, 3);
 }
 
+// ---------- 2b. «registrert» skilles fra «timer i miljøet» ----------
+//
+// «Timer i appen» er en påstand om MILJØET. Den sier ingenting om at nettopp
+// denne jobbens timer ble registrert, og 17.10.2026 var det akkurat det
+// spørsmålet som ikke lot seg besvare da en jobb ikke fyrte.
+{
+    const jobbRegistrertTekst = bygg('jobbRegistrertTekst');
+    sjekk('registrert timer navngis',
+        jobbRegistrertTekst({ trigger: 'timer', registrert: { navn: 'oppslaglisterTimer' } }),
+        'registrert: oppslaglisterTimer');
+    sjekk('uregistrert timer sier fra',
+        jobbRegistrertTekst({ trigger: 'timer', registrert: null }), 'IKKE registrert i appen');
+    // I et miljø uten timere er spørsmålet ikke stilt, og da skal det ikke
+    // besvares heller — en «IKKE registrert» der ville vært en falsk alarm.
+    sjekk('github-actions får ingen registreringslinje',
+        jobbRegistrertTekst({ trigger: 'github-actions', registrert: null }), null);
+    sjekk('ingen jobb gir null', jobbRegistrertTekst(null), null);
+
+    const jobbMerknader2 = bygg('jobbMerknader');
+    const uregistrert = jobbMerknader2({ scheduleVar: 'X', trigger: 'timer', registrert: null });
+    sjekk('uregistrert timer gir en merknad', uregistrert.length, 1);
+    sjekk('og den er en feil', uregistrert[0]?.nivaa, 'feil');
+    sjekk('og sier at den aldri fyrer',
+        /fyrer den aldri/.test(String(uregistrert[0]?.tekst || '')), true);
+    sjekk('en registrert timer gir ingen merknad',
+        jobbMerknader2({ scheduleVar: 'X', trigger: 'timer', registrert: { navn: 't' } }).length, 0);
+    // Og i et miljø uten timere er fraværet riktig, ikke en feil.
+    sjekk('github-actions gir ingen merknad om registrering',
+        jobbMerknader2({ scheduleVar: 'X', trigger: 'github-actions', registrert: null }).length, 0);
+}
+
 // ---------- 3. fargeskalaen ----------
 {
     sjekk('ok', jobbStatusFarge('ok'), 'success');
@@ -137,11 +168,12 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
 
 // ---------- 4. ingenting havner uescapet i HTML-en ----------
 {
-    const jobbRadHtml = bygg('jobbRadHtml', 'jobbTriggerTekst', 'jobbMerknader', 'jobbStatusFarge');
+    const jobbRadHtml = bygg('jobbRadHtml', 'jobbTriggerTekst', 'jobbRegistrertTekst', 'jobbMerknader', 'jobbStatusFarge');
     const ondt = '<img src=x onerror=alert(1)>';
     const html = jobbRadHtml({
         id: ondt, navn: ondt, beskrivelse: ondt, rute: ondt,
-        trigger: 'timer', schedule: ondt, scheduleKilde: ondt, scheduleVar: ondt,
+        trigger: 'timer', registrert: { navn: 'enTimer' },
+        schedule: ondt, scheduleKilde: ondt, scheduleVar: ondt,
         avvist: ondt, grunn: ondt, overstyringIgnorert: null, statusFeil: ondt,
         siste: { status: ondt, kilde: ondt, sistFeil: ondt, sistOppdatert: null, varighetSekunder: 3, antallRader: 7 }
     });
@@ -195,8 +227,8 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
     // En jobb uten statusrad skal ikke vises som «0 rader» eller «0s»: det er
     // en påstand om en kjøring som ikke har skjedd.
     const uten = jobbRadHtml({
-        id: 'a', navn: 'A', rute: 'r', trigger: 'timer', schedule: 's',
-        scheduleKilde: 'standard', siste: null, statusFeil: null
+        id: 'a', navn: 'A', rute: 'r', trigger: 'timer', registrert: { navn: 't' },
+        schedule: 's', scheduleKilde: 'standard', siste: null, statusFeil: null
     });
     sjekk('ingen varighet uten statusrad', /\b0s\b/.test(uten), false);
     sjekk('ingen rader uten statusrad', /0 rader/.test(uten), false);
@@ -205,8 +237,8 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
     // Og når statusraden ikke kunne leses, skal status IKKE stå som «aldri
     // kjørt» — det er den forvekslingen fanen er til for å hindre.
     const uviss = jobbRadHtml({
-        id: 'a', navn: 'A', rute: 'r', trigger: 'timer', schedule: 's',
-        scheduleKilde: 'standard', siste: null, statusFeil: 'Forbidden'
+        id: 'a', navn: 'A', rute: 'r', trigger: 'timer', registrert: { navn: 't' },
+        schedule: 's', scheduleKilde: 'standard', siste: null, statusFeil: 'Forbidden'
     });
     sjekk('uviss status sier ukjent', uviss.includes('ukjent'), true);
     sjekk('og ikke aldri kjørt', uviss.includes('aldri kjørt'), false);

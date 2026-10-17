@@ -9,7 +9,7 @@ const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const postnumreStorage = require('../lib/postnumre-storage');
 const { stotterTimere } = require('../lib/plattform');
-const { jobbForId, jobbSchedule, lesStatusrad } = require('../lib/jobber');
+const { jobbForId, jobbSchedule, lesStatusrad, meldTimer } = require('../lib/jobber');
 
 app.http('postnumreSok', {
     methods: ['GET'],
@@ -131,6 +131,10 @@ if (stotterTimere()) {
     if (valgt.avvist) console.warn(`postnumre-timer: avviste «${valgt.avvist}» — ${valgt.grunn}`);
     else if (valgt.kilde !== 'standard') console.log(`postnumre-timer: schedule fra ${valgt.kilde}: ${valgt.schedule}`);
 
+    // Meld fra om at registreringen SKJEDDE, slik at Jobber-fanen kan si
+    // forskjell på «ingen timer er registrert» og «registrert, men fyrer
+    // ikke». De to krever helt ulik feilsøking.
+    meldTimer('postnumre-bring', 'postnumreTimer', valgt.schedule);
     app.timer('postnumreTimer', {
         // `runOnStartup` settes IKKE: den ville kjørt jobben ved hver eneste
         // deploy og omstart.

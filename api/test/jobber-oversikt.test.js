@@ -115,11 +115,38 @@ async function medAsync(valg, fn) {
     sjekk('men sier at den står der og ignoreres', pilot[0].overstyringIgnorert, '0 */5 * * * *');
     sjekk('og lover ikke at noe ble avvist', pilot[0].avvist, null);
 
-    // Felter som kan forsvinne kan ikke feilsøkes: alle fire skal ALLTID
-    // finnes, også når ingenting er galt.
-    for (const nøkkel of ['avvist', 'grunn', 'overstyringIgnorert', 'scheduleKilde']) {
+    // Felter som kan forsvinne kan ikke feilsøkes: alle skal ALLTID finnes,
+    // også når ingenting er galt.
+    for (const nøkkel of ['avvist', 'grunn', 'overstyringIgnorert', 'scheduleKilde', 'registrert']) {
         sjekk(`${nøkkel} er alltid med`, nøkkel in med({ miljo: 'dev' }, jobbOversikt)[0], true);
     }
+}
+
+// ---------- 2b. registreringen er en annen påstand enn triggeren ----------
+//
+// `trigger: 'timer'` sier at MILJØET kjører timere. `registrert` sier at
+// nettopp denne jobbens timer faktisk ble registrert i prosessen. Blandes de
+// to, kan panelet ikke skille «ingen timer finnes» fra «timeren fyrer ikke» —
+// og det var akkurat det spørsmålet som sto ubesvart 17.10.2026.
+{
+    const { meldTimer, _glemTimere } = require('../src/lib/jobber');
+    _glemTimere();
+    const foer = med({ miljo: 'dev' }, jobbOversikt);
+    sjekk('uten melding er registrert null', foer[0].registrert, null);
+    sjekk('men triggeren er fortsatt timer', foer[0].trigger, 'timer');
+
+    meldTimer(JOBBER[0].id, 'enTimer', JOBBER[0].standardSchedule);
+    const etter = med({ miljo: 'dev' }, jobbOversikt);
+    sjekk('etter melding står navnet der', etter[0].registrert?.navn, 'enTimer');
+    sjekk('og schedulen', etter[0].registrert?.schedule, JOBBER[0].standardSchedule);
+    sjekk('og de andre jobbene er uberørt', etter[1]?.registrert, null);
+
+    // I et miljø uten timere er feltet null uansett hva som er meldt — der
+    // registreres ingen timer, og en «registrert» der ville vært en påstand
+    // om noe som ikke skjer.
+    sjekk('github-actions-miljø melder aldri registrert',
+        med({ miljo: 'pilot' }, jobbOversikt)[0].registrert, null);
+    _glemTimere();
 }
 
 // ---------- 3. statusraden, én leser ----------

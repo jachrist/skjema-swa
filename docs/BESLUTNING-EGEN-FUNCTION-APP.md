@@ -2505,6 +2505,38 @@ Testen er rettet, ikke fila: formen er dokumentert, brukt og nyttig. En
 tastefeil i formen fanges fortsatt — prøvd ved å skrive `kun_dokumentasjn`, som
 ga to røde sjekker.
 
+### Panelet sa «Timer i appen» om noe det ikke hadde sjekket
+
+Første forsøk på å måle: `OPPSLAGLISTER_SCHEDULE` satt til `0 */5 * * * *`,
+omstart, og ti minutter uten en eneste kjøring. Jobber-fanen sa «Timer i
+appen» og «fra OPPSLAGLISTER_SCHEDULE» — og ingen av delene var svar på
+spørsmålet.
+
+«Timer i appen» kom fra `stotterTimere()`, som er en påstand om **miljøet**:
+plattformen her kjører timere. Schedulen kom fra `jobbSchedule()`, som leser
+app-settingen når endepunktet kalles. **Ingen av dem sier at nettopp denne
+jobbens `app.timer(...)` ble kjørt i prosessen som kjører nå.**
+
+De to tilstandene krever helt ulik feilsøking:
+
+* **Ikke registrert** — API-et er ikke deployet med jobben, eller
+  registreringen feilet ved oppstart. Se deployet og oppstartsloggen.
+* **Registrert, men fyrer ikke** — verten planlegger den ikke. Da handler det
+  om `AzureWebJobsStorage`: timeren lagrer sin plassering i planen og tar en
+  singleton-lås i den kontoen. Mangler kontoen, eller mangler identiteten
+  rollene på den, fyrer timeren aldri mens HTTP-rutene virker som før — fordi
+  de ikke trenger den kontoen i det hele tatt.
+
+Panelet skilte dem ikke, og da var ti minutter uten kjøring like forenlig med
+begge. `meldTimer()` i `lib/jobber.js` kalles nå av hver funksjonsfil rett
+etter `app.timer(...)`, og `/api/jobber` svarer med `registrert`.
+
+**Den sier at KALLET ble gjort, ikke at verten godtok det** — og det er
+nettopp skillet over. Står det «IKKE registrert i appen», er det den første
+listen. Står navnet der og jobben likevel ikke fyrer, er det den andre, og
+`AzureWebJobsStorage` er første sted å se (se også 8g punkt 6, som har stått
+åpent siden steg 1).
+
 ### Hva som gjenstår
 
 * **Se de to fyre i dev.** `REFRESH_FS_SCHEDULE` og `OPPSLAGLISTER_SCHEDULE`,
