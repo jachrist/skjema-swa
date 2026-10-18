@@ -235,10 +235,19 @@ og GitHub secret for deployment-token skiller dem.
 
 ### Sette opp prod-tenant
 
+> **Dette avsnittet er planen fra før prod fanst, og virkeligheten avvek
+> fra den på to punkter.** Navnene under er rettet 18.10.2026 etter å ha lest
+> `staticwebapp.config.prod.json`, der auth-sertifikatet hentes gjennom en
+> Key Vault-referanse *plattformen* løser ved oppstart — altså den ene
+> forekomsten som ikke kan være feil uten at innloggingen i prod er nede.
+> `api/test/keyvault-navn.test.js` låser vault-navnet nå. Ressursgruppa under
+> er IKKE verifisert.
+
 1. **Repeter Azure-oppsett** (steg 1–5 over) med prod-navn:
-   - Ressursgruppe: `FHS-skjema-prod`
+   - Ressursgruppe: `FHS-skjema-prod` *(ikke verifisert — les den av i portalen)*
    - Storage: `stfhsskjemaprod`
-   - Key Vault: `kv-fhsskjema-prod`
+   - Key Vault: **`fhs-kv-01`** — en sentral vault som fanst fra før. Planen
+     her sa en egen vault per miljø; det ble ikke gjort
    - Application Insights: `ai-fhsskjema-prod`
    - SWA (Standard-plan): `swa-fhsskjema-prod`
 2. **Managed Identity + rolletildelinger** — samme som pilot,
@@ -447,8 +456,8 @@ Referanse:
    Bruker portal-UI eller CLI:
    ```
    az keyvault certificate import \
-     --vault-name kv-fhsskjema-prod \
-     --name fhs-adminskjema-cert \
+     --vault-name fhs-kv-01 \
+     --name authapi \
      --file <sti>/certificate.pfx \
      --password <pfx-passord>
    ```
@@ -463,8 +472,14 @@ Referanse:
 5. **Fyll ut `staticwebapp.config.prod.json`** i repo — bytt ut
    placeholderene:
    - `<PROD_TENANT_ID>` → prod-tenant sin ID (fra app-registrering-info)
-   - `<PROD_KV_NAME>` → f.eks. `kv-fhsskjema-prod`
-   - `<CERT_NAME>` → f.eks. `fhs-adminskjema-cert`
+   - `<PROD_KV_NAME>` → `fhs-kv-01`
+   - `<CERT_NAME>` → `authapi`
+
+   Dette er gjort. Fila i repoet bærer den ferdige referansen
+   `.../certificates/authapi/`, og `api/src/lib/nokkelkalender-storage.js`
+   forteller en administrator det samme. Sertifikatnavnet sto som
+   `fhs-adminskjema-cert` her til 18.10.2026 — samme feilklasse som
+   vault-navnet, i samme kommando.
 6. **Commit og push** — pilot-deploy trigges automatisk (ingen effekt
    siden pilot-config er separat).
 7. **Trigger prod-deploy** manuelt fra Actions-fanen.
