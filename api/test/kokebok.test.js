@@ -309,5 +309,34 @@ sjekk('dokumentet har kodeblokker', alle.length > 5, true);
         [...fraSkript].filter(r => r === 'Contributor'), []);
 }
 
+// ---------- 11. delt ressursgruppe: scopet og slettingen ----------
+//
+// v2 og v3 kan dele ressursgruppe (0.3). Da er to linjer i dokumentet
+// forskjellen mellom et avgrenset deploy-scope og en GitHub-hemmelighet som
+// rekker over produksjonsdata — og mellom en riving av v3 og en riving av
+// begge. Begge er lette å «forenkle» tilbake.
+{
+    const scopes = [...tekst.matchAll(/^\$scope\s*=\s*"([^"]+)"/gm)].map(m => m[1]);
+    sjekk('dokumentet setter et $scope', scopes.length > 0, true);
+
+    // Et scope som stopper på ressursgruppa treffer v2 også.
+    sjekk('ingen $scope stopper på ressursgruppa',
+        scopes.filter(s => /resourceGroups\/\$RG\s*$/.test(s)), []);
+    sjekk('hvert $scope peker på en navngitt ressurs',
+        scopes.filter(s => !s.includes('/providers/')), []);
+
+    // Og rivingen skal ikke kunne ta gruppa.
+    const gruppesletting = alle.flatMap(b => b.linjer)
+        .filter(l => /\baz\s+group\s+delete\b/.test(l.tekst))
+        .map(l => `${KOKEBOK}:${l.nr}`);
+    sjekk('kokeboka river aldri hele ressursgruppa', gruppesletting, []);
+
+    // Rivingen finnes, og den sletter ved navn — ellers er sjekken over
+    // grønn fordi kapittelet er borte.
+    sjekk('rivingen sletter ressurser ved navn',
+        /az staticwebapp delete --name \$SWA/.test(tekst)
+        && /az storage account delete --name \$DATA/.test(tekst), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

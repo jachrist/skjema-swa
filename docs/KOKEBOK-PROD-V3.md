@@ -185,6 +185,73 @@ az keyvault show --name $KV --query "properties.networkAcls" -o json
 
 ---
 
+### 0.3 Hvis v2 og v3 deler ressursgruppe
+
+En ressursgruppe er en forvaltningsbeholder, ikke en grense ved kjøring. v2 og
+v3 i samme gruppe deler ingen kvote, ingen vert og ingen kjøretid, og navnene
+kolliderer ikke: `*-skjema-3-prod` mot v2 sine `*-fhsskjema-prod`, og
+lagringskonto, Function App og SWA har globalt unike navn uansett.
+
+Det er dessuten **én reell fordel**: ved cutover skal v3 sin identitet ha de
+tre storage-rollene på v2 sin datakonto. Ligger begge i samme gruppe, er den
+tildelingen innenfor et scope du eier, og trenger ingen bestilling.
+
+Fire ting må likevel gjøres annerledes.
+
+**1. Tjenestehovedobjektet for deploy må ikke få ressursgruppa.**
+
+Dette er den som betyr noe. Kokeboka ga tidligere `sp-skjema-3-prod-deploy`
+rollen `contributor` på **ressursgruppa**. Deles gruppa med v2, rekker den
+samme GitHub-hemmeligheten over v2 sin lagringskonto — og `Contributor` gir
+rett til å liste kontonøklene, altså full datatilgang til produksjonsdata
+gjennom en sidedør. `app-name` i deploy-workflowen er dessuten et *input*,
+så en feil utfylling peker på en ekte v2-ressurs. Trinn 8 scoper derfor til
+**den ene Function App-en**.
+
+**2. Sjekk låser og policyer FØR du oppretter noe.**
+
+En `CanNotDelete`-lås på gruppa arver nedover og treffer v3 også — og under
+testing skal v3-ressurser kunne rives og settes opp på nytt. En
+`allowed-locations`-policy på gruppa kan avvise SWA-en, som opprettes i
+`westeurope` mens resten står i `norwayeast`.
+
+```powershell
+az lock list --resource-group $RG -o table
+az policy assignment list --resource-group $RG --query "[].{navn:displayName, policy:policyDefinitionId}" -o table
+```
+
+Skal v2 beskyttes, hører låsen på **v2 sine ressurser**, ikke på gruppa. Og
+den som faktisk er verdt å sette, er en `CanNotDelete` på v2 sin
+datalagringskonto — den skal overleve både cutover og rivingen av v3.
+
+**3. Merk alt med versjon.**
+
+Uten en tagg er det ingen måte å skille v2 fra v3 i kostnadsanalysen, og
+rivingen i trinn 11 blir en navneøvelse.
+
+```powershell
+az tag update --resource-id (az functionapp show --name $FA --resource-group $RG --query id -o tsv) --operation merge --tags versjon=v3 --output none
+az resource list --resource-group $RG --query "[].{navn:name, type:type, versjon:tags.versjon}" -o table
+```
+
+**4. `az group delete` er forbudt så lenge begge lever.**
+
+Rivingen i trinn 11 sletter ved navn, én ressurs om gangen, og det er med
+vilje. En delt gruppe gjør snarveien til et totalhavari.
+
+> **To Application Insights-ressurser i samme gruppe.** `functionapp create`
+> kan opprette sin egen, ved siden av v2 sin `ai-fhsskjema-prod`. Ingen
+> konflikt, men loggene ligger da på to steder — og en feilsøking i feil
+> ressurs ser ut som «ingen trafikk».
+
+**Når er en egen ressursgruppe likevel riktig?** Når du vil kunne rive v3 med
+én kommando, og når blast radius skal være null. Prisen er at `az group
+create` krever Contributor på **abonnementet** (0.1 B), altså en bestilling.
+Har du gruppa fra før og ikke abonnementet, er delt gruppe med punktene over
+det rimelige valget.
+
+---
+
 ## 1. Navn og variabler
 
 Samme konvensjon som dev, med `dev` → `prod`.
@@ -522,11 +589,22 @@ Utskriften fra `az ad sp create-for-rbac` **er en hemmelighet**. Den går rett
 inn i GitHub-secreten, ikke via en sak, e-post eller chat:
 
 ```powershell
-$scope = "/subscriptions/$SUB/resourceGroups/$RG"
+$scope = "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$FA"
 $creds = az ad sp create-for-rbac --name sp-skjema-3-prod-deploy --role contributor --scopes $scope --sdk-auth
 gh secret set AZURE_FUNCAPP_CREDENTIALS_PROD --body $creds
 Remove-Variable creds
 ```
+
+**Scopet er den ene Function App-en, ikke ressursgruppa.** Deles gruppa med
+v2 (0.3), rekker ellers denne GitHub-hemmeligheten over v2 sin lagringskonto,
+og `Contributor` gir rett til å liste kontonøklene — produksjonsdata gjennom
+en sidedør. `app-name` i workflowen er et input, så en feil utfylling peker
+på en ekte v2-ressurs.
+
+> **Prøv det i dev først.** `Azure/functions-action` slår opp appen på navn,
+> og et oppslag kan trenge leserett bredere enn den ene ressursen. Virker det
+> ikke, er neste trinn `Reader` på ressursgruppa **i tillegg** til
+> `contributor` på appen — ikke `contributor` på gruppa.
 
 Kjør så workflowen **Deploy API til Function App** med
 `appnavn = fa-skjema-3-prod` og `miljo = prod`.
