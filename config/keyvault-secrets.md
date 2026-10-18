@@ -20,6 +20,14 @@ fra.
 > Navnene sto feil her og i `docs/SECURITY.md` til 12.10.2026 («-prod»-suffiks
 > på pilot). De er nå lest ut av pilots levende `KEYVAULT_NAME` og av
 > `staticwebapp.config.prod.json`.
+>
+> **Den rettingen traff bare de to dokumentene notatet nevner.**
+> `config/env.pilot.json` bar suffikset videre til 18.10.2026, og
+> `docs/DEPLOY.md` navngav en prod-vault som aldri ble opprettet
+> med et eget navn per miljø, mens prod bruker den sentrale `fhs-kv-01`. Ett
+> navn i syv varianter, og to av dem gale — denne repoens vanligste feilklasse.
+> `api/test/keyvault-navn.test.js` leser nå prod-navnet ut av KV-referansen
+> plattformen faktisk løser, og krever at ingen annen variant finnes i repoet.
 
 > **Key Vault er kilden og rotasjonspunktet — ikke en referanse appen følger.**
 > Verdien må limes inn som klartekst i SWA Configuration. Se «Rotasjon» nederst;
