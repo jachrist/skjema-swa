@@ -14,13 +14,18 @@
  *
  * Autentisering: client credentials mot måltenanten. App-registreringen
  * trenger ikke ligge i samme tenant som appen — SWA-en er bare en HTTP-klient
- * med en hemmelighet. Derfor kan både pilot og prod laste opp til samme
+ * med en hemmelighet eller et sertifikat. Derfor kan både pilot og prod laste opp til samme
  * bibliotek uten multi-tenant-oppsett og uten kryssgående datatilgang.
  *
  * Env-vars:
  *   GRAPH_TENANT_ID              — tenanten biblioteket ligger i
  *   GRAPH_CLIENT_ID              — app-registreringen
  *   GRAPH_CLIENT_SECRET          — hemmelighet (Key Vault-referanse)
+ *   GRAPH_CLIENT_CERT_PEM        — ALTERNATIV til hemmeligheten: sertifikatet
+ *                                  som PEM, privatnøkkel OG sertifikat i samme
+ *                                  verdi. Er begge satt, vinner hemmeligheten.
+ *                                  PKCS#12/PFX kan ikke leses — se
+ *                                  lagKlientAssertion() lenger nede.
  *   BACKUP_SHAREPOINT_SITE       — «https://fhs.sharepoint.com/sites/Skjema»
  *                                  eller «fhs.sharepoint.com:/sites/Skjema»
  *   BACKUP_SHAREPOINT_BIBLIOTEK  — valgfritt bibliotek-navn; uten dette brukes
@@ -30,6 +35,8 @@
  * Rettigheter: appen bør ha Sites.Selected, ikke Files.ReadWrite.All, og få
  * skrivetilgang til nøyaktig dette området. Se docs/BACKUP-SHAREPOINT.md.
  */
+const crypto = require('crypto');
+
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 // Graph krever at alle biter unntatt den siste er et multiplum av 320 KiB.
@@ -48,6 +55,7 @@ function konfig() {
         tenantId: les('GRAPH_TENANT_ID'),
         clientId: les('GRAPH_CLIENT_ID'),
         clientSecret: les('GRAPH_CLIENT_SECRET'),
+        clientCertPem: les('GRAPH_CLIENT_CERT_PEM'),
         site: les('BACKUP_SHAREPOINT_SITE'),
         bibliotek: les('BACKUP_SHAREPOINT_BIBLIOTEK'),
         mappe: les('BACKUP_SHAREPOINT_MAPPE')
@@ -56,7 +64,7 @@ function konfig() {
 
 /** Er Graph-veien satt opp? Uten dette faller backupjobben tilbake til PA-flyten. */
 function erKonfigurert(k = konfig()) {
-    return !!(k.tenantId && k.clientId && k.clientSecret && k.site);
+    return !!(k.tenantId && k.clientId && (k.clientSecret || k.clientCertPem) && k.site);
 }
 
 /** Hva som mangler — til feilmeldinger og helsesjekk. */
@@ -64,7 +72,11 @@ function manglerKonfig(k = konfig()) {
     const kreves = {
         GRAPH_TENANT_ID: k.tenantId,
         GRAPH_CLIENT_ID: k.clientId,
-        GRAPH_CLIENT_SECRET: k.clientSecret,
+        // Én av to. Navnet beholdes slik det er fordi
+        // `api/test/env-inventar.test.js` leser denne lista som kildens egen
+        // fasit over hva Graph-veien ikke klarer seg uten — endres formen,
+        // slutter inventarsjekken å se GRAPH-variablene i det hele tatt.
+        GRAPH_CLIENT_SECRET: k.clientSecret || k.clientCertPem,
         BACKUP_SHAREPOINT_SITE: k.site
     };
     return Object.entries(kreves).filter(([, v]) => !v).map(([n]) => n);
@@ -162,17 +174,73 @@ function graphFeil(melding, status, tekst) {
 }
 
 /** Token via client credentials. Caches til like før utløp. */
+/**
+ * Sertifikat-legitimasjon: en JWT vi signerer selv.
+ *
+ * Et sertifikat sendes ikke som en hemmelighet. Entra vil ha en `client_assertion`
+ * — en JWT signert med den private nøkkelen, der `x5t` er SHA-1-avtrykket av
+ * sertifikatet i base64url, slik at Entra vet hvilken offentlig nøkkel den
+ * skal verifisere mot.
+ *
+ * **PEM, ikke PKCS#12 — målt 19.10.2026 på Node 22.22.** `createPrivateKey`
+ * avviser PFX i alle former (`ERR_OSSL_UNSUPPORTED`). Key Vault sin
+ * secret-representasjon av et sertifikat følger innholdstypen:
+ * `application/x-pem-file` gir PEM, `application/x-pkcs12` gir base64-PFX. Er
+ * sertifikatet importert som PFX, finnes det ingen vei videre herfra, og da
+ * skal det SIES — ikke feile som en signaturfeil langt unna årsaken.
+ *
+ * PEM-en fra Key Vault bærer nøkkel og sertifikat etter hverandre i samme
+ * streng. Node plukker riktig del av hver av dem; prøvd, ikke antatt.
+ */
+function lagKlientAssertion(k, naa = Date.now(), uuid = () => crypto.randomUUID()) {
+    const pem = String(k.clientCertPem || '');
+    if (!/-----BEGIN/.test(pem)) {
+        throw new Error('GRAPH_CLIENT_CERT_PEM er ikke PEM. Verdien må begynne med '
+            + '«-----BEGIN» og inneholde både privatnøkkelen og sertifikatet. Et base64-PFX '
+            + '(PKCS#12) kan ikke leses av Node. Importer sertifikatet i Key Vault med '
+            + 'innholdstype application/x-pem-file, eller legg PEM-en inn som en egen secret.');
+    }
+    if (!/-----BEGIN CERTIFICATE-----/.test(pem)) {
+        throw new Error('GRAPH_CLIENT_CERT_PEM mangler selve sertifikatet. Uten det kan ikke '
+            + 'avtrykket (x5t) beregnes, og Entra vet ikke hvilken nøkkel den skal verifisere mot.');
+    }
+
+    const sertifikat = new crypto.X509Certificate(pem);
+    const x5t = crypto.createHash('sha1').update(sertifikat.raw).digest('base64url');
+    const nokkel = crypto.createPrivateKey(pem);
+
+    const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    // Entra krever at `aud` er nøyaktig token-endepunktet for tenanten.
+    const aud = `https://login.microsoftonline.com/${encodeURIComponent(k.tenantId)}/oauth2/v2.0/token`;
+    const nbf = Math.floor(naa / 1000) - 60;   // litt slingringsmonn for klokkeavvik
+    const hode = { alg: 'RS256', typ: 'JWT', x5t };
+    const krav = { aud, iss: k.clientId, sub: k.clientId, jti: uuid(), nbf, exp: nbf + 600 };
+
+    const data = `${b64(hode)}.${b64(krav)}`;
+    const signatur = crypto.createSign('RSA-SHA256').update(data).sign(nokkel, 'base64url');
+    return `${data}.${signatur}`;
+}
+
+/** Kroppen i token-kallet: hemmelighet eller sertifikat, aldri begge. */
+function tokenKropp(k) {
+    const felles = { client_id: k.clientId, scope: 'https://graph.microsoft.com/.default', grant_type: 'client_credentials' };
+    // Hemmeligheten vinner når begge er satt: den er den innkjørte veien, og
+    // et halvferdig sertifikatoppsett skal ikke kunne ta ned en backup som
+    // virker. Rekkefølgen er med vilje, ikke tilfeldig.
+    if (k.clientSecret) return new URLSearchParams({ ...felles, client_secret: k.clientSecret });
+    return new URLSearchParams({
+        ...felles,
+        client_assertion_type: 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+        client_assertion: lagKlientAssertion(k)
+    });
+}
+
 async function hentToken(k, fetchFn) {
     const nokkel = `${k.tenantId}|${k.clientId}`;
     if (tokenCache && tokenCache.nokkel === nokkel && tokenCache.utloper > Date.now() + 60_000) {
         return tokenCache.token;
     }
-    const kropp = new URLSearchParams({
-        client_id: k.clientId,
-        client_secret: k.clientSecret,
-        scope: 'https://graph.microsoft.com/.default',
-        grant_type: 'client_credentials'
-    });
+    const kropp = tokenKropp(k);
     const svar = await fetchFn(`https://login.microsoftonline.com/${encodeURIComponent(k.tenantId)}/oauth2/v2.0/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -411,6 +479,7 @@ async function lagNedlaster(filnavn, log = () => {}, deps = {}) {
 
 module.exports = {
     lastOppBackup, lagNedlaster, erKonfigurert, manglerKonfig, konfig,
+    lagKlientAssertion, tokenKropp,
     siteReferanse, elementSti, kodetSti, beregnBiter, nesteForventet,
     hentToken, tomTokenCache,
     BIT_STORRELSE, BIT_JUSTERING

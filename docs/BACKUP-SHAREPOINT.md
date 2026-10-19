@@ -57,24 +57,25 @@ adressen, f.eks. `https://fhs.sharepoint.com/sites/Skjemasystem`.
 Entra ID → App registrations → New registration. Ingen redirect-URI trengs.
 Noter **Application (client) ID** og **Directory (tenant) ID**.
 
-Under **Certificates & secrets**: lag en **client secret**. Legg verdien i Key
-Vault, aldri i kode eller env-JSON.
+Under **Certificates & secrets**: lag enten en **client secret** eller et
+**sertifikat**. Legg verdien i Key Vault, aldri i kode eller env-JSON.
 
-> **Her sto det «lag et sertifikat eller en client secret — sertifikat er å
-> foretrekke» til 19.10.2026.** Det var feil, og feilen var dyr: koden støtter
-> bare client secret, og steg 4 under har ingen variabel for et sertifikat.
+> **Her sto det «sertifikat er å foretrekke» til 19.10.2026, mens koden bare
+> kunne client secret** — og steg 4 hadde ingen variabel for et sertifikat.
 > Noen fulgte anbefalingen, fikk app-registreringen opprettet med sertifikat
-> hos en administrator, og sto igjen uten noe å sette inn.
->
-> `api/test/graph-legitimasjon.test.js` leser nå BÅDE `graph-opplast.js` og
-> tabellen under, og krever at de er enige om hva som støttes.
+> hos en administrator, og sto igjen uten noe å sette inn. Støtten kom samme
+> dag, og `api/test/graph-legitimasjon.test.js` leser nå BÅDE
+> `graph-opplast.js` og tabellen under og krever at de er enige.
 
 <!-- legitimasjon-fra-graph-opplast -->
 
 | Legitimasjon | Støttet i dag |
 |---|---|
 | `client secret` | ja |
-| `sertifikat` | nei |
+| `sertifikat` | ja |
+
+**Er begge satt, vinner hemmeligheten.** Den er den innkjørte veien, og et
+halvferdig sertifikatoppsett skal ikke kunne ta ned en backup som virker.
 
 **Hvorfor ikke sertifikat — og hvorfor auth-appen kan.** Prod sin
 *innloggings*-app bruker sertifikat fra Key Vault med bare `AAD_CLIENT_ID`
@@ -164,6 +165,7 @@ Settes i SWA Configuration, alle som **klartekst**.
 | `GRAPH_TENANT_ID` | Directory (tenant) ID for tenanten biblioteket ligger i |
 | `GRAPH_CLIENT_ID` | Application (client) ID |
 | `GRAPH_CLIENT_SECRET` | Klienthemmeligheten i klartekst. Arkiver den i Key Vault som `graph-client-secret` |
+| `GRAPH_CLIENT_CERT_PEM` | **Alternativ til hemmeligheten.** Sertifikatet som PEM, med privatnøkkel **og** sertifikat i samme verdi. Settes bare hvis app-registreringen bruker sertifikat |
 | `BACKUP_SHAREPOINT_SITE` | `https://fhs.sharepoint.com/sites/Skjemasystem` |
 | `BACKUP_SHAREPOINT_BIBLIOTEK` | Valgfritt. Bibliotekets navn, f.eks. `Backup`. Uten dette brukes områdets standardbibliotek. |
 | `BACKUP_SHAREPOINT_MAPPE` | Valgfritt. Undermappe, f.eks. `Skjemasystem/Backup`. |

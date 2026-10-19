@@ -33,9 +33,17 @@ const dok = les('docs', 'BACKUP-SHAREPOINT.md');
 //
 // Lest ut av kroppen i token-kallet, ikke av kommentarer. En kommentar kan
 // påstå hva som helst; `client_secret:` i URLSearchParams er det som skjer.
-const kroppStart = kilde.indexOf('new URLSearchParams({');
-sjekk('fant token-kroppen i graph-opplast.js', kroppStart > 0, true);
-const kropp = kilde.slice(kroppStart, kilde.indexOf('});', kroppStart));
+// Kroppen bygges i `tokenKropp()`, med én gren per legitimasjonstype. Leses
+// bare den FØRSTE `new URLSearchParams({`, måles bare den første grenen — og
+// da melder testen «sertifikat støttes ikke» mens koden støtter det. Det
+// skjedde 19.10.2026, i akkurat denne testen.
+const kroppStart = kilde.indexOf('function tokenKropp(');
+sjekk('fant tokenKropp() i graph-opplast.js', kroppStart > 0, true);
+const kropp = kilde.slice(kroppStart, kilde.indexOf('\n}', kroppStart));
+
+// Og kroppen skal faktisk brukes av token-kallet — ellers kan den si hva som
+// helst uten at noe sendes.
+sjekk('hentToken bruker tokenKropp()', /const kropp = tokenKropp\(k\);/.test(kilde), true);
 
 const koden = {
     'client secret': /\bclient_secret\s*:/.test(kropp),
