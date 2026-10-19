@@ -378,8 +378,27 @@ async function refreshFS(log = (...a) => console.log(...a)) {
         if (aktiveKortKoder.includes(termin)) await store.slettAlleIPartisjon(store.TABELL_STUDENTER, pk);
     }
 
-    await store.upsertBatch(store.TABELL_EMNER, emneRader);
-    await store.upsertBatch(store.TABELL_STUDENTER, studentRader);
+    // Svaret fra upsertBatch BRUKES. `lagret` er antallet rader som faktisk
+    // havnet i tabellen; `entiteter.length` er antallet vi bygget. De to er
+    // ulike når to undervisningsenheter gir samme termin+emnenøkkel — samme
+    // emne på to campus eller med to studieprogramkoblinger — og da slår
+    // dedupliseringen dem sammen, med vilje.
+    //
+    // Til 19.10.2026 ble svaret kastet, og metadataen meldte det BYGDE tallet.
+    // Panelet sa 365 emner mens tabellen hadde 346. Et tall som er 19 for
+    // høyt er verre enn ingen tall: det er ingenting å feilsøke på, fordi
+    // ingenting ser galt ut. FilterStudent-grenen under har alltid brukt
+    // `lagret` — dette er samme regel, anvendt det andre stedet også.
+    const emneSkriv = await store.upsertBatch(store.TABELL_EMNER, emneRader);
+    const studentSkriv = await store.upsertBatch(store.TABELL_STUDENTER, studentRader);
+    if (emneSkriv.lagret < emneRader.length) {
+        log(`refresh-fs: ${emneRader.length - emneSkriv.lagret} emnerader delte termin+emnenøkkel `
+            + `og ble slått sammen (${emneRader.length} bygget, ${emneSkriv.lagret} lagret)`);
+    }
+    if (studentSkriv.lagret < studentRader.length) {
+        log(`refresh-fs: ${studentRader.length - studentSkriv.lagret} studentrader delte nøkkel `
+            + `og ble slått sammen (${studentRader.length} bygget, ${studentSkriv.lagret} lagret)`);
+    }
     await ryddGamleTerminer(aktiveKortKoder);
 
     // FilterStudent: skriv ALLE nye rader først, rydd så bort forrige
@@ -394,8 +413,8 @@ async function refreshFS(log = (...a) => console.log(...a)) {
         log('refresh-fs: ADVARSEL — ingen FilterStudent-rader bygget, hopper over rydding');
     }
 
-    await store.settMetadata('FS-Emner', { antallRader: emneRader.length, status: 'ok' });
-    await store.settMetadata('FS-Studenter', { antallRader: studentRader.length, status: 'ok' });
+    await store.settMetadata('FS-Emner', { antallRader: emneSkriv.lagret, status: 'ok' });
+    await store.settMetadata('FS-Studenter', { antallRader: studentSkriv.lagret, status: 'ok' });
     await store.settMetadata('FS-FilterStudent', { antallRader: alleFilterRader.length, status: 'ok' });
     await store.settMetadata('FS-Klasser', {
         antallRader: klasseMetaRader.length,
@@ -413,8 +432,10 @@ async function refreshFS(log = (...a) => console.log(...a)) {
     log(`refresh-fs: fullført på ${varighet} s`);
     return {
         terminer: aktiveKortKoder,
-        antallEmner: emneRader.length,
-        antallStudenter: studentRader.length,
+        antallEmner: emneSkriv.lagret,
+        antallStudenter: studentSkriv.lagret,
+        antallEmnerBygget: emneRader.length,
+        antallStudenterBygget: studentRader.length,
         antallFilterRader: alleFilterRader.length,
         antallKlasseRader: klasseFilterRader.length,
         antallSlettetGammel: filterSlettet,
