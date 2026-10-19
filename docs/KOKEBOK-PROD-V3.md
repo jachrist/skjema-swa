@@ -58,6 +58,7 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 | ☐ | Flytene er kopiert til prod-tenanten med **Entra-autentisering** | Se trinn 7. Uten dette sender v3 ingenting |
 | ☐ | Domene/subdomene bestemt | Se 10. Ikke nødvendig for oppsettet, men avgjør cutover |
 | ☐ | **Skriver v1 fortsatt?** | Se under. Avklares før cutover, ikke etter |
+| ☐ | **Backup-sertifikatet importeres som PEM** | Se 0.4. Importeres det som PFX, kan koden ikke lese det — og en omgjøring etterpå krever at privatnøkkelen håndteres manuelt |
 
 ```powershell
 az login --tenant <prod-tenant-id>
@@ -250,6 +251,43 @@ vilje. En delt gruppe gjør snarveien til et totalhavari.
 create` krever Contributor på **abonnementet** (0.1 B), altså en bestilling.
 Har du gruppa fra før og ikke abonnementet, er delt gruppe med punktene over
 det rimelige valget.
+
+### 0.4 Backup-appen: sertifikatet må være PEM
+
+Backup-appen (`Sites.Selected` mot SharePoint) kan autentisere seg med **enten**
+en client secret **eller** et sertifikat. Velges sertifikat, er det ett krav
+som må stå i bestillingen:
+
+> **Sertifikatet skal importeres i Key Vault med innholdstype
+> `application/x-pem-file`**, ikke `application/x-pkcs12`.
+
+Grunnen er målt 19.10.2026 på Node 22.22: `crypto.createPrivateKey` avviser
+PKCS#12/PFX i **alle** former (`ERR_OSSL_UNSUPPORTED`). PEM leses direkte.
+Key Vault sin secret-representasjon — den app-settingen refererer til — følger
+innholdstypen sertifikatet ble importert med. Er den PFX, finnes det ingen vei
+videre fra koden.
+
+**Standardvalget er feil vei.** Laster noen opp en `.pfx`-fil, blir
+innholdstypen `application/x-pkcs12` uten at noen tar et valg. Det er derfor
+dette står i bestillingen og ikke i en feilsøkingsliste.
+
+Sjekk hva som faktisk ble importert — kommandoen skriver bare dommen, aldri
+nøkkelen:
+
+```powershell
+az keyvault secret show --vault-name $KV --name <sertifikatnavn> --query "contentType" -o tsv
+```
+
+> **Ble det PFX likevel?** Da må privatnøkkelen konverteres, og den er i
+> klartekst mens det skjer. **Gjenopprett ikke sertifikatet** — et nytt
+> nøkkelpar betyr at app-registreringen må oppdateres av en administrator på
+> nytt. Konverter i stedet, og legg PEM-en inn som en **egen secret** ved
+> siden av sertifikatet, f.eks. `graph-client-cert-pem`. Framgangsmåten, og
+> hvorfor `$HOME` i Cloud Shell er feil sted å gjøre det, står i
+> `docs/BACKUP-SHAREPOINT.md`.
+
+Velges client secret i stedet, gjelder ingenting av dette — da er
+`GRAPH_CLIENT_SECRET` hele oppsettet, og `GRAPH_CLIENT_CERT_PEM` står tom.
 
 ---
 
