@@ -161,6 +161,79 @@ avgjørelse som hører hjemme hos den som eier sertifikatet. **Prøv i dev
 først:** samme framgangsmåte, lav innsats, og du får verifisert at
 sertifikatveien faktisk virker mot Entra før den skal virke i prod.
 
+#### Prøv i dev først — Key Vault utsteder sertifikatet selv
+
+Signaturen er verifisert lokalt i `api/test/graph-sertifikat.test.js`, mot
+sertifikatets egen offentlige nøkkel. **Men Entra er dommeren**, og den prøven
+kan bare tas mot en ekte tenant. Ta den i dev, ikke i prod.
+
+**Selvsignert holder.** For client credentials validerer Entra ingen kjede —
+den matcher signaturen mot den offentlige nøkkelen du selv har lastet opp. Et
+selvsignert sertifikat er ikke en nødløsning her, det er det normale for
+app-til-app.
+
+**1. La Key Vault utstede det, med PEM fra starten.** Standardpolicyen gir
+`application/x-pkcs12`, så den må overstyres. Da slipper du også å håndtere
+privatnøkkelen: den blir til inne i vaulten.
+
+```bash
+az keyvault certificate get-default-policy \
+  | jq '.secretProperties.contentType="application/x-pem-file" | .x509CertificateProperties.subject="CN=fhs-skjema-backup-dev"' \
+  > policy.json
+az keyvault certificate create --vault-name kv-skjema-3-dev --name graph-backup-dev --policy @policy.json
+```
+
+`issuerParameters.name` er `"Self"` i standardpolicyen — altså selvsignert.
+Gyldighet 12 måneder.
+
+**2. Verifiser formatet med en gang**, før du bygger videre på det:
+
+```bash
+az keyvault secret show --vault-name kv-skjema-3-dev --name graph-backup-dev --query contentType -o tsv
+```
+
+Står det noe annet enn `application/x-pem-file`, ble ikke policyen brukt.
+
+**3. Last den OFFENTLIGE delen opp til app-registreringen.** Entra trenger den
+for å verifisere signaturen. Ingen privatnøkkel forlater Key Vault:
+
+```bash
+az keyvault certificate download --vault-name kv-skjema-3-dev --name graph-backup-dev --file cert.cer --encoding DER
+```
+
+Last `cert.cer` opp under **App registrations → appen → Certificates &
+secrets → Certificates → Upload certificate**.
+
+> **Bruk portalen til dette steget.** `az ad app credential reset` FJERNER
+> eksisterende legitimasjon med mindre `--append` er med. I dev er skaden
+> liten, men vanen er dårlig.
+
+**4. Pek app-settingen på den** — på `fa-skjema-3-dev`:
+
+```
+GRAPH_CLIENT_CERT_PEM = @Microsoft.KeyVault(SecretUri=https://kv-skjema-3-dev.vault.azure.net/secrets/graph-backup-dev/)
+```
+
+Uten versjon til slutt gir alltid nyeste.
+
+> **`GRAPH_CLIENT_SECRET` MÅ stå tom.** Er begge satt, vinner hemmeligheten —
+> og da tester du ingenting, mens alt ser ut til å virke. Det er den eneste
+> måten denne prøven kan gi et falskt grønt svar på.
+
+Identiteten har `Key Vault Secrets User` fra trinn 3 i kokeboka. Løses ikke
+referansen, prøv å legge til **`Key Vault Certificate User`**: en secret som
+er ryggen av et sertifikat oppfører seg ikke alltid som en vanlig secret, og
+det er nettopp derfor prod sin SWA-identitet har begge rollene.
+
+**5. Kjør en backup og les feilmeldingen.**
+
+| Det du ser | Hva det betyr |
+|---|---|
+| Backupen lastes opp til SharePoint | Ferdig — veien er bevist mot ekte Entra |
+| `GRAPH_CLIENT_CERT_PEM er ikke PEM` | KV-referansen ga PFX. Policyen i steg 1 slo ikke gjennom |
+| `Fikk ikke token fra Entra (HTTP 401)`, `AADSTS700027` | Signaturen verifiserer ikke — feil sertifikat lastet opp, eller avtrykket matcher ikke |
+| `AADSTS7000215` | Entra leste det som en hemmelighet — da ble `GRAPH_CLIENT_SECRET` stående |
+
 #### Hvor sertifikatveien i det hele tatt kan brukes
 
 En frittstående Function App (dev, og prod v3) løser
