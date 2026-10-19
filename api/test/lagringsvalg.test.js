@@ -405,6 +405,51 @@ function veier(env) {
         /lagringsvalg\.js/.test(eks._kommentar || ''), true);
 }
 
+// ---------- kontonavnet: ett svar, uansett vei inn ----------
+//
+// `lagringsvalg().konto` er det admin-panelet VISER. `miljoetsKonto()` er det
+// koden spør når den trenger å vite hvilken konto som er vår. To kilder til
+// samme opplysning — og til 19.10.2026 var de uenige: på tilkoblingsstreng
+// svarte visningen `null` mens `miljoetsKonto()` leste navnet ut av strengen.
+//
+// Prisen var en formiddag. En tom LU-kolonne ble feilsøkt i en tabell som
+// tilhørte en HELT ANNEN lagringskonto, fordi ingenting i appen kunne si
+// hvilken konto den selv leste fra — og det miljøet som ikke kunne si det,
+// var nettopp det som går på tilkoblingsstreng.
+//
+// Her leses BEGGE, i begge modusene, og de skal svare likt.
+{
+    const tilfeller = [
+        ['tilkoblingsstreng', { STORAGE_CONNECTION_STRING: STRENG }],
+        ['managed identity', { STORAGE_ACCOUNT_NAME: KONTO, AZURE_CLIENT_ID: 'klient-id' }],
+        ['bare konto', { STORAGE_ACCOUNT_NAME: KONTO }]
+    ];
+    for (const [navn, env] of tilfeller) {
+        const vist = lv.lagringsvalg(env).konto;
+        const brukt = lv.miljoetsKonto(env);
+        sjekk(`${navn}: visningen og oppslaget gir samme konto`, vist, brukt);
+        sjekk(`${navn}: og det er et kontonavn`, vist, KONTO);
+    }
+
+    // Ukonfigurert skal gi null begge veier — ikke tomt navn, ikke «ukjent».
+    sjekk('ukonfigurert: visningen gir null', lv.lagringsvalg({}).konto, null);
+    sjekk('ukonfigurert: oppslaget gir null', lv.miljoetsKonto({}), null);
+
+    // En SAS-basert streng har ingen AccountName. Navnet skal likevel fram,
+    // lest ut av vertsnavnet — ellers står panelet tomt akkurat der det
+    // trengs mest.
+    const sas = 'BlobEndpoint=https://stskjema3prod.blob.core.windows.net/;SharedAccessSignature=sv=2024-11-04&sig=OPPDIKTET';
+    sjekk('SAS-streng: kontonavnet leses ut av vertsnavnet',
+        lv.lagringsvalg({ STORAGE_CONNECTION_STRING: sas }).konto, 'stskjema3prod');
+
+    // Og det viktigste: NØKKELEN skal aldri ut. Kontonavnet er ikke en
+    // hemmelighet; nøkkelen i samme streng er det.
+    const vist = JSON.stringify(lv.lagringsvalg({ STORAGE_CONNECTION_STRING: STRENG }));
+    sjekk('det finnes en nøkkel å lekke i strengen', STRENG.includes('OPPDIKTET+NOKKEL=='), true);
+    sjekk('og den står ikke i det som vises', vist.includes('OPPDIKTET'), false);
+    sjekk('heller ikke hele strengen', vist.includes('DefaultEndpointsProtocol'), false);
+}
+
 Module._load = ekteLast;
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

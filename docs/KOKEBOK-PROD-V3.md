@@ -57,6 +57,7 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 | ☐ | Key Vault: gjenbruk `fhs-kv-01`, eller ny `kv-skjema-3-prod`? | Se 3.1 — valget avgjør én kommando |
 | ☐ | Flytene er kopiert til prod-tenanten med **Entra-autentisering** | Se trinn 7. Uten dette sender v3 ingenting |
 | ☐ | Domene/subdomene bestemt | Se 10. Ikke nødvendig for oppsettet, men avgjør cutover |
+| ☐ | **Skriver v1 fortsatt?** | Se under. Avklares før cutover, ikke etter |
 
 ```powershell
 az login --tenant <prod-tenant-id>
@@ -649,6 +650,26 @@ foreach ($rolle in @('Storage Table Data Contributor', 'Storage Blob Data Contri
 **B. Full migrering** — `scripts/migrer/` kopierer tabeller og vedlegg til en
 ny konto. Krever 24 timers kjørestopp for å unngå endringer underveis, men
 lar v2 sine data stå helt urørt.
+
+### Er v2 den eneste som skriver?
+
+**Observert 19.10.2026, ikke bekreftet:** den opprinnelige løsningen (v1) ser
+ut til å kjøre oppdateringer fortsatt, mot sin egen lagringskonto. Det ble
+oppdaget fordi en tom LU-kolonne ble feilsøkt i v1 sin `Emner`-tabell i den
+tro at det var prod — tabellen har samme navn og samme form, og v1 sine
+jobber skriver ikke LU-feltet.
+
+To ting følger av det, og begge hører hjemme FØR cutover:
+
+1. **Planen under forutsetter at v2 er den eneste som skriver.** Er v1 også i
+   drift, er det tre stabler, ikke to — og «ta prod ut av matrisene» dekker
+   ikke v1 sine jobber, som ligger et annet sted.
+2. **Lagringskontoene må kunne skilles fra hverandre på navn alene.** To
+   konti med samme tabellnavn og samme kolonner er ikke til å se forskjell på
+   i en portal. Fra 19.10.2026 melder `/api/system/info` hvilken konto
+   miljøet faktisk leser fra — sjekk den, ikke hukommelsen.
+
+Avklar hva v1 fortsatt gjør, og om noe eller noen leser fra den.
 
 ### Uansett form: stopp de doble kjøringene
 

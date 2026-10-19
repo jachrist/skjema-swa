@@ -126,3 +126,43 @@ jobs:
           else
             echo "### Preview-URL: se «Visit your site at:» i loggen for «Build And Deploy»" >> $GITHUB_STEP_SUMMARY
           fi
+
+      # En grønn deploy er ikke et bevis på at koden er ute.
+      #
+      # 12.10.2026 meldte kjøring #45 suksess. Prod serverte fortsatt kjøring
+      # #44 sin build fra 7. oktober, og ingen oppdaget det før en feilsøking
+      # 19.10 sammenlignet /api/ping med deploy-historikken. En hel formiddag
+      # gikk med til å lete etter en feil i kode som ikke var deployet.
+      #
+      # CLAUDE.md har regelen fra før: «Ikke anta at deployet kode er
+      # gjeldende. /api/ping og /js/config.js bærer commit-SHA-en de kjører.»
+      # Dette steget håndhever den i stedet for å be noen huske den.
+      #
+      # Kjøres ikke for preview: der er vertsnavnet et annet, og det utledes
+      # ikke pålitelig (se steget over).
+      - name: Verifiser at deployen faktisk landet
+        if: inputs.preview == ''
+        env:
+          SWA_URL: ${{ vars.SWA_URL }}
+          FORVENTET: ${{ github.sha }}
+        run: |
+          if [ -z "$SWA_URL" ]; then
+            echo "::error::vars.SWA_URL er ikke satt for dette miljøet. Uten den kan ikke deployen verifiseres, og en stille mislykket deploy er nettopp det dette steget finnes for. Sett den under Settings → Environments → prod → Variables."
+            exit 1
+          fi
+          KORT="${FORVENTET:0:7}"
+          echo "Forventer commit $KORT på $SWA_URL/api/ping"
+          # SWA bruker et par minutter på å bytte innhold. Prøv i opptil 3 min.
+          for FORSOK in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            SVAR=$(curl -sS --max-time 20 "$SWA_URL/api/ping" || echo '')
+            UTE=$(printf '%s' "$SVAR" | python3 -c "import json,sys; print(json.load(sys.stdin).get('bygg',{}).get('commit',''))" 2>/dev/null || echo '')
+            echo "  forsøk $FORSOK: /api/ping melder '${UTE:-(intet svar)}'"
+            if [ "$UTE" = "$KORT" ] || [ "$UTE" = "$FORVENTET" ]; then
+              echo "### Deploy verifisert: prod kjører \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Deployen ble rapportert vellykket, men /api/ping melder fortsatt '${UTE:-(intet svar)}' og ikke '$KORT'. Prod kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026."
+          echo "### Deploy IKKE verifisert — prod melder \`${UTE:-ukjent}\`, forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+          exit 1

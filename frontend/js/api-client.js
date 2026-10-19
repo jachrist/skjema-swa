@@ -2,9 +2,33 @@
  * Sentral fetch-wrapper. Håndterer 401 (redirect til login) og feilmeldinger.
  * SWA setter automatisk auth-cookies — vi trenger ikke bygge tokens selv.
  */
+/**
+ * SWA-fronten svarer «Backend call failure» i REN TEKST når backend-kallet
+ * ble avbrutt — tidsgrense, eller en funksjon som ikke svarte. Endepunkter
+ * som gjør flere eksterne kall synkront er de som treffer det.
+ *
+ * Teksten kan komme med `application/json` i headeren uten å være JSON. Da
+ * kastet `response.json()` «Unexpected token 'B'», og det er en parsefeil som
+ * peker på tegn 1 i en streng ingen får se. Årsaken — en død backend — sto
+ * ingen steder. Det kostet tid 19.10.2026.
+ */
+const SWA_BACKEND_FEIL = /^\s*Backend call failure/i;
+
+function tolkFeiltekst(tekst, status) {
+    if (!SWA_BACKEND_FEIL.test(String(tekst || ''))) return tekst;
+    return `Backend-kallet ble avbrutt av SWA (${status}). Funksjonen svarte ikke i tide — `
+        + 'tunge endepunkt som gjør flere eksterne kall rekker ikke alltid fram '
+        + 'på SWA Managed Functions.';
+}
+
 async function les(response) {
     const ct = response.headers.get('content-type') || '';
-    if (ct.includes('application/json')) return await response.json();
+    if (ct.includes('application/json')) {
+        // Headeren kan lyve. Les teksten først, prøv å parse, og la teksten
+        // komme ut hvis den ikke er JSON — en parsefeil skjuler årsaken.
+        const raa = await response.text();
+        try { return JSON.parse(raa); } catch { return raa; }
+    }
     return await response.text();
 }
 
@@ -46,7 +70,10 @@ async function utfør(path, options = {}, { hopperOver401 = false } = {}) {
 
     if (!r.ok) {
         const feil = await les(r);
-        const e = new Error(typeof feil === 'string' ? feil : (feil.melding || `${r.status} ${r.statusText}`));
+        const melding = typeof feil === 'string'
+            ? tolkFeiltekst(feil, r.status)
+            : (feil.melding || `${r.status} ${r.statusText}`);
+        const e = new Error(melding);
         e.status = r.status;
         throw e;
     }

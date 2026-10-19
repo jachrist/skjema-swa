@@ -84,9 +84,19 @@ function lagringsvalg(env = process.env) {
     const klientId = tekst(env.AZURE_CLIENT_ID);
 
     if (streng) {
+        // Navnet leses UT AV STRENGEN, ikke av STORAGE_ACCOUNT_NAME: de to kan
+        // være uenige, og det er strengen som vinner. Sto som `null` til
+        // 19.10.2026 — og da svarte admin-panelet «ingen konto» i nettopp det
+        // miljøet som går på tilkoblingsstreng. En hel formiddag gikk med til
+        // å feilsøke en tom kolonne i en tabell som tilhørte en HELT ANNEN
+        // lagringskonto, fordi ingenting i appen kunne si hvilken konto den
+        // selv leste fra. `kontoNavnFra` fanst allerede og ble bygget for
+        // dette; den var bare ikke koblet til visningen.
+        //
+        // Kontonavnet er ikke en hemmelighet. Nøkkelen er, og den er ikke her.
         return {
             maate: 'tilkoblingsstreng',
-            konto: null,
+            konto: kontoNavnFra(streng),
             klientId: '',
             grunn: `${STRENG_VAR} er satt — delt nøkkel`
         };

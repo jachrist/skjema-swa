@@ -4,7 +4,7 @@
  * Testen er her fordi `.github/workflows/` er det ene stedet i repoet der en
  * feil ikke gir seg til kjenne før den har fått en konsekvens i et ekte miljø.
  *
- * Tre regler:
+ * Fire regler:
  *
  *   **Hver deploy kjører testene først.** `CLAUDE.md` sier det, og uten steget
  *   ruller en rød suite rett ut. Det er den eneste porten mellom en dårlig
@@ -17,6 +17,12 @@
  *
  *   **deploy-prod kjøres bare manuelt.** Den skal aldri kunne utløses av en
  *   push. Får den en automatisk trigger, er produksjon ett uhell unna.
+ *
+ *   **deploy-prod verifiserer at deployen landet.** 12.10.2026 meldte kjøring
+ *   #45 suksess, og prod serverte fortsatt #44 sin build fra 7. oktober. Det
+ *   ble oppdaget 19.10, etter en formiddag med feilsøking i kode som ikke var
+ *   deployet. `CLAUDE.md` har regelen — «ikke anta at deployet kode er
+ *   gjeldende» — og steget håndhever den i stedet for å be noen huske den.
  *
  * Kjøres med:  node api/test/arbeidsflyter.test.js
  */
@@ -104,6 +110,32 @@ for (const fil of deployer) {
 {
     const t = triggere(les('ci.yml'));
     sjekk('ci: både PR og main', t.sort(), ['pull_request', 'push']);
+}
+
+// ---------- 4. prod-deployen verifiserer seg selv ----------
+//
+// En grønn workflow beviser at FILENE ble lastet opp, ikke at de serveres.
+// Steget leser /api/ping og sammenligner commit-SHA-en med den som ble
+// deployet.
+{
+    const prod = fs.readFileSync(path.join(mappe, 'deploy-prod.yml'), 'utf8');
+
+    sjekk('deploy-prod leser /api/ping etter deploy', /\/api\/ping/.test(prod), true);
+    sjekk('og sammenligner med commit-SHA-en som ble deployet',
+        /github\.sha/.test(prod), true);
+
+    // Et steg som bare SKRIVER avviket er ingenting. Det må felle kjøringen,
+    // ellers er vi tilbake til «grønn deploy, gammel kode».
+    const steget = prod.slice(prod.indexOf('Verifiser at deployen faktisk landet'));
+    sjekk('verifiseringssteget finnes', steget.length > 0, true);
+    sjekk('og avviksgrenen feller kjøringen',
+        /Deployen ble rapportert vellykket[\s\S]{0,600}exit 1/.test(steget), true);
+    sjekk('og sier fra med ::error::', /::error::/.test(steget), true);
+
+    // Mangler adressen, kan ingenting verifiseres — og da skal steget si fra,
+    // ikke hoppe stille over. En sjekk som kan slå seg selv av er ingen sjekk.
+    sjekk('manglende SWA_URL feller steget i stedet for å hoppe over',
+        /SWA_URL er ikke satt[\s\S]{0,400}exit 1/.test(steget), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);

@@ -2369,8 +2369,13 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
             const r = document.getElementById('fs-diag-resultat');
             r.innerHTML = '<div class="laster">Kjører diagnostikk (5-15 s)…</div>';
             try {
-                const res = await fetch('/api/refresh-fs/diag', { method: 'POST' });
-                const data = await res.json();
+                // api.post, ikke rå fetch. Naboene over gjør det samme, og
+                // vaktene i api-client.js bor der: utløpt sesjon, HTML i stedet
+                // for JSON, og et svar som ikke lar seg parse. Med rå fetch kom
+                // «Backend call failure» fra SWA-fronten ut som
+                // «Unexpected token 'B'» — en parsefeil der årsaken var en
+                // avbrutt backend. Det kostet tid 19.10.2026.
+                const data = await api.post('/api/refresh-fs/diag', {});
                 r.innerHTML = `
                     <div class="banner ${data.status === 'ok' ? 'suksess' : 'feil'}" style="max-height: 400px; overflow: auto;">
                         <div style="font-weight: 600; margin-bottom: 6px;">Diagnostikk: ${escHtml(data.status)}</div>
