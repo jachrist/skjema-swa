@@ -72,6 +72,9 @@ const HEMMELIGE_ENV = [
     'HASH_SALT', 'OTP_HMAC_KEY', 'FLOW_CALLBACK_KEY', 'SCHEDULER_KEY',
     'FS_API_USER', 'FS_API_PASSWORD',
     'GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET',
+    // Sertifikatet bærer PRIVATNØKKELEN. Står her, aldri blant de
+    // offentlige: helsesjekken skal si at den er satt, aldri hva den er.
+    'GRAPH_CLIENT_CERT_PEM',
     // UTSENDING_FLOW_URL og PURRE_FLOW_URL sto her til 10.09.2026. Ingen av
     // dem var satt i noe miljø, så helsesjekken meldte en mangel hver gang
     // uten at noen handlet på den — og en alarm ingen handler på slutter å

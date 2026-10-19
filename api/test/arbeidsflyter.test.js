@@ -18,7 +18,8 @@
  *   **deploy-prod kjøres bare manuelt.** Den skal aldri kunne utløses av en
  *   push. Får den en automatisk trigger, er produksjon ett uhell unna.
  *
- *   **deploy-prod verifiserer at deployen landet.** 12.10.2026 meldte kjøring
+ *   **deploy-prod verifiserer at deployen landet** — i preview like mye som
+ *   i produksjon. 12.10.2026 meldte kjøring
  *   #45 suksess, og prod serverte fortsatt #44 sin build fra 7. oktober. Det
  *   ble oppdaget 19.10, etter en formiddag med feilsøking i kode som ikke var
  *   deployet. `CLAUDE.md` har regelen — «ikke anta at deployet kode er
@@ -136,6 +137,29 @@ for (const fil of deployer) {
     // ikke hoppe stille over. En sjekk som kan slå seg selv av er ingen sjekk.
     sjekk('manglende SWA_URL feller steget i stedet for å hoppe over',
         /SWA_URL er ikke satt[\s\S]{0,400}exit 1/.test(steget), true);
+
+    // Preview skal verifiseres også. En preview-deploy som ikke landet er
+    // like villedende som en prod-deploy som ikke landet — og preview er
+    // nettopp der man tester før man tør røre produksjon.
+    sjekk('steget gjelder preview også — ingen if-betingelse',
+        /- name: Verifiser at deployen faktisk landet\n\s+env:/.test(prod), true);
+    sjekk('og henter preview-adressen fra deploy-steget',
+        /steps\.builddeploy\.outputs\.static_web_app_url/.test(prod), true);
+
+    // Azure gir ikke alltid preview-URL-en tilbake. Da kan ingenting
+    // verifiseres — og det skal SIES, ikke hoppes stille over. En advarsel
+    // som bare står i loggen er lett å overse, så den skal i sammendraget
+    // også, med hva man gjør i stedet.
+    const utenUrl = steget.slice(steget.indexOf('returnerte ingen URL'));
+    sjekk('manglende preview-URL gir en ::warning::',
+        /::warning::[\s\S]{0,600}returnerte ingen URL/.test(steget), true);
+    sjekk('og sier hva man skal gjøre i stedet', /api\/ping/.test(utenUrl), true);
+    sjekk('og havner i kjøringssammendraget',
+        /GITHUB_STEP_SUMMARY/.test(utenUrl), true);
+
+    // Men bare for preview. Mangler produksjonens adresse, skal det felle.
+    sjekk('den milde grenen gjelder bare preview',
+        /\[ -z "\$MAAL" \] && \[ -n "\$PREVIEW" \]/.test(steget), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
