@@ -136,24 +136,35 @@ PEM-en inn som en **egen secret** ved siden av sertifikatet, f.eks.
 > privatnøkkelen dit, blir den liggende. Arbeid i `/tmp`, som er
 > container-lokalt.
 
-```bash
-cd "$(mktemp -d)" && umask 077
-az keyvault secret show --vault-name fhs-kv-01 --name <sertifikatnavn> --query value -o tsv | base64 -d > c.pfx
+```powershell
+$arbeid = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid())
+New-Item -ItemType Directory -Path $arbeid | Out-Null
+Set-Location $arbeid
+az keyvault secret show --vault-name fhs-kv-01 --name <sertifikatnavn> --query value -o tsv | Set-Content -Path b64.txt
+[System.IO.File]::WriteAllBytes("$arbeid/c.pfx", [System.Convert]::FromBase64String((Get-Content b64.txt -Raw).Trim()))
 openssl pkcs12 -in c.pfx -nodes -passin pass: -out c.pem
 az keyvault secret set --vault-name fhs-kv-01 --name graph-client-cert-pem --file c.pem --output none
-shred -u c.pfx c.pem && cd ~
+Set-Location ~
+Remove-Item -Recurse -Force $arbeid
 ```
 
 | Detalj | Hvorfor |
 |---|---|
-| `mktemp -d` + `umask 077` | Under `/tmp`, ikke `$HOME`, og lesbart bare for deg |
+| Katalog under `GetTempPath()` | Under `/tmp`, ikke `$HOME` — se boksen over |
+| `FromBase64String`, ikke `base64 -d` | `base64` er et Linux-verktøy. `.NET` følger med PowerShell overalt |
 | `-passin pass:` | Key Vault eksporterer PKCS#12 **uten** passord. Spør openssl likevel, ble sertifikatet importert med ett |
 | `--file`, ikke `--value` | En verdi på kommandolinja havner i historikken *og* er synlig i prosesslista |
 | `--output none` | Ellers skrives hele secret-objektet ut |
-| `shred -u` | `rm` alene etterlater innholdet på disken |
+| `Remove-Item -Recurse` | Hele arbeidskatalogen, ikke bare filene |
 
-Slår openssl 3 tilbake med «unsupported algorithm», legg til `-legacy`. Siste
-linje krever **`Key Vault Secrets Officer`** — lesetilgang alene holder ikke.
+Slår openssl 3 tilbake med «unsupported algorithm», legg til `-legacy`.
+`az keyvault secret set` krever **`Key Vault Secrets Officer`** —
+lesetilgang alene holder ikke.
+
+> **`Remove-Item` overskriver ikke.** `shred -u` gjør det, men finnes bare i
+> Bash. Skal sletting være grundig, bytt til Bash for den ene linja — eller
+> godta at en midlertidig fil på en Cloud Shell-container som rives uansett,
+> er god nok.
 
 **Privatnøkkelen er i klartekst mens dette pågår.** Det er inne i Azure, og
 nøkkelen ligger allerede i Key Vault — men for en prod-legitimasjon er det en
@@ -176,19 +187,31 @@ app-til-app.
 `application/x-pkcs12`, så den må overstyres. Da slipper du også å håndtere
 privatnøkkelen: den blir til inne i vaulten.
 
-```bash
-az keyvault certificate get-default-policy \
-  | jq '.secretProperties.contentType="application/x-pem-file" | .x509CertificateProperties.subject="CN=fhs-skjema-backup-dev"' \
-  > policy.json
-az keyvault certificate create --vault-name kv-skjema-3-dev --name graph-backup-dev --policy @policy.json
+```powershell
+$policy = az keyvault certificate get-default-policy | ConvertFrom-Json
+$policy.secretProperties.contentType = 'application/x-pem-file'
+$policy.x509CertificateProperties.subject = 'CN=fhs-skjema-backup-dev'
+$policy | ConvertTo-Json -Depth 10 | Set-Content -Path policy.json
+az keyvault certificate create --vault-name kv-skjema-3-dev --name graph-backup-dev --policy '@policy.json'
 ```
+
+Tre feller i de fem linjene, og alle gir en fil som *ser* riktig ut:
+
+| Felle | Hvorfor |
+|---|---|
+| `ConvertTo-Json` uten **`-Depth`** | Standarddybden er **2**. Policyen er dypere, og de indre objektene blir til `System.Object[]`-tekst |
+| `--policy @policy.json` uten **anførselstegn** | `@` er splatting-operatoren i PowerShell og prøver å splatte `$policy`. Anførselstegnene gjør det til en vanlig streng |
+| `jq` | Finnes ikke i PowerShell-Cloud Shell. `ConvertFrom-Json` gjør samme jobb |
+
+Klager `az` over JSON-en, er det en BOM: legg til `-Encoding utf8NoBOM` på
+`Set-Content`.
 
 `issuerParameters.name` er `"Self"` i standardpolicyen — altså selvsignert.
 Gyldighet 12 måneder.
 
 **2. Verifiser formatet med en gang**, før du bygger videre på det:
 
-```bash
+```powershell
 az keyvault secret show --vault-name kv-skjema-3-dev --name graph-backup-dev --query contentType -o tsv
 ```
 
@@ -197,7 +220,7 @@ Står det noe annet enn `application/x-pem-file`, ble ikke policyen brukt.
 **3. Last den OFFENTLIGE delen opp til app-registreringen.** Entra trenger den
 for å verifisere signaturen. Ingen privatnøkkel forlater Key Vault:
 
-```bash
+```powershell
 az keyvault certificate download --vault-name kv-skjema-3-dev --name graph-backup-dev --file cert.cer --encoding DER
 ```
 

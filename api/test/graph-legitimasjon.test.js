@@ -166,7 +166,7 @@ sjekk('koden sender minst én legitimasjon',
     // Oppskriften skal be om PEM-innholdstypen eksplisitt — standardpolicyen
     // gir PKCS#12, og det er nettopp fellen hele avsnittet handler om.
     sjekk('oppskriften overstyrer innholdstypen',
-        /secretProperties\.contentType="application\/x-pem-file"/.test(dev), true);
+        /secretProperties\.contentType\s*=\s*['"]application\/x-pem-file['"]/.test(dev), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);
