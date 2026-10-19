@@ -141,28 +141,50 @@ jobs:
       # Kjøres ikke for preview: der er vertsnavnet et annet, og det utledes
       # ikke pålitelig (se steget over).
       - name: Verifiser at deployen faktisk landet
-        if: inputs.preview == ''
         env:
-          SWA_URL: ${{ vars.SWA_URL }}
+          PROD_URL: ${{ vars.SWA_URL }}
+          PREVIEW_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
+          PREVIEW: ${{ inputs.preview }}
           FORVENTET: ${{ github.sha }}
         run: |
-          if [ -z "$SWA_URL" ]; then
+          # Produksjon og preview ligger på hver sin adresse. Produksjonens
+          # står i vars.SWA_URL; previewens kommer ut av deploy-steget, og
+          # den lar seg ikke utlede (se «Vis URL» over).
+          if [ -n "$PREVIEW" ]; then
+            MAAL="$PREVIEW_URL"
+            HVA="preview «$PREVIEW»"
+          else
+            MAAL="$PROD_URL"
+            HVA="prod"
+          fi
+          KORT="${FORVENTET:0:7}"
+
+          if [ -z "$MAAL" ] && [ -n "$PREVIEW" ]; then
+            # Azure ga ingen URL tilbake. Deployen kan være helt i orden, så
+            # dette feller ikke kjøringen — men det sies HØYT, med hva som må
+            # gjøres i stedet. En sjekk som hopper stille over seg selv er
+            # ingen sjekk; en som sier fra at den ikke kunne kjøre, er det.
+            echo "::warning::Preview-miljøet «$PREVIEW» ble deployet, men Azure returnerte ingen URL. Deployen er IKKE verifisert. Finn adressen i loggen for «Build And Deploy» («Visit your site at:») og åpne <adresse>/api/ping — den skal melde commit $KORT."
+            echo "### Preview deployet, men IKKE verifisert — Azure ga ingen URL. Sjekk \`/api/ping\` manuelt mot \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+
+          if [ -z "$MAAL" ]; then
             echo "::error::vars.SWA_URL er ikke satt for dette miljøet. Uten den kan ikke deployen verifiseres, og en stille mislykket deploy er nettopp det dette steget finnes for. Sett den under Settings → Environments → prod → Variables."
             exit 1
           fi
-          KORT="${FORVENTET:0:7}"
-          echo "Forventer commit $KORT på $SWA_URL/api/ping"
+          echo "Forventer commit $KORT på $MAAL/api/ping"
           # SWA bruker et par minutter på å bytte innhold. Prøv i opptil 3 min.
           for FORSOK in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            SVAR=$(curl -sS --max-time 20 "$SWA_URL/api/ping" || echo '')
+            SVAR=$(curl -sS --max-time 20 "$MAAL/api/ping" || echo '')
             UTE=$(printf '%s' "$SVAR" | python3 -c "import json,sys; print(json.load(sys.stdin).get('bygg',{}).get('commit',''))" 2>/dev/null || echo '')
             echo "  forsøk $FORSOK: /api/ping melder '${UTE:-(intet svar)}'"
             if [ "$UTE" = "$KORT" ] || [ "$UTE" = "$FORVENTET" ]; then
-              echo "### Deploy verifisert: prod kjører \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+              echo "### Deploy verifisert: $HVA kjører \`$KORT\`" >> $GITHUB_STEP_SUMMARY
               exit 0
             fi
             sleep 15
           done
-          echo "::error::Deployen ble rapportert vellykket, men /api/ping melder fortsatt '${UTE:-(intet svar)}' og ikke '$KORT'. Prod kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026."
-          echo "### Deploy IKKE verifisert — prod melder \`${UTE:-ukjent}\`, forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+          echo "::error::Deployen ble rapportert vellykket, men /api/ping på $MAAL melder fortsatt '${UTE:-(intet svar)}' og ikke '$KORT'. $HVA kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026."
+          echo "### Deploy IKKE verifisert — $HVA melder \`${UTE:-ukjent}\`, forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
           exit 1
