@@ -108,5 +108,38 @@ sjekk('koden sender minst én legitimasjon',
     }
 }
 
+// ---------- 5. formatkravet står likt tre steder ----------
+//
+// Koden avviser PKCS#12 og navngir løsningen i feilmeldingen. Kokeboka har
+// det som et punkt i bestillingen. Backup-dokumentet har framgangsmåten.
+// Endres kravet ett sted, skal de to andre følge — ellers bestiller noen ett
+// format og feilsøker et annet.
+{
+    const kokebok = les('docs', 'KOKEBOK-PROD-V3.md');
+
+    // Innholdstypen koden peker på, lest ut av SELVE AVVISNINGEN. Over hele
+    // fila traff søket `application/x-www-form-urlencoded` fra HTTP-headeren.
+    const avvisStart = kilde.indexOf('er ikke PEM.');
+    sjekk('fant PFX-avvisningen i koden', avvisStart > 0, true);
+    const avvisning = kilde.slice(avvisStart, avvisStart + 600);
+    sjekk('avvisningen peker på PEM-innholdstypen',
+        /application\/x-pem-file/.test(avvisning), true);
+    sjekk('og navngir formatet som ikke virker',
+        /PKCS#12/.test(avvisning), true);
+
+    for (const [navn, tekst] of [['BACKUP-SHAREPOINT.md', dok], ['KOKEBOK-PROD-V3.md', kokebok]]) {
+        sjekk(`${navn} krever samme innholdstype som koden`,
+            tekst.includes('application/x-pem-file'), true);
+        // Og den gale varianten skal være nevnt — et krav uten fellen ved
+        // siden av forteller ikke hva man skal se etter.
+        sjekk(`${navn} navngir også formatet som IKKE virker`,
+            /application\/x-pkcs12/.test(tekst), true);
+    }
+
+    // Variabelnavnet bærer formatkravet. Endres det, mister navnet poenget
+    // sitt, og da skal noen ta stilling til det bevisst.
+    sjekk('variabelnavnet sier PEM', /GRAPH_CLIENT_CERT_PEM/.test(kilde), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

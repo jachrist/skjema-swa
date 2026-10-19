@@ -77,7 +77,7 @@ Under **Certificates & secrets**: lag enten en **client secret** eller et
 **Er begge satt, vinner hemmeligheten.** Den er den innkjørte veien, og et
 halvferdig sertifikatoppsett skal ikke kunne ta ned en backup som virker.
 
-**Hvorfor ikke sertifikat — og hvorfor auth-appen kan.** Prod sin
+**Auth-appen er ikke samme sak — og det forvirrer.** Prod sin
 *innloggings*-app bruker sertifikat fra Key Vault med bare `AAD_CLIENT_ID`
 satt. Det ser ut som det samme, men det er det ikke: der er det **plattformen**
 som henter sertifikatet, via `clientSecretCertificateKeyVaultReference` i
@@ -97,17 +97,77 @@ Og de to andre veiene er stengt i pilot og prod: app settings med
 `config/keyvault-secrets.md`), og koden kan ikke hente fra Key Vault selv —
 SWA Managed Functions eksponerer ingen MI-token.
 
-**Når sertifikat blir støttet, må det være PEM.** Målt 19.10.2026 på Node
-22.22: `crypto.createPrivateKey` avviser PKCS#12/PFX i alle former
-(`ERR_OSSL_UNSUPPORTED`), mens PEM leses direkte — og `X509Certificate.raw`
-gir avtrykket `x5t` trenger. Key Vault sin secret-representasjon av et
-sertifikat følger *innholdstypen*: `application/x-pkcs12` gir base64-PFX,
-`application/x-pem-file` gir PEM. **Importeres sertifikatet som PFX, kan
-koden ikke lese det.** Avklar formatet med den som oppretter det.
+#### Sertifikatet MÅ være PEM
 
-Veien videre er en frittstående Function App (dev, og prod v3): den løser
+Målt 19.10.2026 på Node 22.22: `crypto.createPrivateKey` avviser PKCS#12/PFX
+i **alle** former (`ERR_OSSL_UNSUPPORTED`). PEM leses direkte, og
+`X509Certificate.raw` gir avtrykket `x5t` trenger.
+
+Key Vault sin secret-representasjon — den app-settingen refererer til — følger
+*innholdstypen* sertifikatet ble importert med:
+
+| Innholdstype | Secret-representasjonen gir | Brukbar |
+|---|---|---|
+| `application/x-pem-file` | PEM | ja |
+| `application/x-pkcs12` | base64-PFX | **nei** |
+
+**Standardvalget er feil vei.** Laster noen opp en `.pfx`-fil, blir
+innholdstypen `application/x-pkcs12` uten at noen tar et valg. Be derfor
+eksplisitt om PEM ved import — det hører i bestillingen, ikke i en
+feilsøkingsliste. Se `docs/KOKEBOK-PROD-V3.md` 0.4.
+
+Sjekk hva som faktisk ligger der. Kommandoen skriver bare innholdstypen,
+aldri nøkkelen:
+
+```powershell
+az keyvault secret show --vault-name fhs-kv-01 --name <sertifikatnavn> --query "contentType" -o tsv
+```
+
+#### Hvis det likevel ble PFX
+
+**Gjenopprett ikke sertifikatet.** Et nytt nøkkelpar betyr at
+app-registreringen må oppdateres av en administrator på nytt — altså en ny
+bestilling. Konverter i stedet: samme nøkkel, registreringen urørt. Legg
+PEM-en inn som en **egen secret** ved siden av sertifikatet, f.eks.
+`graph-client-cert-pem`, og la app-settingen peke på den.
+
+> **Cloud Shell lagrer `$HOME` permanent** — hjemmekatalogen ligger som et
+> diskbilde i en Azure Files-share og overlever sesjonen. Skrives
+> privatnøkkelen dit, blir den liggende. Arbeid i `/tmp`, som er
+> container-lokalt.
+
+```bash
+cd "$(mktemp -d)" && umask 077
+az keyvault secret show --vault-name fhs-kv-01 --name <sertifikatnavn> --query value -o tsv | base64 -d > c.pfx
+openssl pkcs12 -in c.pfx -nodes -passin pass: -out c.pem
+az keyvault secret set --vault-name fhs-kv-01 --name graph-client-cert-pem --file c.pem --output none
+shred -u c.pfx c.pem && cd ~
+```
+
+| Detalj | Hvorfor |
+|---|---|
+| `mktemp -d` + `umask 077` | Under `/tmp`, ikke `$HOME`, og lesbart bare for deg |
+| `-passin pass:` | Key Vault eksporterer PKCS#12 **uten** passord. Spør openssl likevel, ble sertifikatet importert med ett |
+| `--file`, ikke `--value` | En verdi på kommandolinja havner i historikken *og* er synlig i prosesslista |
+| `--output none` | Ellers skrives hele secret-objektet ut |
+| `shred -u` | `rm` alene etterlater innholdet på disken |
+
+Slår openssl 3 tilbake med «unsupported algorithm», legg til `-legacy`. Siste
+linje krever **`Key Vault Secrets Officer`** — lesetilgang alene holder ikke.
+
+**Privatnøkkelen er i klartekst mens dette pågår.** Det er inne i Azure, og
+nøkkelen ligger allerede i Key Vault — men for en prod-legitimasjon er det en
+avgjørelse som hører hjemme hos den som eier sertifikatet. **Prøv i dev
+først:** samme framgangsmåte, lav innsats, og du får verifisert at
+sertifikatveien faktisk virker mot Entra før den skal virke i prod.
+
+#### Hvor sertifikatveien i det hele tatt kan brukes
+
+En frittstående Function App (dev, og prod v3) løser
 `@Microsoft.KeyVault(...)` i app settings (målt 14.10.2026, 8d), så
-sertifikatet kan leveres som en referanse uten at noe står i klartekst.
+sertifikatet kan leveres som en referanse uten at noe står i klartekst. Pilot
+og prod v2 løser dem ikke — der måtte PEM-en stått i klartekst i app
+settings, og da er en client secret det bedre valget.
 
 ### 3. Rettighet: `Sites.Selected`, ikke `Files.ReadWrite.All`
 
