@@ -57,9 +57,56 @@ adressen, f.eks. `https://fhs.sharepoint.com/sites/Skjemasystem`.
 Entra ID → App registrations → New registration. Ingen redirect-URI trengs.
 Noter **Application (client) ID** og **Directory (tenant) ID**.
 
-Under **Certificates & secrets**: lag et sertifikat eller en client secret.
-Sertifikat er å foretrekke — samme begrunnelse som at prod bruker sertifikat mot
-Entra i dag. Legg verdien i Key Vault, aldri i kode eller env-JSON.
+Under **Certificates & secrets**: lag en **client secret**. Legg verdien i Key
+Vault, aldri i kode eller env-JSON.
+
+> **Her sto det «lag et sertifikat eller en client secret — sertifikat er å
+> foretrekke» til 19.10.2026.** Det var feil, og feilen var dyr: koden støtter
+> bare client secret, og steg 4 under har ingen variabel for et sertifikat.
+> Noen fulgte anbefalingen, fikk app-registreringen opprettet med sertifikat
+> hos en administrator, og sto igjen uten noe å sette inn.
+>
+> `api/test/graph-legitimasjon.test.js` leser nå BÅDE `graph-opplast.js` og
+> tabellen under, og krever at de er enige om hva som støttes.
+
+<!-- legitimasjon-fra-graph-opplast -->
+
+| Legitimasjon | Støttet i dag |
+|---|---|
+| `client secret` | ja |
+| `sertifikat` | nei |
+
+**Hvorfor ikke sertifikat — og hvorfor auth-appen kan.** Prod sin
+*innloggings*-app bruker sertifikat fra Key Vault med bare `AAD_CLIENT_ID`
+satt. Det ser ut som det samme, men det er det ikke: der er det **plattformen**
+som henter sertifikatet, via `clientSecretCertificateKeyVaultReference` i
+`staticwebapp.config.prod.json`, med SWA-ressursens egen managed identity.
+Koden vår ser aldri sertifikatet.
+
+Graph-kallet gjør **vår egen kode**, og den har ingen slik krok:
+
+| | Auth-appen | Graph-appen |
+|---|---|---|
+| Hvem ber om tokenet | SWA sin innebygde auth-komponent | `lib/graph-opplast.js` |
+| Hvem henter sertifikatet | Plattformen, med SWA-ressursens MI | Ingen |
+| Konfigurasjon | `clientSecretCertificateKeyVaultReference` i auth-blokka | finnes ikke |
+
+Og de to andre veiene er stengt i pilot og prod: app settings med
+`@Microsoft.KeyVault(...)` løses ikke (målt 12.10.2026, se
+`config/keyvault-secrets.md`), og koden kan ikke hente fra Key Vault selv —
+SWA Managed Functions eksponerer ingen MI-token.
+
+**Når sertifikat blir støttet, må det være PEM.** Målt 19.10.2026 på Node
+22.22: `crypto.createPrivateKey` avviser PKCS#12/PFX i alle former
+(`ERR_OSSL_UNSUPPORTED`), mens PEM leses direkte — og `X509Certificate.raw`
+gir avtrykket `x5t` trenger. Key Vault sin secret-representasjon av et
+sertifikat følger *innholdstypen*: `application/x-pkcs12` gir base64-PFX,
+`application/x-pem-file` gir PEM. **Importeres sertifikatet som PFX, kan
+koden ikke lese det.** Avklar formatet med den som oppretter det.
+
+Veien videre er en frittstående Function App (dev, og prod v3): den løser
+`@Microsoft.KeyVault(...)` i app settings (målt 14.10.2026, 8d), så
+sertifikatet kan leveres som en referanse uten at noe står i klartekst.
 
 ### 3. Rettighet: `Sites.Selected`, ikke `Files.ReadWrite.All`
 
