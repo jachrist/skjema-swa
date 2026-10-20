@@ -28,8 +28,25 @@
     -NyHemmelighet, som alltid lager en ny (gamle står til de utløper).
 
 .PARAMETER Site
-    SharePoint-området backupen skal skrives til, f.eks.
-    https://fhs.sharepoint.com/sites/Skjemasystem
+    SharePoint-området backupen skal skrives til. Begge formene godtas:
+
+      https://fhs.sharepoint.com/sites/Skjemasystem   (kopiert fra nettleseren)
+      fhs.sharepoint.com:/sites/Skjemasystem          (Graph-referansen)
+
+    Fram til 20.10.2026 ble adressen lest med `[Uri]`, og da leste PowerShell
+    «vertsnavn:/sti» som et SKJEMA: `$u.Host` ble tom, og Graph fikk
+    oppslaget `:/teams/SkjemaBackupDev`. Det feiler som om rettighetene
+    manglet. API-et har godtatt begge formene hele tiden, i funksjonen
+    `siteReferanse()` i `api/src/lib/graph-opplast.js` — så env-varen tålte
+    mer enn skriptet.
+
+.PARAMETER Sertifikat
+    Appen skal autentisere med SERTIFIKAT. Da lages ingen klienthemmelighet,
+    og oppsummeringen peker på GRAPH_CLIENT_CERT_PEM i stedet.
+
+    Skriptet rører ikke legitimasjonen i Entra: sertifikatet lastes opp
+    separat. Se «Sertifikat i stedet for hemmelighet» i
+    docs/BACKUP-SHAREPOINT.md.
 
 .PARAMETER Navn
     Visningsnavn på app-registreringen. Standard: fhs-skjema-backup
@@ -67,19 +84,34 @@
     .\opprett-backup-app.ps1 -Site https://fhs.sharepoint.com/sites/Skjemasystem
 
 .NOTES
-    OPPSETT I SWA — IKKE BRUK KEY VAULT-REFERANSE
+    HVOR VERDIENE SKAL INN — OG OM EN KEY VAULT-REFERANSE VIRKER
 
-    SWA Managed Functions løser IKKE `@Microsoft.KeyVault(...)` i app
-    settings. Limer du inn en referanse, får appen referansestrengen som
-    verdi, og feilen dukker opp langt fra årsaken.
+    To verter, to svar. Appen leser de samme variablene, men de settes på
+    ulike steder, og bare ett av stedene løser Key Vault-referanser:
 
-    Prøvd i pilot 12.10.2026 på TEAM_SOK_EKSTERNT_FLOW_URL: /api/system/info
-    meldte «ikke en gyldig URL» med lengde 109 — selve referansestrengen.
-    Rolletildeling på SWA-ens managed identity hjelper ikke.
+      dev og prod v3     frittstående Function App (fa-skjema-3-dev)
+                         → Function App → Settings → Environment variables
+                         → `@Microsoft.KeyVault(SecretUri=…)` VIRKER
+                           (målt 14.10.2026, 8d i
+                           docs/BESLUTNING-EGEN-FUNCTION-APP.md)
 
-    GRAPH_CLIENT_SECRET skal derfor inn som KLARTEKST i SWA Configuration.
-    Key Vault er arkivet og rotasjonspunktet, ikke kjøretidskilden. Se
-    config/keyvault-secrets.md, «Hvorfor vaulten fortsatt har en jobb».
+      pilot og prod v2   SWA Managed Functions
+                         → Static Web App → Configuration
+                         → referanser løses IKKE — KLARTEKST
+
+    Fram til 20.10.2026 sa dette skriptet «SWA Configuration» uten forbehold,
+    og «ikke bruk Key Vault-referanse» som en absolutt regel. Det var riktig
+    så lenge pilot var eneste vert, og feil fra dagen dev fikk sin egen
+    Function App.
+
+    Beviset for SWA-siden: prøvd i pilot 12.10.2026 på
+    TEAM_SOK_EKSTERNT_FLOW_URL — /api/system/info meldte «ikke en gyldig URL»
+    med lengde 109, altså selve referansestrengen. Rolletildeling på SWA-ens
+    managed identity hjelper ikke; den får aldri noe token.
+
+    På SWA er Key Vault derfor arkivet og rotasjonspunktet, ikke
+    kjøretidskilden. Se config/keyvault-secrets.md, «Hvorfor vaulten
+    fortsatt har en jobb».
 
     Unntaket i hele løsningen er auth-sertifikatet i
     staticwebapp.config.prod.json, som plattformens egen auth-komponent
@@ -126,7 +158,8 @@ param(
     [string]$KeyVault = '',
     [string]$HemmelighetNavn = 'graph-client-secret',
     [switch]$Torrkjor,
-    [switch]$NyHemmelighet
+    [switch]$NyHemmelighet,
+    [switch]$Sertifikat
 )
 
 $ErrorActionPreference = 'Stop'
@@ -263,10 +296,53 @@ if ($sp) {
 
 # -------------------------------------------------- 3. tilgang til området
 Steg '3. Skrivetilgang til ETT SharePoint-område'
-# Graph vil ha området som «vertsnavn:/sti», ikke som full URL.
-$u = [Uri]$Site
-$omraadeRef = "$($u.Host):$($u.AbsolutePath.TrimEnd('/'))"
+# Graph vil ha området som «vertsnavn:/sti». Begge formene folk har for
+# hånden godtas, slik API-et alt gjør — `siteReferanse()` i
+# api/src/lib/graph-opplast.js.
+#
+# [Uri] kan IKKE brukes til dette: PowerShell leser «vertsnavn:/sti» som et
+# skjema, `$u.Host` blir tom, og Graph får oppslaget «:/teams/Navn». Det
+# feiler som om rettighetene manglet. Skjedde 20.10.2026.
+#
+# Formene, og hva Graph skal slå opp. api/test/graph-omraaderef.test.js
+# holder radene mot siteReferanse() og krever samme svar:
+#   https://fhs.sharepoint.com/sites/Skjemasystem => fhs.sharepoint.com:/sites/Skjemasystem
+#   https://fhs.sharepoint.com/sites/Skjemasystem/ => fhs.sharepoint.com:/sites/Skjemasystem
+#   fhs.sharepoint.com:/sites/Skjemasystem => fhs.sharepoint.com:/sites/Skjemasystem
+#   fhs.sharepoint.com/sites/Skjemasystem => fhs.sharepoint.com:/sites/Skjemasystem
+#   fhs.sharepoint.com => fhs.sharepoint.com
+function Omraaderef([string]$verdi) {
+    $s = ([string]$verdi).Trim() -replace '/+$', ''
+    if (-not $s) { return '' }
+    if ($s -match '^https?://') {
+        $u = [Uri]$s
+        $vert = $u.Host
+        $sti = [Uri]::UnescapeDataString($u.AbsolutePath)
+    } elseif ($s.Contains(':')) {
+        $i = $s.IndexOf(':')
+        $vert = $s.Substring(0, $i)
+        $sti = $s.Substring($i + 1)
+    } else {
+        $i = $s.IndexOf('/')
+        if ($i -lt 0) { $vert = $s; $sti = '' }
+        else { $vert = $s.Substring(0, $i); $sti = $s.Substring($i) }
+    }
+    $sti = $sti -replace '/+$', ''
+    if (-not $vert) { return '' }
+    if ($sti -and $sti -ne '/') { return ('{0}:{1}' -f $vert, $sti) }
+    return $vert
+}
+
+$omraadeRef = Omraaderef $Site
 Info "Område: $Site"
+# Referansen skrives ALLTID ut. Da den bare ble vist ved mellomrom i
+# adressen, var det umulig å se at oppslaget manglet vertsnavnet.
+Info "Graph slår opp: $omraadeRef"
+if (-not $omraadeRef) {
+    Write-Host "   -Site gir ingen gyldig områdereferanse." -ForegroundColor Red
+    Write-Host "   Oppgi enten full URL eller «vertsnavn:/sti» — se hjelpeteksten." -ForegroundColor Red
+    exit 1
+}
 # Et mellomrom i stien betyr nesten alltid at adressen er skrevet av fra
 # områdets VISNINGSNAVN og ikke kopiert fra adressefeltet. Graph slår opp på
 # stien, ikke på navnet, og et oppslag som bommer her ser ut som manglende
@@ -276,7 +352,6 @@ if ($Site -match '\s') {
     Write-Host "   Kopier den fra adressefeltet i nettleseren når du står i" -ForegroundColor Yellow
     Write-Host "   området — stien har som regel ingen mellomrom, selv om" -ForegroundColor Yellow
     Write-Host "   visningsnavnet har det." -ForegroundColor Yellow
-    Write-Host "   Slår Graph opp: $omraadeRef" -ForegroundColor DarkGray
 }
 
 $omraade = $null
@@ -323,7 +398,12 @@ if (-not $omraade) {
 Steg '4. Klienthemmelighet'
 $hemmelig = $null
 $utloper = $null
-if ($Torrkjor) {
+if ($Sertifikat) {
+    # En hemmelighet som ikke skal brukes, er en ekstra vei inn og en ekstra
+    # utløpsdato å passe på. Lages ikke.
+    Info 'Hoppet over — appen skal bruke sertifikat (-Sertifikat)'
+    Info 'Den offentlige delen lastes opp under Certificates & secrets → Certificates'
+} elseif ($Torrkjor) {
     Ville "ville laget en hemmelighet med $MaanederGyldig måneders levetid"
 } elseif (-not $NyHemmelighet -and $app.PasswordCredentials.Count -gt 0) {
     Ok "Appen har $($app.PasswordCredentials.Count) hemmelighet(er) fra før — bruk -NyHemmelighet for å lage en ny"
@@ -376,7 +456,7 @@ if ($KeyVault -and $Torrkjor) {
 
 # ------------------------------------------------------------ oppsummering
 Write-Host "`n$('═' * 68)" -ForegroundColor Cyan
-Write-Host ' Verdier som skal inn i SWA Configuration' -ForegroundColor Cyan
+Write-Host ' Verdier som skal inn i app settings' -ForegroundColor Cyan
 Write-Host ('═' * 68) -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  GRAPH_TENANT_ID           $($ctx.TenantId)"
@@ -386,15 +466,32 @@ Write-Host ""
 Write-Host "  Valgfritt:"
 Write-Host "  BACKUP_SHAREPOINT_BIBLIOTEK   bibliotekets navn, f.eks. Backup"
 Write-Host "  BACKUP_SHAREPOINT_MAPPE       undermappe, f.eks. Skjemasystem/Backup"
+Write-Host ""
+Write-Host "  Hvor de settes — og om en Key Vault-referanse virker:"
+Write-Host "    dev, prod v3      frittstående Function App → Environment variables"
+Write-Host "                      @Microsoft.KeyVault(SecretUri=…) VIRKER" -ForegroundColor DarkGray
+Write-Host "    pilot, prod v2    Static Web App → Configuration"
+Write-Host "                      referanser løses IKKE — klartekst" -ForegroundColor DarkGray
+
+if ($Sertifikat) {
+    Write-Host ""
+    Write-Host "  GRAPH_CLIENT_CERT_PEM" -ForegroundColor Yellow
+    Write-Host "  PEM-en fra Key Vault — innholdstype application/x-pem-file." -ForegroundColor Yellow
+    Write-Host "  PKCS#12 kan ikke leses; da ble ikke policyen brukt." -ForegroundColor Yellow
+    Write-Host "  GRAPH_CLIENT_SECRET MÅ stå tom: er begge satt, vinner" -ForegroundColor Yellow
+    Write-Host "  hemmeligheten, og sertifikatveien blir aldri prøvd." -ForegroundColor Yellow
+    Write-Host "  Framgangsmåte: docs/BACKUP-SHAREPOINT.md" -ForegroundColor DarkGray
+}
 
 if ($hemmelig) {
     Write-Host ""
     Write-Host "  GRAPH_CLIENT_SECRET" -ForegroundColor Yellow
     Write-Host "  $hemmelig" -ForegroundColor Yellow
     Write-Host ""
-    Write-Host "  Lim inn som KLARTEKST i SWA Configuration." -ForegroundColor Yellow
-    Write-Host "  SWA Managed Functions loser ikke @Microsoft.KeyVault-referanser;" -ForegroundColor Yellow
-    Write-Host "  en referanse her gir en app-setting som ikke virker." -ForegroundColor Yellow
+    Write-Host "  På SWA (pilot, prod v2): lim inn som KLARTEKST. SWA Managed" -ForegroundColor Yellow
+    Write-Host "  Functions loser ikke @Microsoft.KeyVault-referanser, og en" -ForegroundColor Yellow
+    Write-Host "  referanse der gir en app-setting som ikke virker." -ForegroundColor Yellow
+    Write-Host "  På en Function App (dev, prod v3) virker referansen — bruk den." -ForegroundColor Yellow
     if ($arkivert) {
         Write-Host ""
         Write-Host "  Arkivert som «$HemmelighetNavn» i $KeyVault — der ligger den" -ForegroundColor Green
