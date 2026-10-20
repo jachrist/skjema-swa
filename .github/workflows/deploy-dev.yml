@@ -13,12 +13,43 @@ name: Deploy frontend til dev-SWA
 # push er en jobb folk slutter å lese.
 on:
   workflow_dispatch:
+    inputs:
+      # Hvilken SWA skal den deployes til?
+      #
+      # Dev-tenanten kan ha mer enn én: gjennomkjøringen av
+      # docs/KOKEBOK-PROD-V3.md oppretter en v3-SWA ved siden av den
+      # eksisterende, og den har sin EGEN deployment token. Uten dette valget
+      # måtte man byttet verdien på den faste hemmeligheten fram og tilbake —
+      # og den som glemmer å bytte tilbake, deployer neste rettelse til
+      # prøveoppsettet.
+      #
+      # Navnet på hemmeligheten, ikke verdien. Standarden er den som har vært
+      # brukt hele tiden, så en kjøring uten valg oppfører seg som før.
+      swa_token_secret:
+        description: 'Navnet på hemmeligheten med deployment token'
+        required: false
+        default: 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV'
 
 jobs:
   build_and_deploy:
     runs-on: ubuntu-latest
     environment: dev
+    env:
+      # Slås opp dynamisk, samme mønster som matrisen i backup.yml.
+      SWA_TOKEN: ${{ secrets[inputs.swa_token_secret || 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV'] }}
     steps:
+      # Et navn som ikke finnes blir en TOM streng, ikke en feil. SWA-actionen
+      # svarer da med «deployment token is invalid», som ser ut som en utløpt
+      # token og sender feilsøkingen mot Azure-portalen. Si det her i stedet.
+      - name: Sjekk at tokenet finnes
+        run: |
+          if [ -z "$SWA_TOKEN" ]; then
+            echo "::error::Hemmeligheten «${{ inputs.swa_token_secret }}» finnes ikke, eller er tom."
+            echo "Legg den inn under Settings → Secrets → Actions (repo eller miljøet «dev»)."
+            exit 1
+          fi
+          echo "Bruker hemmeligheten «${{ inputs.swa_token_secret }}»."
+
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -52,7 +83,7 @@ jobs:
       - name: Build And Deploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_DEV }}
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: "./frontend"

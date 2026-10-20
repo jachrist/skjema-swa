@@ -199,5 +199,54 @@ for (const fil of deployer) {
         /IKKE verifisert[\s\S]{0,200}GITHUB_STEP_SUMMARY/.test(steget), true);
 }
 
+// ---------- 6. dev-frontenden kan peke på en annen SWA ----------
+//
+// Dev-tenanten kan ha mer enn én SWA: gjennomkjøringen av kokeboka oppretter
+// en v3-SWA ved siden av den eksisterende, og den har sin egen deployment
+// token. Alternativet var å bytte verdien på den faste hemmeligheten fram og
+// tilbake — og den som glemmer å bytte tilbake, deployer neste rettelse til
+// prøveoppsettet.
+//
+// Det viktigste her er at STANDARDEN er uendret: en kjøring uten valg skal
+// treffe samme SWA som før.
+{
+    const dev = fs.readFileSync(path.join(mappe, 'deploy-dev.yml'), 'utf8');
+
+    sjekk('det finnes et valg for hemmeligheten', /swa_token_secret:/.test(dev), true);
+    sjekk('og standarden er den som har vært brukt hele tiden',
+        /default: 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV'/.test(dev), true);
+    sjekk('valget er ikke paakrevd', /swa_token_secret:[\s\S]{0,200}required: false/.test(dev), true);
+
+    // Oppslaget maa ha samme fallback i uttrykket ogsaa. Kjoeres workflowen
+    // fra et API-kall uten inputs, er `inputs.swa_token_secret` tom, og da
+    // ville `secrets['']` gitt en tom token — altsaa den feilen vakten under
+    // skal fange, i en kjoering som ikke ba om noe uvanlig.
+    sjekk('uttrykket har samme standard',
+        /secrets\[inputs\.swa_token_secret \|\| 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV'\]/.test(dev), true);
+
+    // En hemmelighet som ikke finnes blir en TOM STRENG, ikke en feil.
+    // SWA-actionen svarer «deployment token is invalid», som ser ut som en
+    // utloept token og sender feilsoekingen mot Azure-portalen.
+    sjekk('tomt token stopper kjoeringen med en egen melding',
+        /if \[ -z "\$SWA_TOKEN" \][\s\S]{0,400}exit 1/.test(dev), true);
+    sjekk('og meldingen navngir hemmeligheten som mangler',
+        /::error::Hemmeligheten/.test(dev), true);
+
+    // Vakten maa staa FOER deployen. Etterpaa er den uten verdi.
+    //
+    // `indexOf` gir -1 for noe som ikke finnes, og -1 er mindre enn hva som
+    // helst — en sjekk som BESTAAR naar vakten er borte, er ingen sjekk.
+    // Derfor kreves det foerst at den finnes.
+    const iVakt = dev.indexOf('Sjekk at tokenet finnes');
+    sjekk('vakten finnes', iVakt > -1, true);
+    sjekk('og kommer foer opplastingen',
+        iVakt > -1 && iVakt < dev.indexOf('static-web-apps-deploy'), true);
+
+    // Og ingen hardkodet token igjen — en glemt forekomst ville gjort valget
+    // til pynt.
+    sjekk('ingen hardkodet token igjen',
+        /secrets\.AZURE_STATIC_WEB_APPS_API_TOKEN_DEV\s*\}\}/.test(dev), false);
+}
+
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
 process.exit(feil ? 1 : 0);

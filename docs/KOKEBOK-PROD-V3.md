@@ -464,6 +464,48 @@ backup, det er én.
 
 ---
 
+### 0.6 Gjennomkjøring i dev-tenanten først
+
+Kokeboka kan prøves ende til ende i dev-tenanten før den kjøres mot prod. Da
+opprettes et v3-oppsett ved siden av det som alt står der, og rives etterpå.
+
+**Bruk `MILJO=dev`. Ikke finn opp et nytt miljønavn.** Det er ikke bare
+enklere — det er riktigere:
+
+| Hva navnet styrer | Hvorfor `dev` er svaret |
+|---|---|
+| `LØSER_KEYVAULT_REFERANSER` i `lib/plattform.js` | Inneholder `dev`. Et nytt navn ville fått helsesjekken til å gi råd for SWA Managed Functions — «lim inn verdien som klartekst» — i et miljø der referansene virker |
+| `KJORER_TIMERE` | Inneholder `dev`. Et ukjent navn gir ingen timer |
+| `KJENTE_MILJOER` | Et navn utenfor settet er «vet ikke», ikke «gjelder ikke». Alle miljøspesifikke råd blir da uttrykt med forbehold |
+| `config/env.<navn>.json` | Et nytt navn krever en ny, KOMPLETT inventarfil — `env-inventar.test.js` krever at hver `process.env` i `api/src` står i hver av dem |
+
+Et nytt miljønavn koster altså fire filer og gir dårligere diagnostikk. Det
+som faktisk må være nytt, er ressursnavnene — og de er parametre, ikke kode:
+
+| Hva | Hvordan |
+|---|---|
+| Function App | `appnavn` er et input til «Deploy API til Function App». Velg `miljo: dev` |
+| SWA | `swa_token_secret` er et input til frontend-workflowen (5.2). Legg v3-tokenet i en EGEN hemmelighet — ikke bytt verdien på den faste |
+| Lagringskonto, Key Vault | Opprettes av kokeboka. Isolasjonen mellom prøveoppsettet og det ekte dev-miljøet ligger HER, ikke i miljønavnet |
+
+To ting som deler på tvers av miljønavnet, og som må vurderes bevisst:
+
+* **`TODO_STORAGE_CONNECTION_STRING`.** Er den satt, havner oppgavelista og
+  nøkkelkalenderen i det DELTE lageret, med miljønavnet som partisjonsnøkkel.
+  To `dev`-apper skriver da i samme rader. La den stå tom i prøveoppsettet;
+  da er listene lokale, og UI-et sier det.
+* **Backupfilnavnet** er `<MILJO>-backup-<tidsstempel>.fsbk`. To
+  `dev`-oppsett gir filer med samme navnemønster. Skiller de seg bare på
+  tidsstempelet, kan du ikke se hvilket oppsett som laget hvilken fil — gi
+  prøveoppsettet et eget bibliotek eller en egen mappe.
+
+**Globalt unike navn** er lagringskonto, Key Vault, Function App og
+SWA-vertsnavn. Et prefiks på disse fire er riktig grep i en tenant som alt har
+et oppsett — men da avviker navnene fra kapittel 1, så skriv ned
+oversettelsen før du begynner, ikke underveis.
+
+---
+
 ## 1. Navn og variabler
 
 Samme konvensjon som dev, med `dev` → `prod`.
@@ -763,8 +805,19 @@ Remove-Variable token
 
 ### 5.2 Deploy frontend
 
-Kjør frontend-workflowen mot v3-tokenet. **Bekreft i nettleseren at forsiden
-vises** før du går videre.
+Frontend-workflowene tar navnet på token-hemmeligheten som et valg, nettopp
+fordi en tenant kan ha mer enn én SWA. Kjør **Deploy frontend til dev-SWA**
+(dev-tenanten) eller prod-workflowen, og oppgi hemmeligheten du nettopp satte
+i 5.1 under `swa_token_secret`.
+
+Finnes ikke hemmeligheten, stopper jobben med
+«Hemmeligheten «…» finnes ikke, eller er tom» — ikke med SWA-actionens
+«deployment token is invalid», som ser ut som en utløpt token og sender
+feilsøkingen mot portalen.
+
+**Bekreft i nettleseren at forsiden vises** før du går videre. En
+SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
+øverst i 5.
 
 ### 5.3 Lenk Function App-en til SWA-en — først nå
 
