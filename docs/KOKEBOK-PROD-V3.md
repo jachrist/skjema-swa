@@ -245,12 +245,36 @@ Fire prinsipaler trenger noe av vaulten, og de blandes lett:
 | Hvem | Hva den gjør | Rolle på vaulten |
 |---|---|---|
 | **Du**, når verdiene limes inn | Skriver hemmeligheter | `Key Vault Secrets Officer`, pluss `Reader` på ressursen så verktøyet finner den |
+| **Du**, når backup-sertifikatet utstedes (0.4) | Oppretter et sertifikat | **`Key Vault Certificates Officer`** — `Secrets Officer` dekker IKKE sertifikater. Se under |
 | **`mi-skjema-3-prod`** | Løser `@Microsoft.KeyVault(...)` i app settings | `Key Vault Secrets User` — også for en secret som er ryggen av et SERTIFIKAT (målt 20.10.2026 i dev); `Key Vault Certificate User` trengs ikke her |
 | **SWA-ens plattformidentitet** | Henter auth-sertifikatet via `clientSecretCertificateKeyVaultReference` | `Key Vault Secrets User` **og** `Key Vault Certificate User` |
 | **Den som tildeler de tre over** | Rolletildeling | `Owner` eller `User Access Administrator` på vaulten |
 
 `Key Vault Administrator` dekker alt — og gir samtidig rett til å lese hver
 hemmelighet i vaulten. `fhs-kv-01` deles med v2, så hold deg til de smale.
+
+> **`Secrets Officer` er ikke nok til å lage et sertifikat.** Rollene i Key
+> Vault er delt per objekttype: `Secrets Officer` gjelder hemmeligheter,
+> `Certificates Officer` gjelder sertifikater. `az keyvault certificate
+> create` i 0.4 feiler med «forbidden» uten den siste — og feilmeldingen
+> peker på vaulten, ikke på rollen.
+>
+> De henger likevel sammen her: `Certificates Officer` dekker ikke
+> nødvendigvis det å LESE secret-ryggen av sertifikatet, og det er nettopp
+> den `az keyvault secret show --query contentType` leser når du
+> kontrollerer at PEM-policyen slo gjennom. Har du begge, er du dekket.
+>
+> **`Owner` på ressursen gir ikke dataplantilgang** i en RBAC-vault — men den
+> gir rett til å tildele roller, også til deg selv. Mangler du
+> `Certificates Officer`, kan du altså gi deg den (og bør fjerne den igjen
+> etterpå):
+>
+> ```powershell
+> $meg = az ad signed-in-user show --query id -o tsv
+> az role assignment create --assignee-object-id $meg --assignee-principal-type User `
+>     --role "Key Vault Certificates Officer" `
+>     --scope "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.KeyVault/vaults/$KV"
+> ```
 
 > **Fella: RBAC eller tilgangspolicy.** En vault kjører på én av to modeller.
 > Står den på **tilgangspolicyer**, gjør en `Key Vault Secrets User`-tildeling
@@ -394,6 +418,91 @@ SharePoint. Fire funn hører i bestillingen:
 Framgangsmåten, kommando for kommando, står i `docs/BACKUP-SHAREPOINT.md`
 under «Prøv i dev først». Den begynner nå med at app-registreringen må finnes
 — det var det som manglet.
+
+---
+
+### 0.5 App-registreringene fra v2 kan gjenbrukes
+
+Begge, og det sparer to bestillinger. En app-registrering er ikke bundet til
+en SWA eller en Function App — den er bundet til tenanten.
+
+**Auth-appen (pålogging).** Gjenbrukes med en NY redirect-URI, se trinn 6.
+Begge URI-ene står side om side mens v2 og v3 kjører parallelt, og den gamle
+fjernes ved riving. Tre forbehold:
+
+* Flytter du domenet ved cutover, må redirect-URI-en for domenet også ligge
+  der — se 10.
+* `AAD_CLIENT_ID` blir den samme i begge miljøene. Det er greit, men det
+  betyr at en endring på appen (f.eks. rotasjon av auth-sertifikatet) treffer
+  v2 og v3 SAMTIDIG. Under parallellkjøring er det en fordel; ved feilsøking
+  er det en felle, for «bare v3 er nede» kan ikke skyldes appen alene.
+* Sertifikatet hentes av SWA-ens EGEN plattformidentitet. Den nye SWA-en har
+  en annen identitet enn v2, og den trenger `Key Vault Secrets User` **og**
+  `Key Vault Certificate User` på vaulten — se 0.2. Appen gjenbrukes,
+  rolletildelingen gjør det ikke.
+
+**Backup-appen (`Sites.Selected`).** Gjenbrukes uendret: `Sites.Selected` og
+områdetildelingen henger på appen, ikke på miljøet. v3 trenger bare
+`GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID` og én legitimasjon i sine egne app
+settings.
+
+Og her er det en vei som sparer enda et steg: **en app-registrering kan bære
+en client secret OG et sertifikat samtidig.** De ligger i to ulike
+samlinger. Legg sertifikatet på den eksisterende backup-appen, la v2 beholde
+hemmeligheten sin, og la v3 bruke sertifikatet. Ingen ny app, ingen bestilling,
+og ingenting å endre i v2.
+
+> **`GRAPH_CLIENT_SECRET` MÅ stå tom i v3.** Er begge satt, vinner
+> hemmeligheten i `tokenKropp()`, og da kjører v3 på v2 sin legitimasjon uten
+> at noe sier fra. Sertifikatveien er da aldri prøvd — og det oppdages den
+> dagen hemmeligheten utløper.
+
+**To backupjobber mot samme område.** Kjører v2 og v3 backup parallelt, legger
+begge filer i det samme biblioteket. Sjekk at filnavnene skiller miljøene fra
+hverandre før du slår på den andre jobben; to filer med samme navn er ikke en
+backup, det er én.
+
+---
+
+### 0.6 Gjennomkjøring i dev-tenanten først
+
+Kokeboka kan prøves ende til ende i dev-tenanten før den kjøres mot prod. Da
+opprettes et v3-oppsett ved siden av det som alt står der, og rives etterpå.
+
+**Bruk `MILJO=dev`. Ikke finn opp et nytt miljønavn.** Det er ikke bare
+enklere — det er riktigere:
+
+| Hva navnet styrer | Hvorfor `dev` er svaret |
+|---|---|
+| `LØSER_KEYVAULT_REFERANSER` i `lib/plattform.js` | Inneholder `dev`. Et nytt navn ville fått helsesjekken til å gi råd for SWA Managed Functions — «lim inn verdien som klartekst» — i et miljø der referansene virker |
+| `KJORER_TIMERE` | Inneholder `dev`. Et ukjent navn gir ingen timer |
+| `KJENTE_MILJOER` | Et navn utenfor settet er «vet ikke», ikke «gjelder ikke». Alle miljøspesifikke råd blir da uttrykt med forbehold |
+| `config/env.<navn>.json` | Et nytt navn krever en ny, KOMPLETT inventarfil — `env-inventar.test.js` krever at hver `process.env` i `api/src` står i hver av dem |
+
+Et nytt miljønavn koster altså fire filer og gir dårligere diagnostikk. Det
+som faktisk må være nytt, er ressursnavnene — og de er parametre, ikke kode:
+
+| Hva | Hvordan |
+|---|---|
+| Function App | `appnavn` er et input til «Deploy API til Function App». Velg `miljo: dev` |
+| SWA | `swa_token_secret` er et input til frontend-workflowen (5.2). Legg v3-tokenet i en EGEN hemmelighet — ikke bytt verdien på den faste |
+| Lagringskonto, Key Vault | Opprettes av kokeboka. Isolasjonen mellom prøveoppsettet og det ekte dev-miljøet ligger HER, ikke i miljønavnet |
+
+To ting som deler på tvers av miljønavnet, og som må vurderes bevisst:
+
+* **`TODO_STORAGE_CONNECTION_STRING`.** Er den satt, havner oppgavelista og
+  nøkkelkalenderen i det DELTE lageret, med miljønavnet som partisjonsnøkkel.
+  To `dev`-apper skriver da i samme rader. La den stå tom i prøveoppsettet;
+  da er listene lokale, og UI-et sier det.
+* **Backupfilnavnet** er `<MILJO>-backup-<tidsstempel>.fsbk`. To
+  `dev`-oppsett gir filer med samme navnemønster. Skiller de seg bare på
+  tidsstempelet, kan du ikke se hvilket oppsett som laget hvilken fil — gi
+  prøveoppsettet et eget bibliotek eller en egen mappe.
+
+**Globalt unike navn** er lagringskonto, Key Vault, Function App og
+SWA-vertsnavn. Et prefiks på disse fire er riktig grep i en tenant som alt har
+et oppsett — men da avviker navnene fra kapittel 1, så skriv ned
+oversettelsen før du begynner, ikke underveis.
 
 ---
 
@@ -696,8 +805,19 @@ Remove-Variable token
 
 ### 5.2 Deploy frontend
 
-Kjør frontend-workflowen mot v3-tokenet. **Bekreft i nettleseren at forsiden
-vises** før du går videre.
+Frontend-workflowene tar navnet på token-hemmeligheten som et valg, nettopp
+fordi en tenant kan ha mer enn én SWA. Kjør **Deploy frontend til dev-SWA**
+(dev-tenanten) eller prod-workflowen, og oppgi hemmeligheten du nettopp satte
+i 5.1 under `swa_token_secret`.
+
+Finnes ikke hemmeligheten, stopper jobben med
+«Hemmeligheten «…» finnes ikke, eller er tom» — ikke med SWA-actionens
+«deployment token is invalid», som ser ut som en utløpt token og sender
+feilsøkingen mot portalen.
+
+**Bekreft i nettleseren at forsiden vises** før du går videre. En
+SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
+øverst i 5.
 
 ### 5.3 Lenk Function App-en til SWA-en — først nå
 
