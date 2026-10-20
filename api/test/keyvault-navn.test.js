@@ -72,7 +72,7 @@ sjekk('og de tre navnene er forskjellige',
         sjekk('og verdien er den samme som i prod-konfigurasjonen',
             prodEnv.value, KANONISK.prod);
     } else {
-        sjekk('og den settes i SWA, ikke i repoet', !!prodEnv.settes_i_swa, true);
+        sjekk('og den settes i SWA, ikke i repoet', !!prodEnv.settes_direkte, true);
     }
 }
 

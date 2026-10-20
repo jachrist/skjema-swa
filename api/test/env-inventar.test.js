@@ -294,7 +294,7 @@ for (const miljo of MILJOER) {
     // Uenigheten var taus fordi ingen oppføring brukte formen ALENE; den
     // første som gjorde det (`AzureFunctionsJobHost__functionTimeout`) ble
     // avvist som «ukjent form» selv om fila selv beskriver den.
-    const FORMER = ['keyvault', 'value', 'valgfri', 'settes_i_swa', 'kun_dokumentasjon'];
+    const FORMER = ['keyvault', 'value', 'valgfri', 'settes_direkte', 'kun_dokumentasjon'];
     const formløse = nokler.filter(n => {
         const e = d[n];
         return !e || typeof e !== 'object' || !FORMER.some(f => f in e);
@@ -398,7 +398,7 @@ for (const miljo of MILJOER) {
 // ingen har, eller friskmelder en som faktisk kreves.
 //
 // Begge retningene har stått feil. BACKUP_SHAREPOINT_BIBLIOTEK og _MAPPE var
-// merket `settes_i_swa` i alle tre miljøene til 16.10.2026, selv om
+// merket `settes_direkte` i alle tre miljøene til 16.10.2026, selv om
 // graph-opplast.js aldri har krevd dem — ingen av miljøene har noen gang satt
 // dem, og backupene har ligget i rota av standardbiblioteket hele tiden.
 //

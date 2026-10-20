@@ -82,7 +82,7 @@ i en app-setting noen deler i en skjermdump.
 > fra en identitet flyten stoler på, så URL-en er ikke legitimasjon lenger.
 >
 > **De åtte `*_FLOW_URL`-varene i dev settes derfor som klartekst i app
-> settings, uten Key Vault-referanse.** De står som `settes_i_swa` i
+> settings, uten Key Vault-referanse.** De står som `settes_direkte` i
 > `config/env.dev.json` og ikke med verdi: fila er en inventarliste,
 > ingenting der settes automatisk, og en GUID-bærende adresse i repoet driver
 > fra virkeligheten så snart flyten lages på nytt.
@@ -294,7 +294,7 @@ gjenopprettingen:
 2. Hemmelige verdier hentes fra Key Vault (`kv-fhsskjema-pilot` for pilot,
    `fhs-kv-01` for prod) og limes inn som klartekst.
 3. `{"value"}`-verdiene står i inventarfila.
-4. `{"settes_i_swa"}`-verdiene er miljøspesifikke og står hverken her eller i
+4. `{"settes_direkte"}`-verdiene er miljøspesifikke og står hverken her eller i
    Key Vault — de må leses av miljøet selv (lagringskonto-navn, admin-UPN-er,
    SWA-URL).
 

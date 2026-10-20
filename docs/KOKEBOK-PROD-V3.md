@@ -58,7 +58,7 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 | ☐ | Flytene er kopiert til prod-tenanten med **Entra-autentisering** | Se trinn 7. Uten dette sender v3 ingenting |
 | ☐ | Domene/subdomene bestemt | Se 10. Ikke nødvendig for oppsettet, men avgjør cutover |
 | ☐ | **Skriver v1 fortsatt?** | Se under. Avklares før cutover, ikke etter |
-| ☐ | **Backup-sertifikatet importeres som PEM** | Se 0.4. Importeres det som PFX, kan koden ikke lese det — og en omgjøring etterpå krever at privatnøkkelen håndteres manuelt |
+| ☐ | **Backup-sertifikatet importeres som PEM** | Se 0.4, der hele veien er prøvd i dev. Importeres det som PFX, kan koden ikke lese det — og en omgjøring etterpå krever at privatnøkkelen håndteres manuelt |
 
 ```powershell
 az login --tenant <prod-tenant-id>
@@ -156,7 +156,7 @@ Fire prinsipaler trenger noe av vaulten, og de blandes lett:
 | Hvem | Hva den gjør | Rolle på vaulten |
 |---|---|---|
 | **Du**, når verdiene limes inn | Skriver hemmeligheter | `Key Vault Secrets Officer`, pluss `Reader` på ressursen så verktøyet finner den |
-| **`mi-skjema-3-prod`** | Løser `@Microsoft.KeyVault(...)` i app settings | `Key Vault Secrets User` |
+| **`mi-skjema-3-prod`** | Løser `@Microsoft.KeyVault(...)` i app settings | `Key Vault Secrets User` — også for en secret som er ryggen av et SERTIFIKAT (målt 20.10.2026 i dev); `Key Vault Certificate User` trengs ikke her |
 | **SWA-ens plattformidentitet** | Henter auth-sertifikatet via `clientSecretCertificateKeyVaultReference` | `Key Vault Secrets User` **og** `Key Vault Certificate User` |
 | **Den som tildeler de tre over** | Rolletildeling | `Owner` eller `User Access Administrator` på vaulten |
 
@@ -288,6 +288,23 @@ az keyvault secret show --vault-name $KV --name <sertifikatnavn> --query "conten
 
 Velges client secret i stedet, gjelder ingenting av dette — da er
 `GRAPH_CLIENT_SECRET` hele oppsettet, og `GRAPH_CLIENT_CERT_PEM` står tom.
+
+**Veien er prøvd 20.10.2026, i dev** — ikke bare formatkravet, men hele
+kjeden: Key Vault utstedte sertifikatet med PEM-policyen,
+`@Microsoft.KeyVault(...)` løste det på Function App-en,
+`lagKlientAssertion()` signerte, Entra godtok, og backupen havnet i
+SharePoint. Fire funn hører i bestillingen:
+
+| Funn | Hva det betyr for bestillingen |
+|---|---|
+| `Key Vault Secrets User` **alene** var nok for en sertifikat-secret | API-identiteten trenger ikke `Key Vault Certificate User`. Den står i 0.2 for SWA-ens *plattformidentitet*, som henter auth-sertifikatet — en annen tildeling til et annet formål |
+| Ingen client secret i det hele tatt | `scripts/opprett-backup-app.ps1 -Sertifikat` hopper over steget. En hemmelighet som ikke skal brukes er en ekstra vei inn, en ekstra utløpsdato — og den **vinner** over sertifikatet i `tokenKropp()` |
+| Sertifikatet må ligge på appen `GRAPH_CLIENT_ID` peker på | `AADSTS700027` handler om nettopp den appen, ikke om en app der avtrykket tilfeldigvis også finnes. I dev havnet det først på deploy-tjenestehovedobjektet, og avtrykket stemte med Key Vault hele tiden |
+| Skrivetilgangen til området gis **bare** via Graph | Det finnes ingen portalside for `Sites.Selected`-tildelingen. Feiler steget, er `(Get-MgContext).Scopes` sjekken: `Connect-MgGraph -Scopes` *ber* om delegerte rettigheter, og Global Administrator-rollen gir dem ikke av seg selv |
+
+Framgangsmåten, kommando for kommando, står i `docs/BACKUP-SHAREPOINT.md`
+under «Prøv i dev først». Den begynner nå med at app-registreringen må finnes
+— det var det som manglet.
 
 ---
 
@@ -483,7 +500,7 @@ For `keyvault`-formen vises secret-navnet, som er pekeren inn i vaulten.
 |---|---|
 | `keyvault` | Sett som Key Vault-referanse, se under |
 | `value` | Kopier verdien fra `config/env.prod.json`. Ikke hemmelig |
-| `settes_i_swa` | Hører hjemme på SWA-ressursen, ikke her |
+| `settes_direkte` | Sett verdien direkte på **Function App-en** — se 4.3. Unntaket er `AAD_CLIENT_ID`, som hører på SWA-ressursen |
 | `valgfri` | Trenger ingen verdi. Alle `*_SCHEDULE` er her |
 | `kun_dokumentasjon` | Settes av plattformen, eller står for oversiktens skyld |
 
@@ -528,6 +545,35 @@ az functionapp config appsettings list --name $FA --resource-group $RG --query "
 ```
 
 Navnene er greie. Den fulle lista med verdier hører ikke hjemme i en terminal.
+
+### 4.3 Hvilken vert får hva
+
+`settes_direkte` betyr «verdien hører ikke hjemme i repoet» — det er
+definisjonen env-filene selv gir. Men `vis-appsettings.js` skrev den ut som
+«hører hjemme på SWA-ressursen, ikke på Function App-en», og tabellen over
+sa det samme, fram til 20.10.2026. Det var riktig så lenge API-et BODDE i
+SWA-en. I v3 gjør det ikke det, og **seks av de sju leses av API-et selv:**
+
+| Variabel | Leses av | Står den ikke på Function App-en |
+|---|---|---|
+| `STORAGE_ACCOUNT_NAME` | `lib/lagringsvalg.js` | identitetsveien slår aldri inn — lagringen faller til tilkoblingsstreng, eller feiler |
+| `ADMIN_UPNS` | `lib/auth.js` (`erAdmin`) | ingen er administrator |
+| `GRAPH_TENANT_ID` | `lib/graph-opplast.js` | backupen hopper over Graph-veien |
+| `GRAPH_CLIENT_ID` | `lib/graph-opplast.js` | samme |
+| `BACKUP_SHAREPOINT_SITE` | `lib/graph-opplast.js` | samme |
+| `KEYVAULT_NAME` | bare visning i `functions/system.js` | ingenting i drift |
+
+Følger man 4-tabellen bokstavelig slik den sto, får man altså en prod v3 uten
+administratorer, uten identitetsbasert lagring og uten Graph-backup — tre
+feil som hver for seg ser ut som noe annet.
+
+`AAD_CLIENT_ID` er den ene som **ikke** skal på Function App-en: SWA-en leser
+auth-innstillingene fra SINE egne app settings, og en kopi her er ikke i bruk
+og kan drive fra originalen. Samme grunn som `config/env.dev.json` oppgir for
+dev. Se kapittel 6.
+
+Fasiten etterpå er `/api/system/info`, som melder hvilke av dem API-et
+faktisk ser — ikke en portalside.
 
 ---
 
