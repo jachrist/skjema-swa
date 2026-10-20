@@ -788,6 +788,13 @@
 
             innhold.appendChild(form);
 
+            // Gjenåpningslenka for et mellomlagret utkast. Tom og skjult til
+            // noen faktisk lagrer — se visUtkastLenke().
+            const utkastBoks = document.createElement('div');
+            utkastBoks.id = 'utkast-lenke-boks';
+            utkastBoks.style.display = 'none';
+            innhold.appendChild(utkastBoks);
+
             // Lytt på alle endringer for å re-evaluere Vises/ObligatoriskHvis
             form.addEventListener('input', oppdaterVises);
             form.addEventListener('change', oppdaterVises);
@@ -1069,6 +1076,85 @@
             return alleOk;
         }
 
+        /**
+         * Lenka som gjenåpner et mellomlagret utkast.
+         *
+         * `opprinnelse` er en parameter og ikke `location.origin` lest inne i
+         * funksjonen, slik at regelen kan prøves uten en nettleser —
+         * `frontend/test/utkast-lenke.test.js` kjører nettopp denne.
+         *
+         * Begge id-ene URL-kodes. En skjema-id er vår egen og tam, men en
+         * regel som bare er trygg fordi inndata tilfeldigvis er det, er ikke
+         * en trygg regel.
+         */
+        function utkastLenke(opprinnelse, typeId, id) {
+            return `${opprinnelse}/index.html`
+                + `?skjematype_id=${encodeURIComponent(typeId)}`
+                + `&skjema_id=${encodeURIComponent(id)}`;
+        }
+
+        /**
+         * Vis lenka etter mellomlagring, med forklaringen ved siden av.
+         *
+         * Lenka har ligget i adressefeltet hele tiden (`replaceState` under),
+         * men den er usynlig for den som ikke vet at den er der. Og det er
+         * flertallet: brukerne går rett fra en skjemareferanse til utfylling
+         * og ser aldri skjemavelgeren, der mellomlagrede utkast listes opp.
+         * Uten lenka finner de ikke utkastet sitt igjen.
+         *
+         * Boksen blir STÅENDE. En melding som forsvinner etter noen sekunder
+         * er ubrukelig for noe brukeren skal ta vare på.
+         */
+        function visUtkastLenke(id) {
+            const boks = document.getElementById('utkast-lenke-boks');
+            if (!boks || !id) return;
+            const lenke = utkastLenke(window.location.origin, skjematypeId, id);
+            boks.className = 'status-melding info';
+            boks.style.display = 'block';
+            boks.style.textAlign = 'left';
+            boks.innerHTML = `
+                <div style="font-weight: 600; margin-bottom: 6px;">Utkastet er lagret</div>
+                <div style="margin-bottom: 8px;">
+                    Ta vare på lenka under — den er veien tilbake til dette utkastet.
+                    Send den til deg selv, eller lagre den som bokmerke.
+                </div>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                    <input type="text" id="utkast-lenke" readonly value="${escapeHtml(lenke)}"
+                        onclick="this.select()"
+                        style="flex: 1; min-width: 240px; font-family: ui-monospace, monospace; font-size: 12px; padding: 6px 8px;">
+                    <button type="button" class="knapp sekundær" id="kopier-utkast-knapp"
+                        onclick="kopierUtkastLenke()">Kopier lenke</button>
+                </div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                    Du må være innlogget som deg selv for å åpne den. Lenka er ikke
+                    en nøkkel — den gir ingen andre tilgang til svarene dine.
+                </div>
+            `;
+            boks.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        window.kopierUtkastLenke = async () => {
+            const inp = document.getElementById('utkast-lenke');
+            const knapp = document.getElementById('kopier-utkast-knapp');
+            if (!inp) return;
+            const kvitter = (tekst) => {
+                if (!knapp) return;
+                knapp.textContent = tekst;
+                setTimeout(() => { knapp.textContent = 'Kopier lenke'; }, 2000);
+            };
+            try {
+                await navigator.clipboard.writeText(inp.value);
+                kvitter('✓ Kopiert');
+            } catch (_) {
+                // Utklippstavlen krever sikker kontekst og kan være avslått.
+                // Da markeres teksten i stedet, så brukeren kan kopiere selv —
+                // en knapp som later som den virket, er verre enn ingen knapp.
+                inp.select();
+                const ok = document.execCommand?.('copy');
+                kvitter(ok ? '✓ Kopiert' : 'Merk teksten og kopier');
+            }
+        };
+
         async function lagreForSenere() {
             // Ingen validering — bruker skal kunne pause midt i utfylling
             const lagreKnapp = document.getElementById('lagre-knapp');
@@ -1112,6 +1198,12 @@
                 submitKnapp.disabled = false;
                 lagreKnapp.textContent = '✓ Lagret';
                 setTimeout(() => { lagreKnapp.textContent = 'Lagre for senere'; }, 2500);
+
+                // Id-en fra svaret går foran: ved første lagring er det den
+                // som er fasiten. `skjemaId` og `skjemaIdParam` dekker
+                // påfølgende lagringer av et utkast som alt har en id.
+                visUtkastLenke(resp.Skjema_id || skjemaId || skjemaIdParam);
+
                 // Oppdater URL med skjema_id så refresh gjenopptar
                 if (resp.Skjema_id && !skjemaIdParam) {
                     const nyUrl = `/index.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
