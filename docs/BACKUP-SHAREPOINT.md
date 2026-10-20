@@ -277,10 +277,13 @@ Uten versjon til slutt gir alltid nyeste.
 > og da tester du ingenting, mens alt ser ut til å virke. Det er den eneste
 > måten denne prøven kan gi et falskt grønt svar på.
 
-Identiteten har `Key Vault Secrets User` fra trinn 3 i kokeboka. Løses ikke
-referansen, prøv å legge til **`Key Vault Certificate User`**: en secret som
-er ryggen av et sertifikat oppfører seg ikke alltid som en vanlig secret, og
-det er nettopp derfor prod sin SWA-identitet har begge rollene.
+`Key Vault Secrets User` er nok. Det var et åpent spørsmål om en secret som
+er ryggen av et sertifikat trenger **`Key Vault Certificate User`** i
+tillegg — den rollen står i kokeboka for prod sin SWA-identitet. Svaret ble
+målt 20.10.2026: referansen løste seg med Secrets User alene, og
+sertifikatet signerte en assertion Entra godtok. Prod sin SWA-identitet har
+begge rollene fordi *plattformen* henter selve sertifikatobjektet der, ikke
+secret-ryggen.
 
 **5. Kjør en backup og les feilmeldingen.**
 

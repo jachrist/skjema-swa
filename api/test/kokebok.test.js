@@ -155,18 +155,89 @@ const BASHISMER = [
     }
 }
 
-// ---------- 6. formene står likt to steder ----------
+// ---------- 6. formene står likt FIRE steder ----------
 //
-// `vis-appsettings.js` grupperer etter form, og `env-inventar.test.js` godtar
-// et sett former. To lister over det samme er feilklassen dette repoet lager
-// flest av — her leses BEGGE, og de skal svare likt.
+// `vis-appsettings.js` grupperer etter form, `env-inventar.test.js` godtar et
+// sett former, hver miljøfil beskriver dem i `_kommentar`, og kokeboka har
+// dem som en tabell i kapittel 4. Fire lister over det samme er feilklassen
+// dette repoet lager flest av — her leses ALLE, og de skal svare likt.
+//
+// 20.10.2026 var de uenige om MER enn navnet: env-filene definerte
+// `settes_i_swa` som «verdien hører ikke hjemme i repoet», mens skriptet og
+// kokeboka skrev den ut som «hører hjemme på SWA-ressursen, ikke på Function
+// App-en». Den siste er feil i dev og prod v3, der API-et ER Function
+// App-en — og seks av de sju variablene leses av API-et selv. Navnet er nå
+// `settes_direkte`, og denne testen holder de fire listene sammen.
 {
     const { FORMER } = require('../../scripts/vis-appsettings.js');
+    const former = Object.keys(FORMER).sort();
+
     const inventar = fs.readFileSync(path.join(rot, 'api', 'test', 'env-inventar.test.js'), 'utf8');
     const m = /const FORMER = \[([^\]]*)\]/.exec(inventar);
     sjekk('fant FORMER i env-inventar.test.js', !!m, true);
     const fraTest = [...(m?.[1] || '').matchAll(/'(\w+)'/g)].map(x => x[1]).sort();
-    sjekk('de to listene over former er like', Object.keys(FORMER).sort(), fraTest);
+    sjekk('env-inventar.test.js har de samme formene', fraTest, former);
+
+    // Miljøfilenes egen beskrivelse. `{"keyvault": "navn"}`, `{"valgfri"}` …
+    for (const miljo of ['dev', 'pilot', 'prod']) {
+        const d = JSON.parse(fs.readFileSync(path.join(rot, 'config', `env.${miljo}.json`), 'utf8'));
+        const iKommentar = [...new Set([...String(d._kommentar || '')
+            .matchAll(/\{"([a-z_]+)"/g)].map(x => x[1]))].sort();
+        sjekk(`env.${miljo}.json beskriver de samme formene`, iKommentar, former);
+    }
+
+    // Kokebokas tabell i kapittel 4. Den er det operatøren følger.
+    const fraKokebok = [...new Set([...tekst
+        .matchAll(/^\| `([a-z_]+)` \| [^|]*\|$/gm)].map(x => x[1]))]
+        .filter(n => former.includes(n) || /^[a-z_]+$/.test(n));
+    sjekk('kokeboka lister de samme formene',
+        former.filter(f => !fraKokebok.includes(f)), []);
+
+    // Og navnet som løy, skal ikke finnes noe sted igjen.
+    const steder = ['scripts/vis-appsettings.js', 'docs/KOKEBOK-PROD-V3.md',
+        'config/env.dev.json', 'config/env.pilot.json', 'config/env.prod.json',
+        'config/keyvault-secrets.md'];
+    sjekk('ingen bruker det gamle formnavnet',
+        steder.filter(f => fs.readFileSync(path.join(rot, f), 'utf8').includes('settes_i_swa')), []);
+}
+
+// ---------- 6.1 kokeboka navngir hver settes_direkte API-et leser ----------
+//
+// Det var ikke etiketten alene som var feil: den sendte seks variabler til
+// SWA-ressursen, der API-et i v3 aldri leser dem. Utfallet ville vært en prod
+// uten administratorer, uten identitetsbasert lagring og uten Graph-backup.
+//
+// Testen leser hvem som faktisk leser dem: en `settes_direkte` som finnes i
+// `api/src` SKAL være navngitt i kapittel 4.3. Legges det til en ny, blir
+// denne rød — og det er lista som driver, ikke teksten.
+{
+    const prod = JSON.parse(fs.readFileSync(path.join(rot, 'config', 'env.prod.json'), 'utf8'));
+    const direkte = Object.keys(prod).filter(n => !n.startsWith('_') && prod[n] && prod[n].settes_direkte);
+    sjekk('det finnes settes_direkte-oppføringer å sjekke', direkte.length > 0, true);
+
+    // Hele api/src som én tekst. Variablene leses dels som `process.env.X`,
+    // dels gjennom `les('X')` — så navnet, ikke formen, er det vi leter etter.
+    const kilde = (function samle(mappe) {
+        return fs.readdirSync(mappe, { withFileTypes: true }).flatMap(e => {
+            const p = path.join(mappe, e.name);
+            return e.isDirectory() ? samle(p) : (e.name.endsWith('.js') ? [fs.readFileSync(p, 'utf8')] : []);
+        });
+    })(path.join(rot, 'api', 'src')).join('\n');
+
+    const fra = tekst.indexOf('### 4.3');
+    const til = tekst.indexOf('\n## 5.', fra);
+    sjekk('kapittel 4.3 finnes', fra > 0 && til > fra, true);
+    const kap = tekst.slice(fra, til);
+
+    const lest = direkte.filter(n => new RegExp(`(process\\.env\\.${n}\\b|les\\('${n}')`).test(kilde));
+    sjekk('noen av dem leses av API-et', lest.length > 0, true);
+    sjekk('og 4.3 navngir hver av dem', lest.filter(n => !kap.includes(n)), []);
+
+    // Unntaket skal stå som et unntak, ikke mangle. AAD_CLIENT_ID leses av
+    // SWA-ens auth-blokk, og en kopi på Function App-en kan drive fra
+    // originalen — samme grunn env.dev.json oppgir.
+    sjekk('og peker AAD_CLIENT_ID til SWA-ressursen',
+        /AAD_CLIENT_ID[\s\S]{0,200}SWA/.test(kap), true);
 }
 
 // ---------- 7. vis-appsettings skriver aldri ut en verdi ----------

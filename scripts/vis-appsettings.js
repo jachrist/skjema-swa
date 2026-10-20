@@ -28,7 +28,7 @@ const path = require('path');
 const FORMER = {
     keyvault: 'Key Vault-referanse — @Microsoft.KeyVault(SecretUri=…)',
     value: 'Fast verdi, ikke hemmelig — kopier fra miljøfila',
-    settes_i_swa: 'Hører hjemme på SWA-ressursen, ikke på Function App-en',
+    settes_direkte: 'Settes direkte på API-verten — verdien hører ikke i repoet',
     valgfri: 'Trenger ingen verdi — koden har en standard',
     kun_dokumentasjon: 'Settes av plattformen, eller står for oversiktens skyld'
 };
