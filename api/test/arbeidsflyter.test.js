@@ -4,7 +4,7 @@
  * Testen er her fordi `.github/workflows/` er det ene stedet i repoet der en
  * feil ikke gir seg til kjenne før den har fått en konsekvens i et ekte miljø.
  *
- * Fire regler:
+ * Fem regler:
  *
  *   **Hver deploy kjører testene først.** `CLAUDE.md` sier det, og uten steget
  *   ruller en rød suite rett ut. Det er den eneste porten mellom en dårlig
@@ -24,6 +24,10 @@
  *   ble oppdaget 19.10, etter en formiddag med feilsøking i kode som ikke var
  *   deployet. `CLAUDE.md` har regelen — «ikke anta at deployet kode er
  *   gjeldende» — og steget håndhever den i stedet for å be noen huske den.
+ *
+ *   **API-deployen til Function App gjør det samme.** Den deployer dev, og
+ *   manglet steget til 20.10.2026 — da en backup gikk stille feil vei fordi
+ *   Function App-en kjørte eldre kode enn app-settingene forutsatte.
  *
  * Kjøres med:  node api/test/arbeidsflyter.test.js
  */
@@ -160,6 +164,39 @@ for (const fil of deployer) {
     // Men bare for preview. Mangler produksjonens adresse, skal det felle.
     sjekk('den milde grenen gjelder bare preview',
         /\[ -z "\$MAAL" \] && \[ -n "\$PREVIEW" \]/.test(steget), true);
+}
+
+// ---------- 5. API-deployen til Function App verifiserer seg også ----------
+//
+// deploy-prod.yml fikk verifiseringen 19.10.2026. Denne workflowen deployer
+// dev sitt API og hadde den ikke — og 20.10 kostet nettopp det en runde:
+// sertifikatet var satt opp, GRAPH_CLIENT_SECRET fjernet, men Function
+// App-en kjørte kode fra før sertifikatstøtten. erKonfigurert() ble usann,
+// backupen gikk stille via PA-flyten, og feilsøkingen gikk mot flyten.
+{
+    const fa = fs.readFileSync(path.join(mappe, 'deploy-funcapp-pilot.yml'), 'utf8');
+
+    sjekk('API-deployen leser /api/ping', /\/api\/ping/.test(fa), true);
+    sjekk('og sammenligner med commit-SHA-en', /github\.sha/.test(fa), true);
+
+    const steget = fa.slice(fa.indexOf('Verifiser at deployen faktisk landet'));
+    sjekk('verifiseringssteget finnes', steget.length > 0, true);
+    sjekk('og avviksgrenen feller kjøringen',
+        /Deployen ble rapportert vellykket[\s\S]{0,600}exit 1/.test(steget), true);
+
+    // Adressen er et EKSPLISITT input. `vars.SWA_URL` faller tilbake til
+    // repo-nivå når miljøet ikke har sin egen, og da ville sjekken lest et
+    // annet miljø og meldt et falskt avvik. En sjekk som kan ta feil slik er
+    // verre enn ingen.
+    sjekk('adressen kommer fra et eget input', /inputs\.verifiser_url/.test(fa), true);
+    sjekk('og ikke fra vars.SWA_URL', /\$\{\{\s*vars\.SWA_URL/.test(fa), false);
+
+    // Uten adresse kan ingenting verifiseres. Da skal det SIES, ikke hoppes
+    // stille over — men det skal ikke felle en deploy som kanskje er fin.
+    sjekk('manglende adresse gir en ::warning::',
+        /::warning::[\s\S]{0,300}IKKE verifisert/.test(steget), true);
+    sjekk('og havner i kjøringssammendraget',
+        /IKKE verifisert[\s\S]{0,200}GITHUB_STEP_SUMMARY/.test(steget), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);

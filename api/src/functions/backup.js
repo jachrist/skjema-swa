@@ -206,8 +206,18 @@ async function lastOppKopi(res, sasUrl, sti, jobbLog, fremdrift) {
             return { kanal: 'graph', flytStatus: 'feilet', flytMelding: `Graph-opplasting feilet: ${e.message}` };
         }
     }
+    // Hvorfor vi IKKE tok Graph-veien. Uten dette er fallbacken usynlig: en
+    // manglende app-setting ser nøyaktig ut som et bevisst valg, og statusen
+    // melder «PA-flyt: ok» uten et ord om at den andre veien ble forbigått.
+    //
+    // 20.10.2026 kostet det en runde. Sertifikatet var satt opp og
+    // GRAPH_CLIENT_SECRET fjernet, men Function App-en kjørte kode fra før
+    // sertifikatstøtten — så erKonfigurert() var usann, og backupen gikk
+    // stille via flyten.
+    const graphMangler = graphOpplast.manglerKonfig();
+    jobbLog(`backup/kjor: Graph ikke konfigurert (mangler: ${graphMangler.join(', ') || 'ukjent'}) — bruker PA-flyten`);
     fremdrift('kaller PA-flyt');
-    return { kanal: 'pa-flyt', ...(await kallBackupFlyt(res, sasUrl, sti, jobbLog)) };
+    return { kanal: 'pa-flyt', graphMangler, ...(await kallBackupFlyt(res, sasUrl, sti, jobbLog)) };
 }
 
 /** Full URL til kvitteringsendepunktet, slik flyten slipper å ha den hardkodet. */
@@ -306,7 +316,7 @@ async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
         const sasUrl = await lagSasUrl(res.filnavn);
         const stiInnst = await innstillinger.hent('BackupOneDriveSti');
         const sti = stiInnst?.Verdi || '';
-        const { kanal, flytStatus, flytMelding, graph } = await lastOppKopi(res, sasUrl, sti, jobbLog, fremdrift);
+        const { kanal, flytStatus, flytMelding, graph, graphMangler } = await lastOppKopi(res, sasUrl, sti, jobbLog, fremdrift);
 
         // Graph kvitterer i samme kall — vi vet utfallet med én gang, og
         // trenger ingen kvittering tilbake fra en flyt. PA-veien får fortsatt
@@ -330,6 +340,7 @@ async function kjorBackupJobb(aktor, jobbLog, onsketModus = 'full') {
             Tider: JSON.stringify(res.tider || {}),
             FlytStatus: flytStatus,
             Kanal: kanal,
+            GraphMangler: (graphMangler || []).join(','),
             Modus: res.modus,
             BasertPa: res.modus === 'delta' ? (opsjoner.basertPa || '') : '',
             OneDriveSti: kanal === 'graph' ? (graph?.sti || '') : sti,
@@ -527,6 +538,7 @@ app.http('backupStatus', {
                     // 'graph' = SharePoint via Microsoft Graph, 'pa-flyt' = OneDrive
                     // via Power Automate. Avgjør hvordan panelet skal formulere seg.
                     kanal: rad.Kanal || null,
+                    graphMangler: rad.GraphMangler ? String(rad.GraphMangler).split(',').filter(Boolean) : [],
                     modus: rad.Modus || null,
                     basertPa: rad.BasertPa || null,
                     oneDriveStatus: rad.OneDriveStatus || null,

@@ -144,7 +144,7 @@ async function kjor() {
 
     // ---------- konfigurasjonssjekk ----------
     sjekk('mangler alt uten env', graph.manglerKonfig({}),
-        ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET', 'BACKUP_SHAREPOINT_SITE']);
+        ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET eller GRAPH_CLIENT_CERT_PEM', 'BACKUP_SHAREPOINT_SITE']);
     sjekk('komplett konfig mangler ingenting', graph.manglerKonfig(KONFIG), []);
     sjekk('erKonfigurert følger manglerKonfig', graph.erKonfigurert(KONFIG), true);
     sjekk('halvferdig konfig avvises',
