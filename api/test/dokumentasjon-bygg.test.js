@@ -94,8 +94,21 @@ const skript = les('scripts', 'bygg-dokumentasjon.sh');
 //
 // Den ene som mangler, er den som gjør dokumentasjonen åpen.
 {
-    const KONFIGER = ['staticwebapp.config.json', 'staticwebapp.config.dev.json',
-        'staticwebapp.config.pilot.json', 'staticwebapp.config.prod.json'];
+    // Filene finnes med samme mønster som `swa-config.test.js` bruker, og av
+    // samme grunn: rot-fila `staticwebapp.config.json` skrives av
+    // `build-config.js` og er GITIGNORERT. En hardkodet liste med den i
+    // kræsjer i CI, der klonen er frisk — og består lokalt hos den som nettopp
+    // har bygget. Den valideres hvis den finnes, og kreves ikke.
+    const MILJOER = ['dev', 'pilot', 'prod'];
+    const KONFIGER = fs.readdirSync(rot)
+        .filter(n => /^staticwebapp\.config(\.[a-z]+)?\.json$/.test(n)).sort();
+
+    // Miljøkildene MÅ finnes. Forsvinner én, er dokumentasjonen uten
+    // ruteregel i det miljøet — og det er nettopp det som ikke skal kunne
+    // skje stille.
+    sjekk('alle miljøkildene finnes',
+        MILJOER.filter(m => !KONFIGER.includes(`staticwebapp.config.${m}.json`)), []);
+
     for (const f of KONFIGER) {
         const d = JSON.parse(les(f));
         const treff = (d.routes || []).filter(r => r.route === '/dokumentasjon/*');
