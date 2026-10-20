@@ -156,7 +156,33 @@ function bundneNavn(kilde) {
     return ut;
 }
 
+/**
+ * Mapper som ligger UNDER kilden, men ikke ER kilden.
+ *
+ * `frontend/dokumentasjon/` bygges av `scripts/bygg-dokumentasjon.sh` fra
+ * `docs/*.md`. Den må ligge der, fordi SWA laster opp `app_location` — men
+ * den er generert HTML, og seks tester går gjennom frontend-treet og leter
+ * etter regler i «vår» kode.
+ *
+ * 20.10.2026 meldte `storrelse.test.js` at «noen bruker den gamle formelen»,
+ * og fila den pekte på var et bygget dokument som BESKRIVER den gamle
+ * formelen. Testen hadde rett om teksten og tok feil om koden.
+ *
+ * Verre enn feilmeldingen: utfallet kom an på om noen hadde bygget
+ * dokumentasjonen lokalt. I CI bygges den etter testene, så den var grønn
+ * der. En test som svarer ulikt på to maskiner er ikke en test.
+ *
+ * Regelen står derfor ETT sted, og hver vandring spør den.
+ */
+const GENERERTE_MAPPER = new Set(['dokumentasjon', 'node_modules']);
+
+/** Skal denne mappa hoppes over når kilden gås gjennom? */
+function hoppOverMappe(navn) {
+    return GENERERTE_MAPPER.has(String(navn));
+}
+
 module.exports = {
     utenKommentarer, lesKode, hentEksport, bundneNavn,
-    utenHtmlKommentarer, utenBlokkKommentarer, utenLinjeKommentarer
+    utenHtmlKommentarer, utenBlokkKommentarer, utenLinjeKommentarer,
+    hoppOverMappe, GENERERTE_MAPPER
 };

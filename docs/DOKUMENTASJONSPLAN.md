@@ -166,10 +166,34 @@ Sikkerhetsevalueringen er førsteprioritet, så den styrer.
    hjemme der. **En evaluator som finner noe vi ikke har nevnt, leser alt
    annet med nye øyne.**
 
-**Runde 2 — verktøykjeden**
+**Runde 2 — verktøykjeden** — *punkt 4–5 bygget 20.10.2026*
 
-4. MkDocs + pandoc i CI, utgivelse til `/dokumentasjon/*` bak Entra.
-5. Forside og navigasjon ordnet etter målgruppe, ikke etter filnavn.
+4. ✅ MkDocs Material + pandoc/Chromium, kjørt av `scripts/bygg-dokumentasjon.sh`.
+   Begge utgangene leser de samme `docs/*.md` i samme kjøring, så PDF-en kan
+   ikke komme ut av takt med nettsidene. Utgivelse til `/dokumentasjon/*` bak
+   Entra: ruteregelen står i alle fire `staticwebapp.config*.json`, og
+   `api/test/dokumentasjon-bygg.test.js` krever at den står i ALLE — den ene
+   som mangler, er den som gjør dokumentasjonen åpen.
+5. ✅ `docs/index.md` er forsiden, ordnet etter hva leseren skal GJØRE
+   («vurdere sikkerheten», «forvalte», «endre et skjema», «videreutvikle»),
+   og navigasjonen i `mkdocs.yml` følger målgruppe. Testen krever at hver fil
+   i `docs/` står i navigasjonen: et dokument som ikke er lenket til, er
+   vanskeligere å oppdage enn et som mangler — siden ser komplett ut.
+
+**Fire ting målt underveis, som er verdt å ha skrevet ned:**
+
+| Funn | Konsekvens |
+|---|---|
+| Material for MkDocs varsler selv at **MkDocs 2.0 fjerner plugin-systemet uten migreringsvei**, og at 2.0 foreløpig er ulisensiert | Versjonene er pinnet med `==` i byggeskriptet, og en test krever at de er eksakte. En flytende versjon ville tatt ned deployen den dagen 2.0 slippes, uten at noe her var endret. `mdBook` står fortsatt som alternativ |
+| `search: { lang: no }` i YAML leser `no` som den boolske **FALSE** | Feiler med «'bool' object has no attribute 'split'» — en melding som ikke peker på språkkoden i det hele tatt. Må stå som `["no"]` |
+| `site_url` satt gir absolutte lenker mot roten | Siden ligger under `/dokumentasjon/` på en vert som er ulik per miljø. Varen er utelatt med vilje, og testen krever at den blir det |
+| Den bygde HTML-en havner under `frontend/`, der seks tester går gjennom treet | `storrelse.test.js` meldte at «noen bruker den gamle formelen», og pekte på et bygget dokument som BESKRIVER den. Verre: utfallet kom an på om noen hadde bygget lokalt. Regelen om hvilke mapper som hoppes over står nå ett sted (`scripts/test-kilde.js`) |
+
+**Det som gjenstår i runde 2:** ingenting i verktøykjeden. Men
+`docs/FORVALTNING.md` er lagt inn som et **forslag til innhold** — et skjelett
+der hvert kapittel sier hva det skal inneholde, hva som finnes i dag og hvor,
+og hva som mangler. Det er inngangen for forvalteren, og tolv kapitler som
+skal fylles ut etter godkjenning.
 
 **Runde 3 — skjemaeier og sluttbruker**
 

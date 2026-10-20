@@ -71,6 +71,15 @@ jobs:
       - name: Bygg konfigurasjon
         run: node scripts/build-config.js pilot
 
+      # Dokumentasjonen blir en del av appen som lastes opp: SWA serverer
+      # `app_location`, og sidene havner under /dokumentasjon/ bak
+      # ruteregelen i staticwebapp.config.json. Uten --strict — en død lenke
+      # i et dokument skal ikke kunne stoppe en utrulling. CI bygger strengt.
+      - name: Installer pandoc
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq pandoc
+      - name: Bygg dokumentasjonen
+        run: scripts/bygg-dokumentasjon.sh
+
       - name: Build And Deploy
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1

@@ -28,7 +28,7 @@
  */
 const fs = require('fs');
 const path = require('path');
-const { hentEksport, utenKommentarer, bundneNavn } = require('../../scripts/test-kilde.js');
+const { hentEksport, utenKommentarer, hoppOverMappe, bundneNavn } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -142,7 +142,10 @@ const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
     const gå = (...deler) => {
         const katalog = path.join(rot, ...deler);
         for (const n of fs.readdirSync(katalog, { withFileTypes: true })) {
-            if (n.isDirectory()) { gå(...deler, n.name); continue; }
+            // `frontend/dokumentasjon/` er bygget fra docs/*.md og BESKRIVER
+            // regler — den er ikke kode som følger dem. Regelen om hvilke
+            // mapper som hoppes over, står i scripts/test-kilde.js.
+            if (n.isDirectory()) { if (!hoppOverMappe(n.name)) gå(...deler, n.name); continue; }
             if (n.name.endsWith('.js') || n.name.endsWith('.html')) filer.push([...deler, n.name]);
         }
     };
@@ -179,7 +182,7 @@ const KB = 1024, MB = 1024 * 1024, GB = 1024 * 1024 * 1024;
     const gåApi = (...deler) => {
         const katalog = path.join(rot, ...deler);
         for (const n of fs.readdirSync(katalog, { withFileTypes: true })) {
-            if (n.isDirectory()) { gåApi(...deler, n.name); continue; }
+            if (n.isDirectory()) { if (!hoppOverMappe(n.name)) gåApi(...deler, n.name); continue; }
             if (!n.name.endsWith('.js')) continue;
             const rel = [...deler, n.name].join(path.sep);
             if (rel === BACKEND) continue;

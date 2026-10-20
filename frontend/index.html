@@ -435,7 +435,7 @@
             try {
                 skjematype = await api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}`);
                 await forbereedSkjemaId();
-                if (!await svargrenseTillater()) return;
+                if (!await kanFylleUt()) return;
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste skjemadefinisjon: ' + e.message);
@@ -467,7 +467,7 @@
 
             try {
                 await forbereedSkjemaId();
-                if (!await svargrenseTillater()) return;
+                if (!await kanFylleUt()) return;
                 rendrer();
             } catch (e) {
                 visFeil('Kunne ikke laste skjema: ' + e.message);
@@ -667,7 +667,14 @@
         }
 
         /**
-         * Har brukeren svar igjen på denne skjematypen?
+         * Kan brukeren fylle ut dette skjemaet nå?
+         *
+         * To grunner til nei, og serveren svarer på begge: skjemaet er stengt
+         * (utenfor tilgjengelighetsperioden), eller brukeren har brukt opp
+         * svarene sine. Siden avgjør ingen av dem selv — begge reglene bor i
+         * `lib/periode.js` og `lib/svargrense.js`, og en kopi her ville før
+         * eller siden sagt noe annet enn serveren, med den forskjellen at
+         * kopien er den brukeren ser.
          *
          * Spørres FØR skjemaet tegnes. Den ekte sperren ligger i `lagreSkjema`
          * på serveren — dette er for at ingen skal fylle ut et helt skjema og
@@ -682,7 +689,7 @@
          *
          * Returnerer true hvis skjemaet skal tegnes.
          */
-        async function svargrenseTillater() {
+        async function kanFylleUt() {
             try {
                 const sti = `/api/skjematyper/${encodeURIComponent(skjematypeId)}/kan-svare`
                     + (skjemaId ? `?unntatt=${encodeURIComponent(skjemaId)}` : '');
@@ -690,7 +697,7 @@
                 if (svar?.kanSvare === false) {
                     document.getElementById('innhold').className = 'status-melding info';
                     document.getElementById('innhold').textContent =
-                        svar.melding || 'Du har allerede svart på dette skjemaet.';
+                        svar.melding || 'Du kan ikke fylle ut dette skjemaet nå.';
                     const lagre = document.getElementById('lagre-knapp');
                     if (lagre) lagre.style.display = 'none';
                     return false;

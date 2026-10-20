@@ -37,6 +37,7 @@ const dialogTilgang = require('../lib/dialog-tilgang');
 const { harOtpToken, velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
 const prefill = require('../lib/utsending-prefill');
 const svargrense = require('../lib/svargrense');
+const periode = require('../lib/periode');
 
 
 
@@ -738,6 +739,29 @@ app.http('lagreSkjema', {
             // bør vite det.
             {
                 const stGrense = await skjemaStorage.hentSkjematype(skjematypeId);
+
+                // Tilgjengelighetsperioden. Samme grunn som grensen under:
+                // kortlista blokkerte utfylling utenfor perioden, men
+                // utfyllingslenka gikk rett hit, og her ble det aldri spurt.
+                // Et skjema som ikke lar seg ÅPNE fra oversikten, men som
+                // tar imot et svar via lenka, er ikke stengt.
+                //
+                // Den står FØR grensen fordi den er gratis: ingen oppslag,
+                // bare datoer fra skjematypen vi alt har hentet.
+                const perioder = periode.perioderFra(stGrense?.JSON || null);
+                if (periode.maaSjekkes({ perioder, gammelStatus: eksisterende?.Skjema_status })) {
+                    const dom = periode.sjekkPeriode(perioder);
+                    if (!dom.ok) {
+                        context.log(`lagreSkjema: ${innsenderId} avvist utenfor periode på ${skjematypeId}`);
+                        return {
+                            status: 409,
+                            jsonBody: {
+                                status: 'avvist', utenforPeriode: true, melding: dom.melding
+                            }
+                        };
+                    }
+                }
+
                 const grense = svargrense.grenseFor(stGrense?.JSON || null);
                 if (svargrense.maaSjekkes({
                     grense,

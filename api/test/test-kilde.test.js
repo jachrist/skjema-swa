@@ -99,7 +99,7 @@ function sjekk(navn, faktisk, forventet) {
         ['frontend/editor.html', 'id="maks-svar"'],
         ['frontend/editor.html', 'data-panel-id="tilgjengelighet"'],
         ['frontend/evaluering.html', "div.id = 'samtale'"],
-        ['frontend/index.html', 'svargrenseTillater'],
+        ['frontend/index.html', 'kanFylleUt'],
         ['frontend/kvittering.html', 'byggSamtale('],
         ['api/src/functions/skjemaer.js', 'svargrense.maaSjekkes('],
         ['api/src/lib/team-synk-jobb.js', 'kallTeamSynkFlyt(']

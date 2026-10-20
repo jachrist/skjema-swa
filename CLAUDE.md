@@ -5,7 +5,12 @@ Språk: **norsk** i kode, kommentarer, API-feltnavn og brukergrensesnitt.
 
 ## Arkitektur
 
-- **Frontend:** ren HTML/CSS/JS med ES-moduler i `frontend/`. Ingen byggsteg (bortsett fra config.js-generering).
+- **Frontend:** ren HTML/CSS/JS med ES-moduler i `frontend/`. Ingen byggsteg
+  — med to avtalte unntak, og begge skriver bare til filer som er gitignorert:
+  `scripts/build-config.js` (config.js og staticwebapp.config.json) og
+  `scripts/bygg-dokumentasjon.sh` (docs/*.md → `frontend/dokumentasjon/`,
+  servert bak Entra, runde 2 i `docs/DOKUMENTASJONSPLAN.md`). Selve
+  app-sidene skal fortsatt kunne åpnes og endres uten verktøykjede.
 - **Backend:** Azure Functions v4 i `api/`, kun HTTP-triggere.
 - **Datalagring:** Azure Table Storage + Blob Storage, lest i `lib/storage.js`
   og `lib/blob.js`. **To veier inn, og valget står ett sted:**

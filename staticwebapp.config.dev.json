@@ -191,6 +191,12 @@
             ]
         },
         {
+            "route": "/dokumentasjon/*",
+            "allowedRoles": [
+                "authenticated"
+            ]
+        },
+        {
             "route": "/editor.html",
             "allowedRoles": [
                 "authenticated"
@@ -209,6 +215,7 @@
         "rewrite": "/velgskjematype.html",
         "exclude": [
             "/api/*",
+            "/dokumentasjon/*",
             "/*.{png,jpg,jpeg,gif,svg,ico,css,js,woff,woff2}"
         ]
     },

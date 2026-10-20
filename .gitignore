@@ -35,3 +35,8 @@ frontend/staticwebapp.config.json
 # `npm test` fra api/, som gjør det samme underveis).
 api/src/versjon.json
 frontend/js/config.js
+
+# Bygges av scripts/bygg-dokumentasjon.sh ved deploy — docs/*.md er kilden.
+# Sjekkes IKKE inn: 85 genererte filer i hver diff ville skjult de ekte
+# endringene, og to kopier av samme innhold svarer ulikt innen et kvartal.
+frontend/dokumentasjon/
