@@ -31,3 +31,16 @@ jobs:
       # faktisk finnes.
       - name: Bygg config for pilot
         run: node scripts/build-config.js pilot
+
+      # Dokumentasjonen bygges HER med --strict, og det er med vilje:
+      # en død lenke mellom to dokumenter, eller en fil som ikke står i
+      # navigasjonen, skal stoppe en PR — ikke en utrulling. Deploy-jobbene
+      # bygger uten --strict, slik at en lenkefeil aldri kan hindre at en
+      # rettelse kommer ut.
+      #
+      # pandoc ligger ikke på runneren. Uten den hopper skriptet over PDF-ene
+      # med en advarsel, og da var PDF-veien aldri prøvd før den trengtes.
+      - name: Installer pandoc
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq pandoc
+      - name: Bygg dokumentasjonen (strict)
+        run: scripts/bygg-dokumentasjon.sh --strict

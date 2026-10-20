@@ -25,6 +25,7 @@
 const fs = require('fs');
 const path = require('path');
 const periode = require('../src/lib/periode');
+const { hoppOverMappe } = require('../../scripts/test-kilde.js');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -81,7 +82,8 @@ const les = (...p) => fs.readFileSync(path.join(rot, 'src', ...p), 'utf8');
     const filer = (function samle(m) {
         return fs.readdirSync(m, { withFileTypes: true }).flatMap(e => {
             const pp = path.join(m, e.name);
-            return e.isDirectory() ? samle(pp) : (e.name.endsWith('.js') ? [pp] : []);
+            if (e.isDirectory()) return hoppOverMappe(e.name) ? [] : samle(pp);
+            return e.name.endsWith('.js') ? [pp] : [];
         });
     })(path.join(rot, 'src'));
     const egne = filer.filter(f => !f.endsWith(path.join('lib', 'periode.js')))

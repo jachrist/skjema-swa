@@ -1,0 +1,115 @@
+# Dokumentasjonssiden — docs/*.md ut som statiske sider under /dokumentasjon/
+#
+# HVORFOR ET BYGGSTEG HER, NÅR CLAUDE.md SIER NEI.
+# Regelen gjelder frontend-appen: sidene i `frontend/` skal kunne åpnes og
+# endres uten verktøykjede. Dette rører ikke dem. Byggingen skriver bare til
+# `frontend/dokumentasjon/`, som er gitignorert og lages ved deploy.
+# Unntaket er avtalt (runde 2 i docs/DOKUMENTASJONSPLAN.md), ikke snikt inn,
+# og det står i CLAUDE.md ved siden av config.js-unntaket.
+#
+# HVORFOR IKKE BARE PUBLISERE .md-FILENE.
+# `parseMarkdown` i frontend/js/felt-render.js finnes alt, men dekker en
+# bevisst liten delmengde: ingen tabeller, ingen kodegjerder, ingen
+# blokksitat. Dokumentene her er full av alle tre. Å utvide den ville endret
+# hvordan skjemaforklaringer og Planner-notater gjengis — samme funksjon,
+# annen bruk — og det er en for stor regning for en dokumentasjonsside.
+#
+# HVOR DEN LIGGER: bak Entra-innloggingen som alt står der. Arkitektur,
+# datasikring og tilgangsstyring beskriver nøyaktig det en angriper vil vite.
+# Ruteregelen står i staticwebapp.config.*.json og holdes av
+# api/test/dokumentasjon-bygg.test.js.
+site_name: FHS Skjema — dokumentasjon
+site_description: Forvaltnings- og leveransedokumentasjon for skjemaløsningen
+docs_dir: docs
+site_dir: frontend/dokumentasjon
+# Siden serveres under /dokumentasjon/ på samme vert som appen, og verten er
+# ulik per miljø. `site_url` er derfor UTELATT med vilje: da bygger MkDocs
+# relative lenker, og de virker under en hvilken som helst sti. Settes den,
+# peker lenkene på roten og siden finner ingenting.
+# `use_directory_urls: false` gir .html-filer i stedet for mapper — SWA
+# trenger da ingen egen omskrivingsregel for dokumentasjonen.
+use_directory_urls: false
+
+theme:
+  name: material
+  language: nb
+  features:
+    - navigation.sections
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue
+      toggle: { icon: material/weather-night, name: Mørk bakgrunn }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: blue
+      toggle: { icon: material/weather-sunny, name: Lys bakgrunn }
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: { permalink: true }
+  - pymdownx.highlight: { anchor_linenums: true }
+  - pymdownx.superfences
+  - pymdownx.details
+
+plugins:
+  # `"no"` MÅ stå i hermetegn. YAML leser bare `no` som den boolske FALSE, og
+  # søkemotoren feiler da med «'bool' object has no attribute 'split'» — en
+  # feilmelding som ikke peker på språkkoden i det hele tatt.
+  - search: { lang: ["no"] }
+
+# Rekkefølgen er etter MÅLGRUPPE, ikke etter filnavn — steg 5 i
+# DOKUMENTASJONSPLAN.md. En som åpner docs/ i alfabetisk rekkefølge må vite
+# hva hen leter etter for å finne det.
+#
+# Hver fil i docs/ SKAL stå her. En dokumentasjonsside som ikke er lenket til
+# er et dokument ingen finner, og det er vanskeligere å oppdage enn et som
+# mangler. `api/test/dokumentasjon-bygg.test.js` krever at lista er komplett.
+nav:
+  - Start: index.md
+  - Overlevering og sikkerhet:
+      - SIKKERHET-OG-ARKITEKTUR.md
+      - SECURITY.md
+      - ARCHITECTURE.md
+      - DATA-MODELL.md
+      - API-OVERSIKT.md
+  - Forvaltning og drift:
+      - FORVALTNING.md
+      - DEPLOY.md
+      - KOKEBOK-PROD-V3.md
+      - LOGGING.md
+      - BACKUP-SHAREPOINT.md
+      - FLYTER.md
+      - FLYT-DEPLOY.md
+      - OPPSLAGSLISTER.md
+      - TEAM-CACHE-KONTRAKT.md
+      - POWER-BI.md
+  - Bakgrunn og beslutninger:
+      - BESLUTNING-EGEN-FUNCTION-APP.md
+      - STATUS-OKT-2026.md
+      - FASE-KRYPTERING.md
+      - FASE-OTP.md
+      - FASE-EKSTERN-INNSENDER.md
+      - FASE-9-EKSTERN-FLYT.md
+      - FASE-MASSEUTSENDING.md
+      - FASE-UTSENDING-SAMMENSLAING.md
+      - FASE-SAMTALE.md
+      - SAMTALE-INFOTEKST.md
+      - FASE-TEAM-SYNK.md
+      - FASE-5B-FS-INTEGRASJON.md
+      - FILTERSTUDENT-SPEC.md
+      - FASE-10-SP-LISTE.md
+      - FASE-6A-EPOST.md
+      - FASE-DIAGNOSE.md
+      - FASE-FRITTSTAENDE.md
+      - PORTING-SCENARIER.md
+      - SAMMENLIGNING-LEGACY-SWA.md
+      - PLATTFORM-DEMONSTRATOR.md
+  - Om dokumentasjonen:
+      - DOKUMENTASJONSPLAN.md
+      - TODO.md
