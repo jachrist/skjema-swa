@@ -169,5 +169,33 @@ sjekk('koden sender minst én legitimasjon',
         /secretProperties\.contentType\s*=\s*['"]application\/x-pem-file['"]/.test(dev), true);
 }
 
+// ---------- 7. appnavnet står likt i skriptet og i dokumentet ----------
+//
+// 20.10.2026 ble backup-sertifikatet lastet opp på `sp-skjema-3-dev` —
+// deploy-tjenestehovedobjektet — i stedet for backup-appen. Avtrykket
+// stemte med Key Vault, så sammenligningen så riktig ut, men Entra slår opp
+// på appen `client_id` navngir og fant ingenting.
+//
+// Dokumentet navngir nå begge, så forvekslingen kan ses. Navnet må komme
+// fra skriptet som faktisk oppretter appen, ikke fra en avskrift.
+{
+    const skript = fs.readFileSync(
+        path.join(rot, 'scripts', 'opprett-backup-app.ps1'), 'utf8');
+    const m = /\[string\]\$Navn\s*=\s*'([^']+)'/.exec(skript);
+    sjekk('fant standardnavnet i opprett-backup-app.ps1', !!m, true);
+
+    const appnavn = m && m[1];
+    sjekk('dokumentet navngir backup-appen', dok.includes(appnavn), true);
+
+    // Og den andre siden av forvekslingen: deploy-SP-en skal nevnes, ellers
+    // forteller dokumentet ikke hva man kan komme til å forveksle den med.
+    sjekk('dokumentet navngir også deploy-tjenestehovedobjektet',
+        /sp-skjema-\*|create-for-rbac/.test(dok), true);
+
+    // Det som faktisk avgjør: appen GRAPH_CLIENT_ID peker på.
+    sjekk('dokumentet peker på GRAPH_CLIENT_ID som fasiten',
+        /GRAPH_CLIENT_ID[\s\S]{0,120}peker på/.test(dok), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

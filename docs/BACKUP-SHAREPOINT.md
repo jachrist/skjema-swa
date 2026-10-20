@@ -254,8 +254,39 @@ det er nettopp derfor prod sin SWA-identitet har begge rollene.
 |---|---|
 | Backupen lastes opp til SharePoint | Ferdig — veien er bevist mot ekte Entra |
 | `GRAPH_CLIENT_CERT_PEM er ikke PEM` | KV-referansen ga PFX. Policyen i steg 1 slo ikke gjennom |
-| `Fikk ikke token fra Entra (HTTP 401)`, `AADSTS700027` | Signaturen verifiserer ikke — feil sertifikat lastet opp, eller avtrykket matcher ikke |
+| `Fikk ikke token fra Entra (HTTP 401)`, `AADSTS700027` | Sertifikatet er ikke registrert på appen `GRAPH_CLIENT_ID` peker på. Se under — Entra oppgir avtrykket selv |
 | `AADSTS7000215` | Entra leste det som en hemmelighet — da ble `GRAPH_CLIENT_SECRET` stående |
+
+##### `AADSTS700027`: les avtrykket Entra oppgir
+
+Feilmeldingen bærer selve beviset:
+
+> `Thumbprint of key used by client: 'A17394AD8AC5AB3AD2F8B29C6F110162B62C1E52'`
+
+Det er avtrykket **vi** signerte med. Sammenlign det tre steder, i denne
+rekkefølgen:
+
+| # | Hvor | Kommando eller sted |
+|---|---|---|
+| 1 | Sertifikatet i Key Vault | `az keyvault certificate show --vault-name <vault> --name <navn> --query x509ThumbprintHex -o tsv` |
+| 2 | **Appen `GRAPH_CLIENT_ID` peker på** | Entra ID → App registrations → **All applications** → søk på GUID-en → Certificates & secrets |
+| 3 | Appen du *tror* du lastet opp til | samme sted, men funnet på navn |
+
+**Punkt 2 er det som avgjør.** «Not registered on application» betyr appen
+`client_id` navngir — ikke en app der sertifikatet tilfeldigvis også ligger.
+Stemmer avtrykket i Key Vault med en app-registrering, men ikke med den
+`GRAPH_CLIENT_ID` peker på, er sertifikatet lastet opp på feil app.
+
+> **Navnefellen.** Backup-appen heter `fhs-skjema-backup`
+> (`scripts/opprett-backup-app.ps1`). En app som heter `sp-skjema-*` er
+> deploy-tjenestehovedobjektet fra `az ad sp create-for-rbac` — den har
+> `contributor` på ressursgruppa og skal **ikke** bære backup-legitimasjon.
+> De to er skilt med vilje; backup-appen skal bare ha `Sites.Selected` på ett
+> område.
+
+Propagering er sjelden forklaringen: en ny nøkkel er framme i løpet av
+sekunder til et par minutter. Får du samme avtrykk i feilen etter en ny
+kjøring, er det ikke tid som mangler.
 
 #### Hvor sertifikatveien i det hele tatt kan brukes
 
