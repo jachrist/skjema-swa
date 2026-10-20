@@ -15,7 +15,8 @@ const skjemaStorage = require('../lib/skjema-storage');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { hentOgSettFasteData } = require('../lib/faste-data');
 const { hentDropdownVerdier } = require('../lib/oppslag');
-const { erTilgjengeligNaa } = require('../lib/periode');
+const periode = require('../lib/periode');
+const { erTilgjengeligNaa } = periode;
 const rollerStorage = require('../lib/roller-storage');
 const hendelser = require('../lib/hendelser-storage');
 const pakke = require('../lib/skjematype-pakke');
@@ -78,7 +79,7 @@ async function harEierPåType(skjematypeId, upn) {
  */
 function tilKortformat(st, erEier, kanFylle, erOppfortSomEier = erEier) {
     const data = st.JSON || {};
-    const iPeriode = erTilgjengeligNaa(data.Tilgjengelighetsperioder);
+    const iPeriode = erTilgjengeligNaa(periode.perioderFra(data));
     return {
         Skjematype_id: st.id,
         Skjema_navn: st.navn || data.Skjema_navn || '',
@@ -98,7 +99,7 @@ function tilKortformat(st, erEier, kanFylle, erOppfortSomEier = erEier) {
         // Utfylling blokkeres utenfor tilgjengelighetsperioden — eier ser kortet uansett
         KanFylle: kanFylle && iPeriode,
         ErIPeriode: iPeriode,
-        Tilgjengelighetsperioder: data.Tilgjengelighetsperioder || [],
+        Tilgjengelighetsperioder: periode.perioderFra(data),
         AlleTilgang: data.Publikum?.AlleTilgang === true
     };
 }
@@ -292,12 +293,20 @@ app.http('skjematypeDiagnose', {
 });
 
 /**
- * Har denne personen svar igjen på denne skjematypen?
+ * Kan denne personen fylle ut denne skjematypen nå?
+ *
+ * To grunner til nei, og endepunktet svarer på begge: skjemaet er stengt
+ * (utenfor `Tilgjengelighetsperioder`), eller personen har brukt opp svarene
+ * sine. Navnet er `kan-svare` fordi det er ruta grensesnittet alt kaller.
  *
  * Grensesnittet spør om dette FØR utfylling, slik at ingen fyller ut et helt
  * skjema for så å bli avvist ved innsending. Den ekte sperren ligger i
  * `lagreSkjema` — dette endepunktet er høflighet, ikke tilgangskontroll, og
  * den som kaller det direkte oppnår ingenting.
+ *
+ * Periodesjekken står FØRST, og før kravet om identitet: den gjelder
+ * skjemaet, ikke personen, og svaret er det samme for en ekstern innsender
+ * som for en innlogget bruker.
  *
  * Svarer for både innlogget bruker og ekstern OTP-innsender. Utsendings-token
  * har sin egen regel («denne lenken er allerede besvart») og trenger ikke
@@ -315,6 +324,21 @@ app.http('kanSvarePaaSkjematype', {
             const skjematypeId = String(request.params.id || '');
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             if (!st) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjematype ikke funnet' } };
+
+            // Stengt skjema: samme regel og samme melding som lagreSkjema,
+            // fra lib/periode.js. Står den etter grensen, slipper et stengt
+            // skjema uten svargrense rett igjennom — og det er nettopp
+            // kombinasjonen folk har.
+            const perioder = periode.perioderFra(st.JSON || null);
+            const periodeDom = periode.sjekkPeriode(perioder);
+            if (!periodeDom.ok) {
+                return {
+                    jsonBody: {
+                        grense: 0, brukt: 0, kanSvare: false,
+                        utenforPeriode: true, melding: periodeDom.melding
+                    }
+                };
+            }
 
             const grense = svargrense.grenseFor(st.JSON || null);
             if (grense === 0) return { jsonBody: { grense: 0, brukt: 0, kanSvare: true } };

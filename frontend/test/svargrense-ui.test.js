@@ -1,5 +1,5 @@
 /**
- * Svargrensen i grensesnittet.
+ * Svargrensen OG tilgjengelighetsperioden i grensesnittet.
  *
  * To sider er involvert, og de har hver sin jobb:
  *
@@ -13,9 +13,12 @@
  *   tapt arbeid.
  *
  * Det viktigste testen passer på er at index.html IKKE avgjør noe selv.
- * Regelen bor i `lib/svargrense.js` på serveren, og en kopi i nettleseren
- * ville før eller siden sagt noe annet — med den forskjellen at kopien er den
- * brukeren ser.
+ * Reglene bor i `lib/svargrense.js` og `lib/periode.js` på serveren, og en
+ * kopi i nettleseren ville før eller siden sagt noe annet — med den
+ * forskjellen at kopien er den brukeren ser.
+ *
+ * Funksjonen het `svargrenseTillater` til 20.10.2026. Da periodesjekken kom
+ * inn i samme kall, dekket navnet halvparten av det den gjorde.
  *
  * Kjøres med:  node frontend/test/svargrense-ui.test.js
  */
@@ -69,10 +72,10 @@ const les = (f) => utenKommentarer(fs.readFileSync(path.join(rot, f), 'utf8'));
     // Begge autentiseringsveiene — innlogget og ekstern OTP. Én av dem alene
     // ville gitt en grense som bare gjaldt halvparten av brukerne.
     sjekk('sjekken kjøres to steder',
-        (i.match(/svargrenseTillater\(\)\) return/g) || []).length, 2);
+        (i.match(/kanFylleUt\(\)\) return/g) || []).length, 2);
 
     // Den må ligge FØR tegningen. Etterpå er skjemaet allerede synlig.
-    const kall = [...i.matchAll(/if \(!await svargrenseTillater\(\)\) return;\s*\n\s*rendrer\(\);/g)];
+    const kall = [...i.matchAll(/if \(!await kanFylleUt\(\)\) return;\s*\n\s*rendrer\(\);/g)];
     sjekk('sjekken står rett før rendrer()', kall.length, 2);
 
     // Siden skal ikke ha sin egen kopi av regelen.
