@@ -136,6 +136,31 @@ dispatcherens verdier:
 | `sendOtp` | `OTP_FLOW_URL` |
 | `lagreBackup` | `BACKUP_FLOW_URL` |
 
+#### `lagreBackup`: flyten henter fila selv
+
+Vi sender **ikke** innholdet. Nyttelasten bærer en SAS-URL og en liste over
+deler, og flyten henter hver del med en `Range`-header før den skriver til
+OneDrive.
+
+> **Innholdet må gjennom `base64ToBinary()` før det skrives.**
+>
+> Power Automates HTTP-handling eksponerer et binært svar som base64 i
+> `body(...)['$content']`. Mates det rett inn i OneDrive-handlingens
+> *File Content*, skrives **teksten** — og fila blir nøyaktig 4/3 så stor som
+> originalen.
+>
+> Det skjedde i dev 20.10.2026: 74518 bytes ble til 99360, som er
+> `ceil(74518/3)*4` på byten. Backupen så ut til å virke, og fila i OneDrive
+> var ubrukelig.
+
+Flyten melder tilbake til `kvitteringUrl` med filnavn, status og størrelse.
+**Størrelsen er den eneste uavhengige kontrollen vi har** på at det som ligger
+i OneDrive er det vi sendte — `lib/backup-kvittering.js` sammenligner, og
+kjenner igjen 4/3-forholdet som signaturen på manglende dekoding.
+
+Er fila delt i flere deler, melder flyten det **opprinnelige** filnavnet og
+**summen** av delenes størrelse.
+
 ### Kopimottakere på kvitteringen
 
 `sendInnsenderKvittering` er det ene tilfellet der `kopi` betyr noe i dag.

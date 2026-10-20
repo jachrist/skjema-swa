@@ -54,6 +54,7 @@ const { containerKlient, sasUrl: blobSasUrl } = require('../lib/blob');
 const { tabellKlient } = require('../lib/storage');
 const { kontoNavnFra, miljoetsKonto } = require('../lib/lagringsvalg');
 const { formatStorrelse } = require('../lib/storrelse');
+const { vurderKvittering } = require('../lib/backup-kvittering');
 
 const BACKUP_CONTAINER = 'backups';
 
@@ -571,18 +572,6 @@ app.http('backupStatus', {
  * trodd på ordet: stemmer ikke størrelsen med det vi lastet opp, er fila
  * ufullstendig uansett hva flyten sier.
  */
-function vurderKvittering({ meldtStatus, meldtStorrelse, vårStorrelse, melding }) {
-    const meldt = String(meldtStatus || '').toLowerCase() === 'ok' ? 'ok' : 'feil';
-    const tekst = String(melding || '').slice(0, 500);
-
-    if (meldt === 'ok' && meldtStorrelse !== null && vårStorrelse !== null && meldtStorrelse !== vårStorrelse) {
-        return {
-            resultat: 'feil',
-            melding: `Fila i OneDrive er ${meldtStorrelse} bytes, men vi lastet opp ${vårStorrelse}. Opplastingen er ufullstendig.`
-        };
-    }
-    return { resultat: meldt, melding: tekst };
-}
 
 app.http('backupKvittering', {
     methods: ['POST'],
