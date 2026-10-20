@@ -92,15 +92,21 @@ sjekk('dokumentet har kodeblokker', alle.length > 5, true);
 // ---------- 3. ingen bash-isme ----------
 //
 // Hver av disse SER ut som den virker i PowerShell, og gjør det ikke.
+const BASHISMER = [
+    [/^\s*[A-Z_][A-Z0-9_]*=/, 'VAR=verdi (PowerShell: $VAR = ...)'],
+    [/\bfor\s+\w+\s+in\b.*;\s*do\b/, 'for … in …; do (PowerShell: foreach)'],
+    [/\bdone\s*$/, 'done'],
+    [/\|\s*xargs\b/, 'xargs'],
+    [/\|\s*sort\s*$/, '| sort (PowerShell: Sort-Object)'],
+    [/\bexport\s+[A-Z_]+=/, 'export VAR='],
+    [/\bumask\b/, 'umask (ingen motsvarighet i PowerShell)'],
+    [/\|\s*jq\b/, 'jq (PowerShell: ConvertFrom-Json)'],
+    [/\bbase64\s+-d\b/, 'base64 -d (PowerShell: [Convert]::FromBase64String)'],
+    [/\bshred\b/, 'shred (finnes ikke i PowerShell)'],
+    [/\bmktemp\b/, 'mktemp (PowerShell: GetTempPath + New-Item)']
+];
+
 {
-    const BASHISMER = [
-        [/^\s*[A-Z_][A-Z0-9_]*=/, 'VAR=verdi (PowerShell: $VAR = ...)'],
-        [/\bfor\s+\w+\s+in\b.*;\s*do\b/, 'for … in …; do (PowerShell: foreach)'],
-        [/\bdone\s*$/, 'done'],
-        [/\|\s*xargs\b/, 'xargs'],
-        [/\|\s*sort\s*$/, '| sort (PowerShell: Sort-Object)'],
-        [/\bexport\s+[A-Z_]+=/, 'export VAR=']
-    ];
     const funnet = [];
     for (const b of alle) {
         for (const l of b.linjer) {
@@ -336,6 +342,49 @@ sjekk('dokumentet har kodeblokker', alle.length > 5, true);
     sjekk('rivingen sletter ressurser ved navn',
         /az staticwebapp delete --name \$SWA/.test(tekst)
         && /az storage account delete --name \$DATA/.test(tekst), true);
+}
+
+// ---------- 12. BACKUP-SHAREPOINT.md er også PowerShell ----------
+//
+// 19.10.2026 ble dev-oppskriften for sertifikatet skrevet i Bash, med `jq`.
+// Brukeren står i PowerShell-Cloud Shell: «The term 'jq' is not recognized».
+// Konverteringsoppskriften i samme dokument brukte `umask`, `base64 -d` og
+// `shred` — alle tre uten motsvarighet der.
+//
+// Kokeboka har hatt regelen siden 18.10. Dette dokumentet gir like
+// operative kommandoer og skal holdes til den samme.
+{
+    const FIL = 'docs/BACKUP-SHAREPOINT.md';
+    const linjer = fs.readFileSync(path.join(rot, FIL), 'utf8').split('\n');
+
+    // `http`-blokkene er forespørselseksempler, ikke kommandoer. Regelen
+    // gjelder blokker noen skal KJØRE.
+    const erKommando = (l) => /^\s*(az|gh|node|npm|curl|git|openssl|\$\w+\s+=)/.test(l);
+
+    const blokker = [];
+    let aapen = null;
+    linjer.forEach((l, i) => {
+        const start = /^```(\w*)\s*$/.exec(l);
+        if (start && !aapen) { aapen = { sprak: start[1], linjer: [] }; return; }
+        if (/^```\s*$/.test(l) && aapen) { blokker.push(aapen); aapen = null; return; }
+        if (aapen) aapen.linjer.push({ nr: i + 1, tekst: l });
+    });
+
+    const medKommando = blokker.filter(b => b.linjer.some(x => erKommando(x.tekst)));
+    sjekk('det finnes kommandoblokker å sjekke', medKommando.length > 2, true);
+
+    sjekk('hver kommandoblokk er powershell',
+        medKommando.filter(b => b.sprak !== 'powershell').map(b => `${FIL}: «${b.sprak || 'umerket'}»`), []);
+
+    const bashismer = [];
+    for (const b of medKommando) {
+        for (const l of b.linjer) {
+            for (const [m, hva] of BASHISMER) {
+                if (m.test(l.tekst)) bashismer.push(`${FIL}:${l.nr}: ${hva}`);
+            }
+        }
+    }
+    sjekk('ingen bash-isme i kommandoene', bashismer, []);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

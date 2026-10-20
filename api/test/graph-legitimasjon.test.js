@@ -141,5 +141,33 @@ sjekk('koden sender minst én legitimasjon',
     sjekk('variabelnavnet sier PEM', /GRAPH_CLIENT_CERT_PEM/.test(kilde), true);
 }
 
+// ---------- 6. dev-oppskriften kan ikke gi et falskt grønt svar ----------
+//
+// `tokenKropp` lar hemmeligheten vinne når begge er satt. Da er det ÉN måte
+// dev-prøven kan se vellykket ut uten å ha prøvd noe: at
+// GRAPH_CLIENT_SECRET blir stående. Oppskriften må si det — og snus
+// rekkefølgen i koden en dag, skal denne si fra, ikke tilpasse seg.
+{
+    const hemmelighetVinner = /if \(k\.clientSecret\)\s*return/.test(kropp);
+    sjekk('koden lar hemmeligheten vinne når begge er satt', hemmelighetVinner, true);
+
+    const fra = dok.indexOf('Prøv i dev først');
+    const til = dok.indexOf('Hvor sertifikatveien');
+    sjekk('dev-oppskriften finnes i dokumentet', fra > 0 && til > fra, true);
+    const dev = dok.slice(fra, til);
+
+    if (hemmelighetVinner) {
+        sjekk('og den krever at GRAPH_CLIENT_SECRET står tom',
+            /GRAPH_CLIENT_SECRET[\s\S]{0,60}tom/.test(dev), true);
+        sjekk('og sier hvorfor det betyr noe',
+            /tester du ingenting|falskt grønt/.test(dev), true);
+    }
+
+    // Oppskriften skal be om PEM-innholdstypen eksplisitt — standardpolicyen
+    // gir PKCS#12, og det er nettopp fellen hele avsnittet handler om.
+    sjekk('oppskriften overstyrer innholdstypen',
+        /secretProperties\.contentType\s*=\s*['"]application\/x-pem-file['"]/.test(dev), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
