@@ -197,5 +197,38 @@ sjekk('koden sender minst én legitimasjon',
         /GRAPH_CLIENT_ID[\s\S]{0,120}peker på/.test(dok), true);
 }
 
+// ---------- 8. parametrene dokumentet ber om, finnes i skriptet ----------
+//
+// Dev-oppskriften hadde ingen kommandolinje i det hele tatt: den begynte med
+// sertifikatet og antok at app-registreringen fantes. 20.10.2026 fulgte noen
+// den, hadde ingen backup-app i dev, og lastet sertifikatet opp på
+// deploy-tjenestehovedobjektet i stedet.
+//
+// Nå står kallet der — og et dokumentert flagg som ikke finnes i skriptet er
+// samme feil ett lag unna: oppskriften stopper på «A parameter cannot be
+// found that matches parameter name».
+{
+    const skript = fs.readFileSync(
+        path.join(rot, 'scripts', 'opprett-backup-app.ps1'), 'utf8');
+    const parametre = [...skript.matchAll(/\[(?:switch|string|int)\]\$(\w+)/g)].map(m => m[1]);
+    sjekk('fant parameterlista i skriptet', parametre.length > 3, true);
+
+    const kall = [...dok.matchAll(/opprett-backup-app\.ps1([^\n]*)/g)].map(m => m[1]);
+    sjekk('dokumentet viser hvordan skriptet kalles', kall.length > 0, true);
+
+    const brukt = [...new Set(kall.flatMap(k => [...k.matchAll(/-([A-ZÆØÅ]\w+)/g)].map(m => m[1])))];
+    sjekk('og alle flaggene det bruker finnes i skriptet',
+        brukt.filter(b => !parametre.includes(b)), []);
+
+    // Og veien koden faktisk har, skal være den dev-oppskriften tar. Lages en
+    // hemmelighet som ikke skal brukes, er den en ekstra vei inn og en ekstra
+    // utløpsdato — og den vinner over sertifikatet hvis noen setter den.
+    if (koden['sertifikat']) {
+        sjekk('skriptet kan hoppe over klienthemmeligheten',
+            parametre.includes('Sertifikat'), true);
+        sjekk('og dev-oppskriften bruker det', brukt.includes('Sertifikat'), true);
+    }
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

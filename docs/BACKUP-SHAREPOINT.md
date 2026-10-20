@@ -183,6 +183,40 @@ den matcher signaturen mot den offentlige nøkkelen du selv har lastet opp. Et
 selvsignert sertifikat er ikke en nødløsning her, det er det normale for
 app-til-app.
 
+**0. App-registreringen må finnes først — og den er ikke deploy-SP-en.**
+Resten av oppskriften antar en app backupen kan signere som. I dev fantes
+ingen før 20.10.2026, og sertifikatet ble lastet opp på `sp-skjema-3-dev` i
+stedet: deploy-tjenestehovedobjektet. Avtrykket stemte med Key Vault, så
+sammenligningen så riktig ut, og Entra svarte `AADSTS700027` likevel.
+
+```powershell
+.\scripts\opprett-backup-app.ps1 -Site 'https://jachconsulting.sharepoint.com/teams/SkjemaBackupDev' -Navn 'fhs-skjema-backup-dev' -Sertifikat -Torrkjor
+```
+
+`-Sertifikat` hopper over klienthemmeligheten. En hemmelighet som ikke skal
+brukes, er en ekstra vei inn og en ekstra utløpsdato å passe på. Kjør med
+`-Torrkjor` først — den viser hva som ville blitt gjort, uten å endre noe.
+
+`-Site` godtar både full URL og Graph-formen `vertsnavn:/sti`, og skriptet
+skriver ut referansen det faktisk slår opp på («Graph slår opp: …»). Står det
+`:/teams/...` uten vertsnavn foran kolonet, er det ikke rettighetene som
+mangler.
+
+**Steg 3 i skriptet er det eneste stedet skrivetilgangen kan gis.** Det
+finnes ingen portalside for den: `Sites.Selected` gir i seg selv ingen
+tilgang i det hele tatt, og tildelingen av ett område er et Graph-kall
+(`POST /v1.0/sites/{id}/permissions`). Feiler steget, sjekk hva sesjonen
+faktisk fikk samtykke til:
+
+```powershell
+(Get-MgContext).Scopes
+```
+
+`Connect-MgGraph -Scopes` *ber om* delegerte rettigheter. Global
+Administrator-rollen gir dem ikke av seg selv i en sesjon der samtykket ikke
+er gitt — så står ikke `Sites.FullControl.All` i lista, er det samtykket som
+mangler, ikke rollen.
+
 **1. La Key Vault utstede det, med PEM fra starten.** Standardpolicyen gir
 `application/x-pkcs12`, så den må overstyres. Da slipper du også å håndtere
 privatnøkkelen: den blir til inne i vaulten.
