@@ -947,6 +947,38 @@
             rollerRenderGrupper();
         };
 
+        /**
+         * Når ble rollen sist oppdatert — og av hva?
+         *
+         * Ønsket bak dette (punkt 89) var å kunne stole på at en rolle som får
+         * innehaverne sine fra FS faktisk er fersk. Oversikten ser nemlig helt
+         * lik ut enten importen gikk i går eller i fjor.
+         *
+         * Datoen står PER KILDE fordi den samlede nyeste datoen svarer på et
+         * annet spørsmål: redigeres én rad for hånd i dag, blir «sist
+         * oppdatert» i dag, mens importen kan være måneder gammel. Det er
+         * «sist importert» som er svaret.
+         *
+         * Teksten bor her og ikke to steder: gruppelista viser den korte
+         * varianten, detaljruta den fulle, og ordlyden skal være den samme.
+         */
+        function rolleSistTekst(g, fullt = false) {
+            const per = g.SistPerKilde || {};
+            const biter = [];
+            if (per.import) biter.push(`importert ${formatDato(per.import)}`);
+            if (fullt && per.manuell) biter.push(`manuelt endret ${formatDato(per.manuell)}`);
+            if (fullt && per.seed) biter.push(`eksempeldata ${formatDato(per.seed)}`);
+            if (biter.length === 0) {
+                if (per.manuell) biter.push(`endret ${formatDato(per.manuell)}`);
+                else if (g.SistOppdatert) biter.push(`endret ${formatDato(g.SistOppdatert)}`);
+            }
+            // «Aldri oppdatert» og «vi vet ikke» er to ulike påstander. Rader
+            // skrevet før feltet fantes har ingen dato, og da skal det stå.
+            if (biter.length === 0) return g.Antall ? 'dato ukjent' : '';
+            if (fullt && g.UtenDato) biter.push(`${g.UtenDato} uten dato`);
+            return biter.join(' · ');
+        }
+
         function rollerRenderGrupper() {
             const el = document.getElementById('roller-grupper');
             if (rollerState.filtrerte.length === 0) {
@@ -959,6 +991,7 @@
                     <div class="navn">${escHtml(g.Rolle)}</div>
                     ${g.Omfang ? `<div class="omfang">${escHtml(g.Omfang)}</div>` : ''}
                     <div class="antall">${g.Antall} innehaver${g.Antall === 1 ? '' : 'e'}</div>
+                    ${rolleSistTekst(g) ? `<div class="antall" style="font-size: 11px;">${escHtml(rolleSistTekst(g))}</div>` : ''}
                 </div>
             `).join('');
         }
@@ -990,18 +1023,22 @@
             const tittel = `<h2 style="margin: 0 0 6px 0; font-size: 1.2em;">${escHtml(g.Rolle)}${g.Omfang ? ` <span style="color: var(--text-secondary); font-weight: 400;">(${escHtml(g.Omfang)})</span>` : ''}</h2>`;
             const under = `
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px;">
-                    <div style="color: var(--text-secondary); font-size: 12px;">${innehavere.length} innehaver${innehavere.length === 1 ? '' : 'e'}</div>
+                    <div style="color: var(--text-secondary); font-size: 12px;">
+                        ${innehavere.length} innehaver${innehavere.length === 1 ? '' : 'e'}
+                        ${rolleSistTekst(g, true) ? ` — ${escHtml(rolleSistTekst(g, true))}` : ''}
+                    </div>
                     <button class="knapp mini danger" onclick="rollerSlettRolle()">Slett rollen</button>
                 </div>`;
             const tabell = innehavere.length === 0
                 ? '<div class="tom-melding">Ingen innehavere ennå.</div>'
                 : `
-                    <div class="innehaver-header"><div>Navn</div><div>UPN</div><div>Kilde</div><div></div></div>
+                    <div class="innehaver-header" style="grid-template-columns: 1fr 1fr 90px 125px 70px;"><div>Navn</div><div>UPN</div><div>Kilde</div><div>Sist oppdatert</div><div></div></div>
                     ${innehavere.map(i => `
-                        <div class="innehaver-rad">
+                        <div class="innehaver-rad" style="grid-template-columns: 1fr 1fr 90px 125px 70px;">
                             <div>${escHtml(`${i.EN || ''}${i.FN ? ', ' + i.FN : ''}`.trim() || '-')}</div>
                             <div style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escHtml(i.UPN)}</div>
                             <div style="color: var(--text-secondary); font-size: 11px;">${escHtml(i.Kilde || 'manuell')}</div>
+                            <div style="color: var(--text-secondary); font-size: 11px;">${i.SistOppdatert ? escHtml(formatDato(i.SistOppdatert)) : '—'}</div>
                             <div><button class="knapp mini danger" onclick="rollerFjern('${escapeJsIAttributt(i.UPN)}')">Fjern</button></div>
                         </div>
                     `).join('')}

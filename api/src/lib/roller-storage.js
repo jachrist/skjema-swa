@@ -42,12 +42,48 @@ function radTilInnehaver(entity) {
 }
 
 /**
+ * `SistOppdatert` som en ISO-streng, eller null.
+ *
+ * Datoene sammenlignes som TEKST — ISO-strenger sorterer riktig, og en
+ * `new Date(...)` på en ugyldig verdi gir `Invalid Date`, som sammenligner
+ * falskt mot alt uten å feile. Derfor må verdien være en streng før den
+ * brukes.
+ *
+ * Men den er ikke garantert å være det. Vår egen kode skriver
+ * `toISOString()`, mens Table Storage leverer en `Date` for kolonner som er
+ * typet `Edm.DateTime` — og en `Date` sammenlignet med en streng gir `false`
+ * i begge retninger. Da ville den nyeste raden aldri vunnet, og rollen sett
+ * eldre ut enn den er. Den oversettes derfor, i stedet for å forkastes.
+ *
+ * Tom streng er ukjent, ikke «år 0». Rader skrevet før feltet fantes har
+ * ingen verdi, og de skal telles som ukjente.
+ */
+function isoDato(verdi) {
+    if (verdi instanceof Date) return Number.isNaN(verdi.getTime()) ? null : verdi.toISOString();
+    return typeof verdi === 'string' && verdi.trim() ? verdi : null;
+}
+
+/**
  * Hent alle distinkte (Rolle, Omfang)-grupper med telling.
  * Brukes til oversikt i rolleadmin.
+ *
+ * NÅR ROLLEN SIST BLE OPPDATERT følger med, og det er et ønske med en grunn:
+ * en rolle som får innehaverne sine fra FS gjennom importen ser helt lik ut
+ * enten importen gikk i går eller i fjor. Antallet stemmer, navnene står der,
+ * og ingenting i oversikten skiller en fersk liste fra en forlatt.
+ *
+ * `SistOppdatert` alene er ikke nok til å svare på det. Redigeres én rad for
+ * hånd i dag, blir den nyeste datoen dagens — mens importen kan være måneder
+ * gammel. Derfor føres datoen PER KILDE: «sist importert» er det tallet som
+ * svarer på spørsmålet, og «sist endret manuelt» er et annet spørsmål.
+ *
+ * `UtenDato` teller rader fra før feltet ble skrevet. Uten den ville en rolle
+ * med bare gamle rader sett ut som «aldri oppdatert», og det er en annen
+ * påstand enn «vi vet ikke».
  */
 async function hentAlleGrupper() {
     const t = await tabell();
-    const grupper = new Map(); // "Rolle||Omfang" → { Rolle, Omfang, Antall }
+    const grupper = new Map(); // "Rolle||Omfang" → gruppe
     for await (const e of t.listEntities()) {
         const rolle = e.partitionKey;
         const rk = String(e.rowKey || '');
@@ -55,11 +91,21 @@ async function hentAlleGrupper() {
         const omfang = del > -1 ? rk.substring(0, del) : '';
         const key = `${rolle}||${omfang}`;
         if (!grupper.has(key)) {
-            grupper.set(key, { Rolle: rolle, Omfang: omfang, Antall: 0, Kilder: new Set() });
+            grupper.set(key, {
+                Rolle: rolle, Omfang: omfang, Antall: 0, Kilder: new Set(),
+                SistOppdatert: null, SistPerKilde: {}, UtenDato: 0
+            });
         }
         const g = grupper.get(key);
+        const kilde = e.Kilde || 'manuell';
         g.Antall++;
-        g.Kilder.add(e.Kilde || 'manuell');
+        g.Kilder.add(kilde);
+
+        const dato = isoDato(e.SistOppdatert);
+        if (!dato) { g.UtenDato++; continue; }
+        if (!g.SistOppdatert || dato > g.SistOppdatert) g.SistOppdatert = dato;
+        const forrige = g.SistPerKilde[kilde];
+        if (!forrige || dato > forrige) g.SistPerKilde[kilde] = dato;
     }
     return [...grupper.values()]
         .map(g => ({ ...g, Kilder: [...g.Kilder] }))
@@ -281,5 +327,6 @@ module.exports = {
     hentOmfangForBruker,
     leggTilInnehaver,
     fjernInnehaver,
-    slettRolle
+    slettRolle,
+    isoDato
 };
