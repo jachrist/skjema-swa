@@ -66,6 +66,95 @@ az account set --subscription <abonnements-id>
 az account show --query "{abonnement:name, id:id, tenant:tenantId}" -o table
 ```
 
+**Den siste linja er ikke pynt.** Har du logget inn i flere tenanter, står
+dev-abonnementet i samme liste som prod, og `az` husker det som var sist
+valgt — også mellom to økter. Hver kommando i denne kokeboka treffer da et
+annet miljø enn du tror, og de fleste av dem er ikke reversible. Les ut
+tenant-ID-en og sammenlign med den i 1, hver gang du åpner et nytt vindu.
+
+### 0.0 `az` uten administratorrettigheter på PC-en
+
+MSI-installasjonen krever administrator. **ZIP-pakken gjør det ikke** — den er
+Microsofts egen, og pakkes ut hvor som helst:
+
+```powershell
+$mal = "$env:LOCALAPPDATA\AzureCLI"
+Invoke-WebRequest -Uri 'https://aka.ms/installazurecliwindowszipx64' -OutFile "$env:TEMP\azurecli.zip"
+Expand-Archive -Path "$env:TEMP\azurecli.zip" -DestinationPath $mal -Force
+
+# Stien til az.cmd slås OPP, ikke gjettet: om arkivet pakker ut med en
+# toppmappe (azure-cli-<versjon>\bin) eller rett i bin\, er ikke garantert og
+# har variert mellom versjoner. Et hardkodet "$mal\bin\az.cmd" feiler da med
+# «finner ikke stien», som ser ut som en mislykket nedlasting.
+$az = Get-ChildItem -Path $mal -Recurse -Filter 'az.cmd' | Select-Object -First 1
+if (-not $az) { throw "Fant ikke az.cmd under $mal - sjekk at utpakkingen gikk" }
+& $az.FullName --version
+```
+
+Virker den siste linja, er resten bare PATH. Den settes for BRUKEREN, som
+heller ikke krever administrator — men les kommandoen før du kjører den.
+`SetEnvironmentVariable` ERSTATTER verdien, så faller `$naa` ut av strengen,
+står brukerens PATH igjen med bare denne ene mappa.
+
+```powershell
+$bin = $az.Directory.FullName
+$naa = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($naa -notlike "*$bin*") {
+    [Environment]::SetEnvironmentVariable('Path', "$naa;$bin", 'User')
+}
+```
+
+Kjør den i samme vindu som blokka over — `$az` kommer derfra.
+
+Åpne et nytt PowerShell-vindu etterpå — et vindu som alt står åpent, leser
+ikke PATH på nytt.
+
+To forbehold:
+
+* **`az upgrade` virker ikke** på en ZIP-installasjon. Oppgradering er å pakke
+  ut en nyere ZIP over den samme mappa.
+* **På en administrert PC blir den sannsynligvis blokkert likevel.** Målt
+  20.10.2026: nedlasting og utpakking gikk fint, men kjøring ga
+
+  > «Dette programmet er blokkert for gruppepolicy. Kontakt systemansvarlig
+  > for mer informasjon.»
+
+  Det er en policy som hindrer kjøring av programmer fra brukerskrivbare
+  mapper — AppLocker, WDAC eller en SRP. **Den skal ikke omgås.** Den er
+  nettopp det som hindrer at nedlastet kode kjører, og en kokebok som viste
+  en vei rundt, ville vært en oppskrift på å svekke maskinen som har tilgang
+  til prod.
+
+### 0.0.1 Når `az` er blokkert lokalt
+
+Rekkefølgen her er praktisk, ikke prinsipiell:
+
+**1. Azure Cloud Shell.** `az` er forhåndsinstallert og alltid oppdatert, og
+hele denne kokeboka kjører der som den står — ingen installasjon, ingen
+policy, ingen unntak å be om. Velg **PowerShell** som skall, så stemmer
+syntaksen med kommandoene her.
+
+Skal du kjøre `.ps1`-skriptene i `scripts/`, er de to veiene inn å klone
+repoet i Cloud Shell, eller laste opp den enkelte fila med
+opplastingsknappen. `Microsoft.Graph`- og `Az.KeyVault`-modulene skriptene
+trenger, er forhåndsinstallert der.
+
+> **Én felle som gjelder hele kokeboka:** `$HOME` i Cloud Shell ligger i en
+> Azure Files-andel som overlever økta. Private nøkler og sertifikater hører
+> derfor i `/tmp`, ikke i hjemmemappa. Se 0.4.
+
+**2. Be systemansvarlig installere `az` med MSI-en.** Det er den sanksjonerte
+veien til `az` lokalt: Microsofts signerte MSI legger seg i `Program Files`,
+som policyen normalt tillater. Spør om det framfor et unntak for
+`%LOCALAPPDATA%` — et unntak der gjelder alt du laster ned senere også.
+
+**3. Az-modulene i PowerShell** (`Install-Module Az -Scope CurrentUser`).
+Moduler er ikke programmer og rammes ofte ikke av samme policy, så prøv
+`Connect-AzAccount` og se. Men kommandoene i denne kokeboka er
+`az`-kommandoer, og da må hver av dem oversettes — det er mer arbeid enn
+Cloud Shell, og en oversettelse gjort under tidspress er en ny feilkilde i en
+kokebok der de fleste stegene ikke er reversible.
+
 ---
 
 ### 0.1 Rettigheter: hva du gjør selv, og hva som må bestilles
