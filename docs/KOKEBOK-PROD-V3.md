@@ -66,6 +66,64 @@ az account set --subscription <abonnements-id>
 az account show --query "{abonnement:name, id:id, tenant:tenantId}" -o table
 ```
 
+**Den siste linja er ikke pynt.** Har du logget inn i flere tenanter, står
+dev-abonnementet i samme liste som prod, og `az` husker det som var sist
+valgt — også mellom to økter. Hver kommando i denne kokeboka treffer da et
+annet miljø enn du tror, og de fleste av dem er ikke reversible. Les ut
+tenant-ID-en og sammenlign med den i 1, hver gang du åpner et nytt vindu.
+
+### 0.0 `az` uten administratorrettigheter på PC-en
+
+MSI-installasjonen krever administrator. **ZIP-pakken gjør det ikke** — den er
+Microsofts egen, og pakkes ut hvor som helst:
+
+```powershell
+$mal = "$env:LOCALAPPDATA\AzureCLI"
+Invoke-WebRequest -Uri 'https://aka.ms/installazurecliwindowszipx64' -OutFile "$env:TEMP\azurecli.zip"
+Expand-Archive -Path "$env:TEMP\azurecli.zip" -DestinationPath $mal -Force
+
+# Stien til az.cmd slås OPP, ikke gjettet: om arkivet pakker ut med en
+# toppmappe (azure-cli-<versjon>\bin) eller rett i bin\, er ikke garantert og
+# har variert mellom versjoner. Et hardkodet "$mal\bin\az.cmd" feiler da med
+# «finner ikke stien», som ser ut som en mislykket nedlasting.
+$az = Get-ChildItem -Path $mal -Recurse -Filter 'az.cmd' | Select-Object -First 1
+if (-not $az) { throw "Fant ikke az.cmd under $mal - sjekk at utpakkingen gikk" }
+& $az.FullName --version
+```
+
+Virker den siste linja, er resten bare PATH. Den settes for BRUKEREN, som
+heller ikke krever administrator — men les kommandoen før du kjører den.
+`SetEnvironmentVariable` ERSTATTER verdien, så faller `$naa` ut av strengen,
+står brukerens PATH igjen med bare denne ene mappa.
+
+```powershell
+$bin = $az.Directory.FullName
+$naa = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($naa -notlike "*$bin*") {
+    [Environment]::SetEnvironmentVariable('Path', "$naa;$bin", 'User')
+}
+```
+
+Kjør den i samme vindu som blokka over — `$az` kommer derfra.
+
+Åpne et nytt PowerShell-vindu etterpå — et vindu som alt står åpent, leser
+ikke PATH på nytt.
+
+To forbehold:
+
+* **`az upgrade` virker ikke** på en ZIP-installasjon. Oppgradering er å pakke
+  ut en nyere ZIP over den samme mappa.
+* **Blokkerer PC-en det** (AppLocker, WDAC eller en policy som hindrer kjøring
+  fra `%LOCALAPPDATA%`), er det ikke noe å omgå. Da er veiene **Azure Cloud
+  Shell**, der `az` er forhåndsinstallert, eller Az-modulene i PowerShell
+  (`Install-Module Az -Scope CurrentUser`) — den siste krever heller ikke
+  administrator, men kommandoene i denne kokeboka er `az`-kommandoer og må da
+  oversettes.
+
+Cloud Shell har én felle som gjelder hele kokeboka: `$HOME` der ligger i en
+Azure Files-andel som overlever økta. Private nøkler og sertifikater hører
+derfor i `/tmp`, ikke i hjemmemappa. Se 0.4.
+
 ---
 
 ### 0.1 Rettigheter: hva du gjør selv, og hva som må bestilles
