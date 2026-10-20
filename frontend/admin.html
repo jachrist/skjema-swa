@@ -3621,6 +3621,14 @@ Skriv SLETT for å bekrefte.`);
                     const erGraph = st.kanal === 'graph';
                     const maal = erGraph ? 'SharePoint' : 'OneDrive';
                     const kanalNavn = erGraph ? 'SharePoint (Graph)' : 'PA-flyt';
+                    // Hvorfor PA-veien ble valgt. Uten dette ser en manglende
+                    // app-setting ut som et bevisst valg: «PA-flyt: ok» sier
+                    // ingenting om at Graph-veien ble forbigått. Det kostet en
+                    // feilsøkingsrunde 20.10.2026.
+                    const graphMangler = Array.isArray(st.graphMangler) ? st.graphMangler : [];
+                    const kanalGrunn = (!erGraph && graphMangler.length)
+                        ? ` <span style="opacity:.75">(Graph forbigått — mangler ${graphMangler.map(escHtml).join(', ')})</span>`
+                        : '';
                     const venterPaKvittering = !erGraph && st.status === 'ok' && st.flytStatus === 'ok'
                         && !st.oneDriveStatus && (Date.now() - ferdigTid) < KVITTERING_MS;
 
@@ -3646,7 +3654,7 @@ Skriv SLETT for å bekrefte.`);
                         <div class="banner ${klasse}">
                             <strong>${feilet ? '⚠ Backup fullført med feil' : '✓ Backup lagret'}${st.modus ? ` (${escHtml(st.modus)})` : ''}${st.filnavn ? ' som ' + escHtml(st.filnavn) : ''}</strong>
                             ${st.modus === 'delta' && st.basertPa ? `<br><small>Bygger på <code>${escHtml(st.basertPa)}</code> — begge trengs ved gjenoppretting.</small>` : ''}
-                            ${storrelse ? `<br><small>${storrelse} kryptert · ${st.varighetSekunder}s · ${escHtml(kanalNavn)}: ${escHtml(st.flytStatus || '-')}</small>` : ''}
+                            ${storrelse ? `<br><small>${storrelse} kryptert · ${st.varighetSekunder}s · ${escHtml(kanalNavn)}: ${escHtml(st.flytStatus || '-')}${kanalGrunn}</small>` : ''}
                             ${st.sistFeil ? `<br><small>${escHtml(st.sistFeil)}</small>` : ''}
                             ${kopi}
                             ${st.oneDriveSti ? `<br><small>${erGraph ? 'Sti i biblioteket' : 'OneDrive-sti'}: <code>${escHtml(st.oneDriveSti)}</code></small>` : ''}

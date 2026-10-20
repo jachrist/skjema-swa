@@ -183,6 +183,40 @@ den matcher signaturen mot den offentlige nøkkelen du selv har lastet opp. Et
 selvsignert sertifikat er ikke en nødløsning her, det er det normale for
 app-til-app.
 
+**0. App-registreringen må finnes først — og den er ikke deploy-SP-en.**
+Resten av oppskriften antar en app backupen kan signere som. I dev fantes
+ingen før 20.10.2026, og sertifikatet ble lastet opp på `sp-skjema-3-dev` i
+stedet: deploy-tjenestehovedobjektet. Avtrykket stemte med Key Vault, så
+sammenligningen så riktig ut, og Entra svarte `AADSTS700027` likevel.
+
+```powershell
+.\scripts\opprett-backup-app.ps1 -Site 'https://jachconsulting.sharepoint.com/teams/SkjemaBackupDev' -Navn 'fhs-skjema-backup-dev' -Sertifikat -Torrkjor
+```
+
+`-Sertifikat` hopper over klienthemmeligheten. En hemmelighet som ikke skal
+brukes, er en ekstra vei inn og en ekstra utløpsdato å passe på. Kjør med
+`-Torrkjor` først — den viser hva som ville blitt gjort, uten å endre noe.
+
+`-Site` godtar både full URL og Graph-formen `vertsnavn:/sti`, og skriptet
+skriver ut referansen det faktisk slår opp på («Graph slår opp: …»). Står det
+`:/teams/...` uten vertsnavn foran kolonet, er det ikke rettighetene som
+mangler.
+
+**Steg 3 i skriptet er det eneste stedet skrivetilgangen kan gis.** Det
+finnes ingen portalside for den: `Sites.Selected` gir i seg selv ingen
+tilgang i det hele tatt, og tildelingen av ett område er et Graph-kall
+(`POST /v1.0/sites/{id}/permissions`). Feiler steget, sjekk hva sesjonen
+faktisk fikk samtykke til:
+
+```powershell
+(Get-MgContext).Scopes
+```
+
+`Connect-MgGraph -Scopes` *ber om* delegerte rettigheter. Global
+Administrator-rollen gir dem ikke av seg selv i en sesjon der samtykket ikke
+er gitt — så står ikke `Sites.FullControl.All` i lista, er det samtykket som
+mangler, ikke rollen.
+
 **1. La Key Vault utstede det, med PEM fra starten.** Standardpolicyen gir
 `application/x-pkcs12`, så den må overstyres. Da slipper du også å håndtere
 privatnøkkelen: den blir til inne i vaulten.
@@ -254,8 +288,39 @@ det er nettopp derfor prod sin SWA-identitet har begge rollene.
 |---|---|
 | Backupen lastes opp til SharePoint | Ferdig — veien er bevist mot ekte Entra |
 | `GRAPH_CLIENT_CERT_PEM er ikke PEM` | KV-referansen ga PFX. Policyen i steg 1 slo ikke gjennom |
-| `Fikk ikke token fra Entra (HTTP 401)`, `AADSTS700027` | Signaturen verifiserer ikke — feil sertifikat lastet opp, eller avtrykket matcher ikke |
+| `Fikk ikke token fra Entra (HTTP 401)`, `AADSTS700027` | Sertifikatet er ikke registrert på appen `GRAPH_CLIENT_ID` peker på. Se under — Entra oppgir avtrykket selv |
 | `AADSTS7000215` | Entra leste det som en hemmelighet — da ble `GRAPH_CLIENT_SECRET` stående |
+
+##### `AADSTS700027`: les avtrykket Entra oppgir
+
+Feilmeldingen bærer selve beviset:
+
+> `Thumbprint of key used by client: 'A17394AD8AC5AB3AD2F8B29C6F110162B62C1E52'`
+
+Det er avtrykket **vi** signerte med. Sammenlign det tre steder, i denne
+rekkefølgen:
+
+| # | Hvor | Kommando eller sted |
+|---|---|---|
+| 1 | Sertifikatet i Key Vault | `az keyvault certificate show --vault-name <vault> --name <navn> --query x509ThumbprintHex -o tsv` |
+| 2 | **Appen `GRAPH_CLIENT_ID` peker på** | Entra ID → App registrations → **All applications** → søk på GUID-en → Certificates & secrets |
+| 3 | Appen du *tror* du lastet opp til | samme sted, men funnet på navn |
+
+**Punkt 2 er det som avgjør.** «Not registered on application» betyr appen
+`client_id` navngir — ikke en app der sertifikatet tilfeldigvis også ligger.
+Stemmer avtrykket i Key Vault med en app-registrering, men ikke med den
+`GRAPH_CLIENT_ID` peker på, er sertifikatet lastet opp på feil app.
+
+> **Navnefellen.** Backup-appen heter `fhs-skjema-backup`
+> (`scripts/opprett-backup-app.ps1`). En app som heter `sp-skjema-*` er
+> deploy-tjenestehovedobjektet fra `az ad sp create-for-rbac` — den har
+> `contributor` på ressursgruppa og skal **ikke** bære backup-legitimasjon.
+> De to er skilt med vilje; backup-appen skal bare ha `Sites.Selected` på ett
+> område.
+
+Propagering er sjelden forklaringen: en ny nøkkel er framme i løpet av
+sekunder til et par minutter. Får du samme avtrykk i feilen etter en ny
+kjøring, er det ikke tid som mangler.
 
 #### Hvor sertifikatveien i det hele tatt kan brukes
 

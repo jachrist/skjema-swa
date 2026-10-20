@@ -76,8 +76,11 @@ const BASIS = { tenantId: 'tenant-1', clientId: 'klient-1', site: 'fhs.sharepoin
 
     // Kontrakten utad er uendret — `manglerKonfig({})` melder de samme fire
     // navnene som før. `env-inventar.test.js` leser den lista.
-    sjekk('manglerKonfig er uendret for tom konfig', graph.manglerKonfig({}),
-        ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET', 'BACKUP_SHAREPOINT_SITE']);
+    // Navnesettet i `kreves` er uendret — det er den `env-inventar.test.js`
+    // leser. Men teksten navngir begge veiene, så den som leser helsesjekken
+    // ikke leter etter en hemmelighet som er valgt bort.
+    sjekk('manglerKonfig navngir begge legitimasjonsveiene', graph.manglerKonfig({}),
+        ['GRAPH_TENANT_ID', 'GRAPH_CLIENT_ID', 'GRAPH_CLIENT_SECRET eller GRAPH_CLIENT_CERT_PEM', 'BACKUP_SHAREPOINT_SITE']);
     sjekk('og melder ingenting når sertifikatet dekker legitimasjonen',
         graph.manglerKonfig({ ...BASIS, clientCertPem: 'y' }), []);
 }
@@ -162,6 +165,40 @@ const BASIS = { tenantId: 'tenant-1', clientId: 'klient-1', site: 'fhs.sharepoin
         sjekk('ny assertion får ny jti',
             lesDel(1).jti !== JSON.parse(Buffer.from(annen.split('.')[1], 'base64url').toString()).jti, true);
     }
+}
+
+// ---------- 6. en forbigått Graph-vei skal si HVORFOR ----------
+//
+// `lastOppKopi` velger Graph når `erKonfigurert()` er sann, og PA-flyten
+// ellers. Fallbacken var stille: statusen meldte «PA-flyt: ok» uten et ord om
+// at den andre veien ble forbigått, og en tom app-setting så nøyaktig ut som
+// et bevisst valg.
+//
+// 20.10.2026 kostet det en runde. Sertifikatet var satt opp i dev, men
+// erKonfigurert() var usann, og backupen gikk stille via flyten.
+//
+// `backup.js` krever `@azure/functions` på toppnivå og kan ikke lastes her,
+// så kjeden prøves i kilden. Svakere enn å kjøre den — men en mutasjon som
+// fjerner et ledd blir rød, og det var den som slapp igjennom.
+{
+    const backupKilde = fs.readFileSync(
+        path.join(__dirname, '..', 'src', 'functions', 'backup.js'), 'utf8');
+
+    sjekk('fallbacken utleder hva som mangler',
+        /const graphMangler = graphOpplast\.manglerKonfig\(\)/.test(backupKilde), true);
+    sjekk('og logger det',
+        /Graph ikke konfigurert[\s\S]{0,120}graphMangler/.test(backupKilde), true);
+    sjekk('og sender det videre fra lastOppKopi',
+        /kanal: 'pa-flyt', graphMangler/.test(backupKilde), true);
+    sjekk('og statusraden bærer det',
+        /GraphMangler: \(graphMangler \|\| \[\]\)/.test(backupKilde), true);
+    sjekk('og status-svaret eksponerer det',
+        /graphMangler: rad\.GraphMangler/.test(backupKilde), true);
+
+    // Graph-veien skal IKKE falle tilbake når den feiler. En reell feil som
+    // skjules bak en reservevei er verre enn en som stopper.
+    sjekk('Graph-feil faller ikke tilbake til flyten',
+        /kanal: 'graph', flytStatus: 'feilet'/.test(backupKilde), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

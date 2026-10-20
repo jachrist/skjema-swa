@@ -169,5 +169,66 @@ sjekk('koden sender minst én legitimasjon',
         /secretProperties\.contentType\s*=\s*['"]application\/x-pem-file['"]/.test(dev), true);
 }
 
+// ---------- 7. appnavnet står likt i skriptet og i dokumentet ----------
+//
+// 20.10.2026 ble backup-sertifikatet lastet opp på `sp-skjema-3-dev` —
+// deploy-tjenestehovedobjektet — i stedet for backup-appen. Avtrykket
+// stemte med Key Vault, så sammenligningen så riktig ut, men Entra slår opp
+// på appen `client_id` navngir og fant ingenting.
+//
+// Dokumentet navngir nå begge, så forvekslingen kan ses. Navnet må komme
+// fra skriptet som faktisk oppretter appen, ikke fra en avskrift.
+{
+    const skript = fs.readFileSync(
+        path.join(rot, 'scripts', 'opprett-backup-app.ps1'), 'utf8');
+    const m = /\[string\]\$Navn\s*=\s*'([^']+)'/.exec(skript);
+    sjekk('fant standardnavnet i opprett-backup-app.ps1', !!m, true);
+
+    const appnavn = m && m[1];
+    sjekk('dokumentet navngir backup-appen', dok.includes(appnavn), true);
+
+    // Og den andre siden av forvekslingen: deploy-SP-en skal nevnes, ellers
+    // forteller dokumentet ikke hva man kan komme til å forveksle den med.
+    sjekk('dokumentet navngir også deploy-tjenestehovedobjektet',
+        /sp-skjema-\*|create-for-rbac/.test(dok), true);
+
+    // Det som faktisk avgjør: appen GRAPH_CLIENT_ID peker på.
+    sjekk('dokumentet peker på GRAPH_CLIENT_ID som fasiten',
+        /GRAPH_CLIENT_ID[\s\S]{0,120}peker på/.test(dok), true);
+}
+
+// ---------- 8. parametrene dokumentet ber om, finnes i skriptet ----------
+//
+// Dev-oppskriften hadde ingen kommandolinje i det hele tatt: den begynte med
+// sertifikatet og antok at app-registreringen fantes. 20.10.2026 fulgte noen
+// den, hadde ingen backup-app i dev, og lastet sertifikatet opp på
+// deploy-tjenestehovedobjektet i stedet.
+//
+// Nå står kallet der — og et dokumentert flagg som ikke finnes i skriptet er
+// samme feil ett lag unna: oppskriften stopper på «A parameter cannot be
+// found that matches parameter name».
+{
+    const skript = fs.readFileSync(
+        path.join(rot, 'scripts', 'opprett-backup-app.ps1'), 'utf8');
+    const parametre = [...skript.matchAll(/\[(?:switch|string|int)\]\$(\w+)/g)].map(m => m[1]);
+    sjekk('fant parameterlista i skriptet', parametre.length > 3, true);
+
+    const kall = [...dok.matchAll(/opprett-backup-app\.ps1([^\n]*)/g)].map(m => m[1]);
+    sjekk('dokumentet viser hvordan skriptet kalles', kall.length > 0, true);
+
+    const brukt = [...new Set(kall.flatMap(k => [...k.matchAll(/-([A-ZÆØÅ]\w+)/g)].map(m => m[1])))];
+    sjekk('og alle flaggene det bruker finnes i skriptet',
+        brukt.filter(b => !parametre.includes(b)), []);
+
+    // Og veien koden faktisk har, skal være den dev-oppskriften tar. Lages en
+    // hemmelighet som ikke skal brukes, er den en ekstra vei inn og en ekstra
+    // utløpsdato — og den vinner over sertifikatet hvis noen setter den.
+    if (koden['sertifikat']) {
+        sjekk('skriptet kan hoppe over klienthemmeligheten',
+            parametre.includes('Sertifikat'), true);
+        sjekk('og dev-oppskriften bruker det', brukt.includes('Sertifikat'), true);
+    }
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

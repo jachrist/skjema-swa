@@ -37,6 +37,10 @@
  */
 const crypto = require('crypto');
 
+// Navnet står som en konstant fordi både manglerKonfig() og feilmeldingen
+// i lagKlientAssertion() peker på det. To avskrifter ville skilt lag.
+const CERT_VAR = 'GRAPH_CLIENT_CERT_PEM';
+
 const GRAPH = 'https://graph.microsoft.com/v1.0';
 
 // Graph krever at alle biter unntatt den siste er et multiplum av 320 KiB.
@@ -79,7 +83,12 @@ function manglerKonfig(k = konfig()) {
         GRAPH_CLIENT_SECRET: k.clientSecret || k.clientCertPem,
         BACKUP_SHAREPOINT_SITE: k.site
     };
-    return Object.entries(kreves).filter(([, v]) => !v).map(([n]) => n);
+    // Legitimasjonsraden heter GRAPH_CLIENT_SECRET i `kreves` fordi
+    // `env-inventar.test.js` leser navnene DERFRA. Men den som leser
+    // helsesjekken skal se at et sertifikat er et likeverdig alternativ —
+    // ellers leter man etter en hemmelighet man har valgt bort.
+    return Object.entries(kreves).filter(([, v]) => !v)
+        .map(([n]) => (n === 'GRAPH_CLIENT_SECRET' ? `${n} eller ${CERT_VAR}` : n));
 }
 
 /**
