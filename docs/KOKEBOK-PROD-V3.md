@@ -245,12 +245,36 @@ Fire prinsipaler trenger noe av vaulten, og de blandes lett:
 | Hvem | Hva den gjør | Rolle på vaulten |
 |---|---|---|
 | **Du**, når verdiene limes inn | Skriver hemmeligheter | `Key Vault Secrets Officer`, pluss `Reader` på ressursen så verktøyet finner den |
+| **Du**, når backup-sertifikatet utstedes (0.4) | Oppretter et sertifikat | **`Key Vault Certificates Officer`** — `Secrets Officer` dekker IKKE sertifikater. Se under |
 | **`mi-skjema-3-prod`** | Løser `@Microsoft.KeyVault(...)` i app settings | `Key Vault Secrets User` — også for en secret som er ryggen av et SERTIFIKAT (målt 20.10.2026 i dev); `Key Vault Certificate User` trengs ikke her |
 | **SWA-ens plattformidentitet** | Henter auth-sertifikatet via `clientSecretCertificateKeyVaultReference` | `Key Vault Secrets User` **og** `Key Vault Certificate User` |
 | **Den som tildeler de tre over** | Rolletildeling | `Owner` eller `User Access Administrator` på vaulten |
 
 `Key Vault Administrator` dekker alt — og gir samtidig rett til å lese hver
 hemmelighet i vaulten. `fhs-kv-01` deles med v2, så hold deg til de smale.
+
+> **`Secrets Officer` er ikke nok til å lage et sertifikat.** Rollene i Key
+> Vault er delt per objekttype: `Secrets Officer` gjelder hemmeligheter,
+> `Certificates Officer` gjelder sertifikater. `az keyvault certificate
+> create` i 0.4 feiler med «forbidden» uten den siste — og feilmeldingen
+> peker på vaulten, ikke på rollen.
+>
+> De henger likevel sammen her: `Certificates Officer` dekker ikke
+> nødvendigvis det å LESE secret-ryggen av sertifikatet, og det er nettopp
+> den `az keyvault secret show --query contentType` leser når du
+> kontrollerer at PEM-policyen slo gjennom. Har du begge, er du dekket.
+>
+> **`Owner` på ressursen gir ikke dataplantilgang** i en RBAC-vault — men den
+> gir rett til å tildele roller, også til deg selv. Mangler du
+> `Certificates Officer`, kan du altså gi deg den (og bør fjerne den igjen
+> etterpå):
+>
+> ```powershell
+> $meg = az ad signed-in-user show --query id -o tsv
+> az role assignment create --assignee-object-id $meg --assignee-principal-type User `
+>     --role "Key Vault Certificates Officer" `
+>     --scope "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.KeyVault/vaults/$KV"
+> ```
 
 > **Fella: RBAC eller tilgangspolicy.** En vault kjører på én av to modeller.
 > Står den på **tilgangspolicyer**, gjør en `Key Vault Secrets User`-tildeling
@@ -394,6 +418,49 @@ SharePoint. Fire funn hører i bestillingen:
 Framgangsmåten, kommando for kommando, står i `docs/BACKUP-SHAREPOINT.md`
 under «Prøv i dev først». Den begynner nå med at app-registreringen må finnes
 — det var det som manglet.
+
+---
+
+### 0.5 App-registreringene fra v2 kan gjenbrukes
+
+Begge, og det sparer to bestillinger. En app-registrering er ikke bundet til
+en SWA eller en Function App — den er bundet til tenanten.
+
+**Auth-appen (pålogging).** Gjenbrukes med en NY redirect-URI, se trinn 6.
+Begge URI-ene står side om side mens v2 og v3 kjører parallelt, og den gamle
+fjernes ved riving. Tre forbehold:
+
+* Flytter du domenet ved cutover, må redirect-URI-en for domenet også ligge
+  der — se 10.
+* `AAD_CLIENT_ID` blir den samme i begge miljøene. Det er greit, men det
+  betyr at en endring på appen (f.eks. rotasjon av auth-sertifikatet) treffer
+  v2 og v3 SAMTIDIG. Under parallellkjøring er det en fordel; ved feilsøking
+  er det en felle, for «bare v3 er nede» kan ikke skyldes appen alene.
+* Sertifikatet hentes av SWA-ens EGEN plattformidentitet. Den nye SWA-en har
+  en annen identitet enn v2, og den trenger `Key Vault Secrets User` **og**
+  `Key Vault Certificate User` på vaulten — se 0.2. Appen gjenbrukes,
+  rolletildelingen gjør det ikke.
+
+**Backup-appen (`Sites.Selected`).** Gjenbrukes uendret: `Sites.Selected` og
+områdetildelingen henger på appen, ikke på miljøet. v3 trenger bare
+`GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID` og én legitimasjon i sine egne app
+settings.
+
+Og her er det en vei som sparer enda et steg: **en app-registrering kan bære
+en client secret OG et sertifikat samtidig.** De ligger i to ulike
+samlinger. Legg sertifikatet på den eksisterende backup-appen, la v2 beholde
+hemmeligheten sin, og la v3 bruke sertifikatet. Ingen ny app, ingen bestilling,
+og ingenting å endre i v2.
+
+> **`GRAPH_CLIENT_SECRET` MÅ stå tom i v3.** Er begge satt, vinner
+> hemmeligheten i `tokenKropp()`, og da kjører v3 på v2 sin legitimasjon uten
+> at noe sier fra. Sertifikatveien er da aldri prøvd — og det oppdages den
+> dagen hemmeligheten utløper.
+
+**To backupjobber mot samme område.** Kjører v2 og v3 backup parallelt, legger
+begge filer i det samme biblioteket. Sjekk at filnavnene skiller miljøene fra
+hverandre før du slår på den andre jobben; to filer med samme navn er ikke en
+backup, det er én.
 
 ---
 
