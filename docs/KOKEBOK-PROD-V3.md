@@ -113,16 +113,47 @@ To forbehold:
 
 * **`az upgrade` virker ikke** på en ZIP-installasjon. Oppgradering er å pakke
   ut en nyere ZIP over den samme mappa.
-* **Blokkerer PC-en det** (AppLocker, WDAC eller en policy som hindrer kjøring
-  fra `%LOCALAPPDATA%`), er det ikke noe å omgå. Da er veiene **Azure Cloud
-  Shell**, der `az` er forhåndsinstallert, eller Az-modulene i PowerShell
-  (`Install-Module Az -Scope CurrentUser`) — den siste krever heller ikke
-  administrator, men kommandoene i denne kokeboka er `az`-kommandoer og må da
-  oversettes.
+* **På en administrert PC blir den sannsynligvis blokkert likevel.** Målt
+  20.10.2026: nedlasting og utpakking gikk fint, men kjøring ga
 
-Cloud Shell har én felle som gjelder hele kokeboka: `$HOME` der ligger i en
-Azure Files-andel som overlever økta. Private nøkler og sertifikater hører
-derfor i `/tmp`, ikke i hjemmemappa. Se 0.4.
+  > «Dette programmet er blokkert for gruppepolicy. Kontakt systemansvarlig
+  > for mer informasjon.»
+
+  Det er en policy som hindrer kjøring av programmer fra brukerskrivbare
+  mapper — AppLocker, WDAC eller en SRP. **Den skal ikke omgås.** Den er
+  nettopp det som hindrer at nedlastet kode kjører, og en kokebok som viste
+  en vei rundt, ville vært en oppskrift på å svekke maskinen som har tilgang
+  til prod.
+
+### 0.0.1 Når `az` er blokkert lokalt
+
+Rekkefølgen her er praktisk, ikke prinsipiell:
+
+**1. Azure Cloud Shell.** `az` er forhåndsinstallert og alltid oppdatert, og
+hele denne kokeboka kjører der som den står — ingen installasjon, ingen
+policy, ingen unntak å be om. Velg **PowerShell** som skall, så stemmer
+syntaksen med kommandoene her.
+
+Skal du kjøre `.ps1`-skriptene i `scripts/`, er de to veiene inn å klone
+repoet i Cloud Shell, eller laste opp den enkelte fila med
+opplastingsknappen. `Microsoft.Graph`- og `Az.KeyVault`-modulene skriptene
+trenger, er forhåndsinstallert der.
+
+> **Én felle som gjelder hele kokeboka:** `$HOME` i Cloud Shell ligger i en
+> Azure Files-andel som overlever økta. Private nøkler og sertifikater hører
+> derfor i `/tmp`, ikke i hjemmemappa. Se 0.4.
+
+**2. Be systemansvarlig installere `az` med MSI-en.** Det er den sanksjonerte
+veien til `az` lokalt: Microsofts signerte MSI legger seg i `Program Files`,
+som policyen normalt tillater. Spør om det framfor et unntak for
+`%LOCALAPPDATA%` — et unntak der gjelder alt du laster ned senere også.
+
+**3. Az-modulene i PowerShell** (`Install-Module Az -Scope CurrentUser`).
+Moduler er ikke programmer og rammes ofte ikke av samme policy, så prøv
+`Connect-AzAccount` og se. Men kommandoene i denne kokeboka er
+`az`-kommandoer, og da må hver av dem oversettes — det er mer arbeid enn
+Cloud Shell, og en oversettelse gjort under tidspress er en ny feilkilde i en
+kokebok der de fleste stegene ikke er reversible.
 
 ---
 
