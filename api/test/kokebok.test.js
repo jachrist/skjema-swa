@@ -458,5 +458,39 @@ const BASHISMER = [
     sjekk('ingen bash-isme i kommandoene', bashismer, []);
 }
 
+// ---------- 11. den utskrevne kommandoen kan limes inn igjen ----------
+//
+// `steg1-funcapp.ps1` skriver ut hver az-kommando før den kjører den, og det
+// er den utskriften folk kopierer når noe feiler. `-join ' '` alene gir
+//
+//     az role assignment create --role Storage Table Data Contributor ...
+//
+// og limes den tilbake, leser az bare «Storage» som rollenavn og klager over
+// «unrecognized arguments». Kallet var riktig hele tiden — utskriften var det
+// ikke. 21.10.2026 ble nettopp en slik linje limt inn i en feilsøking.
+{
+    const skript = fs.readFileSync(path.join(rot, 'scripts', 'steg1-funcapp.ps1'), 'utf8');
+
+    sjekk('det finnes en funksjon som siterer argumentene',
+        /function Som-Kommando/.test(skript), true);
+    sjekk('og den siterer det som har mellomrom',
+        /\$a -match '\[\\s"\]'/.test(skript), true);
+
+    // Utskriften og feilmeldingen skal BEGGE bruke den — en av dem alene
+    // etterlater halve problemet.
+    const fra = skript.indexOf('function Kjør-Az');
+    const til = skript.indexOf('\nif ($Trinn', fra);
+    const kjor = skript.slice(fra, til);
+    sjekk('utskriften bruker den', /Write-Host "-> az \$\(Som-Kommando \$Argumenter\)"/.test(kjor), true);
+    sjekk('tørrkjøringen bruker den', /Write-Host "   az \$\(Som-Kommando \$Argumenter\)"/.test(kjor), true);
+    sjekk('og feilmeldingen bruker den',
+        /throw "az feilet: \$\(Som-Kommando \$Argumenter\)"/.test(kjor), true);
+
+    // Ingen rå -join igjen i de tre. En glemt forekomst er nøyaktig den
+    // linja noen kommer til å kopiere.
+    sjekk('ingen rå join igjen i Kjør-Az',
+        /\$Argumenter -join ' '/.test(kjor), false);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

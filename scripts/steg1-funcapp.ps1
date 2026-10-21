@@ -109,15 +109,30 @@ if (-not $Kjor) {
     Write-Host "TØRRKJØRING - ingenting gjøres. Legg til -Kjor for å utføre.`n" -ForegroundColor Yellow
 }
 
+# Kommandoen slik den KAN limes inn igjen.
+#
+# `-join ' '` alene gir «--role Storage Table Data Contributor», og limer man
+# den linja tilbake i skallet, leser az bare «Storage» som rollenavn og klager
+# over «unrecognized arguments». Kallet selv er riktig — argumentene sendes som
+# en liste — men utskriften var det ikke, og det er utskriften folk kopierer
+# når de feilsøker.
+function Som-Kommando {
+    param([string[]]$Argumenter)
+    $deler = foreach ($a in $Argumenter) {
+        if ($a -match '[\s"]') { "'" + ($a -replace "'", "''") + "'" } else { $a }
+    }
+    return ($deler -join ' ')
+}
+
 function Kjør-Az {
     param([string[]]$Argumenter)
     if ($Kjor) {
-        Write-Host "-> az $($Argumenter -join ' ')" -ForegroundColor Cyan
+        Write-Host "-> az $(Som-Kommando $Argumenter)" -ForegroundColor Cyan
         $svar = & az @Argumenter
-        if ($LASTEXITCODE -ne 0) { throw "az feilet: $($Argumenter -join ' ')" }
+        if ($LASTEXITCODE -ne 0) { throw "az feilet: $(Som-Kommando $Argumenter)" }
         return $svar
     }
-    Write-Host "   az $($Argumenter -join ' ')"
+    Write-Host "   az $(Som-Kommando $Argumenter)"
     return $null
 }
 
