@@ -41,6 +41,7 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
+const rot = path.join(__dirname, '..', '..');
 const mappe = path.join(__dirname, '..', '..', '.github', 'workflows');
 const les = (f) => fs.readFileSync(path.join(mappe, f), 'utf8');
 
@@ -246,6 +247,81 @@ for (const fil of deployer) {
     // til pynt.
     sjekk('ingen hardkodet token igjen',
         /secrets\.AZURE_STATIC_WEB_APPS_API_TOKEN_DEV\s*\}\}/.test(dev), false);
+}
+
+// ---------- 7. ingen peker på en arbeidsflyt som ikke finnes ----------
+//
+// `steg1-funcapp.ps1` ba deg kjøre «Deploy innhold til prøve-SWA (steg 1)».
+// Den fulgte steg 1-forsøket 14.10.2026 og ble revet med det, mens
+// henvisningen ble stående. 21.10.2026 lette noen etter den i Actions-fanen
+// midt i en prod-gjennomkjøring.
+//
+// En henvisning til noe som ikke finnes er dyrere enn en manglende
+// henvisning: den som leter, antar at feilen er hos dem selv.
+{
+    const navn = new Set(
+        fs.readdirSync(mappe).filter(f => f.endsWith('.yml'))
+            .map(f => /^name:\s*(.+)$/m.exec(fs.readFileSync(path.join(mappe, f), 'utf8')))
+            .filter(Boolean).map(m => m[1].trim()));
+    sjekk('fant navnene på arbeidsflytene', navn.size > 5, true);
+
+    // Navn som ER borte, og som nevnes med vilje som historikk. Lista er
+    // kort og synlig — det er forskjellen på et dokumentert fravær og en
+    // død henvisning.
+    const HISTORISKE = new Set(['Deploy innhold til prøve-SWA (steg 1)']);
+
+    const kilder = [
+        ...fs.readdirSync(path.join(rot, 'scripts')).filter(f => f.endsWith('.ps1'))
+            .map(f => ['scripts/' + f, fs.readFileSync(path.join(rot, 'scripts', f), 'utf8')]),
+        ['docs/KOKEBOK-PROD-V3.md',
+            fs.readFileSync(path.join(rot, 'docs', 'KOKEBOK-PROD-V3.md'), 'utf8')]
+    ];
+
+    // Bare navn som ser ut som en arbeidsflyt her: «Deploy …», «Refresh …»,
+    // «Backup», «Synkroniser …». Ellers fanger regelen all sitert tekst.
+    const SER_UT_SOM = /^(Deploy|Refresh|Backup|Send|Sjekk|Synkroniser|Oppdater|Purre|CI)\b/;
+    const ukjente = [];
+    for (const [fil, tekst] of kilder) {
+        for (const m of tekst.matchAll(/«([^»]{3,60})»/g)) {
+            const n = m[1].trim();
+            if (!SER_UT_SOM.test(n)) continue;
+            if (navn.has(n) || HISTORISKE.has(n)) continue;
+            ukjente.push(`${fil}: ${n}`);
+        }
+    }
+    sjekk('alle arbeidsflyter det henvises til finnes', ukjente, []);
+}
+
+// ---------- 8. frontend-deployene kan velge SWA-ressurs ----------
+//
+// Både dev og prod får en NY SWA ved siden av den gamle: dev under
+// gjennomkjøringen av kokeboka, prod som v3. En hardkodet token-hemmelighet
+// gir da to veier, og begge er gale — deploye den nye med den gamles token,
+// eller bytte verdien på hemmeligheten og sende neste deploy av det GAMLE
+// miljøet til det nye. I prod rammer det produksjon.
+//
+// Pilot står utenfor med vilje: der finnes ingen andre SWA, og et valg
+// ingen bruker er en bryter som ikke er prøvd.
+{
+    for (const fil of ['deploy-dev.yml', 'deploy-prod.yml']) {
+        const w = fs.readFileSync(path.join(mappe, fil), 'utf8');
+        const standard = fil === 'deploy-dev.yml'
+            ? 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV'
+            : 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD';
+
+        sjekk(`${fil}: har et valg for hemmeligheten`, /swa_token_secret:/.test(w), true);
+        sjekk(`${fil}: standarden er den som har vært brukt`,
+            w.includes(`default: '${standard}'`), true);
+        sjekk(`${fil}: uttrykket har samme standard`,
+            w.includes(`secrets[inputs.swa_token_secret || '${standard}']`), true);
+
+        const iVakt = w.indexOf('Sjekk at tokenet finnes');
+        sjekk(`${fil}: vakten finnes`, iVakt > -1, true);
+        sjekk(`${fil}: og kommer før opplastingen`,
+            iVakt > -1 && iVakt < w.indexOf('static-web-apps-deploy'), true);
+        sjekk(`${fil}: ingen hardkodet token igjen`,
+            new RegExp(`secrets\\.${standard}\\s*\\}\\}`).test(w), false);
+    }
 }
 
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
