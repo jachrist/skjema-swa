@@ -602,8 +602,35 @@ const BASHISMER = [
     // fleste må slå opp, midt i et oppsett.
     sjekk('utfallet av Compare-Object er forklart',
         /`<=`[\s\S]{0,200}`=>`/.test(tekst), true);
-    sjekk('og en tom utskrift betyr ferdig',
-        /tom utskrift[\s\S]{0,40}ferdig/.test(tekst), true);
+    // 21.10.2026 sa 4.2 «tom utskrift = ferdig», og den testen krevde det.
+    // Begge tok feil: `=>`-siden har ALLTID treff, fordi verten har sine
+    // egne settinger (`AzureWebJobsStorage`, `FUNCTIONS_WORKER_RUNTIME`, og
+    // timeouten fra 4.1). Et kriterium som aldri inntreffer er et kriterium
+    // folk slutter å bruke — og «mener at alt er satt» er det det skulle
+    // erstatte.
+    sjekk('ferdig-kriteriet er at det ikke st\u00e5r noen <=',
+        /ingen `<=`[\s\S]{0,40}ferdig/.test(tekst), true);
+    sjekk('og dokumentet sier at utskriften ikke blir tom',
+        /blir ikke tom/.test(tekst), true);
+
+    // De forventede `=>`-navnene må STÅ der, ellers må operatøren vurdere
+    // sju ukjente linjer midt i et oppsett. Navnene leses her, så en
+    // forkortelse av tabellen blir rød.
+    for (const navn of ['AzureWebJobsStorage', 'FUNCTIONS_WORKER_RUNTIME',
+        'FUNCTIONS_EXTENSION_VERSION', 'WEBSITE_RUN_FROM_PACKAGE',
+        'AzureFunctionsJobHost__functionTimeout']) {
+        sjekk(`4.2 navngir ${navn} som et forventet =>`,
+            tekst.includes(navn), true);
+    }
+
+    // Timeouten fra 4.1 er den ene operatøren satte selv, og den skal
+    // merkes som det — ikke stå i samme bunke som plattformens egne.
+    sjekk('og peker timeouten tilbake til 4.1',
+        /AzureFunctionsJobHost__functionTimeout`[\s\S]{0,60}4\.1/.test(tekst), true);
+
+    // Og et `=>` utenfor lista skal ikke kunne forbli uforklart.
+    sjekk('et uventet => skal forklares',
+        /ikke st\u00e5r i tabellen[\s\S]{0,60}forklares/.test(tekst), true);
 }
 
 // ---------- 15. kommandogeneratoren setter ingenting selv ----------

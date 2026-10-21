@@ -1156,9 +1156,33 @@ Compare-Object (Get-Content krav.txt | Sort-Object) (Get-Content satt.txt | Sort
 
 | I `Compare-Object` | Betyr |
 |---|---|
-| `<=` | står i inventaret, mangler på verten — ikke ferdig |
-| `=>` | står på verten, ikke i inventaret — enten en levning, eller inventaret er utdatert. Begge skal forklares |
-| tom utskrift | ferdig |
+| `<=` | står i inventaret, mangler på verten — **ikke ferdig** |
+| `=>` | står på verten, ikke i inventaret — en levning, en plattformsetting, eller et utdatert inventar |
+| ingen `<=` | ferdig |
+
+**Utskriften blir ikke tom, og det er normalt.** Ferdig-kriteriet er at det
+ikke står noen `<=`. `=>`-siden har alltid treff, fordi Function App-en har
+settinger ingen av oss har satt — de kom med `az functionapp create` og med
+deployen:
+
+| `=>` du skal forvente | Hvorfra |
+|---|---|
+| `AzureWebJobsStorage` | `functionapp create` — verten trenger et lager til sin egen bokføring |
+| `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`, `WEBSITE_CONTENTSHARE` | samme, på Consumption-planen |
+| `FUNCTIONS_EXTENSION_VERSION`, `FUNCTIONS_WORKER_RUNTIME` | samme — vertsversjon og språk |
+| `WEBSITE_RUN_FROM_PACKAGE` | kommer med zip-deployen av API-et |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` eller `APPINSIGHTS_INSTRUMENTATIONKEY` | App Insights, hvis det ble koblet på |
+| `AzureFunctionsJobHost__functionTimeout` | **du satte den selv**, i 4.1 |
+
+Disse leses av VERTEN, ikke av koden vår, og hører derfor ikke i inventaret:
+`api/test/env-inventar.test.js` krever at hver `process.env` i `api/src` står
+i alle tre miljøfilene, og en setting ingen av dem leser ville gjort lista
+lengre uten å gjøre den sannere.
+
+**Et `=>` som ikke står i tabellen over, skal forklares før du går videre.**
+Det er enten en levning fra et tidligere forsøk, eller en setting inventaret
+har mistet — og det siste er den dyre varianten, fordi inventaret er det
+neste miljøet settes opp fra.
 
 **Samme `--velg` som i 4.0.** Lista er kravlista, og kravet er ikke det
 samme i de to variantene: med sertifikatet er `GRAPH_CLIENT_CERT_PEM`
