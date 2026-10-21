@@ -177,5 +177,41 @@ for (const fil of filer) {
     }
 }
 
+// ---------- redirect-URI-en i kokeboka bruker samme leverandørsegment ----------
+//
+// 21.10.2026: forsiden til prod v3 vistes, og første pålogging endte i
+// `AADSTS50011` fordi det nye vertsnavnet manglet på app-registreringen.
+// Kokeboka oppgir URI-en som skal legges inn, og den er sammensatt:
+// påloggingsstien pluss `/callback`.
+//
+// Segmentet `aad` står altså to steder — i SWA-configen, som plattformen
+// handler på, og i et dokument et menneske limer fra. Endres det ene,
+// peker det andre på en sti som ikke finnes, og symptomet er NØYAKTIG den
+// samme AADSTS50011. Da er en gal URI i kokeboka umulig å skille fra en
+// URI man har glemt å legge inn.
+{
+    const kokebok = fs.readFileSync(
+        path.join(rot, 'docs', 'KOKEBOK-PROD-V3.md'), 'utf8');
+
+    // Segmentet leses ut av configen, ikke skrevet opp her.
+    const konf = JSON.parse(fs.readFileSync(
+        path.join(rot, 'frontend', 'staticwebapp.config.json'), 'utf8'));
+    const redirect = konf.responseOverrides?.['401']?.redirect || '';
+    const m = /^\/\.auth\/login\/([^?/]+)/.exec(redirect);
+    sjekk('fant leverandørsegmentet i 401-redirecten', !!m, true);
+
+    if (m) {
+        sjekk('kokeboka oppgir callback-URI-en med samme segment',
+            kokebok.includes(`/.auth/login/${m[1]}/callback`), true);
+
+        // Og ingen ANNEN callback-sti skal stå der: to URI-er med ulikt
+        // segment er én som ikke virker, og den vil se riktig ut.
+        const andre = [...kokebok.matchAll(/\/\.auth\/login\/([^?/\s]+)\/callback/g)]
+            .map(t => t[1])
+            .filter(seg => seg !== m[1]);
+        sjekk('og ingen callback-sti med et annet segment', [...new Set(andre)], []);
+    }
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

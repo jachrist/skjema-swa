@@ -1156,9 +1156,33 @@ Compare-Object (Get-Content krav.txt | Sort-Object) (Get-Content satt.txt | Sort
 
 | I `Compare-Object` | Betyr |
 |---|---|
-| `<=` | står i inventaret, mangler på verten — ikke ferdig |
-| `=>` | står på verten, ikke i inventaret — enten en levning, eller inventaret er utdatert. Begge skal forklares |
-| tom utskrift | ferdig |
+| `<=` | står i inventaret, mangler på verten — **ikke ferdig** |
+| `=>` | står på verten, ikke i inventaret — en levning, en plattformsetting, eller et utdatert inventar |
+| ingen `<=` | ferdig |
+
+**Utskriften blir ikke tom, og det er normalt.** Ferdig-kriteriet er at det
+ikke står noen `<=`. `=>`-siden har alltid treff, fordi Function App-en har
+settinger ingen av oss har satt — de kom med `az functionapp create` og med
+deployen:
+
+| `=>` du skal forvente | Hvorfra |
+|---|---|
+| `AzureWebJobsStorage` | `functionapp create` — verten trenger et lager til sin egen bokføring |
+| `WEBSITE_CONTENTAZUREFILECONNECTIONSTRING`, `WEBSITE_CONTENTSHARE` | samme, på Consumption-planen |
+| `FUNCTIONS_EXTENSION_VERSION`, `FUNCTIONS_WORKER_RUNTIME` | samme — vertsversjon og språk |
+| `WEBSITE_RUN_FROM_PACKAGE` | kommer med zip-deployen av API-et |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` eller `APPINSIGHTS_INSTRUMENTATIONKEY` | App Insights, hvis det ble koblet på |
+| `AzureFunctionsJobHost__functionTimeout` | **du satte den selv**, i 4.1 |
+
+Disse leses av VERTEN, ikke av koden vår, og hører derfor ikke i inventaret:
+`api/test/env-inventar.test.js` krever at hver `process.env` i `api/src` står
+i alle tre miljøfilene, og en setting ingen av dem leser ville gjort lista
+lengre uten å gjøre den sannere.
+
+**Et `=>` som ikke står i tabellen over, skal forklares før du går videre.**
+Det er enten en levning fra et tidligere forsøk, eller en setting inventaret
+har mistet — og det siste er den dyre varianten, fordi inventaret er det
+neste miljøet settes opp fra.
 
 **Samme `--velg` som i 4.0.** Lista er kravlista, og kravet er ikke det
 samme i de to variantene: med sertifikatet er `GRAPH_CLIENT_CERT_PEM`
@@ -1262,6 +1286,13 @@ feilsøkingen mot portalen.
 SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
 øverst i 5.
 
+> **Og så kommer innloggingen til å feile. Det er riktig her.** Forsiden
+> vises anonymt, men første pålogging ender i
+> `AADSTS50011: The redirect URI … does not match`, fordi det nye
+> vertsnavnet ikke står på app-registreringen ennå. Det er kapittel 6, og
+> det er ikke en mislykket deploy. Feilen kommer ETTER at forsiden vistes,
+> og ser derfor ut som at noe gikk i stykker etterpå.
+
 ### 5.3 Lenk Function App-en til SWA-en — først nå
 
 ```powershell
@@ -1273,8 +1304,20 @@ az staticwebapp backends show --name $SWA --resource-group $RG -o table
 
 ## 6. Innlogging (Entra)
 
-SWA-en trenger sin egen app-registrering, eller gjenbruk av v2 sin med en ny
-redirect-URI.
+**Du trenger ingen ny app-registrering.** En app-registrering bærer mange
+redirect-URI-er under Web-plattformen, én per vertsnavn, og v2 sin skal
+beholde sine. Det som mangler er én URI til.
+
+Og feilmeldingen sier selv at appen er funnet:
+
+| Entra svarer | Hva det forteller |
+|---|---|
+| `AADSTS50011` — redirect URI matcher ikke | Appen ER funnet, `AAD_CLIENT_ID` er riktig satt på SWA-ressursen, og sertifikatet lot seg hente. **Bare vertsnavnet mangler** |
+| `AADSTS700016` — application not found | `AAD_CLIENT_ID` peker på noe som ikke finnes i denne tenanten, eller står ikke på SWA-ressursen i det hele tatt |
+| Feil om klientlegitimasjon | App-ID-en stemmer, men sertifikatet nås ikke — se rollene nederst i dette kapittelet |
+
+De tre ser like ut i nettleseren og har ikke samme årsak. `AADSTS50011` er
+den billigste av dem: alt annet er på plass.
 
 ```powershell
 $VERT = az staticwebapp show --name $SWA --resource-group $RG --query defaultHostname -o tsv
@@ -1282,6 +1325,69 @@ $VERT = az staticwebapp show --name $SWA --resource-group $RG --query defaultHos
 ```
 
 Adressen legges inn under **Authentication** på app-registreringen i Entra.
+Portalen legger den TIL; de gamle står igjen.
+
+Med `az` må den eksisterende lista leses først:
+
+```powershell
+$APPID = '<verdien i AAD_CLIENT_ID>'
+$NY = "https://$VERT/.auth/login/aad/callback"
+$gamle = az ad app show --id $APPID --query 'web.redirectUris' -o tsv
+$alle = @($gamle) + $NY | Where-Object { $_ } | Select-Object -Unique
+$arg = @('ad', 'app', 'update', '--id', $APPID, '--web-redirect-uris') + $alle
+az @arg
+```
+
+`--web-redirect-uris` setter HELE samlingen, ikke ett element — samme familie
+som `az ad app credential reset` uten `--append`, der v2 sin legitimasjon
+forsvinner. Formen over er trygg uansett: sendes de gamle inn sammen med den
+nye, blir resultatet det samme enten flagget erstatter eller legger til.
+`Select-Object -Unique` gjør at den kan kjøres to ganger.
+
+**Kontroller etterpå at de gamle står igjen:**
+
+```powershell
+az ad app show --id $APPID --query 'web.redirectUris' -o tsv
+```
+
+#### Har du ikke rollen: bestillingen
+
+Trinn 6 krever **Application Administrator**, eller at du står som *eier* av
+den ene app-registreringen — og det siste er billigere, se merknad 3 i 0.1 C.
+Må det bestilles, er dette teksten:
+
+> Legg til én redirect-URI på app-registreringen `<navn/app-id som
+> AAD_CLIENT_ID peker på>`:
+>
+> `https://<vertsnavn>/.auth/login/aad/callback`
+>
+> Den skal inn under plattformen **Web**, ikke «Single-page application».
+>
+> **Legg den TIL.** De eksisterende redirect-URI-ene skal stå igjen — de er i
+> bruk av dagens løsning. Ingenting annet på registreringen skal endres.
+
+**Plattformvalget er ikke en formalitet.** SWA-en innløser koden på
+serversiden, med sertifikatet — den er en fortrolig klient. Registreres
+URI-en under «Single-page application», behandler Entra klienten som
+offentlig, og innløsningen avvises med en feil om at tokenet bare kan
+innløses via cross-origin. Innloggingen kommer altså like langt som nå, og
+feiler ett steg senere, med en melding som ikke nevner plattformvalget.
+
+**Kontroller hvor den landet** — de to plattformene er to ulike lister:
+
+```powershell
+az ad app show --id $APPID --query 'web.redirectUris' -o tsv
+az ad app show --id $APPID --query 'spa.redirectUris' -o tsv
+```
+
+Står den i den andre, er bestillingen utført på feil plattform. Det er ikke
+synlig i nettleseren, og det er den eneste måten å se det på.
+
+> **Hvert vertsnavn trenger sin egen URI.** Default-vertsnavnet er ett.
+> Flytter du domenet ved cutover, må domenet ha sin (se 0.5). Og et navngitt
+> preview-miljø har sitt eget vertsnavn — Entra avviser innloggingen DER, og
+> bare der, til URI-en er lagt inn. `deploy-prod.yml` skriver den ferdige
+> URL-en i sammendraget; gjett aldri på den.
 
 `AAD_CLIENT_ID` og auth-sertifikatet settes på **SWA-ressursen**, ikke på
 Function App-en. I prod hentes sertifikatet fra Key Vault via

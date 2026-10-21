@@ -602,8 +602,35 @@ const BASHISMER = [
     // fleste må slå opp, midt i et oppsett.
     sjekk('utfallet av Compare-Object er forklart',
         /`<=`[\s\S]{0,200}`=>`/.test(tekst), true);
-    sjekk('og en tom utskrift betyr ferdig',
-        /tom utskrift[\s\S]{0,40}ferdig/.test(tekst), true);
+    // 21.10.2026 sa 4.2 «tom utskrift = ferdig», og den testen krevde det.
+    // Begge tok feil: `=>`-siden har ALLTID treff, fordi verten har sine
+    // egne settinger (`AzureWebJobsStorage`, `FUNCTIONS_WORKER_RUNTIME`, og
+    // timeouten fra 4.1). Et kriterium som aldri inntreffer er et kriterium
+    // folk slutter å bruke — og «mener at alt er satt» er det det skulle
+    // erstatte.
+    sjekk('ferdig-kriteriet er at det ikke st\u00e5r noen <=',
+        /ingen `<=`[\s\S]{0,40}ferdig/.test(tekst), true);
+    sjekk('og dokumentet sier at utskriften ikke blir tom',
+        /blir ikke tom/.test(tekst), true);
+
+    // De forventede `=>`-navnene må STÅ der, ellers må operatøren vurdere
+    // sju ukjente linjer midt i et oppsett. Navnene leses her, så en
+    // forkortelse av tabellen blir rød.
+    for (const navn of ['AzureWebJobsStorage', 'FUNCTIONS_WORKER_RUNTIME',
+        'FUNCTIONS_EXTENSION_VERSION', 'WEBSITE_RUN_FROM_PACKAGE',
+        'AzureFunctionsJobHost__functionTimeout']) {
+        sjekk(`4.2 navngir ${navn} som et forventet =>`,
+            tekst.includes(navn), true);
+    }
+
+    // Timeouten fra 4.1 er den ene operatøren satte selv, og den skal
+    // merkes som det — ikke stå i samme bunke som plattformens egne.
+    sjekk('og peker timeouten tilbake til 4.1',
+        /AzureFunctionsJobHost__functionTimeout`[\s\S]{0,60}4\.1/.test(tekst), true);
+
+    // Og et `=>` utenfor lista skal ikke kunne forbli uforklart.
+    sjekk('et uventet => skal forklares',
+        /ikke st\u00e5r i tabellen[\s\S]{0,60}forklares/.test(tekst), true);
 }
 
 // ---------- 15. kommandogeneratoren setter ingenting selv ----------
@@ -706,6 +733,87 @@ const BASHISMER = [
     // UTC. Avvisningen må stå, ellers kommer den tilbake.
     sjekk('tekstbyttet er navngitt og avvist',
         /-replace[\s\S]{0,40}00:00[\s\S]{0,400}\+02:00/.test(pem), true);
+}
+
+// ---------- 17. redirect-URI-en, og at den er lagt TIL ----------
+//
+// 21.10.2026: forsiden til prod v3 vistes, og første pålogging endte i
+// `AADSTS50011`. Spørsmålet som fulgte var «må vi ha en egen app?» — og
+// svaret er nei, men kapittel 6 sa det ikke. Det sa «sin egen
+// app-registrering, eller gjenbruk av v2 sin med en ny redirect-URI», altså
+// begge, uten å avgjøre noe.
+//
+// 5.2 sa heller ikke at feilen kom. Den kommer ETTER at forsiden vistes, og
+// ser derfor ut som at noe gikk i stykker etterpå.
+{
+    // Selve URI-formen er bundet i `swa-config.test.js`, der
+    // påloggingsstien alt er en regel: leverandørsegmentet leses ut av
+    // SWA-configen, som er det plattformen faktisk handler på — ikke ut av
+    // én HTML-side.
+
+    const fra = tekst.indexOf('## 6. Innlogging');
+    const til = tekst.indexOf('## 7. Flytene');
+    sjekk('fant kapittel 6', fra > 0 && til > fra, true);
+    const kap6 = tekst.slice(fra, til);
+
+    // Spørsmålet må besvares, ikke stilles.
+    sjekk('kapittel 6 avgjør om det trengs en ny app',
+        /ingen ny app-registrering/i.test(kap6), true);
+    sjekk('og sier hvorfor: mange URI-er per app',
+        /mange\s*\n?\s*redirect-URI-er|flere redirect-URI/i.test(kap6), true);
+
+    // Den dyre feilen her er en kommando som SETTER lista og dermed sletter
+    // v2 sine URI-er. Hvert `--web-redirect-uris` skal stå i en blokk som
+    // leser de gamle først.
+    const settBlokker = alle.filter(b =>
+        b.fra > tekst.slice(0, fra).split('\n').length
+        && b.linjer.some(l => /--web-redirect-uris/.test(l.tekst)));
+    sjekk('kommandoen som setter URI-ene finnes', settBlokker.length > 0, true);
+    for (const b of settBlokker) {
+        const blokk = b.linjer.map(l => l.tekst).join('\n');
+        sjekk(`blokka på linje ${b.fra} leser de gamle først`,
+            /web\.redirectUris/.test(blokk), true);
+        sjekk(`og de gamle sendes med inn (linje ${b.fra})`,
+            /\$gamle/.test(blokk), true);
+    }
+    sjekk('og det står at flagget setter hele samlingen',
+        /setter HELE samlingen/.test(kap6), true);
+    sjekk('med credential reset som familien den hører til',
+        /credential reset/.test(kap6), true);
+
+    // Bestillingen: 21.10.2026 hadde operatøren ikke rollen, og måtte
+    // bestille URI-en fra admin. Da er plattformvalget ute av egne hender,
+    // og det er den ene detaljen som kan gjøres feil uten å synes:
+    // registreres URI-en under «Single-page application», behandler Entra
+    // klienten som offentlig, og innløsningen avvises ETT steg senere, med
+    // en melding som ikke nevner plattformen.
+    sjekk('kapittel 6 har en bestillingstekst',
+        /Har du ikke rollen: bestillingen/.test(kap6), true);
+    sjekk('og den krever plattformen Web',
+        /plattformen \*\*Web\*\*/.test(kap6), true);
+    sjekk('og avviser SPA uttrykkelig',
+        /ikke «Single-page application»/.test(kap6), true);
+    sjekk('og sier at de gamle skal stå igjen',
+        /Legg den TIL/.test(kap6), true);
+
+    // Og kontrollen som skiller de to utfallene. Uten den er «utført» og
+    // «utført på feil plattform» samme svar.
+    sjekk('kontrollen leser begge listene',
+        /web\.redirectUris/.test(kap6) && /spa\.redirectUris/.test(kap6), true);
+
+    // Preview-miljøet har sitt eget vertsnavn, og innloggingen feiler DER og
+    // bare der. Det står i deploy-prod.yml; kapittel 6 må si det også, for
+    // ingen leser en workflow-kommentar midt i et oppsett.
+    sjekk('kapittel 6 nevner preview-vertsnavnet',
+        /preview-miljø[\s\S]{0,120}vertsnavn/.test(kap6), true);
+
+    // Og 5.2 må forberede feilen, med koden man kan søke på.
+    const f52 = tekst.indexOf('### 5.2');
+    const kap52 = tekst.slice(f52, tekst.indexOf('### 5.3', f52));
+    sjekk('5.2 varsler at innloggingen feiler', /AADSTS50011/.test(kap52), true);
+    sjekk('og peker til kapittel 6', /kapittel 6/.test(kap52), true);
+    sjekk('og sier at det ikke er en mislykket deploy',
+        /ikke en mislykket deploy/.test(kap52), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);
