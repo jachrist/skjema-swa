@@ -30,6 +30,14 @@ med vilje:
 * En backtick på slutten av en linje er dessuten usynlig: et mellomrom etter
   den gjør at den slutter å virke, og klipp-og-lim legger ofte igjen ett.
 
+**Og noen variabelnavn er opptatt.** PowerShell har innebygde,
+skrivebeskyttede variabler, og `$pid` er en av dem — den er prosess-ID-en.
+Tilordner du den, feiler linja med «Cannot overwrite variable PID because it
+is read-only or constant», midt i en ellers riktig kommando. Målt
+21.10.2026. De vanligste å snuble i: `$pid`, `$host`, `$error`, `$input`,
+`$args`, `$matches`, `$home`, `$pwd`. Variablene i denne kokeboka er valgt
+utenom dem.
+
 Lange kommandoer står derfor enten på **én linje**, eller som en **liste med
 argumenter** i parentes. En parentes holder uttrykket åpent over linjeskift
 helt uten fortsettelsestegn:
@@ -690,9 +698,24 @@ en ny vault betyr at hver verdi må kopieres — altså innom noens skjerm.
 az role assignment list --assignee-object-id $PRINCIPAL --all --query "[].{rolle:roleDefinitionName, scope:scope}" -o table
 ```
 
-Forventet er rollene `scripts/steg1-funcapp.ps1` tildeler. Tabellen under og
-lista i skriptet er to kilder til det samme, så `api/test/kokebok.test.js`
-leser begge og krever likt svar:
+Forventet er rollene `scripts/steg1-funcapp.ps1` tildeler — **og ingen
+andre.** Står det noe mer i lista, er det noe som er lagt til for hånd, og da
+skal det enten forklares eller fjernes. 21.10.2026 lå det igjen en `Reader`
+på ressursgruppa fra prøven i 3.3 steg 7; identiteten trenger den ikke, og en
+tildeling ingen har besluttet hører ikke i prod:
+
+```powershell
+$arg = @(
+    'role', 'assignment', 'delete',
+    '--assignee', $PRINCIPAL,
+    '--role', 'Reader',
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG"
+)
+az @arg
+```
+
+Tabellen under og lista i skriptet er to kilder til det samme, så
+`api/test/kokebok.test.js` leser begge og krever likt svar:
 
 <!-- roller-fra-steg1 -->
 
