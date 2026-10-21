@@ -121,6 +121,19 @@ function Kjør-Az {
     return $null
 }
 
+# Finnes ressursen? En prøve som IKKE kaster.
+#
+# Grunnen står i trinn 3: Azure svarer `AuthorizationFailed` både når du
+# mangler rettigheten OG når omfanget ikke finnes. «or the scope is invalid»
+# står i meldingen, men den drukner i resten, og feilsøkingen går mot
+# rettigheter som er helt i orden.
+function Finnes-Az {
+    param([string[]]$Argumenter)
+    if (-not $Kjor) { return $true }   # tørrkjøring påstår ingenting
+    & az @Argumenter 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
 if ($Trinn -in @('alt','funcapp')) {
 Write-Host "== 1. Lagringskonto til Function App-runtime ==" -ForegroundColor Green
 Kjør-Az @('storage','account','create','--name',$Lagring,'--resource-group',$Rg,
@@ -196,6 +209,34 @@ Kjør-Az @('functionapp','update','--name',$FuncApp,'--resource-group',$Rg,
 # ikke gir tilgang til en eneste tabellrad, og som i tillegg gir rett til å
 # liste kontonøklene — full datatilgang gjennom en sidedør, med den delte
 # nøkkelen hele øvelsen går ut på å fjerne.
+# Finnes de to ressursene rollene skal tildeles PÅ?
+#
+# Skriptet oppretter `$Lagring` (runtime-kontoen) i trinn 1, men ikke
+# `$DataLagring` og ikke vaulten — de kommer fra kapittel 2 og 3.1 i
+# kokeboka. Kjører du bare `-Trinn funcapp` i en ressursgruppe der de ikke
+# står, feiler rolletildelingen med `AuthorizationFailed` og en melding om
+# `roleAssignments/write`. Det ser ut som en manglende rettighet, og er det
+# ikke. Skjedde 21.10.2026 i prod-tenanten.
+$manglendeOmfang = @()
+if (-not (Finnes-Az @('storage','account','show','--name',$DataLagring,'--resource-group',$Rg))) {
+    $manglendeOmfang += "lagringskontoen «$DataLagring» (kapittel 2 i kokeboka)"
+}
+if (-not (Finnes-Az @('keyvault','show','--name',$KeyVault))) {
+    $manglendeOmfang += "Key Vault «$KeyVault» (kapittel 3.1)"
+}
+if ($manglendeOmfang.Count -gt 0) {
+    Write-Host ""
+    Write-Host "   Kan ikke tildele roller — omfanget finnes ikke:" -ForegroundColor Red
+    foreach ($m in $manglendeOmfang) { Write-Host "     - $m" -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "   Dette er IKKE en rettighetsfeil. Azure svarer" -ForegroundColor Yellow
+    Write-Host "   «AuthorizationFailed ... or the scope is invalid» i begge tilfeller," -ForegroundColor Yellow
+    Write-Host "   og den andre halvdelen er lett å lese forbi." -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "   Opprett dem først, og kjør dette trinnet om igjen." -ForegroundColor Yellow
+    throw "Omfanget for rolletildelingene finnes ikke"
+}
+
 foreach ($rolle in @('Storage Table Data Contributor','Storage Blob Data Contributor','Storage Blob Delegator')) {
     # --assignee-object-id, ikke --assignee: kortformen slår opp prinsipalen i
     # Graph først, og for managed identities feiler eller henger det oppslaget.
