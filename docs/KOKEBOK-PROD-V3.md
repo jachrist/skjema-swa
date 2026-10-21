@@ -838,10 +838,24 @@ minutter, og et token hentet før tildelingen ble gitt bærer ikke
 gruppemedlemskapene den hviler på. Er `Owner` gitt i dag, er dette ikke en
 formalitet:
 
+**I Cloud Shell: start sesjonen på nytt.** Det er den enkleste veien til et
+ferskt token — menyen øverst, «Restart». Ingen kommando, ingenting å angre på.
+
+Utenfor Cloud Shell:
+
 ```powershell
 az account clear
 az login --tenant <prod-tenant-id>
 ```
+
+> **`az account clear` rører ingenting i Azure.** Navnet høres verre ut enn
+> det er: den tømmer `az` sin LOKALE hurtigbuffer over kontoer og tokener på
+> maskinen du står på. Ingen ressurs, ingen rolletildeling og ingen kjørende
+> løsning berøres — og den eksisterende prod-løsningen i samme ressursgruppe
+> merker ingenting. Virkningen er at du må logge inn på nytt.
+>
+> `az logout` gjør det samme for den aktive kontoen alene. Ingen av dem
+> tilbakekaller tokener på Azure-siden; de fjerner bare den lokale kopien.
 
 Vent noen minutter før du prøver igjen. Det er den billigste av alle sjekkene,
 og den eneste som løser seg selv.
