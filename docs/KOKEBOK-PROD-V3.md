@@ -934,6 +934,33 @@ For `keyvault`-formen vises secret-navnet, som er pekeren inn i vaulten.
 Function App LØSER dem (målt 14.10.2026, 8d). SWA Managed Functions gjør det
 ikke, og det er derfor v2 har klartekst.
 
+### 4.0 Få kommandoene generert
+
+22 referanser skrevet for hånd er 22 sjanser til en skrivefeil som først viser
+seg når appen prøver å løse dem. Generer dem i stedet:
+
+```powershell
+node scripts/vis-appsettings.js prod --kommandoer --vault $KV
+```
+
+Den SETTER ingenting. Utskriften er PowerShell-blokker du leser og limer inn
+— én kommando per form, ikke én per setting, fordi hver
+`appsettings set` starter appen på nytt.
+
+Den dekker to av formene, og skillet er prinsipielt:
+
+| Form | Dekkes? | Hvorfor |
+|---|---|---|
+| `keyvault` | ja | Referansen er bygget av vaultnavn + secret-navn. Ingen hemmelighet involvert — referansen er en PEKER |
+| `value` | ja | Verdien står i `config/env.prod.json` og er ikke hemmelig |
+| `settes_direkte` | nei | Verdiene finnes ikke i repoet. Det er hele poenget med formen — de listes med merknaden sin i stedet |
+
+> **`SWA_URL` settes ikke automatisk**, selv om verdien står i inventaret.
+> Den er den EKSISTERENDE instansens adresse. Setter du opp en ny SWA, skal
+> den nyes vertsnavn inn — ellers peker lenker i e-poster og varsler til den
+> gamle, **uten at noe feiler**. Under parallellkjøring er begge i drift, så
+> det oppdages av en bruker som havner i feil versjon.
+
 ```powershell
 $VAULT = az keyvault show --name $KV --query properties.vaultUri -o tsv
 az functionapp config appsettings set --name $FA --resource-group $RG --settings "HASH_SALT=@Microsoft.KeyVault(SecretUri=$($VAULT)secrets/hash-salt/)" --output none

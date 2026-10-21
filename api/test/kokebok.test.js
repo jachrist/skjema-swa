@@ -606,5 +606,45 @@ const BASHISMER = [
         /tom utskrift[\s\S]{0,40}ferdig/.test(tekst), true);
 }
 
+// ---------- 15. kommandogeneratoren setter ingenting selv ----------
+//
+// 22 Key Vault-referanser skrevet for hånd er 22 sjanser til en skrivefeil
+// som først viser seg når appen prøver å løse dem. `--kommandoer` genererer
+// dem — men den SKRIVER dem ut, den kjører dem ikke. Et skript som endrer
+// prod uten at noen har lest kommandoen, er et annet slags verktøy.
+{
+    const kilde = fs.readFileSync(path.join(rot, 'scripts', 'vis-appsettings.js'), 'utf8');
+
+    sjekk('generatoren finnes', /function skrivKommandoer/.test(kilde), true);
+
+    // Den må ikke kjøre az. Hele kontrakten er at et menneske limer inn.
+    sjekk('den kjører ingenting selv',
+        /execSync|spawnSync|child_process/.test(kilde), false);
+
+    // Vaultnavnet er påkrevd. Uten det blir referansene ugyldige, og feilen
+    // viser seg først når appen prøver å løse dem.
+    sjekk('vaultnavnet er påkrevd',
+        /--kommandoer krever --vault/.test(kilde), true);
+
+    // --output none på de genererte kommandoene: uten den skriver az ut ALLE
+    // app settings, inkludert de hemmelige.
+    const genStart = kilde.indexOf('function skrivKommandoer');
+    const gen = kilde.slice(genStart, kilde.indexOf('\nif (require.main', genStart));
+    const settKall = [...gen.matchAll(/appsettings','set'[\s\S]{0,200}?az @arg/g)];
+    sjekk('det genereres set-kommandoer', settKall.length > 0, true);
+    sjekk('og alle har --output none',
+        settKall.filter(m => !/'--output','none'/.test(m[0])).length, 0);
+
+    // Instansspesifikke verdier skal IKKE settes automatisk.
+    sjekk('SWA_URL holdes utenfor', /INSTANSSPESIFIKKE[\s\S]{0,80}'SWA_URL'/.test(kilde), true);
+    sjekk('og kokeboka sier hvorfor',
+        /SWA_URL` settes ikke automatisk/.test(tekst), true);
+
+    // Og dokumentet må vise kallet, ellers finnes generatoren uten at noen
+    // vet om den.
+    sjekk('kokeboka viser kallet',
+        /vis-appsettings\.js prod --kommandoer --vault/.test(tekst), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

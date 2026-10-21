@@ -15,6 +15,19 @@
  *   node scripts/vis-appsettings.js prod
  *   node scripts/vis-appsettings.js dev --form keyvault
  *   node scripts/vis-appsettings.js prod --navn      (ett navn per linje)
+ *   node scripts/vis-appsettings.js prod --kommandoer --vault fhs-kv-01
+ *
+ * `--kommandoer` skriver ut PowerShell-blokkene som SETTER settingene, slik
+ * at 22 Key Vault-referanser ikke skrives for hånd. Den SETTER ingenting
+ * selv: utskriften leses, og limes inn av et menneske. Et skript som endrer
+ * prod uten at noen har lest kommandoen, er en annen slags verktøy.
+ *
+ * Den dekker to av formene, og det er ikke en begrensning men et skille:
+ *   keyvault  — referansen er bygget av vaultnavn + secret-navn. Ingen
+ *               hemmelighet er involvert; referansen er en PEKER.
+ *   value     — verdien står i config/env.<miljø>.json og er ikke hemmelig.
+ * `settes_direkte` kan den ikke dekke: de verdiene finnes ikke i repoet, og
+ * det er hele poenget med formen. De listes med merknaden sin i stedet.
  *
  * `--navn` skriver bare navnene på de settingene som MÅ ha en verdi, uten
  * overskrifter og forklaringer. Den finnes for å kunne svare på «er kapittel
@@ -116,16 +129,113 @@ function skrivNavn(miljo) {
     for (const n of navn) console.log(n);
 }
 
+/**
+ * Kommandoene som setter settingene, som PowerShell-argumentlister.
+ *
+ * Argumentliste og ikke én lang linje: det er formen kokeboka bruker, fordi
+ * et fortsettelsestegn er usynlig og et mellomrom etter det slår det av.
+ *
+ * ÉN kommando per form, ikke én per setting. `--settings` tar mange par, og
+ * hver `az functionapp config appsettings set` starter appen på nytt — 22
+ * kall er 22 omstarter og mange minutter.
+ */
+/**
+ * Verdier som står i inventaret, men som gjelder ÉN instans.
+ *
+ * `SWA_URL` i env.prod.json er v2 sin adresse. Settes den automatisk på en
+ * v3-app, peker lenkene i e-poster og varsler til v2 — og under
+ * parallellkjøring er begge i drift, så ingenting feiler. Det oppdages av en
+ * bruker som klikker seg til feil versjon.
+ *
+ * Lista er kort og navngitt med vilje: en heuristikk på «ser ut som en URL»
+ * ville tatt flyt-URLene også, og de er riktige som de står.
+ */
+const INSTANSSPESIFIKKE = new Set(['SWA_URL']);
+
+function skrivKommandoer(miljo, vault) {
+    const data = les(miljo);
+    const { grupper: g } = grupper(data);
+    const sitert = (s) => `'${String(s).replace(/'/g, "''")}'`;
+
+    console.log('# Les disse FØR du limer dem inn. Skriptet setter ingenting selv.');
+    console.log('# $FA og $RG må være satt (kapittel 1).');
+    console.log('');
+
+    const kvRader = g.keyvault.map(rad => {
+        const [navn, secret] = String(rad).split('  ←  ').map(s => s.trim());
+        return `    ${sitert(`${navn}=@Microsoft.KeyVault(SecretUri=https://${vault}.vault.azure.net/secrets/${secret}/)`)},`;
+    });
+    if (kvRader.length) {
+        console.log(`# ${kvRader.length} Key Vault-referanser. Uten versjon til slutt gir alltid nyeste.`);
+        console.log('$kv = @(');
+        console.log(kvRader.join('\n').replace(/,$/, ''));
+        console.log(')');
+        console.log("$arg = @('functionapp','config','appsettings','set','--name',$FA,'--resource-group',$RG,'--settings') + $kv + @('--output','none')");
+        console.log('az @arg');
+        console.log('');
+    }
+
+    const verdiRader = g.value
+        .filter(navn => !(data[navn] && data[navn].kun_dokumentasjon))
+        .filter(navn => !INSTANSSPESIFIKKE.has(navn))
+        .map(navn => `    ${sitert(`${navn}=${data[navn].value}`)},`);
+    if (verdiRader.length) {
+        console.log(`# ${verdiRader.length} faste verdier, ikke hemmelige.`);
+        console.log('$verdier = @(');
+        console.log(verdiRader.join('\n').replace(/,$/, ''));
+        console.log(')');
+        console.log("$arg = @('functionapp','config','appsettings','set','--name',$FA,'--resource-group',$RG,'--settings') + $verdier + @('--output','none')");
+        console.log('az @arg');
+        console.log('');
+    }
+
+    const direkte = g.settes_direkte.filter(navn => !(data[navn] && data[navn].kun_dokumentasjon));
+    if (direkte.length) {
+        console.log(`# ${direkte.length} MÅ SETTES FOR HÅND - verdiene finnes ikke i repoet:`);
+        for (const navn of direkte) {
+            const m = (data[navn] && data[navn].merknad) || '';
+            console.log(`#   ${navn}${m ? '  - ' + m : ''}`);
+        }
+        console.log('');
+    }
+
+    // Instansspesifikke verdier står i inventaret, men gjelder det MILJØET
+    // inventaret beskriver. De hører i håndlista, ikke i kommandoen.
+    const instans = g.value.filter(navn => INSTANSSPESIFIKKE.has(navn));
+    if (instans.length) {
+        console.log('# MÅ SETTES FOR HÅND, selv om verdien står i inventaret:');
+        for (const navn of instans) {
+            console.log(`#   ${navn}  - inventaret har ${data[navn].value}`);
+            console.log('#     Det er den EKSISTERENDE instansens adresse. Setter du opp en ny');
+            console.log('#     SWA, skal den nyes vertsnavn inn her - ellers peker lenker i');
+            console.log('#     e-poster og varsler til den gamle, uten at noe feiler.');
+        }
+        console.log('');
+    }
+    console.log('# Kontroller til slutt med --navn og Compare-Object, se kapittel 4.2.');
+}
+
 if (require.main === module) {
     const args = process.argv.slice(2);
     const miljo = args.find(a => !a.startsWith('--'));
     const formIdx = args.indexOf('--form');
     if (!miljo) {
-        console.log('Bruk: node scripts/vis-appsettings.js <miljø> [--form <form>] [--navn]');
+        console.log('Bruk: node scripts/vis-appsettings.js <miljø> [--form <form>] [--navn] [--kommandoer --vault <navn>]');
         process.exit(1);
     }
     try {
         if (args.includes('--navn')) { skrivNavn(miljo); }
+        else if (args.includes('--kommandoer')) {
+            const vaultIdx = args.indexOf('--vault');
+            const vault = vaultIdx >= 0 ? args[vaultIdx + 1] : null;
+            // Uten vaultnavn blir referansene ugyldige, og feilen viser seg
+            // først når appen prøver å løse dem. Krev den.
+            if (!vault) {
+                console.log('--kommandoer krever --vault <navn>, f.eks. --vault fhs-kv-01');
+                process.exit(1);
+            }
+            skrivKommandoer(miljo, vault);
+        }
         else skriv(miljo, formIdx >= 0 ? args[formIdx + 1] : null);
     } catch (e) {
         console.log(`FEIL: ${e.message}`);
