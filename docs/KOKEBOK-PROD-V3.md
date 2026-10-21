@@ -176,7 +176,7 @@ ressursgruppa gir deg ingenting i katalogen, og en Global Administrator har
 ikke automatisk tilgang til en eneste ressurs. Det er her et arbeidsmøte
 stopper: alt i Azure går, og så står man fast på én app-registrering.
 
-**A. Azure RBAC inne i `rg-skjema-3-prod` — dette gjør du selv**
+**A. Azure RBAC inne i ressursgruppa (`fhs-prod-rg-01`) — dette gjør du selv**
 
 | Trinn | Operasjon | Minsterolle |
 |---|---|---|
@@ -524,7 +524,7 @@ Samme konvensjon som dev, med `dev` → `prod`.
 
 | Rolle | dev | **prod v3** |
 |---|---|---|
-| Ressursgruppe | `rg-skjema-3-dev` | `rg-skjema-3-prod` |
+| Ressursgruppe | `rg-skjema-3-dev` | **`fhs-prod-rg-01`** — den eksisterende gjenbrukes, se 0.3 |
 | Function App (API) | `fa-skjema-3-dev` | `fa-skjema-3-prod` |
 | Managed identity | `mi-skjema-3-dev` | `mi-skjema-3-prod` |
 | Datalagring (blank!) | `stskjema3dev` | `stskjema3prod` |
@@ -541,8 +541,12 @@ Lagringskontonavn tåler ikke bindestrek, derfor `stskjema3prod`.
 
 Kjør denne blokka først. Alt under bruker variablene:
 
+Ressursgruppa er den v2 alt kjører i. Det er en beslutning, ikke en
+forenkling: `az group create` krever Contributor på abonnementet, og 0.3 sier
+hva man må passe på når to versjoner deler gruppe.
+
 ```powershell
-$RG   = 'rg-skjema-3-prod'
+$RG   = 'fhs-prod-rg-01'
 $STED = 'norwayeast'
 $FA   = 'fa-skjema-3-prod'
 $MI   = 'mi-skjema-3-prod'
@@ -621,7 +625,7 @@ kjøringen er samme linje pluss ett ord:
 
 ```powershell
 $p = @{
-    Rg          = 'rg-skjema-3-prod'
+    Rg          = 'fhs-prod-rg-01'
     FuncApp     = 'fa-skjema-3-prod'
     Lagring     = 'stskjema3prodrt'
     DataLagring = 'stskjema3prod'
