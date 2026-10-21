@@ -132,10 +132,20 @@ const BASHISMER = [
     sjekk('hver appsettings set har --output none', utenStille, []);
 
     // Og kontroll-lesningen skal ikke hente ut verdier.
-    const leser = alle.flatMap(b => b.linjer).filter(l => /appsettings\s+list/.test(l.tekst));
-    sjekk('appsettings list leses i dokumentet', leser.length > 0, true);
+    //
+    // Regelen gjelder BLOKKA, ikke linja. Dokumentets egen konvensjon er
+    // argumentlister over flere linjer — «'appsettings', 'list',» og
+    // «'--query', '[].name',» står da på hver sin linje, og en linjevis
+    // regel ville forbudt nettopp den formen dokumentet anbefaler. Den
+    // feilet 21.10.2026, da 4.2 ble skrevet om til en argumentliste.
+    const lesBlokker = alle.filter(b => {
+        const samlet = b.linjer.map(l => l.tekst).join('\n');
+        return /appsettings['",\s]+list/.test(samlet);
+    });
+    sjekk('appsettings list leses i dokumentet', lesBlokker.length > 0, true);
     sjekk('og bare navnene hentes ut',
-        leser.filter(l => !/\[\]\.name/.test(l.tekst)).map(l => l.nr), []);
+        lesBlokker.filter(b => !/\[\]\.name/.test(b.linjer.map(l => l.tekst).join('\n')))
+            .map(b => b.fra), []);
 }
 
 // ---------- 5. alt dokumentet peker på, finnes ----------
@@ -568,6 +578,32 @@ const BASHISMER = [
         /role assignment list --assignee \$Identitet/.test(skript), false);
     sjekk('og meldingen forklarer forskjellen',
         /PRINSIPAL-ID[\s\S]{0,200}Cannot find user or service principal/.test(skript), true);
+}
+
+// ---------- 14. kapittel 4 har et ferdig-kriterium ----------
+//
+// «Kommandoene over er eksempler på formen, ikke lista» — inventaret er
+// fasiten, og prod har 32 settings som må ha en verdi. Men 4.2 sa bare
+// «kontroller uten å lekke», og da er det ingen måte å vite at man er
+// ferdig. 21.10.2026 var spørsmålet «er det ikke flere kommandoer igjen i
+// kapittel 4?», og svaret var nei — det var 30 igjen.
+{
+    const { MA_SETTES } = require('../../scripts/vis-appsettings.js');
+    sjekk('skriptet vet hva som må settes', MA_SETTES.length, 3);
+    sjekk('og det er formene som trenger en verdi', MA_SETTES.sort(),
+        ['keyvault', 'settes_direkte', 'value']);
+
+    sjekk('kokeboka bruker --navn til sammenligningen',
+        /vis-appsettings\.js prod --navn/.test(tekst), true);
+    sjekk('og sammenligner mot det som står på verten',
+        /Compare-Object/.test(tekst), true);
+
+    // Tabellen som forklarer utfallet. Uten den er `<=` og `=>` to tegn de
+    // fleste må slå opp, midt i et oppsett.
+    sjekk('utfallet av Compare-Object er forklart',
+        /`<=`[\s\S]{0,200}`=>`/.test(tekst), true);
+    sjekk('og en tom utskrift betyr ferdig',
+        /tom utskrift[\s\S]{0,40}ferdig/.test(tekst), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

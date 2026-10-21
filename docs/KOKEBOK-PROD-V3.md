@@ -964,13 +964,42 @@ v2, og en verdi den verten ikke godtar tar ned appen der.
 az functionapp config appsettings set --name $FA --resource-group $RG --settings AzureFunctionsJobHost__functionTimeout=00:10:00 --output none
 ```
 
-### 4.2 Kontroller uten å lekke
+### 4.2 Ferdig med kapittel 4 — og kontroll uten å lekke
+
+**Kommandoene over er eksempler på FORMEN, ikke lista.** Prod har 32 settings
+som må ha en verdi, og de står i inventaret — ikke her. Kapittelet er ferdig
+når hver av dem står på Function App-en, og det er en sammenligning, ikke en
+magefølelse:
 
 ```powershell
-az functionapp config appsettings list --name $FA --resource-group $RG --query "[].name" -o tsv | Sort-Object
+node scripts/vis-appsettings.js prod --navn | Set-Content krav.txt
+$arg = @(
+    'functionapp', 'config', 'appsettings', 'list',
+    '--name', $FA, '--resource-group', $RG,
+    '--query', '[].name', '-o', 'tsv'
+)
+az @arg | Set-Content satt.txt
+Compare-Object (Get-Content krav.txt | Sort-Object) (Get-Content satt.txt | Sort-Object)
 ```
 
-Navnene er greie. Den fulle lista med verdier hører ikke hjemme i en terminal.
+| I `Compare-Object` | Betyr |
+|---|---|
+| `<=` | står i inventaret, mangler på verten — ikke ferdig |
+| `=>` | står på verten, ikke i inventaret — enten en levning, eller inventaret er utdatert. Begge skal forklares |
+| tom utskrift | ferdig |
+
+`--navn` lister bare det som MÅ ha en verdi: `keyvault`, `value` og
+`settes_direkte`. `valgfri` og `kun_dokumentasjon` er ute — den første har en
+standard i koden, den andre settes av plattformen. `AAD_CLIENT_ID` er også
+ute, fordi den hører på SWA-ressursen (4.3); en liste med én kjent falsk
+positiv er en liste folk slutter å lese.
+
+> Dette krever repoet og `node`. Har du en efemer Cloud Shell, må `scripts/`
+> og `config/` være på plass — klon, eller last opp de to filene.
+
+Navnene er greie å se. Den fulle lista med VERDIER hører ikke hjemme i en
+terminal — derfor `--query "[].name"`, og derfor `--output none` når du
+setter.
 
 ### 4.3 Hvilken vert får hva
 

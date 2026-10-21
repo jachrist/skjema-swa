@@ -14,6 +14,20 @@
  * Bruk:
  *   node scripts/vis-appsettings.js prod
  *   node scripts/vis-appsettings.js dev --form keyvault
+ *   node scripts/vis-appsettings.js prod --navn      (ett navn per linje)
+ *
+ * `--navn` skriver bare navnene på de settingene som MÅ ha en verdi, uten
+ * overskrifter og forklaringer. Den finnes for å kunne svare på «er kapittel
+ * 4 ferdig?» — sammenlign med navnene som faktisk står på verten:
+ *
+ *   node scripts/vis-appsettings.js prod --navn | Set-Content krav.txt
+ *   az functionapp config appsettings list --name $FA --resource-group $RG `
+ *       --query "[].name" -o tsv | Set-Content satt.txt
+ *   Compare-Object (Get-Content krav.txt) (Get-Content satt.txt)
+ *
+ * `valgfri` og `kun_dokumentasjon` er UTE av lista: den første har en
+ * standard i koden, den andre settes av plattformen. Tar man dem med, ser et
+ * ferdig miljø ut som om 18 settings mangler.
  */
 const fs = require('fs');
 const path = require('path');
@@ -83,20 +97,40 @@ function skriv(miljo, bareForm = null) {
     console.log('Key Vault; ikke-hemmelige står i config/env.' + miljo + '.json.');
 }
 
+/** Navnene som MÅ ha en verdi, ett per linje. Se `--navn` i toppkommentaren. */
+const MA_SETTES = ['keyvault', 'value', 'settes_direkte'];
+
+function skrivNavn(miljo) {
+    const data = les(miljo);
+    const { grupper: g } = grupper(data);
+    const navn = MA_SETTES.flatMap(f => (g[f] || []))
+        // keyvault-raden er «NAVN  ←  secret-navn»; her vil vi bare navnet.
+        .map(rad => String(rad).split('  ←  ')[0].trim())
+        // En oppføring som OGSÅ er `kun_dokumentasjon`, leses ikke av API-et.
+        // `AAD_CLIENT_ID` i prod er den ene: den hører på SWA-ressursen, der
+        // auth-blokka leser den (4.3). Tas den med, melder sammenligningen
+        // den som manglende på Function App-en hver gang — og en liste med
+        // én kjent falsk positiv er en liste folk slutter å lese.
+        .filter(n => !(data[n] && data[n].kun_dokumentasjon))
+        .sort();
+    for (const n of navn) console.log(n);
+}
+
 if (require.main === module) {
     const args = process.argv.slice(2);
     const miljo = args.find(a => !a.startsWith('--'));
     const formIdx = args.indexOf('--form');
     if (!miljo) {
-        console.log('Bruk: node scripts/vis-appsettings.js <miljø> [--form <form>]');
+        console.log('Bruk: node scripts/vis-appsettings.js <miljø> [--form <form>] [--navn]');
         process.exit(1);
     }
     try {
-        skriv(miljo, formIdx >= 0 ? args[formIdx + 1] : null);
+        if (args.includes('--navn')) { skrivNavn(miljo); }
+        else skriv(miljo, formIdx >= 0 ? args[formIdx + 1] : null);
     } catch (e) {
         console.log(`FEIL: ${e.message}`);
         process.exit(1);
     }
 }
 
-module.exports = { FORMER, formenTil, grupper };
+module.exports = { FORMER, formenTil, grupper, MA_SETTES };
