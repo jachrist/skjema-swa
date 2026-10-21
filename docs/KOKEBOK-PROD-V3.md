@@ -1034,9 +1034,16 @@ Remove-Variable token
 ### 5.2 Deploy frontend
 
 Frontend-workflowene tar navnet på token-hemmeligheten som et valg, nettopp
-fordi en tenant kan ha mer enn én SWA. Kjør **Deploy frontend til dev-SWA**
-(dev-tenanten) eller prod-workflowen, og oppgi hemmeligheten du nettopp satte
-i 5.1 under `swa_token_secret`.
+fordi en tenant kan ha mer enn én SWA. Kjør **«Deploy frontend til dev-SWA»**
+(dev-tenanten) eller **«Deploy prod»** (prod-tenanten, bekreft med
+`DEPLOY-PROD`), og oppgi hemmeligheten du satte i 5.1 under
+`swa_token_secret`.
+
+> **Ikke bytt verdien på en hemmelighet som alt er i bruk.** `AZURE_STATIC_WEB_APPS_API_TOKEN_PROD`
+> peker på v2 sin SWA. Skriver du v3-tokenet dit, går neste ordinære
+> prod-deploy til v3 — altså til et miljø ingen brukere skal se ennå, mens v2
+> står uendret og ser ut som om deployen ikke virket. Egen hemmelighet, og
+> `swa_token_secret` på kjøringen.
 
 Finnes ikke hemmeligheten, stopper jobben med
 «Hemmeligheten «…» finnes ikke, eller er tom» — ikke med SWA-actionens

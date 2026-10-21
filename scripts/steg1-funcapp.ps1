@@ -309,9 +309,19 @@ Write-Host @"
      1. Hent deploy-tokenet:
           az staticwebapp secrets list --name $Swa --resource-group $Rg --query "properties.apiKey" -o tsv
 
-     2. Legg det i GitHub-secreten SWA_PROEVE_TOKEN.
+     2. Legg det i en GitHub-hemmelighet. Velg et navn som sier hvilken SWA
+        det gjelder, f.eks. AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3.
+        IKKE bytt verdien på en hemmelighet som alt er i bruk - da går neste
+        deploy av det andre miljøet til denne SWA-en.
 
-     3. Kjør arbeidsflyten «Deploy innhold til prøve-SWA (steg 1)».
+     3. Kjør frontend-arbeidsflyten og oppgi hemmeligheten under
+        «swa_token_secret»:
+          dev-tenanten:  «Deploy frontend til dev-SWA»
+          prod-tenanten: «Deploy prod»  (bekreft med DEPLOY-PROD)
+
+        Arbeidsflyten «Deploy innhold til prøve-SWA (steg 1)» sto her til
+        21.10.2026. Den fulgte steg 1-forsøket og ble revet med det, mens
+        henvisningen ble stående.
 
      4. BEKREFT at rota viser «Prøve-SWA», ikke Azure sin standardside:
           az staticwebapp environment list --name $Swa --resource-group $Rg --query "[].{Navn:name,Status:status}" -o table

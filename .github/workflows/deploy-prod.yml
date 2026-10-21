@@ -6,6 +6,8 @@ name: Deploy prod
 # Forutsetning:
 #   1. Prod-tenant SWA er opprettet med env-vars satt i Configuration
 #   2. AZURE_STATIC_WEB_APPS_API_TOKEN_PROD er lagt til som repo secret
+#      (eller en annen hemmelighet, oppgitt med «swa_token_secret» — se v3 i
+#      docs/KOKEBOK-PROD-V3.md 5.1)
 #   3. config/env.prod.json er fylt ut med prod-verdier
 #
 # Trigges fra Actions-fanen i GitHub: velg denne workflowen → Run workflow.
@@ -51,6 +53,22 @@ on:
         description: "Valgfritt: navn på preview-miljø, f.eks. 'test'. Tomt = produksjon."
         required: false
         type: string
+      # Hvilken SWA-ressurs?
+      #
+      # Prod v3 er en NY SWA ved siden av v2, med sin egen deployment token
+      # (kapittel 5.1 i KOKEBOK-PROD-V3.md legger den i
+      # AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3). Uten dette valget fins det
+      # bare to veier: deploye v3 med v2 sitt token — altså til v2 — eller
+      # bytte verdien på den faste hemmeligheten, og da går neste v2-deploy
+      # til v3. Begge rammer PRODUKSJON.
+      #
+      # Navnet på hemmeligheten, ikke verdien. Standarden er den som har vært
+      # brukt hele tiden, så en kjøring uten valg treffer v2 som før.
+      swa_token_secret:
+        description: 'Navnet på hemmeligheten med deployment token'
+        required: false
+        default: 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD'
+        type: string
 
 jobs:
   valider:
@@ -77,7 +95,22 @@ jobs:
     runs-on: ubuntu-latest
     name: Build and Deploy to Prod
     environment: prod
+    env:
+      # Slås opp dynamisk, samme mønster som matrisen i backup.yml.
+      SWA_TOKEN: ${{ secrets[inputs.swa_token_secret || 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD'] }}
     steps:
+      # Et navn som ikke finnes blir en TOM streng, ikke en feil. SWA-actionen
+      # svarer da «deployment token is invalid», som ser ut som en utløpt
+      # token og sender feilsøkingen mot portalen. I prod er det en dyr
+      # omvei.
+      - name: Sjekk at tokenet finnes
+        run: |
+          if [ -z "$SWA_TOKEN" ]; then
+            echo "::error::Hemmeligheten «${{ inputs.swa_token_secret }}» finnes ikke, eller er tom."
+            echo "Legg den inn under Settings → Secrets → Actions (repo eller miljøet «prod»)."
+            exit 1
+          fi
+          echo "### SWA-token fra hemmeligheten \`${{ inputs.swa_token_secret }}\`" >> $GITHUB_STEP_SUMMARY
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -111,7 +144,7 @@ jobs:
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: "./frontend"
