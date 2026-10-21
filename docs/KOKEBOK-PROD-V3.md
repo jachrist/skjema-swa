@@ -706,7 +706,16 @@ az storage account show --name $DATA --resource-group $RG --query name -o tsv
 az keyvault show --name $KV --query name -o tsv
 ```
 
-**2. Hvilke roller har du EGENTLIG, og på hvilket nivå?**
+**2. Er det DEG feilen handler om?** Meldingen oppgir `object id` på klienten.
+Sammenlign den med din egen — to kontoer i samme tenant, eller en
+tjenestehovedobjekt-innlogging som ligger igjen i Cloud Shell, gir en
+«rettighetsfeil» på en identitet du ikke tenkte på.
+
+```powershell
+az ad signed-in-user show --query "{navn:userPrincipalName, objectId:id}" -o table
+```
+
+**3. Hvilke roller har du EGENTLIG, og på hvilket nivå?**
 
 ```powershell
 $meg = az ad signed-in-user show --query id -o tsv
@@ -725,7 +734,39 @@ az @arg
 `Contributor` gjør det IKKE. Den gir rett til å lage og endre ressurser, men
 ikke til å tildele roller, og forskjellen vises først her.
 
-**3. Er `Owner` aktivert, eller bare tilgjengelig?** Er rollen styrt av PIM, må
+Står rollen i lista, er den en FAST tildeling. Står den ikke der selv om
+portalen sier du er Owner, er den PIM-styrt — se 5.
+
+**4. Har `Owner`-tildelingen din en BETINGELSE?** Dette er det som ser mest ut
+som en selvmotsigelse, og det er helt lovlig: en `Owner`- eller
+`User Access Administrator`-tildeling kan bære en betingelse som begrenser
+HVILKE roller innehaveren får tildele, og til hvilke prinsipaltyper. Da er du
+Owner, omfanget finnes, og `roleAssignments/write` avvises likevel — med samme
+`AuthorizationFailed`.
+
+Sentral IT bruker dette for å delegere eierskap uten å gi bort retten til å
+dele ut dataplanroller. Og det er nettopp dataplanroller trinn 3 tildeler.
+
+```powershell
+$meg = az ad signed-in-user show --query id -o tsv
+$arg = @(
+    'role', 'assignment', 'list',
+    '--assignee', $meg,
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG",
+    '--include-inherited',
+    '--query', '[].{rolle:roleDefinitionName, betingelse:condition, versjon:conditionVersion}',
+    '-o', 'json'
+)
+az @arg
+```
+
+Er `betingelse` noe annet enn `null`, er svaret funnet. Les uttrykket: det
+navngir rolle-ID-ene du har lov til å tildele. Mangler
+`Storage Table Data Contributor`, `Storage Blob Data Contributor`,
+`Storage Blob Delegator` eller `Key Vault Secrets User` blant dem, er dette
+en bestilling — 0.1 sier til hvem, og de fire rollene står i 3.2.
+
+**5. Er `Owner` aktivert, eller bare tilgjengelig?** Er rollen styrt av PIM, må
 den aktiveres — og tokenet ditt må fornyes etterpå. Det er nettopp det
 «If access was recently granted, please refresh your credentials» viser til:
 
@@ -734,9 +775,14 @@ az account clear
 az login --tenant <prod-tenant-id>
 ```
 
-**4. Finnes en deny assignment?** De overstyrer `Owner`, og settes av Azure
-Blueprints eller en managed application. Står du i lista i steg 2 med `Owner`
-og omfanget finnes, er dette det som er igjen:
+**6. Finnes en deny assignment?** De overstyrer `Owner`, og settes av Azure
+Blueprints eller en managed application. Står du i lista med `Owner` uten
+betingelse, og omfanget finnes, er dette det som er igjen.
+
+**Spør på BEGGE nivåene.** En deny assignment satt på abonnementet eller en
+administrasjonsgruppe gjelder nedover, og et oppslag på ressursgruppa alene
+viser den ikke nødvendigvis. Et tomt svar på ressursgruppenivå er derfor ikke
+et svar — 21.10.2026 ble det lest som ett.
 
 ```powershell
 $url = "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Authorization/denyAssignments?api-version=2022-04-01"
@@ -748,8 +794,71 @@ $arg = @(
 az @arg
 ```
 
+Bytt `/resourceGroups/$RG` ut med bare `/subscriptions/$SUB` i URL-en og kjør
+den om igjen.
+
 Finner du en, er den ikke din å fjerne — da er dette en bestilling, og 0.1
 sier til hvem.
+
+**7. Er det rettigheten eller omfanget?** Når alt over er rent, skiller denne
+prøven de to siste verdenene fra hverandre. `Reader` er harmløs og tildeles på
+RESSURSGRUPPA, der `Owner` er direkte tildelt — ikke arvet:
+
+```powershell
+$arg = @(
+    'role', 'assignment', 'create',
+    '--assignee-object-id', $PRINCIPAL,
+    '--assignee-principal-type', 'ServicePrincipal',
+    '--role', 'Reader',
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG"
+)
+az @arg
+```
+
+| Utfall | Hva det betyr |
+|---|---|
+| Feiler også | Du får ikke tildele roller i det hele tatt. Ingenting av det kokeboka ber om i trinn 3 vil gå, og det er en bestilling |
+| Går igjennom | Rettigheten finnes. Da er det noe ved det smalere omfanget, eller ved de fire rollene — se 4 og 6 igjen, og prøv på nytt etter en ny innlogging |
+
+**Rydd opp etterpå**, uansett utfall — en `Reader`-tildeling som blir
+stående, er en tildeling ingen har besluttet:
+
+```powershell
+$arg = @(
+    'role', 'assignment', 'delete',
+    '--assignee', $PRINCIPAL,
+    '--role', 'Reader',
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG"
+)
+az @arg
+```
+
+**8. Og det meldingen selv foreslår.** ARM mellomlagrer rolletildelinger i noen
+minutter, og et token hentet før tildelingen ble gitt bærer ikke
+gruppemedlemskapene den hviler på. Er `Owner` gitt i dag, er dette ikke en
+formalitet:
+
+**I Cloud Shell: start sesjonen på nytt.** Det er den enkleste veien til et
+ferskt token — menyen øverst, «Restart». Ingen kommando, ingenting å angre på.
+
+Utenfor Cloud Shell:
+
+```powershell
+az account clear
+az login --tenant <prod-tenant-id>
+```
+
+> **`az account clear` rører ingenting i Azure.** Navnet høres verre ut enn
+> det er: den tømmer `az` sin LOKALE hurtigbuffer over kontoer og tokener på
+> maskinen du står på. Ingen ressurs, ingen rolletildeling og ingen kjørende
+> løsning berøres — og den eksisterende prod-løsningen i samme ressursgruppe
+> merker ingenting. Virkningen er at du må logge inn på nytt.
+>
+> `az logout` gjør det samme for den aktive kontoen alene. Ingen av dem
+> tilbakekaller tokener på Azure-siden; de fjerner bare den lokale kopien.
+
+Vent noen minutter før du prøver igjen. Det er den billigste av alle sjekkene,
+og den eneste som løser seg selv.
 
 ---
 
