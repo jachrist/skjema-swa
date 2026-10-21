@@ -706,7 +706,16 @@ az storage account show --name $DATA --resource-group $RG --query name -o tsv
 az keyvault show --name $KV --query name -o tsv
 ```
 
-**2. Hvilke roller har du EGENTLIG, og på hvilket nivå?**
+**2. Er det DEG feilen handler om?** Meldingen oppgir `object id` på klienten.
+Sammenlign den med din egen — to kontoer i samme tenant, eller en
+tjenestehovedobjekt-innlogging som ligger igjen i Cloud Shell, gir en
+«rettighetsfeil» på en identitet du ikke tenkte på.
+
+```powershell
+az ad signed-in-user show --query "{navn:userPrincipalName, objectId:id}" -o table
+```
+
+**3. Hvilke roller har du EGENTLIG, og på hvilket nivå?**
 
 ```powershell
 $meg = az ad signed-in-user show --query id -o tsv
@@ -725,7 +734,39 @@ az @arg
 `Contributor` gjør det IKKE. Den gir rett til å lage og endre ressurser, men
 ikke til å tildele roller, og forskjellen vises først her.
 
-**3. Er `Owner` aktivert, eller bare tilgjengelig?** Er rollen styrt av PIM, må
+Står rollen i lista, er den en FAST tildeling. Står den ikke der selv om
+portalen sier du er Owner, er den PIM-styrt — se 5.
+
+**4. Har `Owner`-tildelingen din en BETINGELSE?** Dette er det som ser mest ut
+som en selvmotsigelse, og det er helt lovlig: en `Owner`- eller
+`User Access Administrator`-tildeling kan bære en betingelse som begrenser
+HVILKE roller innehaveren får tildele, og til hvilke prinsipaltyper. Da er du
+Owner, omfanget finnes, og `roleAssignments/write` avvises likevel — med samme
+`AuthorizationFailed`.
+
+Sentral IT bruker dette for å delegere eierskap uten å gi bort retten til å
+dele ut dataplanroller. Og det er nettopp dataplanroller trinn 3 tildeler.
+
+```powershell
+$meg = az ad signed-in-user show --query id -o tsv
+$arg = @(
+    'role', 'assignment', 'list',
+    '--assignee', $meg,
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG",
+    '--include-inherited',
+    '--query', '[].{rolle:roleDefinitionName, betingelse:condition, versjon:conditionVersion}',
+    '-o', 'json'
+)
+az @arg
+```
+
+Er `betingelse` noe annet enn `null`, er svaret funnet. Les uttrykket: det
+navngir rolle-ID-ene du har lov til å tildele. Mangler
+`Storage Table Data Contributor`, `Storage Blob Data Contributor`,
+`Storage Blob Delegator` eller `Key Vault Secrets User` blant dem, er dette
+en bestilling — 0.1 sier til hvem, og de fire rollene står i 3.2.
+
+**5. Er `Owner` aktivert, eller bare tilgjengelig?** Er rollen styrt av PIM, må
 den aktiveres — og tokenet ditt må fornyes etterpå. Det er nettopp det
 «If access was recently granted, please refresh your credentials» viser til:
 
@@ -734,9 +775,9 @@ az account clear
 az login --tenant <prod-tenant-id>
 ```
 
-**4. Finnes en deny assignment?** De overstyrer `Owner`, og settes av Azure
-Blueprints eller en managed application. Står du i lista i steg 2 med `Owner`
-og omfanget finnes, er dette det som er igjen:
+**6. Finnes en deny assignment?** De overstyrer `Owner`, og settes av Azure
+Blueprints eller en managed application. Står du i lista med `Owner` uten
+betingelse, og omfanget finnes, er dette det som er igjen:
 
 ```powershell
 $url = "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Authorization/denyAssignments?api-version=2022-04-01"
