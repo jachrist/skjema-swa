@@ -556,6 +556,18 @@ const BASHISMER = [
     // et uferdig oppsett ut som en feil.
     sjekk('og sier at 404 før deploy er forventet',
         /404[\s\S]{0,120}forventet/.test(skript), true);
+
+    // `--assignee` vil ha en PRINSIPAL-ID. Gir man navnet på identiteten,
+    // svarer az «Cannot find user or service principal in graph database» —
+    // som ser ut som at identiteten mangler, rett etter at skriptet har
+    // opprettet den. Jeg skrev nettopp den feilen inn i sluttmeldingen
+    // 21.10.2026, og den ble truffet med én gang.
+    sjekk('kontrollkommandoen bruker prinsipal-ID-en',
+        /role assignment list --assignee \$principal/.test(skript), true);
+    sjekk('og ikke navnet på identiteten',
+        /role assignment list --assignee \$Identitet/.test(skript), false);
+    sjekk('og meldingen forklarer forskjellen',
+        /PRINSIPAL-ID[\s\S]{0,200}Cannot find user or service principal/.test(skript), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

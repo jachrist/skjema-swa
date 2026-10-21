@@ -381,8 +381,13 @@ Write-Host @"
    ennå: API-et er ikke deployet, så Function App-en har ingen funksjoner å
    svare med, og /api/ping gir 404. Det er forventet og ikke en feil.
 
-   Kontroller det som ER gjort - rollene, med kapittel 3.2 i kokeboka:
-     az role assignment list --assignee $Identitet --all -o table
+   Kontroller det som ER gjort - rollene, med kapittel 3.2 i kokeboka.
+   MERK at --assignee vil ha en PRINSIPAL-ID, ikke navnet paa identiteten.
+   Gir du navnet, svarer az «Cannot find user or service principal in graph
+   database» - som ser ut som at identiteten mangler, og den star rett over.
+   Id-en hentes i samme linje:
+
+     az role assignment list --assignee $principal --all -o table
 
    Deretter kapittel 4 (app settings) og 5 (SWA og innhold). Prøven mot
    /api/ping hører til ETTER lenkingen i trinn 'lenk'.
