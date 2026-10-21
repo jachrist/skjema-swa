@@ -139,9 +139,21 @@ repoet i Cloud Shell, eller laste opp den enkelte fila med
 opplastingsknappen. `Microsoft.Graph`- og `Az.KeyVault`-modulene skriptene
 trenger, er forhåndsinstallert der.
 
-> **Én felle som gjelder hele kokeboka:** `$HOME` i Cloud Shell ligger i en
-> Azure Files-andel som overlever økta. Private nøkler og sertifikater hører
-> derfor i `/tmp`, ikke i hjemmemappa. Se 0.4.
+> **To ulike Cloud Shell, og du må vite hvilken du har.** Er en lagringskonto
+> montert, ligger `$HOME` i en Azure Files-andel og overlever økta — da hører
+> private nøkler i `/tmp`, ikke i hjemmemappa (se 0.4). Kjører sesjonen
+> **efemert** (uten lagringskonto), slettes `$HOME` ved omstart, og da
+> forsvinner klonen og alt du har endret lokalt med den. Målt 21.10.2026:
+> hjemmemappa var tom etter en omstart, og en lokalt rettet kopi av skriptet
+> var borte.
+>
+> ```powershell
+> if (Test-Path ~/clouddrive) { "montert - `$HOME` overlever" } else { "efemer - `$HOME` slettes" }
+> ```
+>
+> Regelen for private nøkler er den samme uansett: bruk `/tmp`. Men er
+> sesjonen efemer, må alt du vil beholde pushes eller lastes ned FØR du
+> lukker vinduet.
 
 **2. Be systemansvarlig installere `az` med MSI-en.** Det er den sanksjonerte
 veien til `az` lokalt: Microsofts signerte MSI legger seg i `Program Files`,
