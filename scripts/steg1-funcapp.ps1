@@ -149,6 +149,32 @@ function Finnes-Az {
     return ($LASTEXITCODE -eq 0)
 }
 
+# Finnes ressursgruppa i det hele tatt?
+#
+# Dette er den aller første sjekken, fordi en feil her forkler seg som noe
+# annet i HVERT ETTERFØLGENDE steg: Azure svarer `AuthorizationFailed` på en
+# ressursgruppe som ikke finnes, med «or the scope is invalid» til slutt. Du
+# kan være Owner på gruppa du TROR du jobber i, og få en rettighetsfeil på en
+# gruppe som aldri ble opprettet.
+#
+# Skjedde 21.10.2026: `$p` bar `rg-skjema-3-prod` fra kokebokas gamle
+# navnetabell, mens beslutningen var å gjenbruke `fhs-prod-rg-01`. Lagrings-
+# kontoen fins — navnet er globalt unikt — så `az` meldte «will continue to
+# update the existing account» og feilet deretter på en gruppe som ikke er der.
+# En halvtime gikk til rolletildelinger som var helt i orden.
+$rgFinnes = (& az group exists --name $Rg) -eq 'true'
+if (-not $rgFinnes) {
+    Write-Host ""
+    Write-Host "   Ressursgruppa «$Rg» finnes ikke i dette abonnementet." -ForegroundColor Red
+    Write-Host "   $(& az account show --query '{abonnement:name, id:id}' -o tsv)" -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "   Alt under ville feilet med «AuthorizationFailed ... or the" -ForegroundColor Yellow
+    Write-Host "   scope is invalid» — som ser ut som en manglende rettighet." -ForegroundColor Yellow
+    Write-Host "   Sjekk -Rg, og at du står i riktig abonnement." -ForegroundColor Yellow
+    if ($Kjor) { throw "Ressursgruppa $Rg finnes ikke" }
+    Write-Host "   (tørrkjøring fortsetter, men tallene under betyr ingenting)" -ForegroundColor DarkGray
+}
+
 if ($Trinn -in @('alt','funcapp')) {
 Write-Host "== 1. Lagringskonto til Function App-runtime ==" -ForegroundColor Green
 Kjør-Az @('storage','account','create','--name',$Lagring,'--resource-group',$Rg,
