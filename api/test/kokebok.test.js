@@ -492,5 +492,40 @@ const BASHISMER = [
         /\$Argumenter -join ' '/.test(kjor), false);
 }
 
+// ---------- 12. ressursgruppa sjekkes FØRST ----------
+//
+// Azure svarer `AuthorizationFailed` på en ressursgruppe som ikke finnes, med
+// «or the scope is invalid» til slutt. Du kan være Owner på gruppa du TROR du
+// jobber i, og få en rettighetsfeil på en gruppe som aldri ble opprettet.
+//
+// 21.10.2026 bar `$p` navnet fra kokebokas gamle navnetabell
+// (`rg-skjema-3-prod`) mens beslutningen var å gjenbruke `fhs-prod-rg-01`.
+// Lagringskontonavn er globalt unike, så `az` meldte «will continue to update
+// the existing account» og feilet deretter på gruppa. En halvtime gikk til
+// rolletildelinger som var helt i orden.
+{
+    const skript = fs.readFileSync(path.join(rot, 'scripts', 'steg1-funcapp.ps1'), 'utf8');
+
+    sjekk('skriptet spør om ressursgruppa finnes',
+        /az group exists --name \$Rg/.test(skript), true);
+
+    // FØR trinn 1. Står den etter, har de fire første kommandoene alt feilet
+    // med den villedende meldingen.
+    const iSjekk = skript.indexOf('az group exists --name $Rg');
+    const iTrinn1 = skript.indexOf('== 1. Lagringskonto');
+    sjekk('sjekken står før trinn 1', iSjekk > -1 && iSjekk < iTrinn1, true);
+
+    // Og den må STOPPE en ekte kjøring — en advarsel alene er ingenting når
+    // alt under feiler uansett.
+    const iKast = skript.indexOf('throw "Ressursgruppa $Rg finnes ikke"');
+    sjekk('en ekte kjøring stopper', iKast > -1, true);
+    sjekk('og bare den ekte', /if \(\$Kjor\) \{ throw "Ressursgruppa/.test(skript), true);
+
+    // Meldingen må navngi den villedende feilen, ellers gjentas feilsøkingen
+    // neste gang noen treffer den fra en annen retning.
+    sjekk('meldingen nevner den villedende Azure-feilen',
+        /AuthorizationFailed[\s\S]{0,120}scope is invalid/.test(skript), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
