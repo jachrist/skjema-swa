@@ -681,6 +681,76 @@ leser begge og krever likt svar:
 eneste tabellrad, men gir rett til å liste kontonøklene — full datatilgang
 gjennom en sidedør, med den delte nøkkelen hele øvelsen går ut på å fjerne.
 
+### 3.3 `AuthorizationFailed` betyr to ulike ting
+
+Feiler en rolletildeling, ser meldingen slik ut:
+
+> (AuthorizationFailed) The client '…' with object id '…' does not have
+> authorization to perform action
+> 'Microsoft.Authorization/roleAssignments/write' over scope
+> '…/storageAccounts/stskjema3prod/…' **or the scope is invalid.**
+
+**«or the scope is invalid» til slutt er halve meldingen, og den drukner.**
+Azure svarer det samme når du mangler rettigheten OG når ressursen du tildeler
+på ikke finnes. Skjedde 21.10.2026: trinnet ble kjørt i en ressursgruppe der
+datalagringskontoen ennå ikke var opprettet, og feilen leste som en
+rettighetsfeil hos en bruker som var `Owner`.
+
+`steg1-funcapp.ps1` sjekker nå at omfangene finnes før den tildeler, og sier
+hvilket som mangler. Møter du meldingen likevel, er rekkefølgen her:
+
+**1. Finnes ressursen?** Et navn på feil plass gir ugyldig omfang.
+
+```powershell
+az storage account show --name $DATA --resource-group $RG --query name -o tsv
+az keyvault show --name $KV --query name -o tsv
+```
+
+**2. Hvilke roller har du EGENTLIG, og på hvilket nivå?**
+
+```powershell
+$meg = az ad signed-in-user show --query id -o tsv
+$arg = @(
+    'role', 'assignment', 'list',
+    '--assignee', $meg,
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG",
+    '--include-inherited',
+    '--query', '[].{rolle:roleDefinitionName, omfang:scope}',
+    '-o', 'table'
+)
+az @arg
+```
+
+`Owner` på ressursgruppa dekker rolletildeling på ressursene inne i den —
+`Contributor` gjør det IKKE. Den gir rett til å lage og endre ressurser, men
+ikke til å tildele roller, og forskjellen vises først her.
+
+**3. Er `Owner` aktivert, eller bare tilgjengelig?** Er rollen styrt av PIM, må
+den aktiveres — og tokenet ditt må fornyes etterpå. Det er nettopp det
+«If access was recently granted, please refresh your credentials» viser til:
+
+```powershell
+az account clear
+az login --tenant <prod-tenant-id>
+```
+
+**4. Finnes en deny assignment?** De overstyrer `Owner`, og settes av Azure
+Blueprints eller en managed application. Står du i lista i steg 2 med `Owner`
+og omfanget finnes, er dette det som er igjen:
+
+```powershell
+$url = "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Authorization/denyAssignments?api-version=2022-04-01"
+$arg = @(
+    'rest', '--method', 'get', '--url', $url,
+    '--query', 'value[].{navn:properties.denyAssignmentName, beskrivelse:properties.description}',
+    '-o', 'table'
+)
+az @arg
+```
+
+Finner du en, er den ikke din å fjerne — da er dette en bestilling, og 0.1
+sier til hvem.
+
 ---
 
 ## 4. App settings på Function App-en
