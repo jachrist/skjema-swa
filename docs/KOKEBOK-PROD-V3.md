@@ -607,6 +607,10 @@ og ingenting å endre i v2.
 > hemmeligheten i `tokenKropp()`, og da kjører v3 på v2 sin legitimasjon uten
 > at noe sier fra. Sertifikatveien er da aldri prøvd — og det oppdages den
 > dagen hemmeligheten utløper.
+>
+> Dette får konsekvenser i kapittel 4: inventaret bærer begge, så både
+> kommandogeneratoren og kravlista må få `--velg GRAPH_CLIENT_CERT_PEM`.
+> Se 4.0.
 
 **To backupjobber mot samme område.** Kjører v2 og v3 backup parallelt, legger
 begge filer i det samme biblioteket. Sjekk at filnavnene skiller miljøene fra
@@ -1071,8 +1075,18 @@ ikke, og det er derfor v2 har klartekst.
 seg når appen prøver å løse dem. Generer dem i stedet:
 
 ```powershell
-node scripts/vis-appsettings.js prod --kommandoer --vault $KV
+node scripts/vis-appsettings.js prod --kommandoer --vault $KV --velg GRAPH_CLIENT_CERT_PEM
 ```
+
+`--velg` er der fordi Graph-legitimasjonen finnes i to varianter, og
+inventaret bærer begge: **`GRAPH_CLIENT_SECRET`** (pilot og prod v2) og
+**`GRAPH_CLIENT_CERT_PEM`** (v3, etter 0.4). Uten flagget genereres
+hemmeligheten — og settes den, vinner den i `tokenKropp()`, så sertifikatet
+du nettopp la inn blir aldri prøvd. Valgte du hemmeligheten i 0.5 i stedet,
+dropper du flagget.
+
+Utskriften navngir begge medlemmene, det fravalgte også, med `skal stå TOM`.
+En utelatt setting som ikke er forklart, ser ut som et hull i kommandoen.
 
 Den SETTER ingenting. Utskriften er PowerShell-blokker du leser og limer inn
 — én kommando per form, ikke én per setting, fordi hver
@@ -1130,7 +1144,7 @@ når hver av dem står på Function App-en, og det er en sammenligning, ikke en
 magefølelse:
 
 ```powershell
-node scripts/vis-appsettings.js prod --navn | Set-Content krav.txt
+node scripts/vis-appsettings.js prod --navn --velg GRAPH_CLIENT_CERT_PEM | Set-Content krav.txt
 $arg = @(
     'functionapp', 'config', 'appsettings', 'list',
     '--name', $FA, '--resource-group', $RG,
@@ -1145,6 +1159,13 @@ Compare-Object (Get-Content krav.txt | Sort-Object) (Get-Content satt.txt | Sort
 | `<=` | står i inventaret, mangler på verten — ikke ferdig |
 | `=>` | står på verten, ikke i inventaret — enten en levning, eller inventaret er utdatert. Begge skal forklares |
 | tom utskrift | ferdig |
+
+**Samme `--velg` som i 4.0.** Lista er kravlista, og kravet er ikke det
+samme i de to variantene: med sertifikatet er `GRAPH_CLIENT_CERT_PEM`
+påkrevd selv om inventaret kaller den `valgfri`, og `GRAPH_CLIENT_SECRET`
+skal ikke stå på verten i det hele tatt. Glemmes flagget her, melder
+sammenligningen hemmeligheten som manglende — og den som retter opp etter
+den, slår av sertifikatveien.
 
 `--navn` lister bare det som MÅ ha en verdi: `keyvault`, `value` og
 `settes_direkte`. `valgfri` og `kun_dokumentasjon` er ute — den første har en
