@@ -777,7 +777,12 @@ az login --tenant <prod-tenant-id>
 
 **6. Finnes en deny assignment?** De overstyrer `Owner`, og settes av Azure
 Blueprints eller en managed application. Står du i lista med `Owner` uten
-betingelse, og omfanget finnes, er dette det som er igjen:
+betingelse, og omfanget finnes, er dette det som er igjen.
+
+**Spør på BEGGE nivåene.** En deny assignment satt på abonnementet eller en
+administrasjonsgruppe gjelder nedover, og et oppslag på ressursgruppa alene
+viser den ikke nødvendigvis. Et tomt svar på ressursgruppenivå er derfor ikke
+et svar — 21.10.2026 ble det lest som ett.
 
 ```powershell
 $url = "https://management.azure.com/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Authorization/denyAssignments?api-version=2022-04-01"
@@ -789,8 +794,57 @@ $arg = @(
 az @arg
 ```
 
+Bytt `/resourceGroups/$RG` ut med bare `/subscriptions/$SUB` i URL-en og kjør
+den om igjen.
+
 Finner du en, er den ikke din å fjerne — da er dette en bestilling, og 0.1
 sier til hvem.
+
+**7. Er det rettigheten eller omfanget?** Når alt over er rent, skiller denne
+prøven de to siste verdenene fra hverandre. `Reader` er harmløs og tildeles på
+RESSURSGRUPPA, der `Owner` er direkte tildelt — ikke arvet:
+
+```powershell
+$arg = @(
+    'role', 'assignment', 'create',
+    '--assignee-object-id', $PRINCIPAL,
+    '--assignee-principal-type', 'ServicePrincipal',
+    '--role', 'Reader',
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG"
+)
+az @arg
+```
+
+| Utfall | Hva det betyr |
+|---|---|
+| Feiler også | Du får ikke tildele roller i det hele tatt. Ingenting av det kokeboka ber om i trinn 3 vil gå, og det er en bestilling |
+| Går igjennom | Rettigheten finnes. Da er det noe ved det smalere omfanget, eller ved de fire rollene — se 4 og 6 igjen, og prøv på nytt etter en ny innlogging |
+
+**Rydd opp etterpå**, uansett utfall — en `Reader`-tildeling som blir
+stående, er en tildeling ingen har besluttet:
+
+```powershell
+$arg = @(
+    'role', 'assignment', 'delete',
+    '--assignee', $PRINCIPAL,
+    '--role', 'Reader',
+    '--scope', "/subscriptions/$SUB/resourceGroups/$RG"
+)
+az @arg
+```
+
+**8. Og det meldingen selv foreslår.** ARM mellomlagrer rolletildelinger i noen
+minutter, og et token hentet før tildelingen ble gitt bærer ikke
+gruppemedlemskapene den hviler på. Er `Owner` gitt i dag, er dette ikke en
+formalitet:
+
+```powershell
+az account clear
+az login --tenant <prod-tenant-id>
+```
+
+Vent noen minutter før du prøver igjen. Det er den billigste av alle sjekkene,
+og den eneste som løser seg selv.
 
 ---
 
