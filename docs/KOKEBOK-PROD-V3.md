@@ -1286,6 +1286,13 @@ feilsøkingen mot portalen.
 SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
 øverst i 5.
 
+> **Og så kommer innloggingen til å feile. Det er riktig her.** Forsiden
+> vises anonymt, men første pålogging ender i
+> `AADSTS50011: The redirect URI … does not match`, fordi det nye
+> vertsnavnet ikke står på app-registreringen ennå. Det er kapittel 6, og
+> det er ikke en mislykket deploy. Feilen kommer ETTER at forsiden vistes,
+> og ser derfor ut som at noe gikk i stykker etterpå.
+
 ### 5.3 Lenk Function App-en til SWA-en — først nå
 
 ```powershell
@@ -1297,8 +1304,20 @@ az staticwebapp backends show --name $SWA --resource-group $RG -o table
 
 ## 6. Innlogging (Entra)
 
-SWA-en trenger sin egen app-registrering, eller gjenbruk av v2 sin med en ny
-redirect-URI.
+**Du trenger ingen ny app-registrering.** En app-registrering bærer mange
+redirect-URI-er under Web-plattformen, én per vertsnavn, og v2 sin skal
+beholde sine. Det som mangler er én URI til.
+
+Og feilmeldingen sier selv at appen er funnet:
+
+| Entra svarer | Hva det forteller |
+|---|---|
+| `AADSTS50011` — redirect URI matcher ikke | Appen ER funnet, `AAD_CLIENT_ID` er riktig satt på SWA-ressursen, og sertifikatet lot seg hente. **Bare vertsnavnet mangler** |
+| `AADSTS700016` — application not found | `AAD_CLIENT_ID` peker på noe som ikke finnes i denne tenanten, eller står ikke på SWA-ressursen i det hele tatt |
+| Feil om klientlegitimasjon | App-ID-en stemmer, men sertifikatet nås ikke — se rollene nederst i dette kapittelet |
+
+De tre ser like ut i nettleseren og har ikke samme årsak. `AADSTS50011` er
+den billigste av dem: alt annet er på plass.
 
 ```powershell
 $VERT = az staticwebapp show --name $SWA --resource-group $RG --query defaultHostname -o tsv
@@ -1306,6 +1325,36 @@ $VERT = az staticwebapp show --name $SWA --resource-group $RG --query defaultHos
 ```
 
 Adressen legges inn under **Authentication** på app-registreringen i Entra.
+Portalen legger den TIL; de gamle står igjen.
+
+Med `az` må den eksisterende lista leses først:
+
+```powershell
+$APPID = '<verdien i AAD_CLIENT_ID>'
+$NY = "https://$VERT/.auth/login/aad/callback"
+$gamle = az ad app show --id $APPID --query 'web.redirectUris' -o tsv
+$alle = @($gamle) + $NY | Where-Object { $_ } | Select-Object -Unique
+$arg = @('ad', 'app', 'update', '--id', $APPID, '--web-redirect-uris') + $alle
+az @arg
+```
+
+`--web-redirect-uris` setter HELE samlingen, ikke ett element — samme familie
+som `az ad app credential reset` uten `--append`, der v2 sin legitimasjon
+forsvinner. Formen over er trygg uansett: sendes de gamle inn sammen med den
+nye, blir resultatet det samme enten flagget erstatter eller legger til.
+`Select-Object -Unique` gjør at den kan kjøres to ganger.
+
+**Kontroller etterpå at de gamle står igjen:**
+
+```powershell
+az ad app show --id $APPID --query 'web.redirectUris' -o tsv
+```
+
+> **Hvert vertsnavn trenger sin egen URI.** Default-vertsnavnet er ett.
+> Flytter du domenet ved cutover, må domenet ha sin (se 0.5). Og et navngitt
+> preview-miljø har sitt eget vertsnavn — Entra avviser innloggingen DER, og
+> bare der, til URI-en er lagt inn. `deploy-prod.yml` skriver den ferdige
+> URL-en i sammendraget; gjett aldri på den.
 
 `AAD_CLIENT_ID` og auth-sertifikatet settes på **SWA-ressursen**, ikke på
 Function App-en. I prod hentes sertifikatet fra Key Vault via

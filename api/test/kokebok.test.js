@@ -735,5 +735,66 @@ const BASHISMER = [
         /-replace[\s\S]{0,40}00:00[\s\S]{0,400}\+02:00/.test(pem), true);
 }
 
+// ---------- 17. redirect-URI-en, og at den er lagt TIL ----------
+//
+// 21.10.2026: forsiden til prod v3 vistes, og første pålogging endte i
+// `AADSTS50011`. Spørsmålet som fulgte var «må vi ha en egen app?» — og
+// svaret er nei, men kapittel 6 sa det ikke. Det sa «sin egen
+// app-registrering, eller gjenbruk av v2 sin med en ny redirect-URI», altså
+// begge, uten å avgjøre noe.
+//
+// 5.2 sa heller ikke at feilen kom. Den kommer ETTER at forsiden vistes, og
+// ser derfor ut som at noe gikk i stykker etterpå.
+{
+    // Selve URI-formen er bundet i `swa-config.test.js`, der
+    // påloggingsstien alt er en regel: leverandørsegmentet leses ut av
+    // SWA-configen, som er det plattformen faktisk handler på — ikke ut av
+    // én HTML-side.
+
+    const fra = tekst.indexOf('## 6. Innlogging');
+    const til = tekst.indexOf('## 7. Flytene');
+    sjekk('fant kapittel 6', fra > 0 && til > fra, true);
+    const kap6 = tekst.slice(fra, til);
+
+    // Spørsmålet må besvares, ikke stilles.
+    sjekk('kapittel 6 avgjør om det trengs en ny app',
+        /ingen ny app-registrering/i.test(kap6), true);
+    sjekk('og sier hvorfor: mange URI-er per app',
+        /mange\s*\n?\s*redirect-URI-er|flere redirect-URI/i.test(kap6), true);
+
+    // Den dyre feilen her er en kommando som SETTER lista og dermed sletter
+    // v2 sine URI-er. Hvert `--web-redirect-uris` skal stå i en blokk som
+    // leser de gamle først.
+    const settBlokker = alle.filter(b =>
+        b.fra > tekst.slice(0, fra).split('\n').length
+        && b.linjer.some(l => /--web-redirect-uris/.test(l.tekst)));
+    sjekk('kommandoen som setter URI-ene finnes', settBlokker.length > 0, true);
+    for (const b of settBlokker) {
+        const blokk = b.linjer.map(l => l.tekst).join('\n');
+        sjekk(`blokka på linje ${b.fra} leser de gamle først`,
+            /web\.redirectUris/.test(blokk), true);
+        sjekk(`og de gamle sendes med inn (linje ${b.fra})`,
+            /\$gamle/.test(blokk), true);
+    }
+    sjekk('og det står at flagget setter hele samlingen',
+        /setter HELE samlingen/.test(kap6), true);
+    sjekk('med credential reset som familien den hører til',
+        /credential reset/.test(kap6), true);
+
+    // Preview-miljøet har sitt eget vertsnavn, og innloggingen feiler DER og
+    // bare der. Det står i deploy-prod.yml; kapittel 6 må si det også, for
+    // ingen leser en workflow-kommentar midt i et oppsett.
+    sjekk('kapittel 6 nevner preview-vertsnavnet',
+        /preview-miljø[\s\S]{0,120}vertsnavn/.test(kap6), true);
+
+    // Og 5.2 må forberede feilen, med koden man kan søke på.
+    const f52 = tekst.indexOf('### 5.2');
+    const kap52 = tekst.slice(f52, tekst.indexOf('### 5.3', f52));
+    sjekk('5.2 varsler at innloggingen feiler', /AADSTS50011/.test(kap52), true);
+    sjekk('og peker til kapittel 6', /kapittel 6/.test(kap52), true);
+    sjekk('og sier at det ikke er en mislykket deploy',
+        /ikke en mislykket deploy/.test(kap52), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
