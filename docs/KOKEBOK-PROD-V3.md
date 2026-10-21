@@ -419,6 +419,55 @@ az keyvault secret show --vault-name $KV --name <sertifikatnavn> --query "conten
 > hvorfor `$HOME` i Cloud Shell er feil sted å gjøre det, står i
 > `docs/BACKUP-SHAREPOINT.md`.
 
+#### Slik legges den konverterte PEM-en inn
+
+Konverteringen gir en fil med privatnøkkelen i klartekst. Den skal inn som en
+**secret**, ved siden av sertifikatet — ikke som et nytt sertifikatobjekt. Et
+importert sertifikat er et nytt objekt med sin egen secret-rygg, og det var
+nettopp innholdstypen på den som var problemet.
+
+```powershell
+$NOTAFTER = az keyvault certificate show --vault-name $KV --name <sertifikatnavn> --query attributes.expires -o tsv
+$arg = @(
+    'keyvault', 'secret', 'set',
+    '--vault-name', $KV,
+    '--name', 'graph-client-cert-pem',
+    '--file', "$arbeid/c.pem",
+    '--encoding', 'utf-8',
+    '--content-type', 'application/x-pem-file',
+    '--expires', $NOTAFTER,
+    '--output', 'none'
+)
+az @arg
+```
+
+Fire valg, og hvert av dem er der for å unngå noe:
+
+| Valg | Hvorfor |
+|---|---|
+| `--file`, ikke `--value` | Privatnøkkelen havner da aldri på kommandolinja — ikke i historikken, ikke på skjermen, ikke i et skulderkikk |
+| `--content-type application/x-pem-file` | Gjør at sjekken over svarer riktig også for DENNE secreten. Uten den står den som `null`, og «er formatet riktig?» blir ubesvarlig |
+| `--expires` lest av sertifikatet | Secreten og sertifikatet utløper samtidig. Føres datoen bare på sertifikatet, varsler nøkkelkalenderen om noe annet enn det appen bruker |
+| `--output none` | `secret set` skriver ellers hele secreten, verdien inkludert, som JSON |
+
+**Rydd opp etterpå.** Filen er en privatnøkkel i klartekst:
+
+```powershell
+Set-Location ~
+Remove-Item -Recurse -Force $arbeid
+```
+
+> **Konverteringsutskriften virker som den står.** `openssl pkcs12 -nodes` gir
+> ikke bare to PEM-blokker: den legger «Bag Attributes», `localKeyID`,
+> `subject=` og `issuer=` som ren tekst mellom dem, og sertifikatet kommer
+> FØR nøkkelen. Målt 21.10.2026: `createPrivateKey` og `X509Certificate`
+> leser den uendret, `x5t` blir riktig og signaturen verifiserer. **Ikke
+> klipp i fila** — formen er dekket av `api/test/graph-sertifikat.test.js`.
+
+Til slutt peker app-settingen på DENNE secreten, ikke på sertifikatet:
+`GRAPH_CLIENT_CERT_PEM` =
+`@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/graph-client-cert-pem/)`.
+
 #### Slik utstedes det, hvis det skal lages nytt
 
 **Først: skal det lages nytt i det hele tatt?** Gjenbrukes v2 sin backup-app

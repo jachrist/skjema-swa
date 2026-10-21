@@ -167,6 +167,65 @@ const BASIS = { tenantId: 'tenant-1', clientId: 'klient-1', site: 'fhs.sharepoin
     }
 }
 
+// ---------- 5b. den konverterte PEM-en, slik openssl faktisk gir den ----------
+//
+// Er sertifikatet i Key Vault PKCS#12, er veien videre å KONVERTERE, ikke å
+// utstede nytt — et nytt nøkkelpar må lastes opp på app-registreringen igjen.
+// Oppskriften er `openssl pkcs12 -in c.pfx -nodes -passin pass: -out c.pem`.
+//
+// Den utskriften er IKKE bare to PEM-blokker. Den har «Bag Attributes»,
+// `localKeyID`, `subject=` og `issuer=` som ren tekst mellom blokkene, og
+// sertifikatet kommer FØR nøkkelen. Spørsmålet er om `createPrivateKey` og
+// `X509Certificate` leser det likevel.
+//
+// Målt 21.10.2026: ja, uendret. Det er verdt en test og ikke bare en
+// måling — en operatør i prod produserer nøyaktig denne formen, og en
+// framtidig «rydd opp i PEM-lesingen» kan bryte den uten at noe annet
+// merker det.
+{
+    let konvertert = null;
+    const mappe = fs.mkdtempSync(path.join(os.tmpdir(), 'graph-pfx-'));
+    try {
+        const k = path.join(mappe, 'k.pem'), c = path.join(mappe, 'c.pem');
+        const pfx = path.join(mappe, 'c.pfx'), ut = path.join(mappe, 'ut.pem');
+        execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-keyout', k,
+            '-out', c, '-days', '2', '-nodes', '-subj', '/CN=konvertert'], { stdio: 'ignore' });
+        execFileSync('openssl', ['pkcs12', '-export', '-out', pfx, '-inkey', k,
+            '-in', c, '-passout', 'pass:'], { stdio: 'ignore' });
+        execFileSync('openssl', ['pkcs12', '-in', pfx, '-nodes', '-passin', 'pass:',
+            '-out', ut], { stdio: 'ignore' });
+        konvertert = fs.readFileSync(ut, 'utf8');
+    } catch (e) {
+        feil++;
+        console.log('FEIL  kunne ikke lage konvertert PEM — openssl kreves\n'
+            + `      ${String(e.message || e).slice(0, 120)}`);
+    } finally {
+        fs.rmSync(mappe, { recursive: true, force: true });
+    }
+
+    if (konvertert) {
+        // Formen er en del av det som testes: ser utskriften annerledes ut en
+        // dag, skal denne si fra før koden gjør det.
+        sjekk('utskriften har Bag Attributes', /Bag Attributes/.test(konvertert), true);
+        sjekk('og sertifikatet kommer først',
+            konvertert.indexOf('BEGIN CERTIFICATE') < konvertert.indexOf('PRIVATE KEY'), true);
+
+        const p = graph.tokenKropp({ ...BASIS, clientCertPem: konvertert });
+        const jwt = p.get('client_assertion') || '';
+        const deler = jwt.split('.');
+        sjekk('assertionen bygges fra den konverterte PEM-en', deler.length, 3);
+
+        const sertifikat = new crypto.X509Certificate(konvertert);
+        const avtrykk = crypto.createHash('sha1').update(sertifikat.raw).digest('base64url');
+        const hode = JSON.parse(Buffer.from(deler[0], 'base64url').toString('utf8'));
+        sjekk('x5t er riktig avtrykk', hode.x5t, avtrykk);
+
+        const v = crypto.createVerify('RSA-SHA256').update(`${deler[0]}.${deler[1]}`);
+        sjekk('og signaturen verifiserer',
+            v.verify(sertifikat.publicKey, Buffer.from(deler[2], 'base64url')), true);
+    }
+}
+
 // ---------- 6. en forbigått Graph-vei skal si HVORFOR ----------
 //
 // `lastOppKopi` velger Graph når `erKonfigurert()` er sann, og PA-flyten
