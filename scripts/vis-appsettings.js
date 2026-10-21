@@ -113,9 +113,10 @@ function skriv(miljo, bareForm = null) {
 /** Navnene som MÅ ha en verdi, ett per linje. Se `--navn` i toppkommentaren. */
 const MA_SETTES = ['keyvault', 'value', 'settes_direkte'];
 
-function skrivNavn(miljo) {
+function skrivNavn(miljo, valg = []) {
     const data = les(miljo);
     const { grupper: g } = grupper(data);
+    const av = utelatt(valg);
     const navn = MA_SETTES.flatMap(f => (g[f] || []))
         // keyvault-raden er «NAVN  ←  secret-navn»; her vil vi bare navnet.
         .map(rad => String(rad).split('  ←  ')[0].trim())
@@ -125,6 +126,13 @@ function skrivNavn(miljo) {
         // den som manglende på Function App-en hver gang — og en liste med
         // én kjent falsk positiv er en liste folk slutter å lese.
         .filter(n => !(data[n] && data[n].kun_dokumentasjon))
+        // Enten/eller: det medlemmet som IKKE er valgt, skal ikke stå på
+        // verten, så det hører ikke i kravlista. Og det valgte medlemmet
+        // skal stå der selv om inventaret kaller det `valgfri` — valget er
+        // nettopp det som gjør det påkrevd.
+        .filter(n => !av.has(n))
+        .concat(valgteMedlemmer(valg).filter(n => data[n] !== undefined))
+        .filter((n, i, a) => a.indexOf(n) === i)
         .sort();
     for (const n of navn) console.log(n);
 }
@@ -150,21 +158,71 @@ function skrivNavn(miljo) {
  * Lista er kort og navngitt med vilje: en heuristikk på «ser ut som en URL»
  * ville tatt flyt-URLene også, og de er riktige som de står.
  */
+/**
+ * Settinger som utelukker hverandre: ÉN av dem skal ha en verdi, ikke begge.
+ *
+ * Graph-legitimasjonen finnes i to varianter, og begge står i inventaret
+ * fordi begge er lovlige. Men `tokenKropp()` i `graph-opplast.js` lar
+ * hemmeligheten vinne når begge er satt. Settes hemmeligheten på en instans
+ * som skal bruke sertifikatet, er sertifikatveien aldri prøvd — og det
+ * oppdages den dagen hemmeligheten utløper.
+ *
+ * Valget hører til INSTANSEN, ikke til inventaret: pilot og prod v2 går på
+ * hemmeligheten, prod v3 på sertifikatet, og alle tre leser samme fil.
+ * Derfor `--velg`. Uten flagget gjelder den første i gruppa, slik at
+ * oppsettene som alt står, kontrolleres som før.
+ *
+ * Rekkefølgen er altså ikke tilfeldig: det første navnet er standardvalget.
+ */
+const ENTEN_ELLER = [['GRAPH_CLIENT_SECRET', 'GRAPH_CLIENT_CERT_PEM']];
+
+/** Gruppa `navn` hører i, eller null. */
+function gruppenTil(navn) {
+    return ENTEN_ELLER.find(gr => gr.includes(navn)) || null;
+}
+
+/**
+ * Hvilket medlem som gjelder, per gruppe. `valg` er navnene fra `--velg`.
+ *
+ * Et navn som ikke finnes i noen gruppe er en skrivefeil, og den skal si
+ * fra: ellers tror den som skrev det at valget ble tatt.
+ */
+function valgteMedlemmer(valg = []) {
+    for (const v of valg) {
+        if (!gruppenTil(v)) {
+            throw new Error(`--velg ${v}: ikke et navn i en enten/eller-gruppe. `
+                + `Gyldige: ${ENTEN_ELLER.flat().join(', ')}`);
+        }
+    }
+    return ENTEN_ELLER.map(gr => valg.find(v => gr.includes(v)) || gr[0]);
+}
+
+/** Navn som er skrudd AV av et valg i sin gruppe. */
+function utelatt(valg = []) {
+    const valgt = valgteMedlemmer(valg);
+    return new Set(ENTEN_ELLER.flatMap((gr, i) => gr.filter(n => n !== valgt[i])));
+}
+
 const INSTANSSPESIFIKKE = new Set(['SWA_URL']);
 
-function skrivKommandoer(miljo, vault) {
+function skrivKommandoer(miljo, vault, valg = []) {
     const data = les(miljo);
     const { grupper: g } = grupper(data);
     const sitert = (s) => `'${String(s).replace(/'/g, "''")}'`;
+    const av = utelatt(valg);
 
     console.log('# Les disse FØR du limer dem inn. Skriptet setter ingenting selv.');
     console.log('# $FA og $RG må være satt (kapittel 1).');
     console.log('');
 
-    const kvRader = g.keyvault.map(rad => {
-        const [navn, secret] = String(rad).split('  ←  ').map(s => s.trim());
-        return `    ${sitert(`${navn}=@Microsoft.KeyVault(SecretUri=https://${vault}.vault.azure.net/secrets/${secret}/)`)},`;
-    });
+    const kvRader = g.keyvault
+        // Et fravalgt enten/eller-medlem skal ikke stå i en kommando noen
+        // limer inn: settes det, slår det stille av den andre veien.
+        .filter(rad => !av.has(String(rad).split('  ←  ')[0].trim()))
+        .map(rad => {
+            const [navn, secret] = String(rad).split('  ←  ').map(s => s.trim());
+            return `    ${sitert(`${navn}=@Microsoft.KeyVault(SecretUri=https://${vault}.vault.azure.net/secrets/${secret}/)`)},`;
+        });
     if (kvRader.length) {
         console.log(`# ${kvRader.length} Key Vault-referanser. Uten versjon til slutt gir alltid nyeste.`);
         console.log('$kv = @(');
@@ -212,6 +270,27 @@ function skrivKommandoer(miljo, vault) {
         }
         console.log('');
     }
+    // Enten/eller: begge medlemmene nevnes, også det fravalgte. En utelatt
+    // setting som ikke er forklart, ser ut som et hull i kommandoen.
+    const valgt = valgteMedlemmer(valg);
+    const grupperIBruk = ENTEN_ELLER
+        .map((gr, i) => ({ gr, valgt: valgt[i] }))
+        .filter(({ gr }) => gr.some(n => data[n] !== undefined));
+    if (grupperIBruk.length) {
+        console.log('# ENTEN/ELLER - én av hver gruppe skal ha en verdi, ikke begge:');
+        for (const { gr, valgt: v } of grupperIBruk) {
+            for (const navn of gr) {
+                const hvor = navn === v ? 'VALGT' : 'skal stå TOM';
+                console.log(`#   ${navn}  (${hvor})`);
+            }
+            if (!g.keyvault.some(rad => String(rad).split('  ←  ')[0].trim() === v)) {
+                console.log(`#     ${v} har ingen secret i inventaret - verdien bygges`);
+                console.log('#     der den opprettes (kokeboka 0.4), og settes for hånd.');
+            }
+            console.log(`#     Bytt med --velg <navn>. Standard er ${gr[0]}.`);
+        }
+        console.log('');
+    }
     console.log('# Kontroller til slutt med --navn og Compare-Object, se kapittel 4.2.');
 }
 
@@ -220,11 +299,14 @@ if (require.main === module) {
     const miljo = args.find(a => !a.startsWith('--'));
     const formIdx = args.indexOf('--form');
     if (!miljo) {
-        console.log('Bruk: node scripts/vis-appsettings.js <miljø> [--form <form>] [--navn] [--kommandoer --vault <navn>]');
+        console.log('Bruk: node scripts/vis-appsettings.js <miljø> [--form <form>] [--navn] [--kommandoer --vault <navn>] [--velg <navn>]');
         process.exit(1);
     }
     try {
-        if (args.includes('--navn')) { skrivNavn(miljo); }
+        // --velg kan gjentas: én per enten/eller-gruppe.
+        const valg = args.flatMap((a, i) => (a === '--velg' ? [args[i + 1]] : []))
+            .filter(Boolean);
+        if (args.includes('--navn')) { skrivNavn(miljo, valg); }
         else if (args.includes('--kommandoer')) {
             const vaultIdx = args.indexOf('--vault');
             const vault = vaultIdx >= 0 ? args[vaultIdx + 1] : null;
@@ -234,7 +316,7 @@ if (require.main === module) {
                 console.log('--kommandoer krever --vault <navn>, f.eks. --vault fhs-kv-01');
                 process.exit(1);
             }
-            skrivKommandoer(miljo, vault);
+            skrivKommandoer(miljo, vault, valg);
         }
         else skriv(miljo, formIdx >= 0 ? args[formIdx + 1] : null);
     } catch (e) {
@@ -243,4 +325,7 @@ if (require.main === module) {
     }
 }
 
-module.exports = { FORMER, formenTil, grupper, MA_SETTES };
+module.exports = {
+    FORMER, formenTil, grupper, MA_SETTES,
+    ENTEN_ELLER, gruppenTil, valgteMedlemmer, utelatt
+};
