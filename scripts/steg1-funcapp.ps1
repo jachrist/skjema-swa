@@ -351,6 +351,13 @@ if ($Trinn -eq 'alt') {
 }
 }
 
+# Sluttmeldingen hører til DET TRINNET som ble kjørt.
+#
+# Prøven under gjelder etter LENKINGEN, og sto utenfor alle trinn-vaktene:
+# den ble skrevet ut også etter `-Trinn funcapp`, der ingen SWA finnes og
+# ingenting er lenket. Da ber skriptet deg prøve en URL som ikke er
+# opprettet, og det leses som at man har hoppet over noe. Meldt 21.10.2026.
+if ($Trinn -eq 'lenk') {
 Write-Host "`n== Prøven ==" -ForegroundColor Green
 Write-Host @"
    Direkte mot Function App-en svarer 401 etter lenking. Det er riktig:
@@ -365,3 +372,19 @@ Write-Host @"
    Den siste linja er svaret. Skriv det inn i beslutningsnotatet med dato -
    et forsøk ingen har notert utfallet av, blir gjort på nytt om tre måneder.
 "@
+}
+
+if ($Trinn -eq 'funcapp') {
+Write-Host "`n== Ferdig med trinn 3 ==" -ForegroundColor Green
+Write-Host @"
+   Function App-en, identiteten og rollene står nå. Det er IKKE testbart
+   ennå: API-et er ikke deployet, så Function App-en har ingen funksjoner å
+   svare med, og /api/ping gir 404. Det er forventet og ikke en feil.
+
+   Kontroller det som ER gjort - rollene, med kapittel 3.2 i kokeboka:
+     az role assignment list --assignee $Identitet --all -o table
+
+   Deretter kapittel 4 (app settings) og 5 (SWA og innhold). Prøven mot
+   /api/ping hører til ETTER lenkingen i trinn 'lenk'.
+"@
+}
