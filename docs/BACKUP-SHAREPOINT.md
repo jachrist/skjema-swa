@@ -131,10 +131,15 @@ bestilling. Konverter i stedet: samme nøkkel, registreringen urørt. Legg
 PEM-en inn som en **egen secret** ved siden av sertifikatet, f.eks.
 `graph-client-cert-pem`, og la app-settingen peke på den.
 
-> **Cloud Shell lagrer `$HOME` permanent** — hjemmekatalogen ligger som et
-> diskbilde i en Azure Files-share og overlever sesjonen. Skrives
-> privatnøkkelen dit, blir den liggende. Arbeid i `/tmp`, som er
-> container-lokalt.
+> **Cloud Shell kan lagre `$HOME` permanent** — er en lagringskonto montert,
+> ligger hjemmekatalogen som et diskbilde i en Azure Files-share og overlever
+> sesjonen. Skrives privatnøkkelen dit, blir den liggende. Arbeid i `/tmp`,
+> som er container-lokalt.
+>
+> Kjører sesjonen efemert (uten lagringskonto), slettes begge ved omstart —
+> men da forsvinner også alt annet du har gjort, så regelen er den samme:
+> `/tmp` for nøkler, og push det du vil beholde før du lukker vinduet.
+> `Test-Path ~/clouddrive` svarer på hvilken av de to du har.
 
 ```powershell
 $arbeid = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid())

@@ -139,9 +139,21 @@ repoet i Cloud Shell, eller laste opp den enkelte fila med
 opplastingsknappen. `Microsoft.Graph`- og `Az.KeyVault`-modulene skriptene
 trenger, er forhåndsinstallert der.
 
-> **Én felle som gjelder hele kokeboka:** `$HOME` i Cloud Shell ligger i en
-> Azure Files-andel som overlever økta. Private nøkler og sertifikater hører
-> derfor i `/tmp`, ikke i hjemmemappa. Se 0.4.
+> **To ulike Cloud Shell, og du må vite hvilken du har.** Er en lagringskonto
+> montert, ligger `$HOME` i en Azure Files-andel og overlever økta — da hører
+> private nøkler i `/tmp`, ikke i hjemmemappa (se 0.4). Kjører sesjonen
+> **efemert** (uten lagringskonto), slettes `$HOME` ved omstart, og da
+> forsvinner klonen og alt du har endret lokalt med den. Målt 21.10.2026:
+> hjemmemappa var tom etter en omstart, og en lokalt rettet kopi av skriptet
+> var borte.
+>
+> ```powershell
+> if (Test-Path ~/clouddrive) { "montert - `$HOME` overlever" } else { "efemer - `$HOME` slettes" }
+> ```
+>
+> Regelen for private nøkler er den samme uansett: bruk `/tmp`. Men er
+> sesjonen efemer, må alt du vil beholde pushes eller lastes ned FØR du
+> lukker vinduet.
 
 **2. Be systemansvarlig installere `az` med MSI-en.** Det er den sanksjonerte
 veien til `az` lokalt: Microsofts signerte MSI legger seg i `Program Files`,
@@ -164,7 +176,7 @@ ressursgruppa gir deg ingenting i katalogen, og en Global Administrator har
 ikke automatisk tilgang til en eneste ressurs. Det er her et arbeidsmøte
 stopper: alt i Azure går, og så står man fast på én app-registrering.
 
-**A. Azure RBAC inne i `rg-skjema-3-prod` — dette gjør du selv**
+**A. Azure RBAC inne i ressursgruppa (`fhs-prod-rg-01`) — dette gjør du selv**
 
 | Trinn | Operasjon | Minsterolle |
 |---|---|---|
@@ -512,7 +524,7 @@ Samme konvensjon som dev, med `dev` → `prod`.
 
 | Rolle | dev | **prod v3** |
 |---|---|---|
-| Ressursgruppe | `rg-skjema-3-dev` | `rg-skjema-3-prod` |
+| Ressursgruppe | `rg-skjema-3-dev` | **`fhs-prod-rg-01`** — den eksisterende gjenbrukes, se 0.3 |
 | Function App (API) | `fa-skjema-3-dev` | `fa-skjema-3-prod` |
 | Managed identity | `mi-skjema-3-dev` | `mi-skjema-3-prod` |
 | Datalagring (blank!) | `stskjema3dev` | `stskjema3prod` |
@@ -529,8 +541,12 @@ Lagringskontonavn tåler ikke bindestrek, derfor `stskjema3prod`.
 
 Kjør denne blokka først. Alt under bruker variablene:
 
+Ressursgruppa er den v2 alt kjører i. Det er en beslutning, ikke en
+forenkling: `az group create` krever Contributor på abonnementet, og 0.3 sier
+hva man må passe på når to versjoner deler gruppe.
+
 ```powershell
-$RG   = 'rg-skjema-3-prod'
+$RG   = 'fhs-prod-rg-01'
 $STED = 'norwayeast'
 $FA   = 'fa-skjema-3-prod'
 $MI   = 'mi-skjema-3-prod'
@@ -545,8 +561,18 @@ $SUB  = az account show --query id -o tsv
 
 ## 2. Ressursgruppe og lagring
 
+**Ressursgruppa opprettes IKKE hvis den finnes.** I prod er valget å gjenbruke
+den eksisterende — se 0.3. Og `az group create` er ikke gratis selv om gruppa
+finnes: kommandoen krever **Contributor på abonnementet** (0.1 B), og den
+rettigheten har ikke den som bare eier gruppa. Da stopper kapittel 2 på sin
+første linje, av en grunn som ikke har noe med oppgaven å gjøre.
+
 ```powershell
-az group create --name $RG --location $STED --output none
+if ((az group exists --name $RG) -eq 'true') {
+    Write-Host "Ressursgruppa $RG finnes - gjenbrukes, se 0.3"
+} else {
+    az group create --name $RG --location $STED --output none
+}
 ```
 
 ```powershell
@@ -599,7 +625,7 @@ kjøringen er samme linje pluss ett ord:
 
 ```powershell
 $p = @{
-    Rg          = 'rg-skjema-3-prod'
+    Rg          = 'fhs-prod-rg-01'
     FuncApp     = 'fa-skjema-3-prod'
     Lagring     = 'stskjema3prodrt'
     DataLagring = 'stskjema3prod'
