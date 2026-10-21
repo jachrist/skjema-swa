@@ -545,8 +545,18 @@ $SUB  = az account show --query id -o tsv
 
 ## 2. Ressursgruppe og lagring
 
+**Ressursgruppa opprettes IKKE hvis den finnes.** I prod er valget å gjenbruke
+den eksisterende — se 0.3. Og `az group create` er ikke gratis selv om gruppa
+finnes: kommandoen krever **Contributor på abonnementet** (0.1 B), og den
+rettigheten har ikke den som bare eier gruppa. Da stopper kapittel 2 på sin
+første linje, av en grunn som ikke har noe med oppgaven å gjøre.
+
 ```powershell
-az group create --name $RG --location $STED --output none
+if ((az group exists --name $RG) -eq 'true') {
+    Write-Host "Ressursgruppa $RG finnes - gjenbrukes, se 0.3"
+} else {
+    az group create --name $RG --location $STED --output none
+}
 ```
 
 ```powershell
