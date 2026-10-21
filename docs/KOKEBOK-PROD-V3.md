@@ -1350,6 +1350,39 @@ nye, blir resultatet det samme enten flagget erstatter eller legger til.
 az ad app show --id $APPID --query 'web.redirectUris' -o tsv
 ```
 
+#### Har du ikke rollen: bestillingen
+
+Trinn 6 krever **Application Administrator**, eller at du står som *eier* av
+den ene app-registreringen — og det siste er billigere, se merknad 3 i 0.1 C.
+Må det bestilles, er dette teksten:
+
+> Legg til én redirect-URI på app-registreringen `<navn/app-id som
+> AAD_CLIENT_ID peker på>`:
+>
+> `https://<vertsnavn>/.auth/login/aad/callback`
+>
+> Den skal inn under plattformen **Web**, ikke «Single-page application».
+>
+> **Legg den TIL.** De eksisterende redirect-URI-ene skal stå igjen — de er i
+> bruk av dagens løsning. Ingenting annet på registreringen skal endres.
+
+**Plattformvalget er ikke en formalitet.** SWA-en innløser koden på
+serversiden, med sertifikatet — den er en fortrolig klient. Registreres
+URI-en under «Single-page application», behandler Entra klienten som
+offentlig, og innløsningen avvises med en feil om at tokenet bare kan
+innløses via cross-origin. Innloggingen kommer altså like langt som nå, og
+feiler ett steg senere, med en melding som ikke nevner plattformvalget.
+
+**Kontroller hvor den landet** — de to plattformene er to ulike lister:
+
+```powershell
+az ad app show --id $APPID --query 'web.redirectUris' -o tsv
+az ad app show --id $APPID --query 'spa.redirectUris' -o tsv
+```
+
+Står den i den andre, er bestillingen utført på feil plattform. Det er ikke
+synlig i nettleseren, og det er den eneste måten å se det på.
+
 > **Hvert vertsnavn trenger sin egen URI.** Default-vertsnavnet er ett.
 > Flytter du domenet ved cutover, må domenet ha sin (se 0.5). Og et navngitt
 > preview-miljø har sitt eget vertsnavn — Entra avviser innloggingen DER, og

@@ -781,6 +781,26 @@ const BASHISMER = [
     sjekk('med credential reset som familien den hører til',
         /credential reset/.test(kap6), true);
 
+    // Bestillingen: 21.10.2026 hadde operatøren ikke rollen, og måtte
+    // bestille URI-en fra admin. Da er plattformvalget ute av egne hender,
+    // og det er den ene detaljen som kan gjøres feil uten å synes:
+    // registreres URI-en under «Single-page application», behandler Entra
+    // klienten som offentlig, og innløsningen avvises ETT steg senere, med
+    // en melding som ikke nevner plattformen.
+    sjekk('kapittel 6 har en bestillingstekst',
+        /Har du ikke rollen: bestillingen/.test(kap6), true);
+    sjekk('og den krever plattformen Web',
+        /plattformen \*\*Web\*\*/.test(kap6), true);
+    sjekk('og avviser SPA uttrykkelig',
+        /ikke «Single-page application»/.test(kap6), true);
+    sjekk('og sier at de gamle skal stå igjen',
+        /Legg den TIL/.test(kap6), true);
+
+    // Og kontrollen som skiller de to utfallene. Uten den er «utført» og
+    // «utført på feil plattform» samme svar.
+    sjekk('kontrollen leser begge listene',
+        /web\.redirectUris/.test(kap6) && /spa\.redirectUris/.test(kap6), true);
+
     // Preview-miljøet har sitt eget vertsnavn, og innloggingen feiler DER og
     // bare der. Det står i deploy-prod.yml; kapittel 6 må si det også, for
     // ingen leser en workflow-kommentar midt i et oppsett.
