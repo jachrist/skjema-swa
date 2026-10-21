@@ -428,6 +428,7 @@ nettopp innholdstypen på den som var problemet.
 
 ```powershell
 $NOTAFTER = az keyvault certificate show --vault-name $KV --name <sertifikatnavn> --query attributes.expires -o tsv
+$UTLOPER = [datetimeoffset]::Parse($NOTAFTER, [cultureinfo]::InvariantCulture).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss') + 'Z'
 $arg = @(
     'keyvault', 'secret', 'set',
     '--vault-name', $KV,
@@ -435,11 +436,28 @@ $arg = @(
     '--file', "$arbeid/c.pem",
     '--encoding', 'utf-8',
     '--content-type', 'application/x-pem-file',
-    '--expires', $NOTAFTER,
+    '--expires', $UTLOPER,
     '--output', 'none'
 )
 az @arg
 ```
+
+**Datoen må oversettes, og det er ikke valgfritt.** `az` skriver den som
+`2031-10-19T10:52:53+00:00`, men `az keyvault secret set --expires` tar den
+ikke imot:
+
+> `argument --expires: invalid datetime_type value:
+> '2031-10-19T10:52:53+00:00'`
+
+`datetime_type` i keyvault-modulen prøver fire former —
+`%Y-%m-%dT%H:%M:%SZ`, `%Y-%m-%dT%H:%MZ`, `%Y-%m-%dT%HZ` og `%Y-%m-%d` — og
+alle fire krever `Z`, ikke en forskyvning. Derfor linja over. To detaljer i
+den er med vilje:
+
+| Detalj | Hvorfor |
+|---|---|
+| `[datetimeoffset]::Parse(...).UtcDateTime`, ikke `-replace '\+00:00$', 'Z'` | Tekstbyttet stemmer bare så lenge forskyvningen ER `+00:00`. Er den `+02:00`, omdøper byttet et lokalt klokkeslett til UTC og flytter utløpet to timer — stille. Parsingen regner om |
+| `+ 'Z'` utenfor formatstrengen | `Z` er ikke et formattegn i .NET. Står den inni, avhenger utfallet av at ukjente tegn kopieres ordrett. Utenfor er det en bokstav |
 
 Fire valg, og hvert av dem er der for å unngå noe:
 
@@ -447,7 +465,7 @@ Fire valg, og hvert av dem er der for å unngå noe:
 |---|---|
 | `--file`, ikke `--value` | Privatnøkkelen havner da aldri på kommandolinja — ikke i historikken, ikke på skjermen, ikke i et skulderkikk |
 | `--content-type application/x-pem-file` | Gjør at sjekken over svarer riktig også for DENNE secreten. Uten den står den som `null`, og «er formatet riktig?» blir ubesvarlig |
-| `--expires` lest av sertifikatet | Secreten og sertifikatet utløper samtidig. Føres datoen bare på sertifikatet, varsler nøkkelkalenderen om noe annet enn det appen bruker |
+| `--expires` lest av sertifikatet | Secreten og sertifikatet utløper samtidig. Føres datoen bare på sertifikatet, varsler nøkkelkalenderen om noe annet enn det appen bruker. Verdien må oversettes først — se over |
 | `--output none` | `secret set` skriver ellers hele secreten, verdien inkludert, som JSON |
 
 **Rydd opp etterpå.** Filen er en privatnøkkel i klartekst:
