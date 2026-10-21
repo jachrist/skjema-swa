@@ -6,7 +6,7 @@ const { app } = require('@azure/functions');
 const os = require('os');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { lagringsvalg } = require('../lib/lagringsvalg');
-const { flytAuthModus } = require('../lib/flyt-auth');
+const { flytAuthModus, sasIUrlTrossEntra } = require('../lib/flyt-auth');
 // Miljønavnet og plattformens evner bor i lib-en, sammen med timer-vakten
 // i postnumre.js. Samme type liste, samme dag de endres.
 const {
@@ -200,7 +200,14 @@ function maskFlytUrl(verdi) {
     if (!info.satt) return info;
     try {
         const u = new URL(String(verdi));
-        return { ...info, vertsnavn: u.hostname, sti: u.pathname };
+        // Signaturen tas ALDRI med i svaret — men at den FINNES, er noe den
+        // som leser helsesjekken må få vite når vi kjører på Entra. Se
+        // sasIUrlTrossEntra i lib/flyt-auth.js.
+        const advarsel = sasIUrlTrossEntra(verdi);
+        return {
+            ...info, vertsnavn: u.hostname, sti: u.pathname,
+            ...(advarsel ? { advarsel } : {})
+        };
     } catch (_) {
         return { ...info, vertsnavn: null, feil: 'ikke en gyldig URL — uløst Key Vault-referanse?' };
     }

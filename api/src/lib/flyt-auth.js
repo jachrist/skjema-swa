@@ -117,4 +117,37 @@ function glemToken() {
     bufret = null;
 }
 
-module.exports = { flytAuthModus, flytAutorisasjon, FLYT_RESSURS, MODUS, _glemToken: glemToken };
+/**
+ * Bærer en flyt-URL en SAS-signatur, mens vi autentiserer med Entra?
+ *
+ * Spørsmålet kom 21.10.2026: trengs flyt-URLene i Key Vault når de ikke har
+ * `sig=` lenger? Svaret er nei — uten signaturen er adressen ingen
+ * legitimasjon, bare et navn. Men det hviler på en egenskap ved FLYTEN, og
+ * den kan endres uten at noe i dette repoet røres: importeres en gammel
+ * flyt, eller settes en `When a HTTP request is received`-trigger opp uten
+ * Entra, kommer `sig=` tilbake. Da ligger en hemmelighet i klartekst i app
+ * settings, og ingenting feiler.
+ *
+ * Derfor denne: den ser etter signaturen i verdien vi faktisk har, og sier
+ * fra. Ren funksjon, så den kan prøves uten en flyt.
+ *
+ * Returnerer null når alt er som det skal — da har kalleren ingenting å vise.
+ */
+function sasIUrlTrossEntra(verdi, modus = flytAuthModus()) {
+    // MODUS er en LISTE (['sas','entra']), ikke et objekt med navngitte
+    // felt. `MODUS.ENTRA` er undefined, og sammenligningen ble da sann for
+    // alt — altså en vakt som aldri slo til. Fanget av testen under, før den
+    // kom ut.
+    if (String(modus) !== 'entra') return null;
+    const s = String(verdi || '');
+    if (!/[?&]sig=/i.test(s)) return null;
+    return 'URL-en bærer en SAS-signatur (sig=) mens FLYT_AUTH=entra. Da ER '
+        + 'adressen legitimasjon, og den står i klartekst i app settings. '
+        + 'Enten krever flyten likevel ikke Entra — og da er modusen gal — '
+        + 'eller URL-en er en gammel kopi som må byttes.';
+}
+
+module.exports = {
+    flytAuthModus, flytAutorisasjon, FLYT_RESSURS, MODUS,
+    sasIUrlTrossEntra, _glemToken: glemToken
+};

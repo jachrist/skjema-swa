@@ -1156,8 +1156,31 @@ v3 bruker `FLYT_AUTH=entra`, som dev. Det betyr:
 az identity show --name $MI --resource-group $RG --query principalId -o tsv
 ```
 
-3. Flyt-URLene settes som app settings (`*_FLOW_URL`). Uten `sig=` i URL-en er
-   de ikke hemmeligheter — men bekreft at de faktisk er Entra-beskyttet først.
+3. Flyt-URLene settes som app settings (`*_FLOW_URL`). **Uten `sig=` er de
+   ikke hemmeligheter**, og da trenger de ikke Key Vault — adressen er ikke
+   legitimasjon når kallet krever et Entra-token og identitetens `oid` står i
+   flytens allow-liste.
+
+   Men svaret hviler på en egenskap ved FLYTEN, ikke på noe i dette repoet.
+   Bekreft derfor, per URL, før du velger bort vaulten:
+
+   | Sjekk | Hva den avgjør |
+   |---|---|
+   | Ingen `sig=` i query-strengen | Adressen er ikke legitimasjon |
+   | Flytens trigger krever Entra | Et kall uten token avvises |
+   | Identitetens `oid` i allow-lista | Vårt kall slipper inn |
+
+   Velger du bort vaulten, endre formen i `config/env.prod.json` fra
+   `{"keyvault": …}` til `{"settes_direkte": true}` — som i `env.dev.json`.
+   Inventaret og virkeligheten må stemme, ellers ber kapittel 4 om åtte
+   secrets som ikke finnes.
+
+   > **Vakten for veien tilbake.** Importeres en gammel flyt senere, eller
+   > settes en HTTP-trigger opp uten Entra, kommer `sig=` tilbake — og da
+   > ligger en hemmelighet i klartekst i app settings mens `FLYT_AUTH=entra`
+   > sier at alt er i orden. `/api/system/info` melder det nå per URL:
+   > «URL-en bærer en SAS-signatur (sig=) mens FLYT_AUTH=entra». Signaturen
+   > gjentas aldri i svaret — bare at den finnes.
 4. **Connectorene eies av en servicebruker.** Den har ingen rettigheter ut
    over en vanlig bruker: for å opprette oppgaver eller skrive i Teams må den
    meldes eksplisitt inn som teammedlem.
