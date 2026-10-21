@@ -527,5 +527,36 @@ const BASHISMER = [
         /AuthorizationFailed[\s\S]{0,120}scope is invalid/.test(skript), true);
 }
 
+// ---------- 13. sluttmeldingen hører til trinnet som ble kjørt ----------
+//
+// «Prøven» gjelder etter LENKINGEN: den ber deg kalle /api/ping på SWA-URL-en
+// og se at `headerMottatt` blir true. Blokka sto utenfor alle trinn-vaktene,
+// så den ble skrevet ut også etter `-Trinn funcapp` — der ingen SWA finnes og
+// ingenting er lenket. Da ber skriptet deg prøve en URL som ikke er
+// opprettet, og det leses som at man har hoppet over et steg. Meldt
+// 21.10.2026.
+{
+    const skript = fs.readFileSync(path.join(rot, 'scripts', 'steg1-funcapp.ps1'), 'utf8');
+
+    const iProve = skript.indexOf('== Prøven ==');
+    sjekk('prøven finnes', iProve > -1, true);
+
+    // Den må ligge bak en vakt for 'lenk'. Formen er `if ($Trinn -eq 'lenk')`
+    // rett før blokka.
+    const foran = skript.slice(Math.max(0, iProve - 400), iProve);
+    sjekk('prøven står bak en vakt for lenk',
+        /if \(\$Trinn -eq 'lenk'\) \{/.test(foran), true);
+
+    // Og funcapp skal ha sin EGEN avslutning. Uten den sier skriptet
+    // ingenting om hva som er gjort og hva som kommer.
+    sjekk('funcapp har sin egen sluttmelding',
+        /if \(\$Trinn -eq 'funcapp'\) \{[\s\S]{0,200}Ferdig med trinn 3/.test(skript), true);
+
+    // Den må si at 404 fra /api/ping er forventet før deploy. Uten det ser
+    // et uferdig oppsett ut som en feil.
+    sjekk('og sier at 404 før deploy er forventet',
+        /404[\s\S]{0,120}forventet/.test(skript), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
