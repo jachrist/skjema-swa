@@ -419,6 +419,137 @@ az keyvault secret show --vault-name $KV --name <sertifikatnavn> --query "conten
 > hvorfor `$HOME` i Cloud Shell er feil sted å gjøre det, står i
 > `docs/BACKUP-SHAREPOINT.md`.
 
+#### Slik legges den konverterte PEM-en inn
+
+Konverteringen gir en fil med privatnøkkelen i klartekst. Den skal inn som en
+**secret**, ved siden av sertifikatet — ikke som et nytt sertifikatobjekt. Et
+importert sertifikat er et nytt objekt med sin egen secret-rygg, og det var
+nettopp innholdstypen på den som var problemet.
+
+```powershell
+$NOTAFTER = az keyvault certificate show --vault-name $KV --name <sertifikatnavn> --query attributes.expires -o tsv
+$UTLOPER = [datetimeoffset]::Parse($NOTAFTER, [cultureinfo]::InvariantCulture).UtcDateTime.ToString('yyyy-MM-ddTHH:mm:ss') + 'Z'
+$arg = @(
+    'keyvault', 'secret', 'set',
+    '--vault-name', $KV,
+    '--name', 'graph-client-cert-pem',
+    '--file', "$arbeid/c.pem",
+    '--encoding', 'utf-8',
+    '--content-type', 'application/x-pem-file',
+    '--expires', $UTLOPER,
+    '--output', 'none'
+)
+az @arg
+```
+
+**Datoen må oversettes, og det er ikke valgfritt.** `az` skriver den som
+`2031-10-19T10:52:53+00:00`, men `az keyvault secret set --expires` tar den
+ikke imot:
+
+> `argument --expires: invalid datetime_type value:
+> '2031-10-19T10:52:53+00:00'`
+
+`datetime_type` i keyvault-modulen prøver fire former —
+`%Y-%m-%dT%H:%M:%SZ`, `%Y-%m-%dT%H:%MZ`, `%Y-%m-%dT%HZ` og `%Y-%m-%d` — og
+alle fire krever `Z`, ikke en forskyvning. Derfor linja over. To detaljer i
+den er med vilje:
+
+| Detalj | Hvorfor |
+|---|---|
+| `[datetimeoffset]::Parse(...).UtcDateTime`, ikke `-replace '\+00:00$', 'Z'` | Tekstbyttet stemmer bare så lenge forskyvningen ER `+00:00`. Er den `+02:00`, omdøper byttet et lokalt klokkeslett til UTC og flytter utløpet to timer — stille. Parsingen regner om |
+| `+ 'Z'` utenfor formatstrengen | `Z` er ikke et formattegn i .NET. Står den inni, avhenger utfallet av at ukjente tegn kopieres ordrett. Utenfor er det en bokstav |
+
+Fire valg, og hvert av dem er der for å unngå noe:
+
+| Valg | Hvorfor |
+|---|---|
+| `--file`, ikke `--value` | Privatnøkkelen havner da aldri på kommandolinja — ikke i historikken, ikke på skjermen, ikke i et skulderkikk |
+| `--content-type application/x-pem-file` | Gjør at sjekken over svarer riktig også for DENNE secreten. Uten den står den som `null`, og «er formatet riktig?» blir ubesvarlig |
+| `--expires` lest av sertifikatet | Secreten og sertifikatet utløper samtidig. Føres datoen bare på sertifikatet, varsler nøkkelkalenderen om noe annet enn det appen bruker. Verdien må oversettes først — se over |
+| `--output none` | `secret set` skriver ellers hele secreten, verdien inkludert, som JSON |
+
+**Rydd opp etterpå.** Filen er en privatnøkkel i klartekst:
+
+```powershell
+Set-Location ~
+Remove-Item -Recurse -Force $arbeid
+```
+
+> **Konverteringsutskriften virker som den står.** `openssl pkcs12 -nodes` gir
+> ikke bare to PEM-blokker: den legger «Bag Attributes», `localKeyID`,
+> `subject=` og `issuer=` som ren tekst mellom dem, og sertifikatet kommer
+> FØR nøkkelen. Målt 21.10.2026: `createPrivateKey` og `X509Certificate`
+> leser den uendret, `x5t` blir riktig og signaturen verifiserer. **Ikke
+> klipp i fila** — formen er dekket av `api/test/graph-sertifikat.test.js`.
+
+Til slutt peker app-settingen på DENNE secreten, ikke på sertifikatet:
+`GRAPH_CLIENT_CERT_PEM` =
+`@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/graph-client-cert-pem/)`.
+
+#### Slik utstedes det, hvis det skal lages nytt
+
+**Først: skal det lages nytt i det hele tatt?** Gjenbrukes v2 sin backup-app
+(0.5), kan den alt ha et sertifikat. Da gjelder ikke dette avsnittet —
+sjekk innholdstypen over, og konverter hvis den er PFX.
+
+Et NYTT sertifikat betyr nytt nøkkelpar, og da må den offentlige delen
+lastes opp på app-registreringen. En app kan bære flere sertifikater, så v2
+sitt kan bli stående.
+
+Krever **`Key Vault Certificates Officer`** på vaulten — `Secrets Officer`
+dekker ikke sertifikater, se 0.2.
+
+```powershell
+$CERT = 'graph-backup-prod'
+$policy = az keyvault certificate get-default-policy | ConvertFrom-Json
+$policy.secretProperties.contentType = 'application/x-pem-file'
+$policy.x509CertificateProperties.subject = 'CN=fhs-skjema-backup'
+$policy | ConvertTo-Json -Depth 10 | Set-Content -Path policy.json -Encoding utf8NoBOM
+az keyvault certificate create --vault-name $KV --name $CERT --policy '@policy.json'
+```
+
+Tre feller i de fem linjene, og alle gir en fil som *ser* riktig ut:
+
+| Felle | Hvorfor |
+|---|---|
+| `ConvertTo-Json` uten **`-Depth 10`** | Standarddybden er **2**. Policyen er dypere, og de indre objektene blir til `System.Object[]`-tekst |
+| `--policy @policy.json` uten **anførselstegn** | `@` er splatting-operatoren i PowerShell og prøver å splatte `$policy` |
+| `jq` | Finnes ikke i PowerShell-Cloud Shell. `ConvertFrom-Json` gjør samme jobb |
+
+`issuerParameters.name` er `"Self"` i standardpolicyen — altså selvsignert, og
+det er det normale for app-til-app: Entra validerer ingen kjede, bare at
+signaturen stemmer med den offentlige nøkkelen du lastet opp.
+
+**Verifiser formatet med en gang**, før du bygger videre på det:
+
+```powershell
+az keyvault secret show --vault-name $KV --name $CERT --query contentType -o tsv
+```
+
+Står det noe annet enn `application/x-pem-file`, ble ikke policyen brukt.
+
+**Så den offentlige delen til app-registreringen.** Ingen privatnøkkel
+forlater Key Vault:
+
+```powershell
+az keyvault certificate download --vault-name $KV --name $CERT --file cert.cer --encoding DER
+```
+
+Last `cert.cer` opp under **App registrations → appen → Certificates &
+secrets → Certificates**. Bruk portalen: `az ad app credential reset` FJERNER
+eksisterende legitimasjon uten `--append`, og på en app v2 bruker er det en
+dyr feil.
+
+Til slutt peker app-settingen på secret-ryggen av sertifikatet — altså
+`GRAPH_CLIENT_CERT_PEM` satt til
+`@Microsoft.KeyVault(SecretUri=https://<vault>.vault.azure.net/secrets/<CERT>/)`.
+Uten versjon til slutt gir alltid nyeste, og det er riktig her: rotasjon skal
+ikke kreve en endring i app settings.
+
+> **`GRAPH_CLIENT_SECRET` må stå tom.** Er begge satt, vinner hemmeligheten i
+> `tokenKropp()`, og sertifikatveien blir aldri prøvd — den feilen oppdages
+> den dagen hemmeligheten utløper. Se 0.5.
+
 Velges client secret i stedet, gjelder ingenting av dette — da er
 `GRAPH_CLIENT_SECRET` hele oppsettet, og `GRAPH_CLIENT_CERT_PEM` står tom.
 

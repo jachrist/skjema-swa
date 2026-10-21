@@ -646,5 +646,67 @@ const BASHISMER = [
         /vis-appsettings\.js prod --kommandoer --vault/.test(tekst), true);
 }
 
+// ---------- 16. datoen --expires får, er oversatt ----------
+//
+// 21.10.2026: `az keyvault certificate show --query attributes.expires -o tsv`
+// gir `2031-10-19T10:52:53+00:00`, og `az keyvault secret set --expires`
+// avviste den: «invalid datetime_type value». `datetime_type` i
+// keyvault-modulen prøver fire strptime-former, og alle fire krever `Z` —
+// en forskyvning finnes ikke blant dem.
+//
+// Regelen testen holder: variabelen `--expires` får, kan ikke VÆRE den som
+// leser az-utskriften. Skriver noen kommandoen tilbake til den korte
+// formen, blir denne rød — ikke kjøringen i prod.
+{
+    const fra = tekst.indexOf('Slik legges den konverterte PEM-en inn');
+    const til = tekst.indexOf('Slik utstedes det, hvis det skal lages nytt');
+    sjekk('fant avsnittet om den konverterte PEM-en', fra > 0 && til > fra, true);
+    const pem = tekst.slice(fra, til);
+
+    // Formkravene gjelder KOMMANDOEN, ikke prosaen rundt. Første forsøk
+    // leste hele avsnittet, og `+ 'Z'` i tabellteksten gjorde sjekken blind:
+    // mutasjonen som flyttet Z inn i formatstrengen ble ikke rød.
+    const foerLinjer = tekst.slice(0, fra).split('\n').length;
+    const kode = alle.find(b => b.fra > foerLinjer
+        && b.linjer.some(l => /'--expires'/.test(l.tekst)));
+    sjekk('fant kommandoen som setter secreten', !!kode, true);
+    const kommando = kode ? kode.linjer.map(l => l.tekst).join('\n') : '';
+
+    const raa = /\$(\w+)\s*=\s*az keyvault certificate show[^\n]*attributes\.expires/.exec(kommando);
+    sjekk('utløpsdatoen leses av sertifikatet', !!raa, true);
+
+    const brukt = /'--expires',\s*\$(\w+)/.exec(kommando);
+    sjekk('og sendes til --expires', !!brukt, true);
+
+    if (raa && brukt) {
+        sjekk('--expires får ikke az-utskriften direkte', brukt[1] !== raa[1], true);
+
+        // Og den må komme FRA den rå verdien — ellers er det en annen dato.
+        const konvertering = new RegExp(
+            '\\$' + brukt[1] + '\\s*=[^\\n]*\\$' + raa[1]);
+        sjekk('den oversatte verdien utledes av den rå',
+            konvertering.test(kommando), true);
+    }
+
+    // Formen må være Z-formen av de fire az godtar, og uten brøkdelssekunder
+    // (`%Y-%m-%dT%H:%M:%SZ` har ingen plass til dem).
+    sjekk('formen er sekundpresis UTC',
+        /yyyy-MM-ddTHH:mm:ss'\)/.test(kommando), true);
+    sjekk('og Z står utenfor formatstrengen', /\+ 'Z'/.test(kommando), true);
+    sjekk('og det står hvorfor Z ikke står inni',
+        /ikke et formattegn/.test(pem), true);
+
+    // Feilmeldingen selv, slik man kan søke på den.
+    sjekk('feilmeldingen står i dokumentet',
+        /invalid datetime_type value/.test(pem), true);
+    sjekk('og formen az skriver, som utløste den',
+        /\+00:00/.test(pem), true);
+
+    // Tekstbyttet er den nærliggende løsningen, og den er stille gal utenfor
+    // UTC. Avvisningen må stå, ellers kommer den tilbake.
+    sjekk('tekstbyttet er navngitt og avvist',
+        /-replace[\s\S]{0,40}00:00[\s\S]{0,400}\+02:00/.test(pem), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
