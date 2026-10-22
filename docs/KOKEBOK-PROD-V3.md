@@ -1301,7 +1301,9 @@ fordi en tenant kan ha mer enn én SWA. Kjør **«Deploy frontend til dev-SWA»*
 > Står kopien der, er **5.3 stengt**.
 
 **Står kopien der alt?** Rull ut på nytt med `deploy_api = false` FØR du går
-videre til 5.3.
+videre til 5.3. **Målt 22.10.2026: det er nok.** En ny utrulling med tom
+`api_location` fjerner managed functions-kopien, og lenkingen i 5.3 gikk
+rett igjennom etterpå — ingen egen riving trengs.
 
 > **Ikke bytt verdien på en hemmelighet som alt er i bruk.** `AZURE_STATIC_WEB_APPS_API_TOKEN_PROD`
 > peker på v2 sin SWA. Skriver du v3-tokenet dit, går neste ordinære
@@ -1328,7 +1330,15 @@ SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
 ### 5.3 Lenk Function App-en til SWA-en — først nå
 
 **Forutsetning: SWA-en har ingen managed functions.** Er API-et rullet ut
-dit (5.2), kan den ikke lenkes — de to utelukker hverandre.
+dit (5.2), kan den ikke lenkes — de to utelukker hverandre. Rull ut på nytt
+med `deploy_api = false` først; det er målt å være nok.
+
+> **Tørrkjøringen viser ikke de ekte verdiene i dette trinnet.** Function
+> App-ens ressurs-ID og region slås opp først når `-Kjor` er med, så den
+> tørre utskriften har `<Function App-ens resource id>` og regionen fra
+> `$STED`. Den ekte kjøringen viste `'Norway East'` der tørrkjøringen sa
+> `norwayeast`. Begge er riktige — det er samme region, skrevet som API-et
+> oppgir den. Sammenlign derfor FORMEN, ikke verdiene.
 
 ```powershell
 .\scripts\steg1-funcapp.ps1 @p -Trinn lenk -Kjor
