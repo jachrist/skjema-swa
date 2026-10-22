@@ -1985,3 +1985,80 @@ foreach ($id in $ider) { az role assignment delete --ids $id }
   tilgangen.
 - **Ingen utskrift fra `az ... appsettings list` i en commit, e-post eller
   sak.** Navnene er greie; verdiene er det ikke.
+
+---
+
+## 13. Fellene fra første gjennomkjøring (21.–22.10.2026)
+
+Hver av disse kostet tid under den første ekte kjøringen mot prod. De er
+rettet der de hører hjemme — denne lista er registeret, ikke rettelsen.
+
+**Hvorfor den står her:** neste gjennomkjøring setter opp v3 på nytt i den
+andre tenanten, og rydder bort v2 og pilot samtidig. Da er dette fasiten på
+hva som skal prøves, og kolonnen helt til høyre sier hva som kan STRYKES når
+v2 er borte.
+
+### Meldinger som peker feil vei
+
+| Det du ser | Det det betyr | Dekket i |
+|---|---|---|
+| `AuthorizationFailed … or the scope is invalid` | **To ting:** manglende rett ELLER et scope som ikke finnes. Fem runder gikk med; årsaken var en ressursgruppe som ikke fantes | 3.3 |
+| `will continue to update the existing account` | Lagringskontonavn er globalt unike. Meldingen kommer selv om ressursgruppa du oppga ikke finnes | 2 |
+| `Cannot find user or service principal in graph database` | `--assignee` fikk et NAVN. Den vil ha en objekt-ID | 3.1 |
+| `Cannot bind argument to parameter 'Rg'` | `$p` er tom — Cloud Shell mistet variablene. `Rg` er en nøkkel i `$p`, ikke en variabel | 3 |
+| `flag needs an argument: --body` | `$creds` er tom fordi kommandoen FØR feilet. Feilen er ikke i `gh` | 8 |
+| `invalid datetime_type value: '…+00:00'` | `--expires` tar bare `Z`-formen. `attributes.expires` gir forskyvning | 0.4 |
+| `--velg <navn>: ikke et navn i en enten/eller-gruppe` | Navnet er riktig; **klonen er gammel**. `git pull` | 4.2 |
+| `AADSTS50011` | Appen BLE funnet. Bare vertsnavnet mangler — alt annet er på plass | 6 |
+| `AADSTS700027` med riktig avtrykk i Key Vault | Sertifikatet ligger på feil app. `sp-skjema-*` er deploy-objektet, ikke backup-appen | 0.5 |
+| «Lagring er ikke konfigurert» på en lenket SWA | Svaret kom fra en API-KOPI på SWA-en, ikke fra Function App-en | 5.2 |
+| Avvist etter MFA, uten rader i Entras innloggingslogg | Kodevekslingen feilet, ikke autentiseringen. SWA-ens egen identitet mangler | 6.1 |
+
+### Krav uten et trinn
+
+| Felle | Utslag |
+|---|---|
+| SWA-ens systemtildelte identitet + to Key Vault-roller sto som KRAV i 0.2 og 0.5, men ingen kommando utførte det | Innloggingen nede, og symptomet pekte mot Entra |
+| `$PRINCIPAL` ble satt i 3.1 — et VILKÅRSAVSNITT | Tom variabel i 3.2, 3.3, 10 og 11 |
+| Kapittel 4 hadde ikke noe ferdig-kriterium som kunne inntreffe | «Tom utskrift» skjer aldri: verten har alltid egne settinger |
+
+### To lister som svarte ulikt
+
+Den tilbakevendende feilklassen i dette repoet, og den tok fire former på to
+dager:
+
+| Hva som sto to steder | Hva det ga |
+|---|---|
+| `AZURE_FUNCAPP_CREDENTIALS_PROD` i kokeboka mot `AZURE_FUNCAPP_CREDENTIALS` i miljøet i workflowen | Deployen ville feilet i `azure/login`, i et helt annet kapittel |
+| Kravlista krevde `AAD_CLIENT_SECRET` i prod; helsesjekken sa den skal stå tom | Ba om å lime v2 sin klienthemmelighet inn på v3 |
+| `--navn` filtrerte `kun_dokumentasjon`, `--kommandoer` gjorde det ikke | Generatoren ba om å sette noe kravlista ikke krevde |
+| `--sdk-auth` i kokeboka, `--json-auth` i beslutningsnotatet | Avviklingsadvarsel midt i en prod-kjøring |
+
+Alle fire er nå bundet av tester som leser BEGGE kildene.
+
+### Ting kokeboka ba om som ikke kan gjøres
+
+| Teksten sa | Virkeligheten |
+|---|---|
+| «Flytene må ha `…/` som audience, med skråstrek bakerst» | `aud` bestemmes av hvilken ressurs VI ber om token for. Det finnes ingen slik innstilling i Power Automate |
+| «Flytenes allow-liste» | Feltet heter **Tillatte brukere**. Et oppslagsord som ikke finnes i verktøyet, finner ingen |
+
+### Det som forsvinner når v2 og pilot rives
+
+Dette er ryddelista for neste runde. Hver linje finnes BARE fordi to
+versjoner kjører samtidig, eller fordi pilot har en annen arkitektur:
+
+| Kan strykes | Hvorfor det står der nå |
+|---|---|
+| `--velg`-mekanismen og begge enten/eller-parene | Inventaret bærer både hemmelighet og sertifikat, både tilkoblingsstreng og kontonavn, fordi pilot og v2 bruker den ene og v3 den andre. Steg 6 i `BESLUTNING-EGEN-FUNCTION-APP.md` river gaffelen |
+| `deploy_api`-valget i `deploy-prod.yml` | Finnes bare fordi v2 kjører API-et på SWA-en og v3 ikke gjør det |
+| `KUN_I_MILJO` for `AAD_CLIENT_ID` | Erklæringen beskriver v2-arkitekturen, inventaret v3. De kan ikke bli enige før v2 er borte |
+| `AAD_CLIENT_SECRET` i prod-inventaret | Står igjen bare fordi pilot bruker secret-navnet |
+| `SWA_URL` som instansspesifikk | Relevant bare under parallellkjøring |
+| 0.3 og 0.5 i sin helhet | Begge handler om å dele ressursgruppe og app-registreringer med v2 |
+| `production` som miljønavn | Et gammelt navn for pilot |
+
+> **Rydd ikke før v3 er verifisert i begge tenantene.** Hver av linjene over
+> er en gaffel som bærer to oppsett. Fjernes den ene siden før den andre er
+> prøvd, er det ingen vei tilbake — og tilbakeveien i 10 forutsetter at v2
+> fortsatt står.
