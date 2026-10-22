@@ -197,3 +197,61 @@ export function evaluerVilkar(vilkar, seksjoner, behandling, ctx) {
     }
     return false;
 }
+
+export function samleRefererteFelter(vilkar) {
+    const dnf = migrerTilDNF(vilkar);
+    if (!dnf || !Array.isArray(dnf.EllerAv)) return [];
+    const sett = new Set();
+    for (const gruppe of dnf.EllerAv) {
+        for (const b of (gruppe?.OgAv || [])) {
+            if (!b) continue;
+            if (b.Felt) sett.add(String(b.Felt));
+            // Høyresiden kan også peke på et felt. `@idag` er ikke et felt.
+            const v = b.Verdi;
+            if (v && typeof v === 'object' && !Array.isArray(v) && v.Felt
+                && String(v.Felt) !== IDAG_REF) {
+                sett.add(String(v.Felt));
+            }
+        }
+    }
+    return [...sett];
+}
+
+/**
+ * Er hvert felt vilkåret viser til, utfylt?
+ *
+ * En valideringsregel som «sluttdato minst 14 dager etter startdato» kan
+ * ikke avgjøres før BEGGE datoene står der. Uten denne ville brukeren fått
+ * «ugyldig» på et felt hen ikke har rørt, i samme øyeblikk skjemaet åpnes.
+ *
+ * `@idag` teller ikke — den er alltid tilgjengelig, og `samleRefererteFelter`
+ * holder den utenfor.
+ */
+export function alleFelterUtfylt(vilkar, seksjoner, behandling) {
+    for (const ref of samleRefererteFelter(vilkar)) {
+        const v = hentSvar(seksjoner, ref, behandling);
+        const tomt = v === null || v === undefined || v === ''
+            || (Array.isArray(v) && v.length === 0);
+        if (tomt) return false;
+    }
+    return true;
+}
+
+/**
+ * Første valideringsregel som IKKE holder, eller null.
+ *
+ * `Validering` er en liste av { Vilkar, Melding }, og vilkåret leses som
+ * «GYLDIG HVIS» — samme retning som `Vises` og `ObligatoriskHvis`, så den
+ * som setter opp skjemaet slipper å snu tankegangen mellom feltene.
+ *
+ * En regel hoppes over til alle feltene den viser til er utfylt.
+ */
+export function forsteBrudd(validering, seksjoner, behandling, ctx) {
+    if (!Array.isArray(validering)) return null;
+    for (const regel of validering) {
+        if (!regel || !regel.Vilkar) continue;
+        if (!alleFelterUtfylt(regel.Vilkar, seksjoner, behandling)) continue;
+        if (!evaluerVilkar(regel.Vilkar, seksjoner, behandling, ctx)) return regel;
+    }
+    return null;
+}

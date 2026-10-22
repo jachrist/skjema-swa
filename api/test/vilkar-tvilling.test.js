@@ -246,33 +246,101 @@ for (const [navn, verdi, ventet] of HOYRE) {
 
 // ---------- 1c. samleRefererteFelter ser BEGGE sidene ----------
 //
-// Bare backend har den — frontend trenger den ikke, så dette er ikke en
-// tvillingsjekk. Men nå som høyresiden kan peke på et felt, ville lista
-// vært ufullstendig uten at noe sa fra, og en ufullstendig liste over
-// «hvilke felter avhenger dette vilkåret av» er nettopp den slags som
-// leses som fasit.
+// Den var backend-bare til 22.10.2026. Nå trenger frontend den også —
+// `alleFelterUtfylt` hviler på den — så den er blitt en tvilling, og
+// testes som en.
 //
-// Funksjonen er ikke i bruk ennå. Den beholdes fordi feltvelgeren i
-// editoren (steg 3) trenger akkurat dette spørsmålet besvart — og en
-// funksjon som er GAL når den tas i bruk, er verre enn en som mangler.
+// Spørsmålet den svarer på er «hvilke felter avhenger dette vilkåret av».
+// Med en høyreside som kan peke på et felt, ville lista vært ufullstendig
+// uten at noe sa fra, og en ufullstendig liste av det slaget leses som
+// fasit.
 {
-    const samle = hentEksport(les(BACKEND), 'samleRefererteFelter',
-        ['IDAG_REF', 'erDNFFormat', 'erLegacyFormat', 'migrerTilDNF']);
+    const DELER_SAMLE = ['IDAG_REF', 'erDNFFormat', 'erLegacyFormat', 'migrerTilDNF'];
+    const sFra = hentEksport(les(FRONTEND), 'samleRefererteFelter', DELER_SAMLE);
+    const sBak = hentEksport(les(BACKEND), 'samleRefererteFelter', DELER_SAMLE);
 
-    sjekk('tomt vilkår gir tom liste', samle(null), []);
-    sjekk('venstresiden er med',
-        samle(en('1-01', '=', 'x')), ['1-01']);
-    sjekk('høyresiden er med når den peker på et felt',
-        samle(en('1-02', '>=', { Felt: '1-01', PlussDager: 14 })), ['1-02', '1-01']);
-    sjekk('@idag er ikke et felt',
-        samle(en('1-02', '>', { Felt: '@idag' })), ['1-02']);
-    sjekk('literal på høyresiden gir ingen ekstra',
-        samle(en('1-02', '>', '2026-01-01')), ['1-02']);
-    sjekk('duplikater telles én gang',
-        samle({ EllerAv: [
+    const SAMLE = [
+        ['tomt vilkår gir tom liste', null, []],
+        ['venstresiden er med', en('1-01', '=', 'x'), ['1-01']],
+        ['høyresiden er med når den peker på et felt',
+            en('1-02', '>=', { Felt: '1-01', PlussDager: 14 }), ['1-02', '1-01']],
+        ['@idag er ikke et felt', en('1-02', '>', { Felt: '@idag' }), ['1-02']],
+        ['literal på høyresiden gir ingen ekstra',
+            en('1-02', '>', '2026-01-01'), ['1-02']],
+        ['duplikater telles én gang', { EllerAv: [
             { OgAv: [{ Felt: '1-01', Operator: '=', Verdi: { Felt: '1-02' } }] },
             { OgAv: [{ Felt: '1-02', Operator: '=', Verdi: { Felt: '1-01' } }] }
-        ] }), ['1-01', '1-02']);
+        ] }, ['1-01', '1-02']]
+    ];
+    for (const [navn, vilkar, ventet] of SAMLE) {
+        const a = sFra(vilkar), b = sBak(vilkar);
+        sjekk(`samleRefererteFelter: ${navn} — frontend`, a, ventet);
+        sjekk(`samleRefererteFelter: ${navn} — backend`, b, ventet);
+        sjekk(`samleRefererteFelter: ${navn} — de to er enige`, a, b);
+    }
+}
+
+// ---------- 1d. en regel hoppes over til feltene er utfylt ----------
+//
+// Valgt 22.10.2026: en regel som «sluttdato minst 14 dager etter
+// startdato» skal IKKE slå til før begge datoene står der. Ellers møter
+// brukeren «ugyldig» på et felt hen ikke har rørt, i samme øyeblikk
+// skjemaet åpnes.
+{
+    const DELER_UTFYLT = ['UUID_RE', 'IDAG_REF', 'erDNFFormat', 'erLegacyFormat',
+        'migrerTilDNF', 'svarFraFelt', 'hentSvar', 'samleRefererteFelter'];
+    const uFra = hentEksport(les(FRONTEND), 'alleFelterUtfylt', DELER_UTFYLT);
+    const uBak = hentEksport(les(BACKEND), 'alleFelterUtfylt', DELER_UTFYLT);
+
+    const UTFYLT = [
+        ['begge sider utfylt', en(UID_SLUTT, '>', { Felt: UID_START }), true],
+        ['venstresiden tom', en('1-04', '>', { Felt: UID_START }), false],
+        ['høyresiden tom', en(UID_START, '>', { Felt: '1-04' }), false],
+        ['høyresiden er en literal', en(UID_START, '>', '2020-01-01'), true],
+        ['@idag krever ingenting', en(UID_START, '>', { Felt: '@idag' }), true],
+        ['ukjent felt regnes som tomt', en('1-99', '=', 'x'), false],
+        ['tomt vilkår har ingen felter', null, true]
+    ];
+    for (const [navn, vilkar, ventet] of UTFYLT) {
+        const a = uFra(vilkar, SEKSJONER, BEHANDLING);
+        const b = uBak(vilkar, SEKSJONER, BEHANDLING);
+        sjekk(`alleFelterUtfylt: ${navn} — frontend`, a, ventet);
+        sjekk(`alleFelterUtfylt: ${navn} — backend`, b, ventet);
+        sjekk(`alleFelterUtfylt: ${navn} — de to er enige`, a, b);
+    }
+}
+
+// ---------- 1e. forsteBrudd: «gyldig hvis», og første regel som ryker ----------
+{
+    const DELER_BRUDD = [...DELER, 'evaluerVilkar', 'samleRefererteFelter',
+        'alleFelterUtfylt'];
+    const bFra = hentEksport(les(FRONTEND), 'forsteBrudd', DELER_BRUDD);
+    const bBak = hentEksport(les(BACKEND), 'forsteBrudd', DELER_BRUDD);
+
+    const R = (vilkar, melding) => ({ Vilkar: vilkar, Melding: melding });
+    // 1-07 er 2026-03-20, UID_START er 2026-03-01.
+    const OK_REGEL = R(en('1-07', '>=', { Felt: UID_START, PlussDager: 14 }), 'for tidlig');
+    const BRUTT_REGEL = R(en('1-07', '>=', { Felt: UID_START, PlussDager: 30 }), 'for tidlig');
+    const HOPPES_OVER = R(en('1-04', '>', { Felt: UID_START }), 'tomt felt');
+
+    const BRUDD = [
+        ['ingen regler', null, null],
+        ['tom liste', [], null],
+        ['regel som holder', [OK_REGEL], null],
+        ['regel som ryker', [BRUTT_REGEL], 'for tidlig'],
+        ['regel med tomt felt hoppes over', [HOPPES_OVER], null],
+        ['første brudd vinner', [OK_REGEL, BRUTT_REGEL], 'for tidlig'],
+        ['et hopp stopper ikke resten', [HOPPES_OVER, BRUTT_REGEL], 'for tidlig'],
+        ['regel uten vilkår hoppes over', [{ Melding: 'uten vilkår' }], null],
+        ['null i lista hoppes over', [null, OK_REGEL], null]
+    ];
+    for (const [navn, validering, ventet] of BRUDD) {
+        const a = bFra(validering, SEKSJONER, BEHANDLING, CTX);
+        const b = bBak(validering, SEKSJONER, BEHANDLING, CTX);
+        sjekk(`forsteBrudd: ${navn} — frontend`, a ? a.Melding : null, ventet);
+        sjekk(`forsteBrudd: ${navn} — backend`, b ? b.Melding : null, ventet);
+        sjekk(`forsteBrudd: ${navn} — de to er enige`, a, b);
+    }
 }
 
 // ---------- 2. ingen av dem kaster på søppel ----------

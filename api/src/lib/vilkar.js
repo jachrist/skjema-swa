@@ -277,8 +277,49 @@ function samleRefererteFelter(vilkar) {
     return [...sett];
 }
 
+/**
+ * Er hvert felt vilkåret viser til, utfylt?
+ *
+ * En valideringsregel som «sluttdato minst 14 dager etter startdato» kan
+ * ikke avgjøres før BEGGE datoene står der. Uten denne ville brukeren fått
+ * «ugyldig» på et felt hen ikke har rørt, i samme øyeblikk skjemaet åpnes.
+ *
+ * `@idag` teller ikke — den er alltid tilgjengelig, og `samleRefererteFelter`
+ * holder den utenfor.
+ */
+function alleFelterUtfylt(vilkar, seksjoner, behandling) {
+    for (const ref of samleRefererteFelter(vilkar)) {
+        const v = hentSvar(seksjoner, ref, behandling);
+        const tomt = v === null || v === undefined || v === ''
+            || (Array.isArray(v) && v.length === 0);
+        if (tomt) return false;
+    }
+    return true;
+}
+
+/**
+ * Første valideringsregel som IKKE holder, eller null.
+ *
+ * `Validering` er en liste av { Vilkar, Melding }, og vilkåret leses som
+ * «GYLDIG HVIS» — samme retning som `Vises` og `ObligatoriskHvis`, så den
+ * som setter opp skjemaet slipper å snu tankegangen mellom feltene.
+ *
+ * En regel hoppes over til alle feltene den viser til er utfylt.
+ */
+function forsteBrudd(validering, seksjoner, behandling, ctx) {
+    if (!Array.isArray(validering)) return null;
+    for (const regel of validering) {
+        if (!regel || !regel.Vilkar) continue;
+        if (!alleFelterUtfylt(regel.Vilkar, seksjoner, behandling)) continue;
+        if (!evaluerVilkar(regel.Vilkar, seksjoner, behandling, ctx)) return regel;
+    }
+    return null;
+}
+
 module.exports = {
     erDNFFormat, erLegacyFormat, migrerTilDNF,
     evaluerVilkar, evaluerBetingelse, hentSvar,
-    samleRefererteFelter
+    samleRefererteFelter,
+    alleFelterUtfylt,
+    forsteBrudd
 };
