@@ -381,5 +381,54 @@ for (const fil of deployer) {
         /M\u00e5lt 22\.10\.2026: det er nok/.test(kap), true);
 }
 
+// ---------- «doesn't exist» betyr to ting ----------
+//
+// 22.10.2026 ble `Skjema-3-dev` oppgitt som appnavn — visningsnavnet på
+// SWA-en ved siden av. `Azure/functions-action` svarte «Resource
+// Skjema-3-dev of type Microsoft.Web/Sites doesn't exist», og den
+// meldingen dekker BEGGE: feil navn, og en tjenestehovedstol som ikke ser
+// ressursen (kapittel 8 i kokeboka sier at oppslaget kan trenge bredere
+// leserett).
+//
+// Vakten skiller dem ved å liste det den FAKTISK ser.
+{
+    const wf = fs.readFileSync(path.join(mappe, 'deploy-funcapp-pilot.yml'), 'utf8');
+
+    sjekk('workflowen sjekker at appen finnes f\u00f8r deploy',
+        /name: Finnes appen\?/.test(wf), true);
+
+    // Rekkefølgen er hele poenget: etter innlogging, før deploy.
+    const iLogin = wf.indexOf('azure/login');
+    const iSjekk = wf.indexOf('name: Finnes appen?');
+    // `uses:`, ikke bare navnet: vaktens egen kommentar nevner handlingen,
+    // og et søk på navnet alene traff den i stedet for steget.
+    const iDeploy = wf.indexOf('uses: Azure/functions-action');
+    sjekk('og den st\u00e5r etter innlogging', iLogin < iSjekk, true);
+    sjekk('og f\u00f8r deployen', iSjekk < iDeploy, true);
+
+    // Den må LISTE det den ser — ellers er den bare en annen formulering
+    // av samme tvetydige melding.
+    sjekk('vakten lister de synlige appene',
+        /functionapp list --query "\[\]\.name"/.test(wf), true);
+    sjekk('og skiller tomt oppslag fra feil navn',
+        /elif \[ -z "\$SYNLIGE" \]/.test(wf), true);
+    sjekk('og peker p\u00e5 leserett i det tilfellet',
+        /LESERETT som mangler/.test(wf), true);
+
+    // Et tomt oppslag skal ikke STOPPE kjøringen: manglende leserett
+    // hindrer ikke nødvendigvis deployen, og en vakt som stopper noe som
+    // ville gått, er verre enn ingen.
+    const blokk = wf.slice(iSjekk, iDeploy);
+    const iTomt = blokk.indexOf('elif [ -z "$SYNLIGE" ]');
+    const iElse = blokk.indexOf('else', iTomt);
+    sjekk('tomt oppslag advarer, men stopper ikke',
+        /::warning::/.test(blokk.slice(iTomt, iElse)), true);
+    sjekk('mens feil navn stopper', /exit 1/.test(blokk.slice(iElse)), true);
+
+    // Og navnekonvensjonen må stå i input-beskrivelsen, der den skrives inn.
+    sjekk('appnavn-feltet viser formen',
+        /description: '[^']*fa-skjema-3-dev/.test(wf), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
 process.exit(feil ? 1 : 0);
