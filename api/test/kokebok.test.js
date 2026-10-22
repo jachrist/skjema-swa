@@ -879,5 +879,56 @@ const BASHISMER = [
     }
 }
 
+// ---------- 19. $p skriver ikke navnene opp en gang til ----------
+//
+// 22.10.2026: Cloud Shell-økten mistet variablene midt i kjøringen, og
+// `@p -Trinn lenk` stoppet med «Cannot bind argument to parameter 'Rg'
+// because it is an empty string». Meldingen sender deg på jakt etter en
+// variabel `$Rg` — den finnes ikke, `Rg` er en nøkkel i `$p`.
+//
+// To ting fulgte: hashtabellen skal bygges av variablene fra kapittel 1, så
+// navnene ikke står to steder, og den skal si fra NÅR en er tom i stedet for
+// å splatte en tom streng videre.
+{
+    const fra = tekst.indexOf('$p = @{');
+    sjekk('fant $p-blokka', fra > 0, true);
+    const blokk = tekst.slice(fra, tekst.indexOf('}', fra));
+
+    // Hver verdi skal være en variabelreferanse, ikke en streng i hermetegn.
+    const rader = [...blokk.matchAll(/^\s*(\w+)\s*=\s*(\S+)/gm)]
+        .filter(m => m[1] !== 'p');
+    sjekk('$p har rader', rader.length >= 6, true);
+    const litteraler = rader.filter(m => /^'/.test(m[2])).map(m => m[1]);
+    sjekk('ingen navn er skrevet opp på nytt i $p', litteraler, []);
+
+    // Og variablene må være de samme som kapittel 1 setter.
+    const kap1 = tekst.slice(tekst.indexOf('## 1. Navn og variabler'),
+        tekst.indexOf('## 2. '));
+    const satt = new Set([...kap1.matchAll(/^\$(\w+)\s*=/gm)].map(m => m[1]));
+    sjekk('kapittel 1 setter variabler', satt.size >= 6, true);
+    const ukjente = rader
+        .map(m => /^\$(\w+)/.exec(m[2]))
+        .filter(Boolean)
+        .map(m => m[1])
+        .filter(navn => !satt.has(navn));
+    sjekk('alle variablene i $p settes i kapittel 1', ukjente, []);
+
+    // Vakten. Uten den er en tom variabel en feilmelding om noe annet.
+    sjekk('$p-blokka sjekker for tomme verdier',
+        /\$tomme/.test(tekst), true);
+    sjekk('og navngir hvilke som er tomme',
+        /\$tomme -join/.test(tekst), true);
+    sjekk('og peker tilbake til kapittel 1',
+        /Kjor blokka i kapittel 1 forst/.test(tekst), true);
+
+    // Og forklaringen på meldingen man faktisk får.
+    sjekk('den ekte feilmeldingen står der',
+        /Cannot bind argument to parameter/.test(tekst), true);
+    sjekk('og at Rg er en nøkkel, ikke en variabel',
+        /`Rg` er en NØKKEL/.test(tekst), true);
+    sjekk('og at Cloud Shell mister variablene',
+        /Cloud Shell mister variablene/.test(tekst), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

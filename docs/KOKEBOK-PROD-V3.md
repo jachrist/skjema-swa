@@ -766,17 +766,33 @@ Dette trinnet kjøres av `scripts/steg1-funcapp.ps1`, som bygde dev-miljøet.
 Parametrene samles i en hashtabell, slik at tørrkjøringen og den ekte
 kjøringen er samme linje pluss ett ord:
 
+Navnene står i kapittel 1 og skal ikke skrives opp en gang til her — to
+lister med de samme navnene er to lister som kan bli uenige:
+
 ```powershell
 $p = @{
-    Rg          = 'fhs-prod-rg-01'
-    FuncApp     = 'fa-skjema-3-prod'
-    Lagring     = 'stskjema3prodrt'
-    DataLagring = 'stskjema3prod'
-    Identitet   = 'mi-skjema-3-prod'
-    KeyVault    = 'fhs-kv-01'
-    Swa         = 'swa-skjema-3-prod'
+    Rg          = $RG
+    FuncApp     = $FA
+    Lagring     = $RT
+    DataLagring = $DATA
+    Identitet   = $MI
+    KeyVault    = $KV
+    Swa         = $SWA
 }
+$tomme = ($p.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key })
+if ($tomme) { throw "Tomme: $($tomme -join ', '). Kjor blokka i kapittel 1 forst." }
 ```
+
+**Vakten er ikke pynt.** Er en variabel tom, splattes en tom streng inn, og
+skriptet stopper med `Cannot bind argument to parameter 'Rg' because it is
+an empty string` — en melding som leter etter en variabel som heter `Rg`.
+Den finnes ikke; `Rg` er en NØKKEL i `$p`, og `@p` gjør den om til `-Rg`.
+
+> **Cloud Shell mister variablene.** En ny økt starter med tomt skall, og da
+> er både blokka i kapittel 1 og `$p` borte — også midt i kjøringen, hvis
+> økten har stått stille. Symptomet er det samme hver gang: et skript som
+> klager på en parameter du aldri skrev. Kjør begge blokkene på nytt; de
+> setter bare variabler og kan gjentas.
 
 ```powershell
 .\scripts\steg1-funcapp.ps1 @p -Trinn funcapp
