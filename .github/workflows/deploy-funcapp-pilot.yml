@@ -18,8 +18,12 @@ name: Deploy API til Function App
 on:
   workflow_dispatch:
     inputs:
+      # NAVNET PÅ RESSURSEN, ikke visningsnavnet på SWA-en ved siden av.
+      # 22.10.2026 ble `Skjema-3-dev` oppgitt, og handlingen svarte «Resource
+      # Skjema-3-dev of type Microsoft.Web/Sites doesn't exist». Den riktige
+      # er `fa-skjema-3-dev` — konvensjonen er `fa-skjema-3-<miljø>`.
       appnavn:
-        description: 'Navnet på Function App-en (uten .azurewebsites.net)'
+        description: 'Function App-ressursen, f.eks. fa-skjema-3-dev (ikke .azurewebsites.net)'
         required: true
       miljo:
         description: 'Miljø config bygges for'
@@ -68,6 +72,34 @@ jobs:
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_FUNCAPP_CREDENTIALS }}
+
+      # «doesn't exist» betyr TO ting, og handlingen sier ikke hvilken.
+      #
+      # Enten er navnet feil, eller så ser ikke tjenestehovedobjektet
+      # ressursen — `Azure/functions-action` slår opp appen, og et oppslag
+      # kan trenge leserett bredere enn den ene ressursen (se kapittel 8 i
+      # KOKEBOK-PROD-V3.md). Forskjellen avgjøres av om vi ser NOEN
+      # Function Apps i det hele tatt.
+      #
+      # Steget feiler ikke selv om oppslaget er tomt: en manglende leserett
+      # hindrer ikke nødvendigvis deployen, og en vakt som stopper en
+      # kjøring som ville gått er verre enn ingen. Den sier fra, og lar
+      # handlingen avgjøre.
+      - name: Finnes appen?
+        env:
+          APPNAVN: ${{ inputs.appnavn }}
+        run: |
+          SYNLIGE=$(az functionapp list --query "[].name" -o tsv 2>/dev/null || true)
+          if echo "$SYNLIGE" | grep -qx "$APPNAVN"; then
+            echo "Fant $APPNAVN."
+          elif [ -z "$SYNLIGE" ]; then
+            echo "::warning::Ser ingen Function Apps i det hele tatt. Feiler deployen med «doesn't exist», er det LESERETT som mangler — ikke navnet. Se kapittel 8 i KOKEBOK-PROD-V3.md."
+          else
+            echo "::error::Fant ikke «$APPNAVN». Disse ser jeg:"
+            echo "$SYNLIGE" | sed 's/^/  /'
+            echo "::error::Konvensjonen er fa-skjema-3-<miljø>. Oppgi ressursnavnet, ikke visningsnavnet på SWA-en."
+            exit 1
+          fi
 
       - name: Deploy
         uses: Azure/functions-action@v1

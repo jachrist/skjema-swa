@@ -2013,6 +2013,7 @@ v2 er borte.
 | `AADSTS700027` med riktig avtrykk i Key Vault | Sertifikatet ligger på feil app. `sp-skjema-*` er deploy-objektet, ikke backup-appen | 0.5 |
 | «Lagring er ikke konfigurert» på en lenket SWA | Svaret kom fra en API-KOPI på SWA-en, ikke fra Function App-en | 5.2 |
 | Avvist etter MFA, uten rader i Entras innloggingslogg | Kodevekslingen feilet, ikke autentiseringen. SWA-ens egen identitet mangler | 6.1 |
+| `Resource <navn> of type Microsoft.Web/Sites doesn't exist` | **To ting:** feil navn, ELLER at deploy-objektet ikke ser ressursen. Workflowen lister nå det den ser, så de to kan skilles. Konvensjonen er `fa-skjema-3-<miljø>` — ikke visningsnavnet på SWA-en ved siden av | 8 |
 
 ### Krav uten et trinn
 
