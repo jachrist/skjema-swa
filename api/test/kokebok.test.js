@@ -1186,5 +1186,59 @@ const BASHISMER = [
         /if \(-not \$PRINCIPAL\)/.test(tekst), true);
 }
 
+// ---------- 23. skråstreken hører på VÅR side ----------
+//
+// Kapittel 7 sa at flytene måtte ha `https://service.flow.microsoft.com/`
+// «som audience — med skråstrek bakerst». Det leses som en innstilling i
+// Power Automate, og den finnes ikke: `aud` kommer av hvilken ressurs VI ber
+// om et token for. 22.10.2026 spurte den som skriver flytene hva som var
+// ment, og det var et rimelig spørsmål — teksten ba om noe som ikke kan
+// gjøres.
+//
+// Ressursen leses derfor ut av koden, og kapittelet må peke på koden.
+{
+    const auth = fs.readFileSync(
+        path.join(rot, 'api', 'src', 'lib', 'flyt-auth.js'), 'utf8');
+    const m = /FLYT_RESSURS\s*=\s*'([^']+)'/.exec(auth);
+    sjekk('fant flyt-ressursen i koden', !!m, true);
+
+    const fra = tekst.indexOf('## 7. Flytene');
+    const til = tekst.indexOf('## 8. Deploy av API-et');
+    sjekk('fant kapittel 7', fra > 0 && til > fra, true);
+    const kap = tekst.slice(fra, til);
+
+    if (m) {
+        sjekk('ressursen slutter på skråstrek', m[1].endsWith('/'), true);
+        sjekk('og kapittelet oppgir samme streng', kap.includes(m[1]), true);
+    }
+
+    // Og at den tilhører oss, ikke flyten. Uten dette leter man i Power
+    // Automate etter en innstilling som ikke finnes.
+    sjekk('kapittelet sier at skråstreken er vår',
+        /Skråstreken er VÅR, ikke flytens/.test(kap), true);
+    sjekk('og navngir modulen som ber om den',
+        /flyt-auth\.js/.test(kap), true);
+    sjekk('og hvorfor plattform-token\\.js finnes',
+        /plattform-token\.js[\s\S]{0,200}klippet den bort/.test(kap), true);
+
+    // Det som FAKTISK skal gjøres i flyten, med etikettene fra brukerflaten.
+    for (const etikett of ['Spesifikke brukere i leieren', 'Tillatte brukere']) {
+        sjekk(`kapittelet bruker etiketten «${etikett}»`,
+            kap.includes(etikett), true);
+    }
+
+    // `oid` er per miljø. Settes den ved eksport, er dette fella.
+    sjekk('kapittelet sier at oid er per miljø',
+        /per miljø/.test(kap), true);
+    sjekk('og hva som skjer med dev-identitetens oid i prod',
+        /avviser prod-flytene prod-API-et/.test(kap), true);
+
+    // Og at ordet «allow-liste» ikke står igjen noe sted: brukerflaten
+    // heter noe annet, og et oppslagsord som ikke finnes i verktøyet er et
+    // oppslagsord ingen finner.
+    sjekk('ordet allow-liste er ute av kapittelet',
+        /allow-liste/.test(kap), false);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
