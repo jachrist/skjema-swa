@@ -229,6 +229,14 @@ function skrivKommandoer(miljo, vault, valg = []) {
         // Et fravalgt enten/eller-medlem skal ikke stå i en kommando noen
         // limer inn: settes det, slår det stille av den andre veien.
         .filter(rad => !av.has(String(rad).split('  ←  ')[0].trim()))
+        // `kun_dokumentasjon` betyr at oppføringen IKKE skal settes her.
+        // `--navn` filtrerte den bort, denne gjorde det ikke, og da ba
+        // generatoren om å sette noe kravlista ikke krevde — to svar på
+        // samme spørsmål.
+        .filter(rad => {
+            const navn = String(rad).split('  ←  ')[0].trim();
+            return !(data[navn] && data[navn].kun_dokumentasjon);
+        })
         .map(rad => {
             const [navn, secret] = String(rad).split('  ←  ').map(s => s.trim());
             return `    ${sitert(`${navn}=@Microsoft.KeyVault(SecretUri=https://${vault}.vault.azure.net/secrets/${secret}/)`)},`;
@@ -280,6 +288,21 @@ function skrivKommandoer(miljo, vault, valg = []) {
         }
         console.log('');
     }
+    // Oppføringer som står i inventaret for oversiktens skyld, men ikke skal
+    // settes her. Nevnes, ellers ser en utelatt rad ut som et hull.
+    const dokumentasjon = Object.keys(data)
+        .filter(n => !n.startsWith('_'))
+        .filter(n => data[n] && data[n].kun_dokumentasjon)
+        .sort();
+    if (dokumentasjon.length) {
+        console.log(`# ${dokumentasjon.length} star i inventaret, men SETTES IKKE her:`);
+        for (const navn of dokumentasjon) {
+            const m = (data[navn] && data[navn].merknad) || '';
+            console.log(`#   ${navn}${m ? '  - ' + m : ''}`);
+        }
+        console.log('');
+    }
+
     // Enten/eller: begge medlemmene nevnes, også det fravalgte. En utelatt
     // setting som ikke er forklart, ser ut som et hull i kommandoen.
     const valgt = valgteMedlemmer(valg);
