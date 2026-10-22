@@ -1057,7 +1057,12 @@
 
                     // Bygg midlertidig felt-objekt med aktuell Obligatorisk-status
                     const effektivFelt = { ...felt, Obligatorisk: erObligatoriskNa(felt, seksjonerMedSvar) };
-                    const res = valider(effektivFelt, verdi);
+                    // `behandling` er ikke med: utfyllingssiden kjenner ingen
+                    // behandlingssteg. En regel som viser til `behandling-N`
+                    // blir derfor hoppet over her — `alleFelterUtfylt` leser
+                    // den som tom — og det er riktig: steget er ikke tatt
+                    // ennå når skjemaet sendes inn.
+                    const res = valider(effektivFelt, verdi, { seksjoner: seksjonerMedSvar });
                     if (!res.ok) {
                         feltEl?.classList.add('har-feil');
                         if (feilEl) feilEl.textContent = res.feilmelding || 'Ugyldig verdi';

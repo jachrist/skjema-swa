@@ -15,6 +15,7 @@
  */
 import { escapeHtml, escapeJsIAttributt } from './escape.js';
 import { formatStorrelse } from './storrelse.js';
+import { forsteBrudd } from './vilkar.js';
 
 
 export const FELTTYPER = [
@@ -1251,9 +1252,23 @@ export function hentSvarFraDom(feltId, type) {
 
 /**
  * Validerer felt-svar. Returnerer { ok: true } eller { ok: false, feilmelding: string }.
- * Håndterer obligatorisk-sjekk + type-spesifikk validering.
+ *
+ * Tre lag, i denne rekkefølgen:
+ *
+ *   1. Obligatorisk — er feltet tomt?
+ *   2. Felttypen — e-post, fødselsnummer, kontonummer, postnummer, tall
+ *      med `Min_verdi`/`Max_verdi`.
+ *   3. `felt.Validering` — vilkår i DNF-form, som kan sammenligne mot ANDRE
+ *      felter og mot dagens dato. Krever `ctx`.
+ *
+ * Rekkefølgen er ikke tilfeldig: et felt som ikke er en gyldig dato skal si
+ * nettopp det, ikke «sluttdato må være etter startdato».
+ *
+ * `ctx` er { seksjoner, behandling, idag } og trengs bare for lag 3. Uten
+ * den hoppes laget over — da er `valider` den samme funksjonen som før, og
+ * kallsteder som ikke har hele skjemaet for hånden virker uendret.
  */
-export function valider(felt, svar) {
+export function valider(felt, svar, ctx) {
     // Obligatorisk-sjekk
     const erTom = !svar || svar.length === 0 || (svar.length === 1 && (svar[0] === '' || svar[0] == null));
     if (felt.Obligatorisk && erTom) {
@@ -1284,6 +1299,15 @@ export function valider(felt, svar) {
             break;
         }
     }
+
+    // Lag 3: vilkår som kan vise til andre felter. Hopper over seg selv
+    // uten ctx, og hver enkelt regel hopper over seg selv til feltene den
+    // viser til er utfylt — se `forsteBrudd` i vilkar.js.
+    if (ctx && Array.isArray(felt.Validering) && felt.Validering.length) {
+        const brudd = forsteBrudd(felt.Validering, ctx.seksjoner, ctx.behandling, ctx);
+        if (brudd) return { ok: false, feilmelding: brudd.Melding || 'Ugyldig verdi' };
+    }
+
     return { ok: true };
 }
 

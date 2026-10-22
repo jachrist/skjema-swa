@@ -4,6 +4,46 @@
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const IDAG_REF = '@idag';
+const ISO_DATO_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function erIsoDato(v) {
+    return typeof v === 'string' && ISO_DATO_RE.test(v.trim());
+}
+
+function idagISO(ctx) {
+    if (ctx && ctx.idag) return String(ctx.idag);
+    const n = new Date();
+    const p = (x) => String(x).padStart(2, '0');
+    return `${n.getFullYear()}-${p(n.getMonth() + 1)}-${p(n.getDate())}`;
+}
+
+function datoPlussDager(iso, dager) {
+    const [aar, mnd, dag] = String(iso).trim().split('-').map(Number);
+    const ut = new Date(Date.UTC(aar, mnd - 1, dag) + dager * 86400000);
+    const p = (x) => String(x).padStart(2, '0');
+    return `${ut.getUTCFullYear()}-${p(ut.getUTCMonth() + 1)}-${p(ut.getUTCDate())}`;
+}
+
+function hoyreVerdi(verdi, seksjoner, behandling, ctx) {
+    if (!verdi || typeof verdi !== 'object' || Array.isArray(verdi)) return verdi;
+    if (!('Felt' in verdi)) return null;
+
+    const ref = String(verdi.Felt ?? '').trim();
+    let v = ref === IDAG_REF ? idagISO(ctx) : hentSvar(seksjoner, ref, behandling);
+    // Et flervalg gir en array; vi sammenligner mot det første svaret.
+    // `svarFraFelt` gir `null` for et TOMT svar, aldri `[]` — det er målt i
+    // `api/test/vilkar-tvilling.test.js`, og derfor står det ingen vakt mot
+    // en tom array her. En vakt ingen test kan skille fra ingenting, er
+    // ingenting.
+    if (Array.isArray(v)) v = v[0];
+    if (v === undefined) v = null;
+
+    const dager = Number(verdi.PlussDager || 0);
+    if (!dager) return v;
+    if (!erIsoDato(v)) return null;
+    return datoPlussDager(v, dager);
+}
 
 export function erDNFFormat(vilkar) {
     return !!(vilkar && Array.isArray(vilkar.EllerAv));
@@ -88,11 +128,11 @@ function parsTall(v) {
     return Number.isFinite(n) ? n : NaN;
 }
 
-export function evaluerBetingelse(betingelse, seksjoner, behandling) {
+export function evaluerBetingelse(betingelse, seksjoner, behandling, ctx) {
     if (!betingelse) return false;
     const svar = hentSvar(seksjoner, betingelse.Felt, behandling);
     const op = String(betingelse.Operator || '=').toLowerCase();
-    const ventet = betingelse.Verdi;
+    const ventet = hoyreVerdi(betingelse.Verdi, seksjoner, behandling, ctx);
 
     const erTomSvar = svar === null || svar === undefined || svar === ''
         || (Array.isArray(svar) && svar.length === 0);
@@ -109,6 +149,19 @@ export function evaluerBetingelse(betingelse, seksjoner, behandling) {
 
     if (op === '<' || op === '<=' || op === '>' || op === '>=') {
         const v = Array.isArray(svar) ? svar[0] : svar;
+
+        // To ISO-datoer sammenlignes som datoer. Formen sorterer
+        // leksikografisk, så teksten holder — og da slipper vi tidssoner.
+        if (erIsoDato(v) && erIsoDato(ventet)) {
+            const x = String(v).trim(), y = String(ventet).trim();
+            switch (op) {
+                case '<':  return x < y;
+                case '<=': return x <= y;
+                case '>':  return x > y;
+                case '>=': return x >= y;
+            }
+        }
+
         const a = parsTall(v);
         const b = parsTall(ventet);
         if (Number.isNaN(a) || Number.isNaN(b)) return false;
@@ -129,7 +182,7 @@ export function evaluerBetingelse(betingelse, seksjoner, behandling) {
     return false;
 }
 
-export function evaluerVilkar(vilkar, seksjoner, behandling) {
+export function evaluerVilkar(vilkar, seksjoner, behandling, ctx) {
     if (!vilkar) return true;
     const dnf = migrerTilDNF(vilkar);
     if (!dnf || !Array.isArray(dnf.EllerAv) || dnf.EllerAv.length === 0) return true;
@@ -138,9 +191,67 @@ export function evaluerVilkar(vilkar, seksjoner, behandling) {
         if (og.length === 0) continue;
         let alleSanne = true;
         for (const b of og) {
-            if (!evaluerBetingelse(b, seksjoner, behandling)) { alleSanne = false; break; }
+            if (!evaluerBetingelse(b, seksjoner, behandling, ctx)) { alleSanne = false; break; }
         }
         if (alleSanne) return true;
     }
     return false;
+}
+
+export function samleRefererteFelter(vilkar) {
+    const dnf = migrerTilDNF(vilkar);
+    if (!dnf || !Array.isArray(dnf.EllerAv)) return [];
+    const sett = new Set();
+    for (const gruppe of dnf.EllerAv) {
+        for (const b of (gruppe?.OgAv || [])) {
+            if (!b) continue;
+            if (b.Felt) sett.add(String(b.Felt));
+            // Høyresiden kan også peke på et felt. `@idag` er ikke et felt.
+            const v = b.Verdi;
+            if (v && typeof v === 'object' && !Array.isArray(v) && v.Felt
+                && String(v.Felt) !== IDAG_REF) {
+                sett.add(String(v.Felt));
+            }
+        }
+    }
+    return [...sett];
+}
+
+/**
+ * Er hvert felt vilkåret viser til, utfylt?
+ *
+ * En valideringsregel som «sluttdato minst 14 dager etter startdato» kan
+ * ikke avgjøres før BEGGE datoene står der. Uten denne ville brukeren fått
+ * «ugyldig» på et felt hen ikke har rørt, i samme øyeblikk skjemaet åpnes.
+ *
+ * `@idag` teller ikke — den er alltid tilgjengelig, og `samleRefererteFelter`
+ * holder den utenfor.
+ */
+export function alleFelterUtfylt(vilkar, seksjoner, behandling) {
+    for (const ref of samleRefererteFelter(vilkar)) {
+        const v = hentSvar(seksjoner, ref, behandling);
+        const tomt = v === null || v === undefined || v === ''
+            || (Array.isArray(v) && v.length === 0);
+        if (tomt) return false;
+    }
+    return true;
+}
+
+/**
+ * Første valideringsregel som IKKE holder, eller null.
+ *
+ * `Validering` er en liste av { Vilkar, Melding }, og vilkåret leses som
+ * «GYLDIG HVIS» — samme retning som `Vises` og `ObligatoriskHvis`, så den
+ * som setter opp skjemaet slipper å snu tankegangen mellom feltene.
+ *
+ * En regel hoppes over til alle feltene den viser til er utfylt.
+ */
+export function forsteBrudd(validering, seksjoner, behandling, ctx) {
+    if (!Array.isArray(validering)) return null;
+    for (const regel of validering) {
+        if (!regel || !regel.Vilkar) continue;
+        if (!alleFelterUtfylt(regel.Vilkar, seksjoner, behandling)) continue;
+        if (!evaluerVilkar(regel.Vilkar, seksjoner, behandling, ctx)) return regel;
+    }
+    return null;
 }

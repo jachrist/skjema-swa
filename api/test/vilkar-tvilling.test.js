@@ -38,8 +38,11 @@ const FRONTEND = path.join('frontend', 'js', 'vilkar.js');
 const BACKEND = path.join('api', 'src', 'lib', 'vilkar.js');
 
 // Avhengighetene i den rekkefølgen de må erklæres.
-const DELER = ['UUID_RE', 'erDNFFormat', 'erLegacyFormat', 'migrerTilDNF',
-    'svarFraFelt', 'hentSvar', 'parsTall', 'evaluerBetingelse'];
+const DELER = ['UUID_RE', 'IDAG_REF', 'ISO_DATO_RE',
+    'erDNFFormat', 'erLegacyFormat', 'migrerTilDNF',
+    'svarFraFelt', 'hentSvar', 'parsTall',
+    'erIsoDato', 'idagISO', 'datoPlussDager', 'hoyreVerdi',
+    'evaluerBetingelse'];
 
 // Begge hentes ut av kilden og kjøres. Ikke `require` på den ene og en kopi
 // av den andre: da ville testen kunne bestå på sin egen kopi.
@@ -62,7 +65,8 @@ const SEKSJONER = [
             { Nummer: 3, Svar: ['42'] },
             { Nummer: 4, Svar: [] },
             { Nummer: 5, Svar: ['Oslo', 'Bergen'] },
-            { Nummer: 6, Svar: ['3,5'] }
+            { Nummer: 6, Svar: ['3,5'] },
+            { Nummer: 7, Svar: ['2026-03-20'] }
         ]
     }
 ];
@@ -131,19 +135,212 @@ const TILFELLER = [
         ]
     }, true],
 
-    // Datoene ligger her med vilje: i dag sammenlignes de som TEKST, og
-    // `>` på to datoer gir usant fordi parsTall ikke klarer dem. Det er
-    // nettopp hullet utvidelsen skal fylle, og tilfellet står her for at
-    // endringen skal bli SYNLIG når den kommer.
-    ['dato mot dato er ikke støttet ennå', en(UID_START, '>', '2026-02-01'), false]
+    // Dette tilfellet sto med fasit `false` fram til 22.10.2026, da datoer
+    // ikke kunne sammenlignes. Det er endringen, og den er synlig her.
+    ['dato mot fast dato', en(UID_START, '>', '2026-02-01'), true],
+    ['dato mot fast dato, andre vei', en(UID_START, '<', '2026-02-01'), false],
+
+    // ---- høyresiden peker på et annet felt ----
+    ['felt mot felt: slutt er FØR start', en(UID_SLUTT, '>', { Felt: UID_START }), false],
+    ['felt mot felt: start er etter slutt', en(UID_START, '>', { Felt: UID_SLUTT }), true],
+    ['felt mot felt, likhet', en(UID_START, '=', { Felt: UID_START }), true],
+    ['felt mot felt via posisjon', en('1-07', '>', { Felt: '1-01' }), true],
+    ['tall mot tall-felt', en('1-03', '>', { Felt: '1-06' }), true],
+
+    // ---- forskyvning i dager ----
+    ['minst 14 dager etter start', en('1-07', '>=', { Felt: UID_START, PlussDager: 14 }), true],
+    ['minst 30 dager etter start', en('1-07', '>=', { Felt: UID_START, PlussDager: 30 }), false],
+    ['negativ forskyvning', en(UID_SLUTT, '>=', { Felt: UID_START, PlussDager: -60 }), true],
+    // 1. februar + 47 dager = 20. mars. Krysser februar, som har 28 dager
+    // i 2026 — en forskyvning regnet i måneder ville bommet her.
+    ['forskyvning over månedsskifte', en('1-07', '=', { Felt: UID_SLUTT, PlussDager: 47 }), true],
+
+    // ---- dagens dato ----
+    ['etter i dag', en('1-07', '>', { Felt: '@idag' }), true],
+    ['før i dag', en(UID_SLUTT, '<', { Felt: '@idag' }), true],
+    // 10. mars + 10 dager = 20. mars, som er nøyaktig feltets verdi: her
+    // prøves også grensen i `>=`.
+    ['minst 10 dager fram i tid, på dagen', en('1-07', '>=', { Felt: '@idag', PlussDager: 10 }), true],
+    ['minst 14 dager fram i tid', en('1-07', '>=', { Felt: '@idag', PlussDager: 14 }), false],
+    ['minst 90 dager fram i tid', en('1-07', '>=', { Felt: '@idag', PlussDager: 90 }), false],
+
+    // ---- det som IKKE skal gå ----
+    ['forskyvning på noe som ikke er en dato', en('1-03', '>', { Felt: '1-06', PlussDager: 1 }), false],
+    ['høyreside som peker på ukjent felt', en(UID_START, '>', { Felt: '1-99' }), false],
+    ['høyreside som peker på tomt felt', en(UID_START, '>', { Felt: '1-04' }), false],
+    ['objekt uten Felt gir usant', en(UID_START, '>', { PlussDager: 5 }), false],
+    ['@idag på VENSTRESIDEN er ikke et felt', en('@idag', '>', '2020-01-01'), false]
 ];
 
+// `i dag` bindes, ellers endrer testen svar ved midnatt — og en test som
+// feiler på en bestemt dato er en test ingen stoler på.
+const CTX = { idag: '2026-03-10' };
+
 for (const [navn, vilkar, ventet] of TILFELLER) {
-    const a = fra(vilkar, SEKSJONER, BEHANDLING);
-    const b = bak(vilkar, SEKSJONER, BEHANDLING);
+    const a = fra(vilkar, SEKSJONER, BEHANDLING, CTX);
+    const b = bak(vilkar, SEKSJONER, BEHANDLING, CTX);
     sjekk(`${navn} — frontend`, a, ventet);
     sjekk(`${navn} — backend`, b, ventet);
     sjekk(`${navn} — de to er enige`, a, b);
+}
+
+// ---------- 1b. høyresiden, prøvd direkte ----------
+//
+// `hoyreVerdi` må testes for seg. Gjennom `evaluerVilkar` er `null` og en
+// søppelverdi som «NaN-NaN-NaN» ikke til å skille fra hverandre: begge gir
+// NaN i parsTall og dermed `false`. Tre mutasjoner overlevde på nettopp
+// det — vakten mot `PlussDager` på noe som ikke er en dato, objektet uten
+// `Felt`, og det tomme feltet. De er ekte, og de er observerbare HER.
+const hFra = hentEksport(les(FRONTEND), 'hoyreVerdi', DELER.filter(d => d !== 'hoyreVerdi'));
+const hBak = hentEksport(les(BACKEND), 'hoyreVerdi', DELER.filter(d => d !== 'hoyreVerdi'));
+
+const HOYRE = [
+    ['literal tall går uendret gjennom', 42, 42],
+    ['literal tekst går uendret gjennom', 'Oslo', 'Oslo'],
+    ['null går uendret gjennom', null, null],
+    ['array er en literal, ikke en referanse', ['a'], ['a']],
+
+    ['feltreferanse løses', { Felt: UID_START }, '2026-03-01'],
+    ['posisjonsreferanse løses', { Felt: '1-03' }, '42'],
+    ['@idag løses til bundet dato', { Felt: '@idag' }, '2026-03-10'],
+    ['forskyvning på dato', { Felt: UID_START, PlussDager: 19 }, '2026-03-20'],
+    ['forskyvning på @idag', { Felt: '@idag', PlussDager: 10 }, '2026-03-20'],
+    ['negativ forskyvning', { Felt: UID_START, PlussDager: -1 }, '2026-02-28'],
+
+    // De tre mutasjonene som overlevde gjennom evaluerVilkar:
+    ['objekt uten Felt gir null', { PlussDager: 5 }, null],
+    ['forskyvning på et tall gir null, ikke en søppeldato',
+        { Felt: '1-06', PlussDager: 1 }, null],
+    ['tomt felt gir null, ikke tom streng', { Felt: '1-04' }, null],
+    ['ukjent felt gir null', { Felt: '1-99' }, null],
+    ['forskyvning på tomt felt gir null', { Felt: '1-04', PlussDager: 3 }, null],
+    ['flervalg tar det første', { Felt: '1-05' }, 'Oslo']
+];
+
+// Invarianten `hoyreVerdi` hviler på: et TOMT svar gir `null`, ikke `[]`.
+// Uten den ville `v[0]` gitt `undefined`. Den er ikke synlig gjennom
+// hoyreVerdi — derfor prøves den direkte, på begge kopiene.
+{
+    const sFra = hentEksport(les(FRONTEND), 'svarFraFelt');
+    const sBak = hentEksport(les(BACKEND), 'svarFraFelt');
+    const FELT = [
+        ['tomt svar gir null', { Svar: [] }, null],
+        ['ett svar gir verdien, ikke en array', { Svar: ['Oslo'] }, 'Oslo'],
+        ['flere svar gir arrayen', { Svar: ['Oslo', 'Bergen'] }, ['Oslo', 'Bergen']],
+        ['svar som ikke er array', { Svar: 'Oslo' }, 'Oslo'],
+        ['manglende svar gir null', {}, null]
+    ];
+    for (const [navn, felt, ventet] of FELT) {
+        sjekk(`svarFraFelt: ${navn} — frontend`, sFra(felt), ventet);
+        sjekk(`svarFraFelt: ${navn} — backend`, sBak(felt), ventet);
+    }
+}
+
+for (const [navn, verdi, ventet] of HOYRE) {
+    const a = hFra(verdi, SEKSJONER, BEHANDLING, CTX);
+    const b = hBak(verdi, SEKSJONER, BEHANDLING, CTX);
+    sjekk(`høyreside: ${navn} — frontend`, a, ventet);
+    sjekk(`høyreside: ${navn} — backend`, b, ventet);
+    sjekk(`høyreside: ${navn} — de to er enige`, a, b);
+}
+
+// ---------- 1c. samleRefererteFelter ser BEGGE sidene ----------
+//
+// Den var backend-bare til 22.10.2026. Nå trenger frontend den også —
+// `alleFelterUtfylt` hviler på den — så den er blitt en tvilling, og
+// testes som en.
+//
+// Spørsmålet den svarer på er «hvilke felter avhenger dette vilkåret av».
+// Med en høyreside som kan peke på et felt, ville lista vært ufullstendig
+// uten at noe sa fra, og en ufullstendig liste av det slaget leses som
+// fasit.
+{
+    const DELER_SAMLE = ['IDAG_REF', 'erDNFFormat', 'erLegacyFormat', 'migrerTilDNF'];
+    const sFra = hentEksport(les(FRONTEND), 'samleRefererteFelter', DELER_SAMLE);
+    const sBak = hentEksport(les(BACKEND), 'samleRefererteFelter', DELER_SAMLE);
+
+    const SAMLE = [
+        ['tomt vilkår gir tom liste', null, []],
+        ['venstresiden er med', en('1-01', '=', 'x'), ['1-01']],
+        ['høyresiden er med når den peker på et felt',
+            en('1-02', '>=', { Felt: '1-01', PlussDager: 14 }), ['1-02', '1-01']],
+        ['@idag er ikke et felt', en('1-02', '>', { Felt: '@idag' }), ['1-02']],
+        ['literal på høyresiden gir ingen ekstra',
+            en('1-02', '>', '2026-01-01'), ['1-02']],
+        ['duplikater telles én gang', { EllerAv: [
+            { OgAv: [{ Felt: '1-01', Operator: '=', Verdi: { Felt: '1-02' } }] },
+            { OgAv: [{ Felt: '1-02', Operator: '=', Verdi: { Felt: '1-01' } }] }
+        ] }, ['1-01', '1-02']]
+    ];
+    for (const [navn, vilkar, ventet] of SAMLE) {
+        const a = sFra(vilkar), b = sBak(vilkar);
+        sjekk(`samleRefererteFelter: ${navn} — frontend`, a, ventet);
+        sjekk(`samleRefererteFelter: ${navn} — backend`, b, ventet);
+        sjekk(`samleRefererteFelter: ${navn} — de to er enige`, a, b);
+    }
+}
+
+// ---------- 1d. en regel hoppes over til feltene er utfylt ----------
+//
+// Valgt 22.10.2026: en regel som «sluttdato minst 14 dager etter
+// startdato» skal IKKE slå til før begge datoene står der. Ellers møter
+// brukeren «ugyldig» på et felt hen ikke har rørt, i samme øyeblikk
+// skjemaet åpnes.
+{
+    const DELER_UTFYLT = ['UUID_RE', 'IDAG_REF', 'erDNFFormat', 'erLegacyFormat',
+        'migrerTilDNF', 'svarFraFelt', 'hentSvar', 'samleRefererteFelter'];
+    const uFra = hentEksport(les(FRONTEND), 'alleFelterUtfylt', DELER_UTFYLT);
+    const uBak = hentEksport(les(BACKEND), 'alleFelterUtfylt', DELER_UTFYLT);
+
+    const UTFYLT = [
+        ['begge sider utfylt', en(UID_SLUTT, '>', { Felt: UID_START }), true],
+        ['venstresiden tom', en('1-04', '>', { Felt: UID_START }), false],
+        ['høyresiden tom', en(UID_START, '>', { Felt: '1-04' }), false],
+        ['høyresiden er en literal', en(UID_START, '>', '2020-01-01'), true],
+        ['@idag krever ingenting', en(UID_START, '>', { Felt: '@idag' }), true],
+        ['ukjent felt regnes som tomt', en('1-99', '=', 'x'), false],
+        ['tomt vilkår har ingen felter', null, true]
+    ];
+    for (const [navn, vilkar, ventet] of UTFYLT) {
+        const a = uFra(vilkar, SEKSJONER, BEHANDLING);
+        const b = uBak(vilkar, SEKSJONER, BEHANDLING);
+        sjekk(`alleFelterUtfylt: ${navn} — frontend`, a, ventet);
+        sjekk(`alleFelterUtfylt: ${navn} — backend`, b, ventet);
+        sjekk(`alleFelterUtfylt: ${navn} — de to er enige`, a, b);
+    }
+}
+
+// ---------- 1e. forsteBrudd: «gyldig hvis», og første regel som ryker ----------
+{
+    const DELER_BRUDD = [...DELER, 'evaluerVilkar', 'samleRefererteFelter',
+        'alleFelterUtfylt'];
+    const bFra = hentEksport(les(FRONTEND), 'forsteBrudd', DELER_BRUDD);
+    const bBak = hentEksport(les(BACKEND), 'forsteBrudd', DELER_BRUDD);
+
+    const R = (vilkar, melding) => ({ Vilkar: vilkar, Melding: melding });
+    // 1-07 er 2026-03-20, UID_START er 2026-03-01.
+    const OK_REGEL = R(en('1-07', '>=', { Felt: UID_START, PlussDager: 14 }), 'for tidlig');
+    const BRUTT_REGEL = R(en('1-07', '>=', { Felt: UID_START, PlussDager: 30 }), 'for tidlig');
+    const HOPPES_OVER = R(en('1-04', '>', { Felt: UID_START }), 'tomt felt');
+
+    const BRUDD = [
+        ['ingen regler', null, null],
+        ['tom liste', [], null],
+        ['regel som holder', [OK_REGEL], null],
+        ['regel som ryker', [BRUTT_REGEL], 'for tidlig'],
+        ['regel med tomt felt hoppes over', [HOPPES_OVER], null],
+        ['første brudd vinner', [OK_REGEL, BRUTT_REGEL], 'for tidlig'],
+        ['et hopp stopper ikke resten', [HOPPES_OVER, BRUTT_REGEL], 'for tidlig'],
+        ['regel uten vilkår hoppes over', [{ Melding: 'uten vilkår' }], null],
+        ['null i lista hoppes over', [null, OK_REGEL], null]
+    ];
+    for (const [navn, validering, ventet] of BRUDD) {
+        const a = bFra(validering, SEKSJONER, BEHANDLING, CTX);
+        const b = bBak(validering, SEKSJONER, BEHANDLING, CTX);
+        sjekk(`forsteBrudd: ${navn} — frontend`, a ? a.Melding : null, ventet);
+        sjekk(`forsteBrudd: ${navn} — backend`, b ? b.Melding : null, ventet);
+        sjekk(`forsteBrudd: ${navn} — de to er enige`, a, b);
+    }
 }
 
 // ---------- 2. ingen av dem kaster på søppel ----------
@@ -157,7 +354,7 @@ const SOPPEL = [
 ];
 for (const s of SOPPEL) {
     let a, b, kastet = null;
-    try { a = fra(s, SEKSJONER, BEHANDLING); b = bak(s, SEKSJONER, BEHANDLING); }
+    try { a = fra(s, SEKSJONER, BEHANDLING, CTX); b = bak(s, SEKSJONER, BEHANDLING, CTX); }
     catch (e) { kastet = e.message; }
     sjekk(`søppel ${JSON.stringify(s)} kaster ikke`, kastet, null);
     sjekk(`søppel ${JSON.stringify(s)}: de to er enige`, a, b);
@@ -167,7 +364,7 @@ for (const s of SOPPEL) {
 for (const sek of [null, undefined, [], 'ikke en liste']) {
     const v = en('1-03', '=', '42');
     sjekk(`seksjoner=${JSON.stringify(sek)}: de to er enige`,
-        fra(v, sek, BEHANDLING), bak(v, sek, BEHANDLING));
+        fra(v, sek, BEHANDLING, CTX), bak(v, sek, BEHANDLING, CTX));
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);
