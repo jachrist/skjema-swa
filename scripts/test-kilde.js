@@ -102,6 +102,26 @@ function hentEksport(kilde, navn, ogsa = []) {
             if (slutt === -1) break;
             return kilde.slice(i, slutt + 2).replace('export function', 'function');
         }
+
+        // Også en const på ÉN linje: moduler har tabeller og regexer på
+        // toppnivå, og en funksjon som bruker dem kan ikke kjøres uten.
+        // `UUID_RE` i vilkar.js er den første.
+        //
+        // Bare én linje, og den må slutte med `;`. En const over flere
+        // linjer ville blitt kuttet midt i, og resultatet er en test som
+        // feiler på noe helt annet enn det den undersøker — derfor kastes
+        // det heller her.
+        for (const m of [`export const ${n} = `, `const ${n} = `]) {
+            const i = kilde.indexOf(m);
+            if (i === -1) continue;
+            const slutt = kilde.indexOf('\n', i);
+            const linje = kilde.slice(i, slutt === -1 ? undefined : slutt).trim();
+            if (!linje.endsWith(';')) {
+                throw new Error(`${n} går over flere linjer — hentEksport tar bare `
+                    + 'en const som er ferdig på én linje');
+            }
+            return linje.replace(/^export /, '');
+        }
         throw new Error(`Fant ikke ${n} i kilden`);
     });
     return new Function(`${biter.join('\n')}\nreturn ${navn};`)();
