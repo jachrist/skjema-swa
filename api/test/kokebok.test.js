@@ -930,5 +930,72 @@ const BASHISMER = [
         /Cloud Shell mister variablene/.test(tekst), true);
 }
 
+// ---------- 20. secreten kapittel 8 setter, er den workflowen leser ----------
+//
+// 22.10.2026 sa kapittel 8 `gh secret set AZURE_FUNCAPP_CREDENTIALS_PROD`.
+// `deploy-funcapp-pilot.yml` leser `secrets.AZURE_FUNCAPP_CREDENTIALS` i
+// GitHub-MILJØET. En repo-secret med `_PROD` på slutten leses aldri, og
+// deployen ville feilet i `azure/login` med en JSON-feil om en tom verdi —
+// langt fra kommandoen som satte feil navn.
+//
+// Navnet leses derfor ut av workflowen, ikke skrevet opp her.
+{
+    const wf = fs.readFileSync(
+        path.join(rot, '.github', 'workflows', 'deploy-funcapp-pilot.yml'), 'utf8');
+
+    const m = /creds:\s*\$\{\{\s*secrets\.(\w+)\s*\}\}/.exec(wf);
+    sjekk('fant secret-navnet i workflowen', !!m, true);
+
+    // Leses den i et miljø, må kokeboka sette den DER.
+    const iMiljo = /^\s*environment:\s*\$\{\{\s*inputs\.miljo/m.test(wf);
+    sjekk('workflowen kjører i et GitHub-miljø', iMiljo, true);
+
+    const satt = /gh secret set (\S+)([^\n]*)/.exec(tekst.slice(tekst.indexOf('## 8. Deploy av API-et')));
+    sjekk('kokeboka setter en secret i kapittel 8', !!satt, true);
+    if (m && satt) {
+        sjekk('og navnet er det workflowen leser', satt[1], m[1]);
+        if (iMiljo) {
+            sjekk('og den settes i miljøet, ikke på repoet',
+                /--env\s+prod/.test(satt[2]), true);
+        }
+    }
+
+    // Flagget til create-for-rbac står to steder, og de skal være enige.
+    const beslutning = fs.readFileSync(
+        path.join(rot, 'docs', 'BESLUTNING-EGEN-FUNCTION-APP.md'), 'utf8');
+    //
+    // Regelen gjelder KOMMANDOLINJER, ikke prosa: første utgave forbød
+    // strengen overalt, og tok dermed raden som forklarer hvorfor flagget
+    // ikke skal brukes. En regel som ikke kan begrunnes i dokumentet den
+    // gjelder for, er en regel folk fjerner begrunnelsen til.
+    const kommandolinjer = (d) => d.split('\n')
+        .filter(l => /create-for-rbac|azure\/login/.test(l));
+    for (const [navn, d] of [['kokeboka', tekst], ['BESLUTNING', beslutning]]) {
+        const linjer = kommandolinjer(d);
+        sjekk(`${navn} har create-for-rbac-linjer`, linjer.length > 0, true);
+        sjekk(`${navn} bruker ikke det avviklede --sdk-auth`,
+            linjer.filter(l => /--sdk-auth/.test(l)), []);
+        sjekk(`${navn} bruker --json-auth`,
+            d.includes('--json-auth'), true);
+    }
+
+    // Vakten på $creds: uten den blir en rettighetsfeil til en gh-feil.
+    const kap8 = tekst.slice(tekst.indexOf('## 8. Deploy av API-et'),
+        tekst.indexOf('## 9. Verifikasjon'));
+    sjekk('kapittel 8 vokter $creds', /if \(-not \$creds\)/.test(kap8), true);
+    sjekk('og navngir symptomet uten den',
+        /flag needs an argument/.test(kap8), true);
+
+    // Og rettighetsfeilen, som er den sannsynligste utgangen.
+    sjekk('Insufficient privileges er dekket',
+        /Insufficient privileges/.test(kap8), true);
+    sjekk('og rollen er navngitt',
+        /Application Administrator/.test(kap8), true);
+    sjekk('og det finnes en vei uten rollen',
+        /Del jobben/.test(kap8), true);
+    sjekk('der administratoren IKKE trenger ressursgruppa',
+        /UTEN rolle/.test(kap8), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

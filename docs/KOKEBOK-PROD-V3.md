@@ -1569,15 +1569,88 @@ hvor blank lagringen er.
 
 ## 8. Deploy av API-et
 
+**Dette trinnet krever en Entra-rolle du kanskje ikke har.** Les avsnittet
+«Får du `Insufficient privileges`» under FØR du kjører — det er den
+sannsynligste utgangen.
+
 Utskriften fra `az ad sp create-for-rbac` **er en hemmelighet**. Den går rett
 inn i GitHub-secreten, ikke via en sak, e-post eller chat:
 
 ```powershell
 $scope = "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$FA"
-$creds = az ad sp create-for-rbac --name sp-skjema-3-prod-deploy --role contributor --scopes $scope --sdk-auth
-gh secret set AZURE_FUNCAPP_CREDENTIALS_PROD --body $creds
+$creds = az ad sp create-for-rbac --name sp-skjema-3-prod-deploy --role Contributor --scopes $scope --json-auth
+if (-not $creds) { throw "create-for-rbac ga ingenting - les feilen over. Ikke gaa videre." }
+gh secret set AZURE_FUNCAPP_CREDENTIALS --env prod --body $creds
 Remove-Variable creds
 ```
+
+Tre detaljer, og hver av dem har et symptom som peker et annet sted:
+
+| Detalj | Hvorfor |
+|---|---|
+| `--json-auth`, ikke `--sdk-auth` | `--sdk-auth` er avviklet og skriver en advarsel. `docs/BESLUTNING-EGEN-FUNCTION-APP.md` bruker alt den nye — to steder som svarer ulikt er den feilklassen dette repoet oftest har |
+| `--env prod`, og navnet UTEN `_PROD` | `deploy-funcapp-pilot.yml` leser `secrets.AZURE_FUNCAPP_CREDENTIALS` i **GitHub-miljøet** `${{ inputs.miljo }}`. En repo-secret som heter `AZURE_FUNCAPP_CREDENTIALS_PROD` leses aldri, og deployen feiler i `azure/login` med en JSON-feil om en tom verdi |
+| Vakten på `$creds` | Feiler kommandoen over, er `$creds` tom, og `gh secret set --body $creds` svarer `flag needs an argument: --body`. Det ser ut som en feil i `gh`-kallet. Vakten stopper der feilen faktisk er |
+
+#### Får du `Insufficient privileges`
+
+> `ERROR: Directory permission is needed for the current user to register the
+> application. … Insufficient privileges to complete the operation.`
+
+`az ad sp create-for-rbac` er **to operasjoner i én kommando**, med
+rettigheter fra hver sin verden (0.1 C, merknad 1):
+
+| Del | Hva den gjør | Rolle |
+|---|---|---|
+| App-registreringen | Oppretter tjenestehovedobjektet i Entra | **`Application Administrator`**, eller at tenanten tillater at brukere registrerer apper |
+| `--role ... --scopes ...` | Tildeler `Contributor` på Function App-en | `Owner`/`User Access Administrator` på ressursgruppa — den du alt har |
+
+Feilmeldingen gjelder den FØRSTE. Ingenting ble opprettet, og ingen rolle ble
+tildelt.
+
+**Del jobben i stedet for å be om rollen.** En administrator oppretter
+tjenestehovedobjektet UTEN rolle — da trenger de ikke røre ressursgruppa
+— og du tildeler rollen selv etterpå:
+
+> **Bestilling:** Opprett et tjenestehovedobjekt (app-registrering med
+> service principal) med navnet `sp-skjema-3-prod-deploy`. Ingen roller, ingen
+> API-tillatelser, ingen redirect-URI-er. Send meg `appId`, `tenant` og en
+> klienthemmelighet. Hemmeligheten skal IKKE sendes i e-post eller en sak —
+> avtal en egen kanal.
+
+Når du har verdiene, gjør du resten selv:
+
+```powershell
+$APPID = '<appId fra administratoren>'
+$arg = @(
+    'role', 'assignment', 'create',
+    '--assignee', $APPID,
+    '--role', 'Contributor',
+    '--scope', $scope,
+    '--output', 'none'
+)
+az @arg
+```
+
+Og bygger JSON-en `azure/login@v2` forventer. **Hele objektet**, ikke bare
+hemmeligheten — får den noe annet, feiler den med
+`Login failed with SyntaxError: Unexpected token`:
+
+```powershell
+$hemmelig = Read-Host -AsSecureString 'Klienthemmeligheten'
+$klar = [System.Net.NetworkCredential]::new('', $hemmelig).Password
+$creds = @{
+    clientId = $APPID
+    clientSecret = $klar
+    subscriptionId = $SUB
+    tenantId = (az account show --query tenantId -o tsv)
+} | ConvertTo-Json
+gh secret set AZURE_FUNCAPP_CREDENTIALS --env prod --body $creds
+Remove-Variable creds, klar, hemmelig
+```
+
+`Read-Host -AsSecureString` holder hemmeligheten utenfor skjermen og utenfor
+PSReadLine-historikken. `Remove-Variable` til slutt, på alle tre.
 
 **Scopet er den ene Function App-en, ikke ressursgruppa.** Deles gruppa med
 v2 (0.3), rekker ellers denne GitHub-hemmeligheten over v2 sin lagringskonto,

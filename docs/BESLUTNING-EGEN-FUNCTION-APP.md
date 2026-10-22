@@ -1766,7 +1766,7 @@ det samme miljøet.
 
 1. **Tjenestehovedstolen.** `az ad sp create-for-rbac --scopes` vil ha
    abonnementets **GUID**, ikke navnet. Og `azure/login` vil ha hele
-   JSON-objektet fra `--sdk-auth`, ikke bare `clientSecret`. Sett det sammen
+   JSON-objektet fra `--json-auth`, ikke bare `clientSecret`. Sett det sammen
    for hånd, og noe er alltid i utakt — kopier hele utskriften fra den
    kjøringen som lyktes.
 2. **`ID tokens`** var ikke slått på i app-registreringen. Symptomet er en
