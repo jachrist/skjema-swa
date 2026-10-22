@@ -200,7 +200,8 @@ function valgteMedlemmer(valg = []) {
     for (const v of valg) {
         if (!gruppenTil(v)) {
             throw new Error(`--velg ${v}: ikke et navn i en enten/eller-gruppe. `
-                + `Gyldige: ${ENTEN_ELLER.flat().join(', ')}`);
+                + `Gyldige: ${ENTEN_ELLER.flat().join(', ')}. `
+                + 'Står navnet i kokeboka men ikke her, er klonen gammel: git pull');
         }
     }
     return ENTEN_ELLER.map(gr => valg.find(v => gr.includes(v)) || gr[0]);
