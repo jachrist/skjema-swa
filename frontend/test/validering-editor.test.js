@@ -200,5 +200,49 @@ const sideRen = utenKommentarer(les('frontend', 'editor.html'));
     }
 }
 
+// ---------- 10. «dagens dato» er sitt EGET valg ----------
+//
+// 22.10.2026: «Jeg ønsker ikke å sammenlikne to felt med hverandre, men
+// feltet jeg holder på å fylle ut med dagens dato + eller minus et antall
+// dager. Hvordan uttrykkes det?»
+//
+// Det gikk an alt — «Dagens dato» lå inne i feltvelgeren, bak valget «et
+// annet felt». Riktig i data (`@idag` ER en referanse), galt i ord: den
+// som vil sammenligne med dagens dato sammenligner ikke med et FELT, og
+// leter derfor ikke under det valget.
+//
+// Spørsmålet gjaldt altså noe som sto rett der. Det er en etikettfeil, og
+// den koster like mye som en manglende funksjon.
+{
+    const hoyre = editorRen.slice(editorRen.indexOf('function byggHoyreside'));
+
+    // Tre valg, med «dagens dato» som sitt eget.
+    for (const v of ['verdi', 'idag', 'felt']) {
+        sjekk(`høyresiden har valget «${v}»`,
+            hoyre.includes(`['${v}',`), true);
+    }
+    sjekk('og «dagens dato» står som egen tekst',
+        /'dagens dato'/.test(hoyre), true);
+
+    // Valget setter referansen direkte — ingen omvei om feltvelgeren.
+    sjekk('valget setter @idag direkte',
+        /typeSel\.value === 'idag'\) betingelse\.Verdi = \{ Felt: IDAG_REF \}/.test(hoyre), true);
+
+    // Og «Dagens dato» ligger IKKE lenger i feltvelgeren: to steder å
+    // uttrykke det samme er to steder å lete.
+    const feltvelger = hoyre.slice(hoyre.indexOf("valgt === 'felt'"));
+    sjekk('feltvelgeren har ingen egen Dagens dato-opsjon',
+        /Dagens dato/.test(feltvelger), false);
+
+    // Feltvelgeren vises bare når det faktisk er et felt.
+    sjekk('feltvelgeren vises bare for feltvalget',
+        /if \(valgt === 'felt'\) \{/.test(hoyre), true);
+
+    // Dagersfeltet må si hva det betyr i dette tilfellet — «± dager» alene
+    // sier ikke fra hva.
+    sjekk('dagersfeltet sier «fra i dag» når det gjelder i dag',
+        /valgt === 'idag' \? '± dager fra i dag'/.test(hoyre), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
