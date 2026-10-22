@@ -1279,5 +1279,62 @@ const BASHISMER = [
         /allow-liste/.test(kap), false);
 }
 
+// ---------- 24. felleregisteret peker på noe som finnes ----------
+//
+// Kapittel 13 er et register over det som kostet tid 21.–22.10.2026, skrevet
+// fordi neste gjennomkjøring setter opp v3 på nytt i den andre tenanten.
+// Et register som peker på et kapittel som er omdøpt, er verre enn ingen:
+// det ser ut som en fasit.
+{
+    const fra = tekst.indexOf('## 13. Fellene fra første gjennomkjøring');
+    sjekk('fant kapittel 13', fra > 0, true);
+    const kap = tekst.slice(fra);
+
+    // «Dekket i»-kolonnen: hver referanse må finnes som en overskrift.
+    const overskrifter = new Set(
+        [...tekst.matchAll(/^#{2,4}\s+(\d+(?:\.\d+)?)[\s.]/gm)].map(m => m[1]));
+    sjekk('fant kapitteloverskrifter', overskrifter.size > 5, true);
+
+    const rader = kap.split('\n').filter(l => l.startsWith('|') && l.includes('|'));
+    const referanser = [...new Set(rader
+        .map(l => l.split('|').map(c => c.trim()))
+        .map(c => c[c.length - 2])
+        .filter(c => /^\d+(\.\d+)?$/.test(c || '')))];
+    sjekk('registeret peker på kapitler', referanser.length >= 8, true);
+
+    const doede = referanser.filter(r => !overskrifter.has(r));
+    sjekk('alle henvisningene finnes som overskrift', doede, []);
+
+    // Ryddelista må peke på ting som FAKTISK finnes, ellers river neste
+    // runde noe annet enn det som står.
+    const ryddes = tekst.slice(tekst.indexOf('Det som forsvinner når v2'));
+    //
+    // ERKLÆRINGEN må matches, ikke delstrengen: første utgave brukte
+    // `includes`, og en mutasjon som døpte om `deploy_api` til
+    // `deploy_api_gammel` forble grønn — navnet sto jo fortsatt i fila.
+    const kilder = [
+        ['deploy_api', '.github/workflows/deploy-prod.yml', /^\s+deploy_api:/m],
+        ['KUN_I_MILJO', 'api/src/functions/system.js', /^const KUN_I_MILJO = \{/m],
+        ['ENTEN_ELLER', 'scripts/vis-appsettings.js', /^const ENTEN_ELLER = \[/m],
+        ['INSTANSSPESIFIKKE', 'scripts/vis-appsettings.js',
+            /^const INSTANSSPESIFIKKE = new Set\(/m]
+    ];
+    for (const [navn, fil, m] of kilder) {
+        const kilde = fs.readFileSync(path.join(rot, ...fil.split('/')), 'utf8');
+        sjekk(`${navn} er fortsatt erkl\u00e6rt i ${fil}`, m.test(kilde), true);
+    }
+    // Og at ryddelista nevner dem, så den ikke blir ufullstendig i stillhet.
+    for (const navn of ['deploy_api', 'KUN_I_MILJO', 'SWA_URL']) {
+        sjekk(`ryddelista nevner ${navn}`, ryddes.includes(navn), true);
+    }
+
+    // Advarselen om rekkefølge. Uten den er lista en invitasjon til å rive
+    // for tidlig, og tilbakeveien i 10 forutsetter at v2 står.
+    sjekk('ryddelista advarer mot å rydde for tidlig',
+        /Rydd ikke før v3 er verifisert/.test(ryddes), true);
+    sjekk('og sier hvorfor: tilbakeveien',
+        /tilbakeveien i 10 forutsetter/.test(ryddes), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
