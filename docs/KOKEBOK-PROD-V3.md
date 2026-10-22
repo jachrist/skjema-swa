@@ -595,6 +595,12 @@ Tre skiller er verdt å lese nøye:
 * **Deploy-objektet brukes aldri i drift.** Det logger inn i Azure fra en
   GitHub-jobb og legger kode på Function App-en. Står det stille, merker
   ingen bruker noe; feiler det, er det utrullingen som stopper.
+* **`sp-skjema-*` er ALLTID deploy-objektet, aldri backup-appen.** Backup-appen
+  heter `fhs-skjema-backup*`. 20.10.2026 ble backup-sertifikatet lastet opp på
+  `sp-skjema-3-dev` — deploy-objektet i dev — og avtrykket stemte med Key
+  Vault, så sammenligningen så riktig ut. Entra svarte `AADSTS700027`
+  likevel, fordi den slår opp appen `GRAPH_CLIENT_ID` navngir. Se
+  navnefellen i `docs/BACKUP-SHAREPOINT.md`.
 * **De to managed identitetene er ikke den samme.** Den ene hører på Function
   App-en, den andre på SWA-ressursen, og de trenger hver sine roller. Det var
   nettopp den sammenblandingen som holdt innloggingen nede 22.10.2026 — se
@@ -1644,7 +1650,8 @@ tjenestehovedobjektet UTEN rolle — da trenger de ikke røre ressursgruppa
 — og du tildeler rollen selv etterpå:
 
 > **Bestilling:** Opprett et tjenestehovedobjekt (app-registrering med
-> service principal) med navnet `sp-skjema-3-prod-deploy`. Ingen roller, ingen
+> service principal) med navnet `sp-skjema-3-prod-deploy` — tilsvarer
+> `sp-skjema-3-dev` i dev-tenanten. Ingen roller, ingen
 > API-tillatelser, ingen redirect-URI-er. Send meg `appId`, `tenant` og en
 > klienthemmelighet. Hemmeligheten skal IKKE sendes i e-post eller en sak —
 > avtal en egen kanal.

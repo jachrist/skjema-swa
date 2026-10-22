@@ -1027,6 +1027,25 @@ const BASHISMER = [
     sjekk('og det står at det aldri brukes i drift',
         /brukes aldri i drift/.test(kap), true);
 
+    // Navnefellen. Den sto bare i BACKUP-SHAREPOINT.md, og det er for sent:
+    // 20.10.2026 ble backup-sertifikatet lastet opp på deploy-objektet i
+    // dev, avtrykket stemte med Key Vault, og Entra svarte AADSTS700027.
+    // Prefikset leses ut av det dokumentet, ikke skrevet opp her.
+    {
+        const backup = fs.readFileSync(
+            path.join(rot, 'docs', 'BACKUP-SHAREPOINT.md'), 'utf8');
+        const m = /Backup-appen heter `([a-z0-9-]+)`/.exec(backup);
+        sjekk('fant backup-appens navn i BACKUP-SHAREPOINT.md', !!m, true);
+        if (m) {
+            // Tabellen må navngi BEGGE formene, ellers skiller den dem ikke.
+            sjekk('0.5 navngir backup-appens navneform',
+                kap.includes(m[1].replace(/-dev$|-prod$/, '')), true);
+        }
+        sjekk('0.5 advarer om sp-skjema-prefikset',
+            /`sp-skjema-\*` er ALLTID deploy-objektet/.test(kap), true);
+        sjekk('og viser til hendelsen', /AADSTS700027/.test(kap), true);
+    }
+
     // Og at de to managed identitetene ikke er den samme — den
     // sammenblandingen kostet innloggingen.
     sjekk('de to identitetene skilles uttrykkelig',
