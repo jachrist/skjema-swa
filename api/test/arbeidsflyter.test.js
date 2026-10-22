@@ -324,5 +324,58 @@ for (const fil of deployer) {
     }
 }
 
+// ---------- api_location bestemmer ARKITEKTUR, og må være et valg ----------
+//
+// 22.10.2026: v3-SWA-en ble rullet ut med «Deploy prod», som har
+// `api_location: "api"` fordi v2 kjører API-et PÅ SWA-en. v3 har
+// arkitekturen fra dev — API-et i en lenket Function App — så kopien som
+// havnet på SWA-en svarte på /api/* med SWA-ressursens app settings, uten
+// lagringsoppsettet.
+//
+// Symptomet pekte feil vei: «Lagring er ikke konfigurert» leses som at
+// Function App-en mangler verdier. Function App-en var ikke involvert.
+//
+// Og en SWA kan ikke ha både managed functions og en lenket backend, så
+// kopien stenger kapittel 5.3.
+{
+    const dev = fs.readFileSync(path.join(mappe, 'deploy-dev.yml'), 'utf8');
+    const prod = fs.readFileSync(path.join(mappe, 'deploy-prod.yml'), 'utf8');
+
+    // Dev er frontend-alene, og begrunnelsen må stå der — ellers ser den tomme
+    // verdien ut som en forglemmelse noen «retter».
+    sjekk('deploy-dev ruller ikke ut API-et',
+        /api_location:\s*""/.test(dev), true);
+    sjekk('og sier at det ikke er en forglemmelse',
+        /ikke en forglemmelse/.test(dev), true);
+
+    // Prod må kunne gjøre begge deler, og valget må være et input.
+    sjekk('deploy-prod har api_location som et valg',
+        /api_location:\s*\$\{\{/.test(prod), true);
+    sjekk('og det er et deklarert input',
+        /deploy_api:\s*\n\s*description:/.test(prod), true);
+
+    // Standarden skal være v2 sin, ellers endrer dette oppførselen for
+    // miljøet som virker.
+    const inp = /deploy_api:[\s\S]{0,300}?default:\s*(\S+)/.exec(prod);
+    sjekk('fant standardverdien', !!inp, true);
+    sjekk('og den er v2 sin oppførsel', inp && inp[1], 'true');
+
+    // Uttrykket må gi 'api' når valget er på, og tom streng når det er av.
+    sjekk('uttrykket velger mellom api og tom streng',
+        /inputs\.deploy_api\s*&&\s*'api'\s*\|\|\s*''/.test(prod), true);
+
+    // Og kokeboka må si hva v3 skal velge, der deployen kjøres.
+    const kokebok = fs.readFileSync(
+        path.join(rot, 'docs', 'KOKEBOK-PROD-V3.md'), 'utf8');
+    const fra = kokebok.indexOf('### 5.2');
+    const kap = kokebok.slice(fra, kokebok.indexOf('### 5.3', fra));
+    sjekk('kokeboka 5.2 krever deploy_api = false for v3',
+        /`deploy_api`[\s\S]{0,60}`false`/.test(kap), true);
+    sjekk('og sier hvorfor det betyr noe',
+        /Lagring er ikke konfigurert/.test(kap), true);
+    sjekk('og at lenkingen da er stengt',
+        /5\.3 stengt|stengt/.test(kap), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
 process.exit(feil ? 1 : 0);

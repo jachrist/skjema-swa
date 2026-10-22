@@ -859,6 +859,20 @@ const BASHISMER = [
         sjekk('og sier hva som forventes',
             /To linjer forventes/.test(trinn), true);
 
+        // Diagnoserekkefølgen. Den tredje raden er den viktige: «dev har
+        // ingen identitet» er et nærliggende motbevis, og det er ugyldig —
+        // dev og pilot bruker clientSecretSettingName. Står ikke den
+        // forskjellen her, gjentas resonnementet.
+        const kap6b = tekst.slice(fra, fra + 6000);
+        sjekk('diagnoserekkefølgen står der',
+            /v2 logger inn/.test(kap6b), true);
+        sjekk('og at fravær av rader i Entra er et funn',
+            /Ingen mislykkede p\u00e5logginger/.test(kap6b), true);
+        sjekk('og at dev ikke er et motbevis',
+            /clientSecretSettingName/.test(kap6b), true);
+        sjekk('og hvorfor: app setting mot Key Vault-referanse',
+            /uten noen identitet/.test(kap6b), true);
+
         // Symptomet må stå der, ellers leter man i Key Vault-loggene etter
         // noe som ser ut som en Entra-feil.
         sjekk('symptomet er beskrevet', /etter MFA|etter MFA-koden/.test(trinn), true);

@@ -1271,6 +1271,22 @@ fordi en tenant kan ha mer enn én SWA. Kjør **«Deploy frontend til dev-SWA»*
 `DEPLOY-PROD`), og oppgi hemmeligheten du satte i 5.1 under
 `swa_token_secret`.
 
+> **`deploy_api` MÅ settes til `false` for v3.** «Deploy prod» er skrevet for
+> v2, som kjører API-et PÅ SWA-en. v3 har arkitekturen fra dev: API-et bor i
+> en lenket Function App, og app settingene står DER.
+>
+> Rulles API-et likevel ut som managed functions, svarer den kopien på
+> `/api/*` — med SWA-ressursens app settings, som ikke har lagringsoppsettet.
+> Utslaget 22.10.2026: forsiden og innloggingen virket, og `/api/skjematyper`
+> svarte **«Lagring er ikke konfigurert»**. Det leses som at Function App-en
+> mangler verdier, og Function App-en var ikke involvert i det hele tatt.
+>
+> En SWA kan dessuten ikke både ha managed functions og en lenket backend.
+> Står kopien der, er **5.3 stengt**.
+
+**Står kopien der alt?** Rull ut på nytt med `deploy_api = false` FØR du går
+videre til 5.3.
+
 > **Ikke bytt verdien på en hemmelighet som alt er i bruk.** `AZURE_STATIC_WEB_APPS_API_TOKEN_PROD`
 > peker på v2 sin SWA. Skriver du v3-tokenet dit, går neste ordinære
 > prod-deploy til v3 — altså til et miljø ingen brukere skal se ennå, mens v2
@@ -1294,6 +1310,9 @@ SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
 > og ser derfor ut som at noe gikk i stykker etterpå.
 
 ### 5.3 Lenk Function App-en til SWA-en — først nå
+
+**Forutsetning: SWA-en har ingen managed functions.** Er API-et rullet ut
+dit (5.2), kan den ikke lenkes — de to utelukker hverandre.
 
 ```powershell
 .\scripts\steg1-funcapp.ps1 @p -Trinn lenk -Kjor
@@ -1447,6 +1466,26 @@ fortsatt, og symptomet er det samme som før.
 > **`enableRbacAuthorization` må være `true`** for at disse rollene skal bety
 > noe. Står vaulten på tilgangspolicyer, lykkes kommandoene over og
 > oppslaget feiler likevel — se fella i 0.2.
+
+**Slik skilles den fra en Entra-feil.** Symptomet — avvist etter MFA — ser ut
+som noe i app-registreringen. Tre observasjoner avgjør det, og den siste er
+den som nesten sendte feilsøkingen feil vei:
+
+| Observasjon | Hva den utelukker |
+|---|---|
+| **v2 logger inn** | App-registreringen, Conditional Access, «assignment required» og ID-token-innstillingen. De er delte, så de kan ikke være årsaken |
+| **Ingen mislykkede pålogginger i Entra** | Hele Entra-siden. Avvisningen skjedde ikke der, og fravær av rader er her et funn, ikke mangel på informasjon |
+| **dev har ingen SWA-identitet** | **Ingenting.** Dev og pilot bruker `clientSecretSettingName` — en app setting, som plattformen leser uten noen identitet. Bare prod-configen har en Key Vault-referanse, og bare den må *hentes* |
+
+Den siste raden er verdt å lese to ganger. «Dev klarer seg uten» er et
+nærliggende motbevis, og det er ugyldig: de tre miljøene oppgir
+klientlegitimasjonen på to ulike måter, og forskjellen er nettopp det som
+avgjør om en identitet trengs.
+
+> **Målt 22.10.2026.** v2 sin SWA har en systemtildelt identitet; v3 hadde
+> ingen. Da den ble slått på og de to rollene gitt, gikk innloggingen
+> igjennom. Fasiten for hva v3 skal ha, er alltid v2 — den kjører samme
+> config og virker.
 
 > **`openIdIssuer` skal aldri settes til `/common/` eller `/organizations/`.**
 > Da slipper hvilken som helst Entra-tenant inn.

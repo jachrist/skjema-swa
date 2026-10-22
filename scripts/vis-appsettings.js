@@ -174,7 +174,16 @@ function skrivNavn(miljo, valg = []) {
  *
  * Rekkefølgen er altså ikke tilfeldig: det første navnet er standardvalget.
  */
-const ENTEN_ELLER = [['GRAPH_CLIENT_SECRET', 'GRAPH_CLIENT_CERT_PEM']];
+const ENTEN_ELLER = [
+    ['GRAPH_CLIENT_SECRET', 'GRAPH_CLIENT_CERT_PEM'],
+    // Samme form, og den sto her fra før uten å være erklært: `lagringsvalg.js`
+    // tar tilkoblingsstrengen når den er satt, og leser da til og med
+    // KONTONAVNET ut av strengen — STORAGE_ACCOUNT_NAME blir ikke bare
+    // ignorert, den kan peke på en annen konto uten at noe sier fra.
+    // Prod v3 skal gå på identitet (kapittel 9, punkt 3), og da må strengen
+    // stå tom.
+    ['STORAGE_CONNECTION_STRING', 'STORAGE_ACCOUNT_NAME']
+];
 
 /** Gruppa `navn` hører i, eller null. */
 function gruppenTil(navn) {
