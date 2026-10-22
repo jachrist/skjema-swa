@@ -1,24 +1,28 @@
-name: Deploy pilot (test/utvikling)
+name: Deploy pilot (manuell)
 
-# Automatisk deploy til pilot-tenanten ved push til main.
-# Prod-tenanten deployes fra deploy-prod.yml (manuell trigger).
+# KUN manuell kjøring fra 22.10.2026.
 #
-# paths-ignore: rene dokumentasjonsendringer (docs/, README, CLAUDE.md, TODO)
-# deployes ikke — ingen .md-fil inngår i frontend/ eller api/. Berører en commit
-# både kode og dokumentasjon, kjører deployen som normalt.
+# Pilot deployet automatisk ved hver push til main. Det var riktig da pilot
+# var stedet man testet. Nå foregår testingen på dev (steg 0 i
+# docs/BESLUTNING-EGEN-FUNCTION-APP.md), og pilot brukes lite.
+#
+# En automatisk deploy til et miljø ingen ser på, er ikke gratis: den
+# ruller ut halvferdig arbeid i et miljø som fortsatt har ekte flyter og
+# ekte e-postutsending, og den lager en strøm av kjøringer ingen leser.
+# Blir en av dem rød, oppdages det ikke.
+#
+# Tilbakeveien er én linje: legg `push`-triggeren tilbake. Den står her,
+# utkommentert, fordi det er den eneste endringen som skal til — og fordi
+# paths-ignore-lista ellers måtte finnes opp på nytt.
+#
+#   push:
+#     branches: [main]
+#     paths-ignore: ['**.md', 'docs/**', '.gitignore']
+#
+# Prod-tenanten deployes fra deploy-prod.yml, også manuelt.
 
 on:
-  # Manuell kjøring fra Actions-fanen. Trengs når siste push bare rørte
-  # dokumentasjon, eller når en deploy skal kjøres om igjen uten en ny commit
-  # — for eksempel etter at en innstilling er endret i Azure.
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-      - '.gitignore'
 
 # INGEN pull_request-trigger, og det er et valg.
 #

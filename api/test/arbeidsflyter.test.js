@@ -92,8 +92,20 @@ for (const fil of deployer) {
 // ---------- pilot ----------
 {
     const t = triggere(les('deploy-pilot.yml'));
-    sjekk('pilot: triggere', t.sort(), ['push', 'workflow_dispatch']);
+    // KUN manuell fra 22.10.2026. Testingen foregår på dev, og pilot brukes
+    // lite — men miljøet har fortsatt ekte flyter og ekte e-postutsending.
+    // En automatisk deploy dit ruller ut halvferdig arbeid i et miljø ingen
+    // ser på, og lager en strøm av kjøringer ingen leser. Blir en av dem
+    // rød, oppdages det ikke.
+    sjekk('pilot: kun manuell', t.sort(), ['workflow_dispatch']);
     sjekk('pilot: ingen preview per PR', t.includes('pull_request'), false);
+
+    // Tilbakeveien skal stå i fila. Uten den må paths-ignore-lista finnes
+    // opp på nytt, og da blir den ikke den samme.
+    sjekk('pilot: tilbakeveien er skrevet ned',
+        /#\s*push:/.test(les('deploy-pilot.yml')), true);
+    sjekk('pilot: med paths-ignore',
+        /#\s*paths-ignore:/.test(les('deploy-pilot.yml')), true);
     // Close-jobben har ingen hendelse å kjøre på uten triggeren, og en jobb
     // som aldri kan kjøre ser ut som en sikkerhetsmekanisme som finnes.
     sjekk('pilot: ingen død close-jobb',
