@@ -257,3 +257,38 @@ export function forsteBrudd(validering, seksjoner, behandling, ctx) {
     }
     return null;
 }
+
+/**
+ * Alle valideringsbrudd i et skjema — for DIAGNOSE, ikke for å avvise.
+ *
+ * Bakgrunn (22.10.2026): `valider()` i frontend håndhever reglene, og
+ * `POST /api/skjemaer` er det eneste endepunktet som skriver feltsvar.
+ * Spørsmålet var om backend også burde avvise. Svaret ble nei — samme
+ * endepunkt lagrer UTKAST, som med vilje er uten validering, og en regel
+ * lagt til i ettertid ville gjort et gammelt utkast umulig å sende inn.
+ *
+ * Men `register.html` redigerer svar og poster til samme endepunkt UTEN å
+ * validere. Den veien finnes, og den var ikke kjent da steg 2 ble bygget.
+ * Derfor denne: se hva som faktisk skjer, uten å stenge noen ute.
+ *
+ * Skjulte felter hoppes over, slik `validerAlle()` i index.html gjør — en
+ * regel på et felt brukeren aldri så, er ikke et brudd brukeren kan rette.
+ */
+export function bruddISkjema(skjematype, seksjoner, behandling, ctx) {
+    const ut = [];
+    for (const sek of (skjematype?.Seksjoner || [])) {
+        if (sek.Vises && !evaluerVilkar(sek.Vises, seksjoner, behandling, ctx)) continue;
+        for (const felt of (sek.Felter || [])) {
+            if (!Array.isArray(felt.Validering) || !felt.Validering.length) continue;
+            if (felt.Vises && !evaluerVilkar(felt.Vises, seksjoner, behandling, ctx)) continue;
+            const brudd = forsteBrudd(felt.Validering, seksjoner, behandling, ctx);
+            if (brudd) {
+                ut.push({
+                    ref: felt.Id || `${sek.Seksjon_nummer}-${felt.Nummer}`,
+                    melding: brudd.Melding || 'Ugyldig verdi'
+                });
+            }
+        }
+    }
+    return ut;
+}

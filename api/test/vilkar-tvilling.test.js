@@ -367,5 +367,68 @@ for (const sek of [null, undefined, [], 'ikke en liste']) {
         fra(v, sek, BEHANDLING, CTX), bak(v, sek, BEHANDLING, CTX));
 }
 
+// ---------- 1f. bruddISkjema: hele skjemaet, for diagnose ----------
+//
+// Backend AVVISER ikke på valideringsregler — samme endepunkt lagrer
+// utkast, og en regel lagt til i ettertid ville gjort et gammelt utkast
+// umulig å sende inn. Men `register.html` redigerer svar og poster hit
+// uten å validere, så veien forbi finnes. Denne gir svaret på hvor ofte.
+{
+    const DELER_SKJEMA = [...DELER, 'evaluerVilkar', 'samleRefererteFelter',
+        'alleFelterUtfylt', 'forsteBrudd'];
+    const sFra = hentEksport(les(FRONTEND), 'bruddISkjema', DELER_SKJEMA);
+    const sBak = hentEksport(les(BACKEND), 'bruddISkjema', DELER_SKJEMA);
+
+    const regel = (felt, op, verdi, melding) => ([{
+        Vilkar: { EllerAv: [{ OgAv: [{ Felt: felt, Operator: op, Verdi: verdi }] }] },
+        Melding: melding
+    }]);
+
+    // 1-07 er 2026-03-20, UID_START er 2026-03-01.
+    const TYPE = {
+        Seksjoner: [{
+            Seksjon_nummer: '1',
+            Felter: [
+                { Nummer: 1, Id: UID_START },
+                { Nummer: 7, Validering: regel('1-07', '>=', { Felt: UID_START, PlussDager: 30 }, 'for tidlig') }
+            ]
+        }]
+    };
+
+    const kjor = (type) => {
+        const a = sFra(type, SEKSJONER, BEHANDLING, CTX);
+        const b = sBak(type, SEKSJONER, BEHANDLING, CTX);
+        sjekk('bruddISkjema: de to er enige', a, b);
+        return a;
+    };
+
+    sjekk('et brudd meldes', kjor(TYPE).map(b => b.melding), ['for tidlig']);
+    sjekk('og med feltreferansen', kjor(TYPE).map(b => b.ref), ['1-7']);
+
+    // En regel som holder gir ingenting.
+    const ok2 = JSON.parse(JSON.stringify(TYPE));
+    ok2.Seksjoner[0].Felter[1].Validering[0].Vilkar.EllerAv[0].OgAv[0].Verdi.PlussDager = 14;
+    sjekk('en regel som holder gir ingenting', kjor(ok2), []);
+
+    // SKJULTE felter hoppes over: en regel på noe brukeren aldri så, er
+    // ikke et brudd brukeren kan rette. Samme som validerAlle() gjør.
+    const skjultFelt = JSON.parse(JSON.stringify(TYPE));
+    skjultFelt.Seksjoner[0].Felter[1].Vises = { EllerAv: [{ OgAv: [
+        { Felt: '1-03', Operator: '=', Verdi: 'aldri' }
+    ] }] };
+    sjekk('skjult felt gir ingen brudd', kjor(skjultFelt), []);
+
+    const skjultSeksjon = JSON.parse(JSON.stringify(TYPE));
+    skjultSeksjon.Seksjoner[0].Vises = { EllerAv: [{ OgAv: [
+        { Felt: '1-03', Operator: '=', Verdi: 'aldri' }
+    ] }] };
+    sjekk('skjult seksjon gir ingen brudd', kjor(skjultSeksjon), []);
+
+    // Og det som ikke skal kaste.
+    sjekk('uten skjematype', kjor(null), []);
+    sjekk('skjematype uten seksjoner', kjor({}), []);
+    sjekk('felt uten Validering', kjor({ Seksjoner: [{ Seksjon_nummer: '1', Felter: [{ Nummer: 1 }] }] }), []);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

@@ -512,7 +512,7 @@
         import { kommentarerSomHtml } from './js/behandling-kommentar.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { byggEditWidget, byggReadonlyVisning, hentSvarFraDom, svarTekstFor, preSubmitOpplasting, samleSeksjonerFraDom, escapeHtml as escHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
-        import { evaluerVilkar } from './js/vilkar.js';
+        import { evaluerVilkar, bruddISkjema } from './js/vilkar.js';
         import { statusTekst, statusKlasse } from './js/skjemastatus.js';
         import { listekolonner } from './js/listekolonne.js';
         import { escapeJsIAttributt } from './js/escape.js';
@@ -1235,6 +1235,26 @@
                 }
                 nyeSeksjoner.push(seksjonUt);
             }
+            // ADVARSEL, ikke sperre.
+            //
+            // Registeret redigerer et skjema som ALT er sendt inn, ofte for å
+            // rette noe. Reglene kan dessuten være lagt til etter at skjemaet
+            // ble fylt ut, og da er bruddet en opplysning — ikke en feil den
+            // som retter har begått.
+            //
+            // Men å lagre et brudd i stillhet er verre: registeret er den ene
+            // veien forbi valideringen i utfyllingssiden, og uten dette ville
+            // ingen visst at det skjedde.
+            const brudd = bruddISkjema(state.skjematype, nyeSeksjoner,
+                state.valgtSkjema?.Behandling);
+            if (brudd.length) {
+                const linjer = brudd.map(b => `• ${b.melding}`).join('\n');
+                const svar = confirm(
+                    `${brudd.length === 1 ? 'Én regel' : `${brudd.length} regler`} `
+                    + `er ikke oppfylt:\n\n${linjer}\n\nLagre likevel?`);
+                if (!svar) return;
+            }
+
             const body = {
                 ...state.valgtSkjema,
                 Skjema_id: state.valgtId,
