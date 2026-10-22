@@ -816,5 +816,54 @@ const BASHISMER = [
         /ikke en mislykket deploy/.test(kap52), true);
 }
 
+// ---------- 18. SWA-ens egen identitet må ha et TRINN ----------
+//
+// 22.10.2026: redirect-URI-en var på plass, men innloggingen feilet etter
+// MFA. Kravet sto i kokeboka to steder — 0.2 («SWA-ens plattformidentitet»)
+// og 0.5 — men INGEN steg slo på identiteten eller tildelte rollene. Et krav
+// uten et trinn er et krav som hoppes over, og dette er den dyreste
+// varianten: autoriseringen trenger ikke sertifikatet, så brukeren kommer
+// gjennom passord og MFA og avvises først i kodevekslingen, som er en
+// server-til-server-samtale ingen ser.
+//
+// Regelen: bruker en SWA-config `clientSecretCertificateKeyVaultReference`,
+// MÅ kokeboka ha kommandoene som slår på identiteten og gir BEGGE rollene.
+{
+    const konfigene = fs.readdirSync(rot)
+        .filter(n => /^staticwebapp\.config\..*\.json$/.test(n));
+    const brukerKvRef = konfigene.some(n => fs
+        .readFileSync(path.join(rot, n), 'utf8')
+        .includes('clientSecretCertificateKeyVaultReference'));
+    sjekk('en SWA-config henter sertifikatet fra Key Vault', brukerKvRef, true);
+
+    if (brukerKvRef) {
+        // Identiteten må slås PÅ et sted, ikke bare omtales.
+        sjekk('kokeboka sl\u00e5r p\u00e5 identiteten',
+            /az staticwebapp identity assign/.test(tekst), true);
+        sjekk('og leser den f\u00f8rst, s\u00e5 trinnet kan gjentas',
+            /az staticwebapp identity show/.test(tekst), true);
+
+        // Begge rollene, i en kommando som faktisk tildeler.
+        const fra = tekst.indexOf('SWA-ens egen identitet');
+        sjekk('trinnet finnes som eget avsnitt', fra > 0, true);
+        const trinn = tekst.slice(fra, fra + 2600);
+        for (const rolle of ['Key Vault Secrets User', 'Key Vault Certificate User']) {
+            sjekk(`trinnet tildeler ${rolle}`, trinn.includes(rolle), true);
+        }
+        sjekk('og det er en rolletildeling, ikke en tabellrad',
+            /'role', 'assignment', 'create'/.test(trinn), true);
+
+        // Og kontrollen etterpå. Én rolle av to feiler like stille som ingen.
+        sjekk('trinnet kontrollerer at begge st\u00e5r der',
+            /role assignment list[\s\S]{0,200}roleDefinitionName/.test(trinn), true);
+        sjekk('og sier hva som forventes',
+            /To linjer forventes/.test(trinn), true);
+
+        // Symptomet må stå der, ellers leter man i Key Vault-loggene etter
+        // noe som ser ut som en Entra-feil.
+        sjekk('symptomet er beskrevet', /etter MFA|etter MFA-koden/.test(trinn), true);
+    }
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

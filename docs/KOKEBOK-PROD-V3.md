@@ -1392,8 +1392,61 @@ synlig i nettleseren, og det er den eneste måten å se det på.
 `AAD_CLIENT_ID` og auth-sertifikatet settes på **SWA-ressursen**, ikke på
 Function App-en. I prod hentes sertifikatet fra Key Vault via
 `clientSecretCertificateKeyVaultReference` i `staticwebapp.config.prod.json`.
-Det oppslaget gjøres av *plattformen*, med SWA-ens egen identitet, og den
-trenger `Key Vault Secrets User` **og** `Key Vault Certificate User`.
+
+#### 6.1 SWA-ens egen identitet, og to roller på vaulten
+
+Det oppslaget gjøres av *plattformen*, med SWA-ressursens **systemtildelte
+identitet** — en annen identitet enn `mi-skjema-3-prod`, og den finnes ikke
+før noen slår den på. Dette er et eget trinn, ikke en merknad.
+
+**Symptomet når den mangler er ikke en feilmelding om Key Vault.**
+Innloggingen kommer HELT igjennom brukernavn, passord og MFA — autorisering
+trenger ikke sertifikatet — og feiler først når SWA-en skal veksle inn koden,
+som er en server-til-server-samtale brukeren ikke ser. Det brukeren ser er at
+Microsoft avviser etter MFA-koden, uten at noe nevner verken SWA-en eller
+vaulten.
+
+```powershell
+$SWAMI = az staticwebapp identity show --name $SWA --resource-group $RG --query principalId -o tsv
+$SWAMI
+```
+
+Er den tom, slå den på:
+
+```powershell
+$SWAMI = az staticwebapp identity assign --name $SWA --resource-group $RG --query principalId -o tsv
+```
+
+Så de to rollene. `Key Vault Secrets User` alene holder ikke her — rollene i
+Key Vault er delt per objekttype, og referansen peker på et **sertifikat**:
+
+```powershell
+$KV_ID = az keyvault show --name $KV --query id -o tsv
+foreach ($rolle in @('Key Vault Secrets User', 'Key Vault Certificate User')) {
+    $arg = @(
+        'role', 'assignment', 'create',
+        '--assignee-object-id', $SWAMI,
+        '--assignee-principal-type', 'ServicePrincipal',
+        '--role', $rolle,
+        '--scope', $KV_ID,
+        '--output', 'none'
+    )
+    az @arg
+}
+```
+
+**Kontroller at begge står der:**
+
+```powershell
+az role assignment list --assignee $SWAMI --scope $KV_ID --query '[].roleDefinitionName' -o tsv
+```
+
+To linjer forventes. Én linje er den stille varianten: oppslaget feiler
+fortsatt, og symptomet er det samme som før.
+
+> **`enableRbacAuthorization` må være `true`** for at disse rollene skal bety
+> noe. Står vaulten på tilgangspolicyer, lykkes kommandoene over og
+> oppslaget feiler likevel — se fella i 0.2.
 
 > **`openIdIssuer` skal aldri settes til `/common/` eller `/organizations/`.**
 > Da slipper hvilken som helst Entra-tenant inn.
