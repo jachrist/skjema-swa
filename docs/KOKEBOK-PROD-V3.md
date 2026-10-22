@@ -1595,20 +1595,39 @@ avgjør om en identitet trengs.
 
 v3 bruker `FLYT_AUTH=entra`, som dev. Det betyr:
 
-1. Flytene i prod-tenanten må være de **nye versjonene** med
-   `https://service.flow.microsoft.com/` som audience — **med skråstrek
-   bakerst**. Uten den avvises tokenet, og en 401 fra en flyt lager **ingen
-   kjøring i historikken**: tom historikk betyr ikke at kallet uteble.
-2. Identitetens **objectId** må inn i flytenes allow-liste:
+1. **I flyten, per HTTP-trigger:** «Hvem kan utløse flyten?» settes til
+   **«Spesifikke brukere i leieren»**. Står den på «Hvem som helst», er
+   URL-en med `sig=` hele adgangen, og et token blir ikke engang lest.
+2. **Identitetens `objectId` inn i «Tillatte brukere»** på hver av dem:
 
 ```powershell
 az identity show --name $MI --resource-group $RG --query principalId -o tsv
 ```
 
-3. Flyt-URLene settes som app settings (`*_FLOW_URL`). **Uten `sig=` er de
+   Verdien er **per miljø**. Settes den som en miljøvariabel i løsningen og
+   fylles ved eksport/import, er det prod-identitetens `oid` som skal inn —
+   står dev-identitetens der, avviser prod-flytene prod-API-et, og
+   feilmeldingen peker på tokenet, ikke på variabelen.
+
+3. **Skråstreken er VÅR, ikke flytens.** Det er ingenting å sette i Power
+   Automate: `aud` kommer av hvilken ressurs vi ber om et token for.
+   `lib/flyt-auth.js` ber om `https://service.flow.microsoft.com/` **med
+   skråstrek**, og `lib/plattform-token.js` finnes utelukkende fordi
+   Azure-SDK-en ville klippet den bort — den oversetter `<ressurs>/.default`
+   til plattformens `resource` ved å fjerne `/.default`, og da forsvinner
+   skråstreken med. Power Automate sammenligner `aud` bokstavelig, så det
+   feiler på ett tegn.
+
+   Det er altså ikke et trinn her, men det forklarer en 401 du ellers ville
+   lett etter i flyten. **Og en 401 lager ingen kjøring i historikken** —
+   tom historikk betyr ikke at kallet uteble. `/api/mi-diagnose` svarer med
+   `ressursSomBleSpurtOm`, nettopp for at det skal være synlig hvilken av de
+   to formene som faktisk ble sendt.
+
+4. Flyt-URLene settes som app settings (`*_FLOW_URL`). **Uten `sig=` er de
    ikke hemmeligheter**, og da trenger de ikke Key Vault — adressen er ikke
    legitimasjon når kallet krever et Entra-token og identitetens `oid` står i
-   flytens allow-liste.
+   flytens «Tillatte brukere».
 
    Men svaret hviler på en egenskap ved FLYTEN, ikke på noe i dette repoet.
    Bekreft derfor, per URL, før du velger bort vaulten:
