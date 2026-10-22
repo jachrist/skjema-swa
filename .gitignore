@@ -40,3 +40,10 @@ frontend/js/config.js
 # Sjekkes IKKE inn: 85 genererte filer i hver diff ville skjult de ekte
 # endringene, og to kopier av samme innhold svarer ulikt innen et kvartal.
 frontend/dokumentasjon/
+
+# Skrives av sammenligningen i KOKEBOK-PROD-V3.md 4.2, og kjøres ofte fra en
+# klone i Cloud Shell. Begge er avledet av inventaret og skal kastes etterpå:
+# en kopi av en liste som har en kilde, blir lest som fasit en dag den ikke
+# er det. 4.2 ber om Remove-Item; dette er vakten for når det glemmes.
+krav.txt
+satt.txt

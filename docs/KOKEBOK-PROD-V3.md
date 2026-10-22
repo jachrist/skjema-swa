@@ -58,6 +58,12 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 
 ## 0. Før møtet
 
+> **Flere kommandoer i dette kapittelet bruker variablene fra kapittel 1.**
+> Den blokka setter bare navn og slår opp abonnements-ID-en — den oppretter
+> ingenting, og kan kjøres før noe av dette finnes. Kjør den først hvis du
+> vil lime kommandoene her rett inn. Uten den sendes en tom streng videre, og
+> feilen kommer ut som noe annet enn en manglende variabel.
+
 | Avklart? | Hva | Hvorfor det må være avklart først |
 |---|---|---|
 | ☐ | Abonnement og ressursgruppe | Alle kommandoene peker på dem |
@@ -595,6 +601,12 @@ Tre skiller er verdt å lese nøye:
 * **Deploy-objektet brukes aldri i drift.** Det logger inn i Azure fra en
   GitHub-jobb og legger kode på Function App-en. Står det stille, merker
   ingen bruker noe; feiler det, er det utrullingen som stopper.
+* **`sp-skjema-*` er ALLTID deploy-objektet, aldri backup-appen.** Backup-appen
+  heter `fhs-skjema-backup*`. 20.10.2026 ble backup-sertifikatet lastet opp på
+  `sp-skjema-3-dev` — deploy-objektet i dev — og avtrykket stemte med Key
+  Vault, så sammenligningen så riktig ut. Entra svarte `AADSTS700027`
+  likevel, fordi den slår opp appen `GRAPH_CLIENT_ID` navngir. Se
+  navnefellen i `docs/BACKUP-SHAREPOINT.md`.
 * **De to managed identitetene er ikke den samme.** Den ene hører på Function
   App-en, den andre på SWA-ressursen, og de trenger hver sine roller. Det var
   nettopp den sammenblandingen som holdt innloggingen nede 22.10.2026 — se
@@ -844,6 +856,20 @@ med Function App-en, og da må hver håndgitte tildeling gjøres om — rollene,
 Graph-approllene, SharePoint-tilgangen per site, og `oid` i flytenes
 allow-liste.
 
+**Hent identitetens objekt-ID nå.** Resten av kapittelet bruker den, og den
+brukes igjen i 10 og 11:
+
+```powershell
+$PRINCIPAL = az identity show --name $MI --resource-group $RG --query principalId -o tsv
+if (-not $PRINCIPAL) { throw "Fant ikke $MI. Kjorte trinnet over med -Kjor?" }
+$PRINCIPAL
+```
+
+Linja slår bare opp og kan gjentas — **kjør den på nytt etter en ny Cloud
+Shell-økt**, sammen med blokkene over. Uten den sendes en tom streng som
+`--assignee-object-id`, og feilen kommer ut som noe annet enn en manglende
+variabel. Det har skjedd to ganger i denne kokeboka alt.
+
 ### 3.1 Hvis Key Vault ligger i en annen ressursgruppe
 
 Skriptet bygger rolle-scopet med **samme ressursgruppe** som Function App-en.
@@ -851,9 +877,10 @@ Gjenbrukes `fhs-kv-01` og den ligger et annet sted, feiler den ene
 rolletildelingen. Gjør den da manuelt, med full ressurs-ID:
 
 ```powershell
-$PRINCIPAL = az identity show --name $MI --resource-group $RG --query principalId -o tsv
 $KV_ID = az keyvault show --name $KV --query id -o tsv
 ```
+
+`$PRINCIPAL` er satt i kapittel 3 over.
 
 ```powershell
 $kvrolle = @(
@@ -1118,10 +1145,17 @@ ikke, og det er derfor v2 har klartekst.
 seg når appen prøver å løse dem. Generer dem i stedet:
 
 ```powershell
-node scripts/vis-appsettings.js prod --kommandoer --vault $KV --velg GRAPH_CLIENT_CERT_PEM
+node scripts/vis-appsettings.js prod --kommandoer --vault $KV --velg GRAPH_CLIENT_CERT_PEM --velg STORAGE_ACCOUNT_NAME
 ```
 
-`--velg` er der fordi Graph-legitimasjonen finnes i to varianter, og
+**To `--velg`, fordi to par utelukker hverandre.** Det andre er lagringen:
+`STORAGE_CONNECTION_STRING` mot `STORAGE_ACCOUNT_NAME`. Settes strengen,
+vinner den i `lagringsvalg.js` — og den leser til og med KONTONAVNET ut av
+strengen, så `STORAGE_ACCOUNT_NAME` kan peke på en annen konto uten at noe
+sier fra. v3 skal gå på identitet (kapittel 9, punkt 3), så strengen skal
+stå tom.
+
+Det første `--velg` er der fordi Graph-legitimasjonen finnes i to varianter, og
 inventaret bærer begge: **`GRAPH_CLIENT_SECRET`** (pilot og prod v2) og
 **`GRAPH_CLIENT_CERT_PEM`** (v3, etter 0.4). Uten flagget genereres
 hemmeligheten — og settes den, vinner den i `tokenKropp()`, så sertifikatet
@@ -1187,7 +1221,7 @@ når hver av dem står på Function App-en, og det er en sammenligning, ikke en
 magefølelse:
 
 ```powershell
-node scripts/vis-appsettings.js prod --navn --velg GRAPH_CLIENT_CERT_PEM | Set-Content krav.txt
+node scripts/vis-appsettings.js prod --navn --velg GRAPH_CLIENT_CERT_PEM --velg STORAGE_ACCOUNT_NAME | Set-Content krav.txt
 $arg = @(
     'functionapp', 'config', 'appsettings', 'list',
     '--name', $FA, '--resource-group', $RG,
@@ -1242,6 +1276,18 @@ positiv er en liste folk slutter å lese.
 
 > Dette krever repoet og `node`. Har du en efemer Cloud Shell, må `scripts/`
 > og `config/` være på plass — klon, eller last opp de to filene.
+
+**Rydd opp etterpå.** De to filene er et øyeblikksbilde av en liste som har
+en kilde — inventaret — og en kopi som blir liggende, blir lest som fasit en
+dag den ikke er det:
+
+```powershell
+Remove-Item krav.txt, satt.txt
+```
+
+De er også gitignorert, så en glemt fil ikke kan havne i en commit. `satt.txt`
+har bare NAVN, ingen verdier, men en liste over hva som er satt i prod hører
+likevel ikke i et repo.
 
 Navnene er greie å se. Den fulle lista med VERDIER hører ikke hjemme i en
 terminal — derfor `--query "[].name"`, og derfor `--output none` når du
@@ -1644,7 +1690,8 @@ tjenestehovedobjektet UTEN rolle — da trenger de ikke røre ressursgruppa
 — og du tildeler rollen selv etterpå:
 
 > **Bestilling:** Opprett et tjenestehovedobjekt (app-registrering med
-> service principal) med navnet `sp-skjema-3-prod-deploy`. Ingen roller, ingen
+> service principal) med navnet `sp-skjema-3-prod-deploy` — tilsvarer
+> `sp-skjema-3-dev` i dev-tenanten. Ingen roller, ingen
 > API-tillatelser, ingen redirect-URI-er. Send meg `appId`, `tenant` og en
 > klienthemmelighet. Hemmeligheten skal IKKE sendes i e-post eller en sak —
 > avtal en egen kanal.
