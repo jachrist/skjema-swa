@@ -1158,6 +1158,13 @@ const BASHISMER = [
         .map(([navn, nr]) => `${navn} (brukt ${nr}, satt ${settes.get(navn)})`);
     sjekk('ingen variabel brukes før den settes', forSent, []);
 
+    // En klone som blir liggende, kjører gammel kode. Kokeboka må si det
+    // der skriptet kjøres — ikke bare i feilmeldingen etterpå.
+    sjekk('kokeboka ber om git pull f\u00f8r skriptet kj\u00f8res',
+        /`git pull` f\u00f8rst/.test(tekst), true);
+    sjekk('og navngir symptomet',
+        /navnet var riktig, skriptet var gammelt/.test(tekst), true);
+
     // Filer kokeboka SKRIVER inne i repoet, må være gitignorert.
     //
     // 4.2 lager krav.txt og satt.txt, og kommandoen kjøres typisk fra en
