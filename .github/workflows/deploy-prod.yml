@@ -69,6 +69,28 @@ on:
         required: false
         default: 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD'
         type: string
+      # Skal API-et rulles ut som SWA Managed Functions?
+      #
+      # v2 kjører API-et PÅ SWA-en, og `api_location: "api"` er riktig der.
+      # v3 har arkitekturen fra dev: API-et bor i en lenket Function App, og
+      # app settingene står DER. Rulles API-et likevel ut som managed
+      # functions, svarer den kopien på /api/* — med SWA-ressursens app
+      # settings, som ikke har lagringsoppsettet.
+      #
+      # Utslaget 22.10.2026: forsiden og innloggingen virket, og
+      # /api/skjematyper svarte «Lagring er ikke konfigurert». Det LESES som
+      # at Function App-en mangler verdier, men Function App-en var ikke
+      # involvert i det hele tatt.
+      #
+      # En SWA kan dessuten ikke både ha managed functions og en lenket
+      # backend. Står kopien der, er kapittel 5.3 stengt.
+      #
+      # Standarden er v2 sin, så en kjøring uten valg oppfører seg som før.
+      deploy_api:
+        description: 'Rull ut API-et som SWA Managed Functions (v2: ja, v3: nei)'
+        required: false
+        default: true
+        type: boolean
 
 jobs:
   valider:
@@ -88,6 +110,11 @@ jobs:
             echo "### Mål: preview-miljøet \`${{ inputs.preview }}\` — IKKE produksjon" >> $GITHUB_STEP_SUMMARY
           else
             echo "### Mål: PRODUKSJON" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ "${{ inputs.deploy_api }}" = "false" ]; then
+            echo "API-et rulles IKKE ut her (lenket Function App)." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "API-et rulles ut som SWA Managed Functions." >> $GITHUB_STEP_SUMMARY
           fi
 
   build_and_deploy_job:
@@ -148,7 +175,8 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: "./frontend"
-          api_location: "api"
+          # Tom streng = ingen managed functions. Se `deploy_api` over.
+          api_location: ${{ inputs.deploy_api && 'api' || '' }}
           output_location: ""
           # Ingen app_build_command: konfigurasjonen er alt bygget i steget over.
           skip_app_build: true

@@ -90,14 +90,79 @@ for (const miljo of ['dev', 'pilot', 'prod']) {
     }
 }
 
+// ---------- 2b. lagringsparet: strengen vinner, og den er standardvalget ----------
+//
+// Samme form som GRAPH-paret, og den sto i repoet lenge før den ble erklært:
+// `lagringsvalg.js` tar tilkoblingsstrengen når den er satt, og leser da til
+// og med KONTONAVNET ut av strengen. `STORAGE_ACCOUNT_NAME` blir ikke bare
+// ignorert — den kan peke på en annen konto uten at noe sier fra.
+{
+    const kilde = fs.readFileSync(
+        path.join(rot, 'api', 'src', 'lib', 'lagringsvalg.js'), 'utf8');
+
+    // Navnene leses ut av modulen, ikke skrevet opp her.
+    const streng = /const STRENG_VAR = '([^']+)'/.exec(kilde);
+    const konto = /const KONTO_VAR = '([^']+)'/.exec(kilde);
+    sjekk('fant begge variabelnavnene i lagringsvalg.js',
+        !!streng && !!konto, true);
+
+    if (streng && konto) {
+        const gruppe = gruppenTil(streng[1]);
+        sjekk('lagringsparet er erklært', !!gruppe, true);
+        if (gruppe) {
+            sjekk('og begge navnene er med',
+                gruppe.slice().sort(), [streng[1], konto[1]].sort());
+
+            // Hvem som vinner, AVGJØRES VED Å KJØRE funksjonen med begge
+            // satt. Første utgave sammenlignet posisjonen til to tekstlige
+            // `if`-linjer, og en mutasjon som la inn en ny gren foran dem
+            // forble grønn — proxyen målte ikke oppførselen.
+            const { lagringsvalg } = require(
+                path.join(rot, 'api', 'src', 'lib', 'lagringsvalg.js'));
+            sjekk('lagringsvalg er eksportert', typeof lagringsvalg, 'function');
+
+            const begge = lagringsvalg({
+                [streng[1]]: 'DefaultEndpointsProtocol=https;AccountName=stfrastrengen;'
+                    + 'AccountKey=xx;EndpointSuffix=core.windows.net',
+                [konto[1]]: 'stfrakontonavn'
+            });
+            sjekk('med BEGGE satt vinner tilkoblingsstrengen',
+                begge.maate, 'tilkoblingsstreng');
+            // Og kontoen leses ut av strengen, ikke av KONTO_VAR. Det er
+            // grunnen til at paret er et enten/eller og ikke en preferanse:
+            // de to kan peke på hver sin konto.
+            sjekk('og kontonavnet kommer fra strengen',
+                begge.konto, 'stfrastrengen');
+
+            const vinner = begge.maate === 'tilkoblingsstreng' ? streng[1] : konto[1];
+            sjekk('den som vinner, er standardvalget', gruppe[0], vinner);
+        }
+    }
+}
+
 // ---------- 3. valget flytter kravet, begge veier ----------
 {
     sjekk('standard velger det første medlemmet',
         valgteMedlemmer([]), ENTEN_ELLER.map(gr => gr[0]));
-    sjekk('og --velg flytter det',
-        valgteMedlemmer(['GRAPH_CLIENT_CERT_PEM']), ['GRAPH_CLIENT_CERT_PEM']);
-    sjekk('det fravalgte er det andre medlemmet',
-        [...utelatt(['GRAPH_CLIENT_CERT_PEM'])], ['GRAPH_CLIENT_SECRET']);
+    // Gruppevis, ikke med én gruppe antatt: det kom et par nummer to
+    // 22.10.2026, og denne testen var skrevet som om det bare fantes ett.
+    for (const gr of ENTEN_ELLER) {
+        const andre = gr[1];
+        const valgt = valgteMedlemmer([andre]);
+        sjekk(`--velg ${andre} flytter sin egen gruppe`,
+            valgt[ENTEN_ELLER.indexOf(gr)], andre);
+
+        // Og BARE sin egen: et valg som flytter en annen gruppe er en
+        // sammenblanding som ville vært usynlig med bare én gruppe.
+        const uberoerte = ENTEN_ELLER
+            .filter(g2 => g2 !== gr)
+            .map(g2 => valgt[ENTEN_ELLER.indexOf(g2)]);
+        sjekk(`og lar de andre gruppene stå på standard`,
+            uberoerte, ENTEN_ELLER.filter(g2 => g2 !== gr).map(g2 => g2[0]));
+
+        sjekk(`det fravalgte i ${gr[0]}-gruppa er det andre medlemmet`,
+            [...utelatt([andre])].filter(n => gr.includes(n)), [gr[0]]);
+    }
 
     // Et navn utenfor gruppene er en skrivefeil, og den skal stoppe. Går den
     // gjennom i stillhet, tror den som skrev den at valget ble tatt.
