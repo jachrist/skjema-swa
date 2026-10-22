@@ -20,6 +20,7 @@ const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg } = require('../lib/behandling');
 const { listekolonner } = require('../lib/listekolonne');
+const vilkar = require('../lib/vilkar');
 const { sisteBeslutning } = require('../lib/datauttrekk');
 const dynamiskRolle = require('../lib/dynamisk-rolle');
 const feltperson = require('../lib/feltperson');
@@ -975,6 +976,37 @@ app.http('lagreSkjema', {
                     }
                 } catch (e) {
                     context.log(`lagreSkjema: kryptering/anonymisering feilet — ${e.message}`);
+                }
+            }
+
+            // DIAGNOSE, ikke håndheving.
+            //
+            // Valgt 22.10.2026: backend AVVISER ikke på valideringsregler.
+            // Samme endepunkt lagrer utkast (`Skjema_status: 1`), som med
+            // vilje er uten validering, og en regel lagt til i ettertid ville
+            // gjort et gammelt utkast umulig å sende inn — brukeren ville
+            // stått fast i en definisjon hen ikke rår over.
+            //
+            // Men veien forbi `valider()` finnes: `register.html` redigerer
+            // svar og poster hit uten å validere. Den var ikke kjent da
+            // reglene ble bygget. Derfor dette: se hva som faktisk skjer.
+            //
+            // Bare ved INNSENDING (status 2 og oppover). Et utkast som ikke
+            // holder er helt normalt — det er halvveis utfylt.
+            //
+            // Linja skrives alltid med et ANTALL, også når det er null. En
+            // logglinje som bare finnes når noe er galt, kan ikke skille
+            // «ingen brudd» fra «koden er ikke deployet».
+            if (Number(skjemaData.Skjema_status) >= 2) {
+                try {
+                    const stDiag = await skjemaStorage.hentSkjematype(skjematypeId);
+                    const brudd = vilkar.bruddISkjema(
+                        stDiag?.JSON || {}, skjemaData.Seksjoner || [], skjemaData.Behandling);
+                    context.log(`validering: ${skjemaId} (type ${skjematypeId}) — ${brudd.length} brudd`
+                        + (brudd.length ? `: ${brudd.map(b => `${b.ref} «${b.melding}»`).join('; ')}` : ''));
+                } catch (e) {
+                    // En diagnose skal aldri kunne stoppe en innsending.
+                    context.log(`validering: diagnosen feilet for ${skjemaId} — ${e.message}`);
                 }
             }
 
