@@ -559,6 +559,8 @@ export function byggDNFEditor(container, initial, options) {
  */
 export function byggValideringEditor(container, initial, options) {
     const feltOptions = options.feltOptions || [];
+    // Feltet reglene står PÅ. Venstresiden i en ny regel peker på det.
+    const egetFelt = options.egetFelt || '';
     const onEndring = options.onEndring || (() => {});
 
     let regler = Array.isArray(initial) ? JSON.parse(JSON.stringify(initial)) : [];
@@ -598,7 +600,10 @@ export function byggValideringEditor(container, initial, options) {
         ny.style.cssText = 'margin-top: 6px; padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
         ny.textContent = '+ Legg til regel';
         ny.addEventListener('click', () => {
-            regler.push({ Vilkar: { EllerAv: [{ OgAv: [{ Felt: '', Operator: '=', Verdi: '' }] }] }, Melding: '' });
+            regler.push({
+                Vilkar: { EllerAv: [{ OgAv: [{ Felt: egetFelt, Operator: '=', Verdi: '' }] }] },
+                Melding: ''
+            });
             ferdig();
             render();
         });

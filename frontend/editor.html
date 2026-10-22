@@ -2535,6 +2535,24 @@
          * seksjoner, og `fIdx = -1` stopper ingen felter. To lister over
          * «hvilke felter finnes» ville kunne svare ulikt.
          */
+        /**
+         * Referansen og etiketten til et felt — ett sted.
+         *
+         * Etiketten bygges to steder: når feltvelgerne fylles, og når
+         * tittelen endres og de åpne velgerne skal oppdateres. To
+         * formuleringer ville gitt to ulike tekster for samme felt, og den
+         * som setter opp skjemaet ville sett ett navn i én liste og et annet
+         * i en annen.
+         */
+        function feltRef(seksjon, felt) {
+            return felt.Id || `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
+        }
+
+        function feltEtikett(seksjon, felt) {
+            const tekst = felt.Tekst?.Verdi || '(uten tekst)';
+            return `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}`;
+        }
+
         function samleAlleFelter() {
             return samleFelterFør(data.Seksjoner.length, -1);
         }
@@ -2550,12 +2568,14 @@
                     if (s === sIdx && fIdx >= 0 && f >= fIdx) break;
                     const felt = seksjon.Felter[f];
                     if (felt.Type === 'Informasjon' || felt.Type === 'Opplasting') continue;
-                    const ref = felt.Id || `${seksjon.Seksjon_nummer}-${felt.Nummer}`;
-                    const tekst = felt.Tekst?.Verdi || '(uten tekst)';
                     // type følger med: mottakervelgeren i tilgang-editoren
                     // godtar bare E-post-felter. De andre bruksstedene
                     // (dynamisk rolle, vilkår) ser bort fra den.
-                    felter.push({ ref, type: felt.Type || '', tekst: `S${seksjon.Seksjon_nummer}-F${felt.Nummer}: ${tekst.substring(0, 40)}` });
+                    felter.push({
+                        ref: feltRef(seksjon, felt),
+                        type: felt.Type || '',
+                        tekst: feltEtikett(seksjon, felt)
+                    });
                 }
             }
             return felter;
@@ -2655,6 +2675,12 @@
                         if (valSlot) {
                             byggValideringEditor(valSlot, felt.Validering, {
                                 feltOptions: samleAlleFelter(),
+                                // En regel på ET felt handler nesten alltid om
+                                // DET feltet. Uten dette er første valg i hver
+                                // nye regel å finne seg selv i en liste over
+                                // alle felter — og en tom venstreside gir en
+                                // regel som ser ferdig ut og ikke gjør noe.
+                                egetFelt: feltRef(seksjon, felt),
                                 onEndring: (ny) => { if (ny) felt.Validering = ny; else delete felt.Validering; }
                             });
                         }
@@ -3655,9 +3681,24 @@
             fokuserFelt(sIdx, pos);
         }
         window.setFeltTekst = (sIdx, fIdx, v) => {
-            const felt = data.Seksjoner[sIdx].Felter[fIdx];
+            const seksjon = data.Seksjoner[sIdx];
+            const felt = seksjon.Felter[fIdx];
             if (!felt.Tekst) felt.Tekst = { Format: 'Tekst' };
             felt.Tekst.Verdi = v;
+
+            // Feltvelgerne i vilkårspanelene fikk etiketten sin da panelet ble
+            // bygget, og den blir stående: å tegne om ved hvert tastetrykk
+            // ville tatt fokus ut av tittelfeltet. Resultatet var at et felt
+            // man nettopp hadde navngitt sto som «(uten tekst)» i hver eneste
+            // nedtrekksliste — meldt 22.10.2026.
+            //
+            // Her flyttes bare TEKSTEN på de opsjonene som peker på dette
+            // feltet. Ingen omtegning, ingen tapt markør.
+            const ref = feltRef(seksjon, felt);
+            const etikett = feltEtikett(seksjon, felt);
+            for (const opt of document.querySelectorAll('.dnf-editor select option')) {
+                if (opt.value === ref) opt.textContent = etikett;
+            }
         };
         window.setFeltType = (sIdx, fIdx, v) => {
             const felt = data.Seksjoner[sIdx].Felter[fIdx];
