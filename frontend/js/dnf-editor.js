@@ -334,29 +334,40 @@ export function byggDNFEditor(container, initial, options) {
         const boks = document.createElement('span');
         boks.style.cssText = 'display: flex; gap: 6px; align-items: center; flex: 1 1 200px; flex-wrap: wrap;';
 
-        const erFeltRef = !!(betingelse.Verdi && typeof betingelse.Verdi === 'object'
-            && !Array.isArray(betingelse.Verdi));
+        // TRE valg, ikke to.
+        //
+        // «Dagens dato» lå først inne i feltvelgeren, bak valget «et annet
+        // felt». Det er riktig i data — `@idag` ER en referanse — men galt i
+        // ord: den som vil sammenligne med dagens dato sammenligner ikke med
+        // et FELT, og leter derfor ikke under det valget. Meldt 22.10.2026,
+        // og spørsmålet var «hvordan uttrykkes det?» om noe som sto rett der.
+        const ref = (betingelse.Verdi && typeof betingelse.Verdi === 'object'
+            && !Array.isArray(betingelse.Verdi)) ? String(betingelse.Verdi.Felt || '') : null;
+        const valgt = ref === null ? 'verdi' : (ref === IDAG_REF ? 'idag' : 'felt');
 
         const typeSel = document.createElement('select');
-        typeSel.style.cssText = 'padding: 3px 6px; font-size: 12px; width: 108px;';
-        for (const [v, t] of [['verdi', 'fast verdi'], ['felt', 'et annet felt']]) {
+        typeSel.style.cssText = 'padding: 3px 6px; font-size: 12px; width: 124px;';
+        for (const [v, t] of [['verdi', 'fast verdi'], ['idag', 'dagens dato'],
+            ['felt', 'et annet felt']]) {
             const o = document.createElement('option');
             o.value = v;
             o.textContent = t;
-            if ((v === 'felt') === erFeltRef) o.selected = true;
+            if (v === valgt) o.selected = true;
             typeSel.appendChild(o);
         }
         typeSel.addEventListener('change', () => {
-            // Verdien kastes ved bytte: en tekst og en feltreferanse er ikke
-            // det samme, og å forsøke å oversette ville gitt en referanse som
-            // ser satt ut uten å peke på noe.
-            betingelse.Verdi = typeSel.value === 'felt' ? { Felt: '' } : '';
+            // Verdien kastes ved bytte: en tekst og en referanse er ikke det
+            // samme, og å forsøke å oversette ville gitt en referanse som ser
+            // satt ut uten å peke på noe.
+            if (typeSel.value === 'idag') betingelse.Verdi = { Felt: IDAG_REF };
+            else if (typeSel.value === 'felt') betingelse.Verdi = { Felt: '' };
+            else betingelse.Verdi = '';
             ferdig();
             render();
         });
         boks.appendChild(typeSel);
 
-        if (!erFeltRef) {
+        if (valgt === 'verdi') {
             const inp = document.createElement('input');
             inp.type = 'text';
             inp.style.cssText = 'flex: 1 1 90px; min-width: 70px; padding: 3px 6px; font-size: 12px;';
@@ -370,38 +381,39 @@ export function byggDNFEditor(container, initial, options) {
             return boks;
         }
 
-        const feltSel = document.createElement('select');
-        feltSel.style.cssText = 'flex: 1 1 130px; min-width: 120px; padding: 3px 6px; font-size: 12px;';
-        const tom = document.createElement('option');
-        tom.value = '';
-        tom.textContent = '— felt —';
-        feltSel.appendChild(tom);
+        // Feltvelgeren vises bare når det FAKTISK er et felt. «Dagens dato»
+        // er sitt eget valg nå, og skal ikke ligge to steder.
+        if (valgt === 'felt') {
+            const feltSel = document.createElement('select');
+            feltSel.style.cssText = 'flex: 1 1 130px; min-width: 120px; padding: 3px 6px; font-size: 12px;';
+            const tom = document.createElement('option');
+            tom.value = '';
+            tom.textContent = '— felt —';
+            feltSel.appendChild(tom);
 
-        const idag = document.createElement('option');
-        idag.value = IDAG_REF;
-        idag.textContent = 'Dagens dato';
-        idag.title = 'Datoen skjemaet fylles ut';
-        feltSel.appendChild(idag);
-
-        for (const f of feltOptions) {
-            const o = document.createElement('option');
-            o.value = f.ref;
-            o.textContent = f.tekst;
-            feltSel.appendChild(o);
+            for (const f of feltOptions) {
+                const o = document.createElement('option');
+                o.value = f.ref;
+                o.textContent = f.tekst;
+                feltSel.appendChild(o);
+            }
+            feltSel.value = String(betingelse.Verdi.Felt || '');
+            feltSel.addEventListener('change', () => {
+                betingelse.Verdi = { ...betingelse.Verdi, Felt: feltSel.value };
+                ferdig();
+            });
+            boks.appendChild(feltSel);
         }
-        feltSel.value = String(betingelse.Verdi.Felt || '');
-        feltSel.addEventListener('change', () => {
-            betingelse.Verdi = { ...betingelse.Verdi, Felt: feltSel.value };
-            ferdig();
-        });
-        boks.appendChild(feltSel);
 
         const dager = document.createElement('input');
         dager.type = 'number';
         dager.style.cssText = 'width: 86px; padding: 3px 6px; font-size: 12px;';
-        dager.placeholder = '± dager';
-        dager.title = 'Forskyvning i dager. «14» betyr 14 dager ETTER feltet, '
-            + '«-30» betyr 30 dager før. Virker bare på datoer.';
+        dager.placeholder = valgt === 'idag' ? '± dager fra i dag' : '± dager';
+        dager.title = valgt === 'idag'
+            ? 'Forskyvning i dager fra i dag. «14» betyr om fjorten dager, '
+                + '«-30» betyr tretti dager siden. Tomt betyr i dag.'
+            : 'Forskyvning i dager. «14» betyr 14 dager ETTER feltet, '
+                + '«-30» betyr 30 dager før. Virker bare på datoer.';
         dager.value = betingelse.Verdi.PlussDager == null ? '' : String(betingelse.Verdi.PlussDager);
         dager.addEventListener('input', () => {
             const n = dager.value === '' ? null : Number(dager.value);
@@ -559,6 +571,8 @@ export function byggDNFEditor(container, initial, options) {
  */
 export function byggValideringEditor(container, initial, options) {
     const feltOptions = options.feltOptions || [];
+    // Feltet reglene står PÅ. Venstresiden i en ny regel peker på det.
+    const egetFelt = options.egetFelt || '';
     const onEndring = options.onEndring || (() => {});
 
     let regler = Array.isArray(initial) ? JSON.parse(JSON.stringify(initial)) : [];
@@ -598,7 +612,10 @@ export function byggValideringEditor(container, initial, options) {
         ny.style.cssText = 'margin-top: 6px; padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
         ny.textContent = '+ Legg til regel';
         ny.addEventListener('click', () => {
-            regler.push({ Vilkar: { EllerAv: [{ OgAv: [{ Felt: '', Operator: '=', Verdi: '' }] }] }, Melding: '' });
+            regler.push({
+                Vilkar: { EllerAv: [{ OgAv: [{ Felt: egetFelt, Operator: '=', Verdi: '' }] }] },
+                Melding: ''
+            });
             ferdig();
             render();
         });

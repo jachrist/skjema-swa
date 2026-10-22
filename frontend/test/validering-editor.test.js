@@ -89,7 +89,7 @@ const sideRen = utenKommentarer(les('frontend', 'editor.html'));
         /samleAlleFelter\(\)\s*\{\s*return samleFelterFør\(/.test(sideRen), true);
 
     // Valideringspanelet bruker den; Vises og ObligatoriskHvis gjør det ikke.
-    const valKall = /byggValideringEditor\([\s\S]{0,400}?\}\);/.exec(sideRen);
+    const valKall = /byggValideringEditor\([\s\S]{0,900}?\}\);/.exec(sideRen);
     sjekk('valideringspanelet monteres', !!valKall, true);
     if (valKall) {
         sjekk('og får ALLE felter',
@@ -137,6 +137,111 @@ const sideRen = utenKommentarer(les('frontend', 'editor.html'));
     }
     sjekk('og sloten tegnes bare da',
         /kanValideres\(felt\.Type\) \? `<div class="dnf-slot" data-slot="felt-validering/.test(sideRen), true);
+}
+
+// ---------- 8. venstresiden er feltet selv ----------
+//
+// 22.10.2026: «Burde ikke venstresiden automatisk være gjeldende felt?»
+// Jo — en regel PÅ et felt handler nesten alltid om DET feltet. Uten dette
+// er første valg i hver nye regel å finne seg selv i en liste over alle
+// felter, og en tom venstreside gir en regel som ser ferdig ut og ikke
+// gjør noe.
+{
+    const vi = editorRen.slice(editorRen.indexOf('export function byggValideringEditor'));
+    sjekk('valideringseditoren tar imot feltets egen referanse',
+        /egetFelt = options\.egetFelt/.test(vi), true);
+    sjekk('og en ny regel starter med den på venstresiden',
+        /OgAv: \[\{ Felt: egetFelt,/.test(vi), true);
+
+    sjekk('og editoren sender den inn',
+        /egetFelt:\s*feltRef\(seksjon, felt\)/.test(sideRen), true);
+}
+
+// ---------- 9. etiketten i feltvelgeren bygges ETT sted ----------
+//
+// Nedtrekket sa «(uten tekst)» for et felt som nettopp var navngitt:
+// velgerne fikk etiketten da panelet ble bygget, og tittelfeltet tegner
+// ikke om ved hvert tastetrykk — det ville tatt fokus ut av feltet.
+//
+// Rettelsen flytter bare teksten på de opsjonene som peker på feltet. Da
+// bygges etiketten to steder, og de må være samme funksjon.
+{
+    sjekk('etiketten har en egen funksjon',
+        /function feltEtikett\(seksjon, felt\)/.test(sideRen), true);
+    sjekk('og referansen likeså',
+        /function feltRef\(seksjon, felt\)/.test(sideRen), true);
+
+    // Feltlista bruker dem.
+    const samler = /function samleFelterFør\(sIdx, fIdx\)[\s\S]{0,1400}?\n        \}/.exec(sideRen);
+    sjekk('fant feltsamleren', !!samler, true);
+    if (samler) {
+        sjekk('feltlista bruker feltRef', /ref:\s*feltRef\(/.test(samler[0]), true);
+        sjekk('og feltEtikett', /tekst:\s*feltEtikett\(/.test(samler[0]), true);
+        // Og bygger dem IKKE selv.
+        sjekk('og bygger ikke etiketten selv',
+            /S\$\{seksjon\.Seksjon_nummer\}-F\$\{felt\.Nummer\}/.test(samler[0]), false);
+    }
+
+    // setFeltTekst oppdaterer de åpne velgerne, med samme funksjon.
+    const sett = /window\.setFeltTekst = [\s\S]{0,1600}?\n        \};/.exec(sideRen);
+    sjekk('fant setFeltTekst', !!sett, true);
+    if (sett) {
+        sjekk('tittelendring oppdaterer åpne feltvelgere',
+            /querySelectorAll\('\.dnf-editor select option'\)/.test(sett[0]), true);
+        sjekk('og bruker samme etikettfunksjon',
+            /feltEtikett\(seksjon, felt\)/.test(sett[0]), true);
+        sjekk('og samme referansefunksjon',
+            /feltRef\(seksjon, felt\)/.test(sett[0]), true);
+
+        // Den skal IKKE tegne om: da forsvinner markøren ut av tittelfeltet
+        // midt i skrivingen, og det var grunnen til at etiketten ble stående.
+        sjekk('og tegner ikke om',
+            /rendrerSeksjoner\(\)/.test(sett[0]), false);
+    }
+}
+
+// ---------- 10. «dagens dato» er sitt EGET valg ----------
+//
+// 22.10.2026: «Jeg ønsker ikke å sammenlikne to felt med hverandre, men
+// feltet jeg holder på å fylle ut med dagens dato + eller minus et antall
+// dager. Hvordan uttrykkes det?»
+//
+// Det gikk an alt — «Dagens dato» lå inne i feltvelgeren, bak valget «et
+// annet felt». Riktig i data (`@idag` ER en referanse), galt i ord: den
+// som vil sammenligne med dagens dato sammenligner ikke med et FELT, og
+// leter derfor ikke under det valget.
+//
+// Spørsmålet gjaldt altså noe som sto rett der. Det er en etikettfeil, og
+// den koster like mye som en manglende funksjon.
+{
+    const hoyre = editorRen.slice(editorRen.indexOf('function byggHoyreside'));
+
+    // Tre valg, med «dagens dato» som sitt eget.
+    for (const v of ['verdi', 'idag', 'felt']) {
+        sjekk(`høyresiden har valget «${v}»`,
+            hoyre.includes(`['${v}',`), true);
+    }
+    sjekk('og «dagens dato» står som egen tekst',
+        /'dagens dato'/.test(hoyre), true);
+
+    // Valget setter referansen direkte — ingen omvei om feltvelgeren.
+    sjekk('valget setter @idag direkte',
+        /typeSel\.value === 'idag'\) betingelse\.Verdi = \{ Felt: IDAG_REF \}/.test(hoyre), true);
+
+    // Og «Dagens dato» ligger IKKE lenger i feltvelgeren: to steder å
+    // uttrykke det samme er to steder å lete.
+    const feltvelger = hoyre.slice(hoyre.indexOf("valgt === 'felt'"));
+    sjekk('feltvelgeren har ingen egen Dagens dato-opsjon',
+        /Dagens dato/.test(feltvelger), false);
+
+    // Feltvelgeren vises bare når det faktisk er et felt.
+    sjekk('feltvelgeren vises bare for feltvalget',
+        /if \(valgt === 'felt'\) \{/.test(hoyre), true);
+
+    // Dagersfeltet må si hva det betyr i dette tilfellet — «± dager» alene
+    // sier ikke fra hva.
+    sjekk('dagersfeltet sier «fra i dag» når det gjelder i dag',
+        /valgt === 'idag' \? '± dager fra i dag'/.test(hoyre), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

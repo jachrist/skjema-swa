@@ -112,8 +112,16 @@ const api = utenKommentarer(
 
     // Uten `type` på oppføringene ville filteret over tømt dropdownen, og
     // velgeren sett ut som om skjemaet ikke har E-post-felter.
+    //
+    // Sjekken leser OPPFØRINGEN, ikke linjeskiftene: den festet tidligere
+    // hele kallet på én linje, og ble rød da objektet ble brukket over
+    // flere linjer uten at noe faktisk endret seg. En test som går i
+    // stykker av ombrekking, måler formatering — ikke regelen.
+    const push = /felter\.push\(\{([\s\S]{0,300}?)\}\);/.exec(editor);
+    sjekk('fant oppføringen som bygges', !!push, true);
     sjekk('felttypen følger med referansen',
-        /felter\.push\(\{ ref, type: felt\.Type \|\| '', tekst:/.test(editor), true);
+        !!push && /\btype:\s*felt\.Type\b/.test(push[1]), true);
+    sjekk('og referansen er med', !!push && /\bref\b/.test(push[1]), true);
 }
 
 // ---------- chipen viser feltet, ikke koden ----------
