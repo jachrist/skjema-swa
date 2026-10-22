@@ -574,7 +574,34 @@ under «Prøv i dev først». Den begynner nå med at app-registreringen må fin
 
 ### 0.5 App-registreringene fra v2 kan gjenbrukes
 
-Begge, og det sparer to bestillinger. En app-registrering er ikke bundet til
+**Fem identiteter er i bruk, og de blandes lett.** To er app-registreringer
+som gjenbrukes, én opprettes ny, og to er managed identities — altså ikke
+app-registreringer i det hele tatt:
+
+| Identitet | Hva den er | Brukes NÅR | Peker fra |
+|---|---|---|---|
+| **Auth-appen** | app-registrering | en BRUKER logger inn | `AAD_CLIENT_ID` + auth-sertifikatet, på **SWA-ressursen** |
+| **Backup-appen** (`Sites.Selected`) | app-registrering | API-et laster opp backup til SharePoint | `GRAPH_CLIENT_ID` + `GRAPH_CLIENT_CERT_PEM`, på **Function App-en** |
+| **Deploy-objektet** (`sp-skjema-3-prod-deploy`) | app-registrering, opprettes NY i kapittel 8 | **bare i GitHub Actions**, når API-et rulles ut | `AZURE_FUNCAPP_CREDENTIALS` i GitHub-miljøet `prod` |
+| **`mi-skjema-3-prod`** | **managed identity**, user-assigned | API-et leser og skriver LAGRING, og løser `@Microsoft.KeyVault(...)` | `AZURE_CLIENT_ID` + `keyVaultReferenceIdentity`, på **Function App-en** |
+| **SWA-ens plattformidentitet** | **managed identity**, systemtildelt | plattformen henter auth-sertifikatet | `clientSecretCertificateKeyVaultReference` i SWA-configen (6.1) |
+
+Tre skiller er verdt å lese nøye:
+
+* **Lagringen går IKKE gjennom noen app-registrering.** Den går på
+  `mi-skjema-3-prod` med tre storage-roller (kapittel 3). Spørsmålet «hvilken
+  app gir tilgang til lageret» har derfor ikke noe svar — det er feil
+  spørsmål, og et billig sted å lete lenge.
+* **Deploy-objektet brukes aldri i drift.** Det logger inn i Azure fra en
+  GitHub-jobb og legger kode på Function App-en. Står det stille, merker
+  ingen bruker noe; feiler det, er det utrullingen som stopper.
+* **De to managed identitetene er ikke den samme.** Den ene hører på Function
+  App-en, den andre på SWA-ressursen, og de trenger hver sine roller. Det var
+  nettopp den sammenblandingen som holdt innloggingen nede 22.10.2026 — se
+  6.1.
+
+Begge app-registreringene fra v2 kan gjenbrukes, og det sparer to
+bestillinger. En app-registrering er ikke bundet til
 en SWA eller en Function App — den er bundet til tenanten.
 
 **Auth-appen (pålogging).** Gjenbrukes med en NY redirect-URI, se trinn 6.
@@ -1568,6 +1595,10 @@ hvor blank lagringen er.
 ---
 
 ## 8. Deploy av API-et
+
+**Hva dette objektet er:** den tredje identiteten i tabellen i 0.5 — den
+GitHub Actions logger inn med for å legge kode på Function App-en. Den
+brukes aldri i drift, og den har ingenting med lagringen å gjøre.
 
 **Dette trinnet krever en Entra-rolle du kanskje ikke har.** Les avsnittet
 «Får du `Insufficient privileges`» under FØR du kjører — det er den

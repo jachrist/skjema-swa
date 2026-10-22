@@ -997,5 +997,92 @@ const BASHISMER = [
         /UTEN rolle/.test(kap8), true);
 }
 
+// ---------- 21. identitetstabellen navngir ALLE, og peker riktig ----------
+//
+// 22.10.2026, midt i kapittel 8: «Hvilken app-registrering er dette? Jeg har
+// allerede en for AAD og en for Site-selected. Er det for tilgang til
+// lageret?» Tre av fem identiteter var i bruk uten å stå i samme tabell, og
+// den fjerde — managed identityen som FAKTISK har lagringsrollene — er ikke
+// en app-registrering i det hele tatt. Spørsmålet var rimelig og hadde ikke
+// noe sted å slås opp.
+{
+    const fra = tekst.indexOf('### 0.5');
+    const til = tekst.indexOf('### 0.6');
+    sjekk('fant 0.5', fra > 0 && til > fra, true);
+    const kap = tekst.slice(fra, til);
+
+    // De to managed identitetene må navngis SOM managed identities, ellers
+    // leses hele tabellen som en liste over app-registreringer.
+    sjekk('tabellen skiller managed identity fra app-registrering',
+        /managed identity/.test(kap) && /app-registrering/.test(kap), true);
+
+    // Lagringssvaret. Det var spørsmålet.
+    sjekk('tabellen sier at lagringen ikke går via en app-registrering',
+        /Lagringen går IKKE gjennom noen app-registrering/.test(kap), true);
+    sjekk('og navngir hva den går på',
+        /mi-skjema-3-prod[\s\S]{0,80}storage-roller/.test(kap), true);
+
+    // Deploy-objektet: drift mot utrulling.
+    sjekk('deploy-objektet er med', /sp-skjema-3-prod-deploy/.test(kap), true);
+    sjekk('og det står at det aldri brukes i drift',
+        /brukes aldri i drift/.test(kap), true);
+
+    // Og at de to managed identitetene ikke er den samme — den
+    // sammenblandingen kostet innloggingen.
+    sjekk('de to identitetene skilles uttrykkelig',
+        /ikke den samme/.test(kap), true);
+
+    // Pekerne må være EKTE app settings. En tabell som navngir en setting
+    // som ikke finnes, er verre enn ingen tabell: den leses som fasit.
+    const prod = JSON.parse(fs.readFileSync(
+        path.join(rot, 'config', 'env.prod.json'), 'utf8'));
+    const finnes = new Set();
+    (function samle(o) {
+        if (o && typeof o === 'object') {
+            for (const [k, v] of Object.entries(o)) {
+                if (v && typeof v === 'object'
+                    && ('keyvault' in v || 'value' in v || 'valgfri' in v
+                        || 'settes_direkte' in v || 'kun_dokumentasjon' in v)) finnes.add(k);
+                else samle(v);
+            }
+        }
+    })(prod);
+
+    // Navnene leses UT AV TABELLRADENE, ikke fra en liste her. Første utgave
+    // hadde lista skrevet opp, og en mutasjon som byttet `GRAPH_CLIENT_ID`
+    // mot et oppdiktet navn forble grønn — fordi det ekte navnet også sto
+    // ellers i avsnittet. Da målte sjekken avsnittet, ikke tabellen.
+    const rader = kap.split('\n').filter(l => /^\|\s*\*\*/.test(l));
+    sjekk('tabellen har rader', rader.length >= 5, true);
+
+    // Navn som IKKE er app settings, med grunnen til hver:
+    //   AZURE_CLIENT_ID      — leses av @azure/identity, ikke av vår kode,
+    //                          og står derfor med vilje utenfor inventaret.
+    //   AZURE_FUNCAPP_CREDENTIALS — en GitHub-secret, ikke en app setting.
+    const UTENFOR = new Set(['AZURE_CLIENT_ID', 'AZURE_FUNCAPP_CREDENTIALS']);
+
+    const iTabellen = [...new Set(rader
+        .flatMap(l => [...l.matchAll(/`([A-Z][A-Z0-9_]{3,})`/g)].map(m => m[1])))];
+    sjekk('tabellen navngir app settings', iTabellen.length >= 4, true);
+
+    const ukjente = iTabellen
+        .filter(n => !UTENFOR.has(n))
+        .filter(n => !finnes.has(n));
+    sjekk('hver setting i tabellen finnes i inventaret', ukjente, []);
+
+    // Og de tre pekerne som bærer hele poenget, skal faktisk stå der.
+    for (const n of ['AAD_CLIENT_ID', 'GRAPH_CLIENT_ID', 'AZURE_CLIENT_ID']) {
+        sjekk(`tabellen peker på ${n}`, iTabellen.includes(n), true);
+    }
+
+    // Kapittel 8 må peke tilbake, ellers dukker objektet opp uten sammenheng.
+    const kap8 = tekst.slice(tekst.indexOf('## 8. Deploy av API-et'),
+        tekst.indexOf('## 9. Verifikasjon'));
+    sjekk('kapittel 8 peker tilbake til tabellen',
+        /tabellen i 0\.5/.test(kap8), true);
+    sjekk('og avviser lagringstolkningen der også',
+        /ingenting med lagringen/.test(kap8), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
