@@ -574,7 +574,34 @@ under «Prøv i dev først». Den begynner nå med at app-registreringen må fin
 
 ### 0.5 App-registreringene fra v2 kan gjenbrukes
 
-Begge, og det sparer to bestillinger. En app-registrering er ikke bundet til
+**Fem identiteter er i bruk, og de blandes lett.** To er app-registreringer
+som gjenbrukes, én opprettes ny, og to er managed identities — altså ikke
+app-registreringer i det hele tatt:
+
+| Identitet | Hva den er | Brukes NÅR | Peker fra |
+|---|---|---|---|
+| **Auth-appen** | app-registrering | en BRUKER logger inn | `AAD_CLIENT_ID` + auth-sertifikatet, på **SWA-ressursen** |
+| **Backup-appen** (`Sites.Selected`) | app-registrering | API-et laster opp backup til SharePoint | `GRAPH_CLIENT_ID` + `GRAPH_CLIENT_CERT_PEM`, på **Function App-en** |
+| **Deploy-objektet** (`sp-skjema-3-prod-deploy`) | app-registrering, opprettes NY i kapittel 8 | **bare i GitHub Actions**, når API-et rulles ut | `AZURE_FUNCAPP_CREDENTIALS` i GitHub-miljøet `prod` |
+| **`mi-skjema-3-prod`** | **managed identity**, user-assigned | API-et leser og skriver LAGRING, og løser `@Microsoft.KeyVault(...)` | `AZURE_CLIENT_ID` + `keyVaultReferenceIdentity`, på **Function App-en** |
+| **SWA-ens plattformidentitet** | **managed identity**, systemtildelt | plattformen henter auth-sertifikatet | `clientSecretCertificateKeyVaultReference` i SWA-configen (6.1) |
+
+Tre skiller er verdt å lese nøye:
+
+* **Lagringen går IKKE gjennom noen app-registrering.** Den går på
+  `mi-skjema-3-prod` med tre storage-roller (kapittel 3). Spørsmålet «hvilken
+  app gir tilgang til lageret» har derfor ikke noe svar — det er feil
+  spørsmål, og et billig sted å lete lenge.
+* **Deploy-objektet brukes aldri i drift.** Det logger inn i Azure fra en
+  GitHub-jobb og legger kode på Function App-en. Står det stille, merker
+  ingen bruker noe; feiler det, er det utrullingen som stopper.
+* **De to managed identitetene er ikke den samme.** Den ene hører på Function
+  App-en, den andre på SWA-ressursen, og de trenger hver sine roller. Det var
+  nettopp den sammenblandingen som holdt innloggingen nede 22.10.2026 — se
+  6.1.
+
+Begge app-registreringene fra v2 kan gjenbrukes, og det sparer to
+bestillinger. En app-registrering er ikke bundet til
 en SWA eller en Function App — den er bundet til tenanten.
 
 **Auth-appen (pålogging).** Gjenbrukes med en NY redirect-URI, se trinn 6.
@@ -1301,7 +1328,9 @@ fordi en tenant kan ha mer enn én SWA. Kjør **«Deploy frontend til dev-SWA»*
 > Står kopien der, er **5.3 stengt**.
 
 **Står kopien der alt?** Rull ut på nytt med `deploy_api = false` FØR du går
-videre til 5.3.
+videre til 5.3. **Målt 22.10.2026: det er nok.** En ny utrulling med tom
+`api_location` fjerner managed functions-kopien, og lenkingen i 5.3 gikk
+rett igjennom etterpå — ingen egen riving trengs.
 
 > **Ikke bytt verdien på en hemmelighet som alt er i bruk.** `AZURE_STATIC_WEB_APPS_API_TOKEN_PROD`
 > peker på v2 sin SWA. Skriver du v3-tokenet dit, går neste ordinære
@@ -1328,7 +1357,15 @@ SWA uten vellykket deploy kan ikke lenkes til en backend — se advarselen
 ### 5.3 Lenk Function App-en til SWA-en — først nå
 
 **Forutsetning: SWA-en har ingen managed functions.** Er API-et rullet ut
-dit (5.2), kan den ikke lenkes — de to utelukker hverandre.
+dit (5.2), kan den ikke lenkes — de to utelukker hverandre. Rull ut på nytt
+med `deploy_api = false` først; det er målt å være nok.
+
+> **Tørrkjøringen viser ikke de ekte verdiene i dette trinnet.** Function
+> App-ens ressurs-ID og region slås opp først når `-Kjor` er med, så den
+> tørre utskriften har `<Function App-ens resource id>` og regionen fra
+> `$STED`. Den ekte kjøringen viste `'Norway East'` der tørrkjøringen sa
+> `norwayeast`. Begge er riktige — det er samme region, skrevet som API-et
+> oppgir den. Sammenlign derfor FORMEN, ikke verdiene.
 
 ```powershell
 .\scripts\steg1-funcapp.ps1 @p -Trinn lenk -Kjor
@@ -1559,15 +1596,92 @@ hvor blank lagringen er.
 
 ## 8. Deploy av API-et
 
+**Hva dette objektet er:** den tredje identiteten i tabellen i 0.5 — den
+GitHub Actions logger inn med for å legge kode på Function App-en. Den
+brukes aldri i drift, og den har ingenting med lagringen å gjøre.
+
+**Dette trinnet krever en Entra-rolle du kanskje ikke har.** Les avsnittet
+«Får du `Insufficient privileges`» under FØR du kjører — det er den
+sannsynligste utgangen.
+
 Utskriften fra `az ad sp create-for-rbac` **er en hemmelighet**. Den går rett
 inn i GitHub-secreten, ikke via en sak, e-post eller chat:
 
 ```powershell
 $scope = "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.Web/sites/$FA"
-$creds = az ad sp create-for-rbac --name sp-skjema-3-prod-deploy --role contributor --scopes $scope --sdk-auth
-gh secret set AZURE_FUNCAPP_CREDENTIALS_PROD --body $creds
+$creds = az ad sp create-for-rbac --name sp-skjema-3-prod-deploy --role Contributor --scopes $scope --json-auth
+if (-not $creds) { throw "create-for-rbac ga ingenting - les feilen over. Ikke gaa videre." }
+gh secret set AZURE_FUNCAPP_CREDENTIALS --env prod --body $creds
 Remove-Variable creds
 ```
+
+Tre detaljer, og hver av dem har et symptom som peker et annet sted:
+
+| Detalj | Hvorfor |
+|---|---|
+| `--json-auth`, ikke `--sdk-auth` | `--sdk-auth` er avviklet og skriver en advarsel. `docs/BESLUTNING-EGEN-FUNCTION-APP.md` bruker alt den nye — to steder som svarer ulikt er den feilklassen dette repoet oftest har |
+| `--env prod`, og navnet UTEN `_PROD` | `deploy-funcapp-pilot.yml` leser `secrets.AZURE_FUNCAPP_CREDENTIALS` i **GitHub-miljøet** `${{ inputs.miljo }}`. En repo-secret som heter `AZURE_FUNCAPP_CREDENTIALS_PROD` leses aldri, og deployen feiler i `azure/login` med en JSON-feil om en tom verdi |
+| Vakten på `$creds` | Feiler kommandoen over, er `$creds` tom, og `gh secret set --body $creds` svarer `flag needs an argument: --body`. Det ser ut som en feil i `gh`-kallet. Vakten stopper der feilen faktisk er |
+
+#### Får du `Insufficient privileges`
+
+> `ERROR: Directory permission is needed for the current user to register the
+> application. … Insufficient privileges to complete the operation.`
+
+`az ad sp create-for-rbac` er **to operasjoner i én kommando**, med
+rettigheter fra hver sin verden (0.1 C, merknad 1):
+
+| Del | Hva den gjør | Rolle |
+|---|---|---|
+| App-registreringen | Oppretter tjenestehovedobjektet i Entra | **`Application Administrator`**, eller at tenanten tillater at brukere registrerer apper |
+| `--role ... --scopes ...` | Tildeler `Contributor` på Function App-en | `Owner`/`User Access Administrator` på ressursgruppa — den du alt har |
+
+Feilmeldingen gjelder den FØRSTE. Ingenting ble opprettet, og ingen rolle ble
+tildelt.
+
+**Del jobben i stedet for å be om rollen.** En administrator oppretter
+tjenestehovedobjektet UTEN rolle — da trenger de ikke røre ressursgruppa
+— og du tildeler rollen selv etterpå:
+
+> **Bestilling:** Opprett et tjenestehovedobjekt (app-registrering med
+> service principal) med navnet `sp-skjema-3-prod-deploy`. Ingen roller, ingen
+> API-tillatelser, ingen redirect-URI-er. Send meg `appId`, `tenant` og en
+> klienthemmelighet. Hemmeligheten skal IKKE sendes i e-post eller en sak —
+> avtal en egen kanal.
+
+Når du har verdiene, gjør du resten selv:
+
+```powershell
+$APPID = '<appId fra administratoren>'
+$arg = @(
+    'role', 'assignment', 'create',
+    '--assignee', $APPID,
+    '--role', 'Contributor',
+    '--scope', $scope,
+    '--output', 'none'
+)
+az @arg
+```
+
+Og bygger JSON-en `azure/login@v2` forventer. **Hele objektet**, ikke bare
+hemmeligheten — får den noe annet, feiler den med
+`Login failed with SyntaxError: Unexpected token`:
+
+```powershell
+$hemmelig = Read-Host -AsSecureString 'Klienthemmeligheten'
+$klar = [System.Net.NetworkCredential]::new('', $hemmelig).Password
+$creds = @{
+    clientId = $APPID
+    clientSecret = $klar
+    subscriptionId = $SUB
+    tenantId = (az account show --query tenantId -o tsv)
+} | ConvertTo-Json
+gh secret set AZURE_FUNCAPP_CREDENTIALS --env prod --body $creds
+Remove-Variable creds, klar, hemmelig
+```
+
+`Read-Host -AsSecureString` holder hemmeligheten utenfor skjermen og utenfor
+PSReadLine-historikken. `Remove-Variable` til slutt, på alle tre.
 
 **Scopet er den ene Function App-en, ikke ressursgruppa.** Deles gruppa med
 v2 (0.3), rekker ellers denne GitHub-hemmeligheten over v2 sin lagringskonto,

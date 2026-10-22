@@ -375,6 +375,10 @@ for (const fil of deployer) {
         /Lagring er ikke konfigurert/.test(kap), true);
     sjekk('og at lenkingen da er stengt',
         /5\.3 stengt|stengt/.test(kap), true);
+    // Og at en ny utrulling ER nok. Uten dette står neste kjøring med samme
+    // ubesvarte spørsmål: må kopien rives på en egen måte? Målt 22.10.2026.
+    sjekk('og at en ny utrulling fjerner kopien',
+        /M\u00e5lt 22\.10\.2026: det er nok/.test(kap), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
