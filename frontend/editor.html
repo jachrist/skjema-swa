@@ -658,7 +658,7 @@
         import { api } from './js/api-client.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { FELTTYPER, renderTekst } from './js/felt-render.js';
-        import { byggDNFEditor } from './js/dnf-editor.js';
+        import { byggDNFEditor, byggValideringEditor } from './js/dnf-editor.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn, invaliderRolleCache } from './js/tilgang-editor.js';
         import { apneMeldingModal, samleFeltreferanser, EPOST_IKON } from './js/melding-editor.js';
         import { migrerFeltreferanser } from './js/feltref-migrering.js';
@@ -2511,6 +2511,34 @@
             window.scrollTo({ top: rullePos });
         }
 
+        /**
+         * Hvilke felttyper kan bære valideringsregler?
+         *
+         * Ikke `Informasjon` — den har ikke noe svar. Ikke `Opplasting` —
+         * et vedlegg har ingen verdi å sammenligne. Resten kan: også
+         * tekstfelter, for en regel kan vise til ANDRE felter uten å si noe
+         * om feltets egen form.
+         */
+        function kanValideres(type) {
+            return type !== 'Informasjon' && type !== 'Opplasting';
+        }
+
+        /**
+         * Alle felter i skjemaet, uansett rekkefølge.
+         *
+         * Validering kjører ved INNSENDING, når hele skjemaet er fylt ut, så
+         * «sluttdato» kan godt stå etter «startdato» i skjemaet. `Vises` og
+         * `ObligatoriskHvis` må derimot kunne avgjøres mens man blar nedover,
+         * og bruker `samleFelterFør`.
+         *
+         * Uttrykt gjennom den: en seksjonsindeks utenfor lista tar med alle
+         * seksjoner, og `fIdx = -1` stopper ingen felter. To lister over
+         * «hvilke felter finnes» ville kunne svare ulikt.
+         */
+        function samleAlleFelter() {
+            return samleFelterFør(data.Seksjoner.length, -1);
+        }
+
         function samleFelterFør(sIdx, fIdx) {
             // Samler felter tilgjengelig som referanse: alle i tidligere seksjoner
             // + tidligere felter i samme seksjon. Info/Opplasting hoppes over.
@@ -2621,6 +2649,15 @@
                             tittel: 'Obligatorisk hvis',
                             onEndring: (ny) => { if (ny) felt.ObligatoriskHvis = ny; else delete felt.ObligatoriskHvis; }
                         });
+                    }
+                    if (kanValideres(felt.Type)) {
+                        const valSlot = document.querySelector(`.dnf-slot[data-slot="felt-validering-${sIdx}-${fIdx}"]`);
+                        if (valSlot) {
+                            byggValideringEditor(valSlot, felt.Validering, {
+                                feltOptions: samleAlleFelter(),
+                                onEndring: (ny) => { if (ny) felt.Validering = ny; else delete felt.Validering; }
+                            });
+                        }
                     }
                     if (kanHaFasteData(felt.Type)) {
                         const fdSlot = document.querySelector(`.dnf-slot[data-slot="felt-fastedata-${sIdx}-${fIdx}"]`);
@@ -2887,6 +2924,7 @@
                     <div class="felt-config">${config}</div>
                     ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-vises-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-oblig-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
+                    ${kanValideres(felt.Type) ? `<div class="dnf-slot" data-slot="felt-validering-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${kanHaFasteData(felt.Type) ? `<div class="dnf-slot" data-slot="felt-fastedata-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${data.SPListeadresse && felt.Type !== 'Informasjon' ? `
                         <div class="rad" style="margin-top: 8px;">

@@ -21,6 +21,10 @@
  *   });
  *   // editor.destroy()  — fjerner DOM og handlers
  */
+// Samme streng som `IDAG_REF` i vilkar.js. Den leses derfra, ikke skrevet
+// opp på nytt — editoren og motoren skal ikke kunne bli uenige om hva
+// «dagens dato» heter.
+import { IDAG_REF } from './vilkar.js';
 
 const OPERATORER_VILKAR = ['=', '!=', '<', '<=', '>', '>=', 'tom', 'ikke_tom', 'inneholder'];
 const OPERATORER_FASTE_DATA = ['=', '!=', 'inneholder']; // enklere sett for filter
@@ -42,6 +46,10 @@ const OPERATOR_FORKLARING = {
 
 export function byggDNFEditor(container, initial, options) {
     const modus = options.modus || 'vilkår';
+    // Høyresiden som feltreferanse er et VALG, ikke standard: `Vises` og
+    // `ObligatoriskHvis` har klart seg med faste verdier, og en ekstra
+    // nedtrekksliste i hver rad der ville vært støy. Validering trenger det.
+    const høyresideFelt = options.høyresideFelt === true;
     const feltOptions = options.feltOptions || [];
     const datakilder = options.datakilder || [];
     const tittel = options.tittel || (modus === 'faste-data' ? 'Hent verdier fra datakilde' : 'Vilkår');
@@ -315,6 +323,101 @@ export function byggDNFEditor(container, initial, options) {
         return div;
     }
 
+    /**
+     * Høyresiden: fast verdi ELLER et annet felt, med valgfri forskyvning.
+     *
+     * Formen i data avgjør hva som vises: er `Verdi` et objekt, er det en
+     * feltreferanse. Det er samme regel `vilkar.js` bruker når den leser
+     * den, så editoren og motoren kan ikke bli uenige om hva en verdi ER.
+     */
+    function byggHoyreside(betingelse) {
+        const boks = document.createElement('span');
+        boks.style.cssText = 'display: flex; gap: 6px; align-items: center; flex: 1 1 200px; flex-wrap: wrap;';
+
+        const erFeltRef = !!(betingelse.Verdi && typeof betingelse.Verdi === 'object'
+            && !Array.isArray(betingelse.Verdi));
+
+        const typeSel = document.createElement('select');
+        typeSel.style.cssText = 'padding: 3px 6px; font-size: 12px; width: 108px;';
+        for (const [v, t] of [['verdi', 'fast verdi'], ['felt', 'et annet felt']]) {
+            const o = document.createElement('option');
+            o.value = v;
+            o.textContent = t;
+            if ((v === 'felt') === erFeltRef) o.selected = true;
+            typeSel.appendChild(o);
+        }
+        typeSel.addEventListener('change', () => {
+            // Verdien kastes ved bytte: en tekst og en feltreferanse er ikke
+            // det samme, og å forsøke å oversette ville gitt en referanse som
+            // ser satt ut uten å peke på noe.
+            betingelse.Verdi = typeSel.value === 'felt' ? { Felt: '' } : '';
+            ferdig();
+            render();
+        });
+        boks.appendChild(typeSel);
+
+        if (!erFeltRef) {
+            const inp = document.createElement('input');
+            inp.type = 'text';
+            inp.style.cssText = 'flex: 1 1 90px; min-width: 70px; padding: 3px 6px; font-size: 12px;';
+            inp.placeholder = 'verdi';
+            inp.value = betingelse.Verdi == null ? '' : String(betingelse.Verdi);
+            inp.addEventListener('input', () => {
+                betingelse.Verdi = inp.value;
+                ferdig();
+            });
+            boks.appendChild(inp);
+            return boks;
+        }
+
+        const feltSel = document.createElement('select');
+        feltSel.style.cssText = 'flex: 1 1 130px; min-width: 120px; padding: 3px 6px; font-size: 12px;';
+        const tom = document.createElement('option');
+        tom.value = '';
+        tom.textContent = '— felt —';
+        feltSel.appendChild(tom);
+
+        const idag = document.createElement('option');
+        idag.value = IDAG_REF;
+        idag.textContent = 'Dagens dato';
+        idag.title = 'Datoen skjemaet fylles ut';
+        feltSel.appendChild(idag);
+
+        for (const f of feltOptions) {
+            const o = document.createElement('option');
+            o.value = f.ref;
+            o.textContent = f.tekst;
+            feltSel.appendChild(o);
+        }
+        feltSel.value = String(betingelse.Verdi.Felt || '');
+        feltSel.addEventListener('change', () => {
+            betingelse.Verdi = { ...betingelse.Verdi, Felt: feltSel.value };
+            ferdig();
+        });
+        boks.appendChild(feltSel);
+
+        const dager = document.createElement('input');
+        dager.type = 'number';
+        dager.style.cssText = 'width: 86px; padding: 3px 6px; font-size: 12px;';
+        dager.placeholder = '± dager';
+        dager.title = 'Forskyvning i dager. «14» betyr 14 dager ETTER feltet, '
+            + '«-30» betyr 30 dager før. Virker bare på datoer.';
+        dager.value = betingelse.Verdi.PlussDager == null ? '' : String(betingelse.Verdi.PlussDager);
+        dager.addEventListener('input', () => {
+            const n = dager.value === '' ? null : Number(dager.value);
+            const ny = { ...betingelse.Verdi };
+            // Null dagers forskyvning er det samme som ingen. Lagres den
+            // likevel, bærer skjematypen en nøkkel som ikke betyr noe.
+            if (n === null || !Number.isFinite(n) || n === 0) delete ny.PlussDager;
+            else ny.PlussDager = n;
+            betingelse.Verdi = ny;
+            ferdig();
+        });
+        boks.appendChild(dager);
+
+        return boks;
+    }
+
     function byggBetingelse(betingelse, gIdx, bIdx) {
         const rad = document.createElement('div');
         rad.style.cssText = 'display: flex; gap: 6px; align-items: center; margin: 4px 0; flex-wrap: wrap;';
@@ -380,7 +483,18 @@ export function byggDNFEditor(container, initial, options) {
         rad.appendChild(opSel);
 
         // Verdi (skjules for tom/ikke_tom)
-        if (betingelse.Operator !== 'tom' && betingelse.Operator !== 'ikke_tom') {
+        //
+        // I modus `vilkår` kan høyresiden være ET ANNET FELT, ikke bare en
+        // fast verdi: «sluttdato etter startdato» er ikke uttrykkbart med en
+        // literal. Formen er { Felt: "<ref>", PlussDager: n } — se vilkar.js.
+        //
+        // `faste-data` beholder den faste verdien: der sammenlignes mot en
+        // kolonne i en ekstern datakilde, og et felt i skjemaet gir ikke
+        // mening som filter.
+        if (betingelse.Operator !== 'tom' && betingelse.Operator !== 'ikke_tom'
+            && modus !== 'faste-data' && høyresideFelt) {
+            rad.appendChild(byggHoyreside(betingelse));
+        } else if (betingelse.Operator !== 'tom' && betingelse.Operator !== 'ikke_tom') {
             const inp = document.createElement('input');
             inp.type = 'text';
             inp.style.cssText = 'flex: 1 1 100px; min-width: 80px; padding: 3px 6px; font-size: 12px;';
@@ -427,4 +541,121 @@ export function byggDNFEditor(container, initial, options) {
     return {
         destroy: () => { container.innerHTML = ''; }
     };
+}
+
+/**
+ * Valideringsregler på et felt — en liste av { Vilkar, Melding }.
+ *
+ * Hver regel er en DNF-editor med høyresiden satt til feltmodus, pluss et
+ * meldingsfelt. Vilkåret leses som GYLDIG HVIS, og det står i panelet: uten
+ * den setningen er retningen en gjetning, og en snudd regel ser ut som en
+ * regel som ikke virker.
+ *
+ * Bruk:
+ *   byggValideringEditor(container, felt.Validering, {
+ *       feltOptions: [{ ref, tekst }, ...],
+ *       onEndring: (ny) => { if (ny) felt.Validering = ny; else delete felt.Validering; }
+ *   });
+ */
+export function byggValideringEditor(container, initial, options) {
+    const feltOptions = options.feltOptions || [];
+    const onEndring = options.onEndring || (() => {});
+
+    let regler = Array.isArray(initial) ? JSON.parse(JSON.stringify(initial)) : [];
+
+    function ferdig() {
+        // En regel uten vilkår er ingen regel. Den slipper ikke ut.
+        const rene = regler.filter(r => r && r.Vilkar);
+        onEndring(rene.length ? rene : null);
+    }
+
+    function render() {
+        container.innerHTML = '';
+        container.classList.add('dnf-editor');
+
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'border: 1px solid var(--border-color, #d0d7de); border-radius: 8px; padding: 10px 12px; background: rgba(0,0,0,0.02); margin-top: 6px;';
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;';
+        const t = document.createElement('div');
+        t.style.cssText = 'font-weight: 600; font-size: 13px;';
+        t.textContent = 'Validering';
+        header.appendChild(t);
+        wrap.appendChild(header);
+
+        const forklaring = document.createElement('div');
+        forklaring.style.cssText = 'font-size: 11px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.5;';
+        forklaring.textContent = 'Vilkåret sier når svaret er GYLDIG. Holder det ikke, '
+            + 'vises meldingen og skjemaet kan ikke sendes inn. En regel hopper over '
+            + 'seg selv til alle feltene den viser til er fylt ut.';
+        wrap.appendChild(forklaring);
+
+        regler.forEach((regel, i) => wrap.appendChild(byggRegel(regel, i)));
+
+        const ny = document.createElement('button');
+        ny.type = 'button';
+        ny.style.cssText = 'margin-top: 6px; padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: pointer;';
+        ny.textContent = '+ Legg til regel';
+        ny.addEventListener('click', () => {
+            regler.push({ Vilkar: { EllerAv: [{ OgAv: [{ Felt: '', Operator: '=', Verdi: '' }] }] }, Melding: '' });
+            ferdig();
+            render();
+        });
+        wrap.appendChild(ny);
+
+        container.appendChild(wrap);
+    }
+
+    function byggRegel(regel, i) {
+        const div = document.createElement('div');
+        div.style.cssText = 'padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; background: white; margin: 6px 0;';
+
+        const topp = document.createElement('div');
+        topp.style.cssText = 'display: flex; gap: 6px; align-items: center; margin-bottom: 6px;';
+
+        const melding = document.createElement('input');
+        melding.type = 'text';
+        melding.style.cssText = 'flex: 1; padding: 4px 8px; font-size: 12px;';
+        melding.placeholder = 'Melding når regelen ikke holder';
+        melding.title = 'Dette er teksten den som fyller ut skjemaet får se. '
+            + 'Skriv hva som MÅ være sant, ikke hva som er galt.';
+        melding.value = regel.Melding || '';
+        melding.addEventListener('input', () => {
+            regel.Melding = melding.value;
+            ferdig();
+        });
+        topp.appendChild(melding);
+
+        const fjern = document.createElement('button');
+        fjern.type = 'button';
+        fjern.style.cssText = 'padding: 3px 8px; font-size: 12px; border: 1px solid var(--danger); background: transparent; color: var(--danger); border-radius: 4px; cursor: pointer;';
+        fjern.textContent = '×';
+        fjern.title = 'Fjern regel';
+        fjern.addEventListener('click', () => {
+            regler.splice(i, 1);
+            ferdig();
+            render();
+        });
+        topp.appendChild(fjern);
+        div.appendChild(topp);
+
+        const slot = document.createElement('div');
+        div.appendChild(slot);
+        byggDNFEditor(slot, regel.Vilkar, {
+            modus: 'vilkår',
+            feltOptions,
+            høyresideFelt: true,
+            tittel: 'Gyldig hvis',
+            onEndring: (ny) => {
+                if (ny) regel.Vilkar = ny; else delete regel.Vilkar;
+                ferdig();
+            }
+        });
+
+        return div;
+    }
+
+    render();
+    return { destroy: () => { container.innerHTML = ''; } };
 }

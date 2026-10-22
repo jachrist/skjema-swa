@@ -56,6 +56,7 @@
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Eksportert av samme grunn som i frontend-kopien: navnet skal stå ett sted.
 const IDAG_REF = '@idag';
 const ISO_DATO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -319,6 +320,7 @@ function forsteBrudd(validering, seksjoner, behandling, ctx) {
 module.exports = {
     erDNFFormat, erLegacyFormat, migrerTilDNF,
     evaluerVilkar, evaluerBetingelse, hentSvar,
+    IDAG_REF,
     samleRefererteFelter,
     alleFelterUtfylt,
     forsteBrudd

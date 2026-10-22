@@ -4,7 +4,9 @@
  */
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const IDAG_REF = '@idag';
+// Eksportert: dnf-editor.js bygger nedtrekket «Dagens dato» av den, slik at
+// editoren og motoren ikke kan bli uenige om hva verdien heter.
+export const IDAG_REF = '@idag';
 const ISO_DATO_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 function erIsoDato(v) {
