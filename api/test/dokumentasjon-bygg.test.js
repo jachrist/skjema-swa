@@ -140,7 +140,10 @@ const skript = les('scripts', 'bygg-dokumentasjon.sh');
     const frontendJobber = filer.filter(f =>
         /app_location:\s*"\.\/frontend"/.test(fs.readFileSync(path.join(mappe, f), 'utf8')));
 
-    sjekk('fant deploy-jobbene som laster opp frontend', frontendJobber.length >= 3, true);
+    // Antallet er bare en forsikring om at skanningen fant noe — regelen er
+    // de to sjekkene under. Det var 3 til 22.10.2026, da deploy-pilot.yml
+    // ble slått sammen med deploy-prod.yml; nå er det dev og prod/pilot.
+    sjekk('fant deploy-jobbene som laster opp frontend', frontendJobber.length >= 2, true);
     const uten = frontendJobber.filter(f =>
         !fs.readFileSync(path.join(mappe, f), 'utf8').includes('bygg-dokumentasjon.sh'));
     sjekk('alle bygger dokumentasjonen først', uten, []);

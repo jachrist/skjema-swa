@@ -10,7 +10,7 @@
  *   ruller en rød suite rett ut. Det er den eneste porten mellom en dårlig
  *   commit og et miljø med brukere i.
  *
- *   **deploy-pilot har ingen pull_request-trigger.** SWA-actionen lager et
+ *   **Deploy-workflowen har ingen pull_request-trigger.** SWA-actionen lager et
  *   preview-miljø per PR, og ingen åpner dem — arbeidsflyten er å merge og
  *   teste på pilot. Regelen står her fordi Azures egen genererte workflow HAR
  *   den triggeren: regenererer noen fila, kommer den tilbake av seg selv.
@@ -89,15 +89,53 @@ for (const fil of deployer) {
         utrulling.every(i => kilde.indexOf('kjor-tester.js') < i), true);
 }
 
-// ---------- pilot ----------
+// ---------- pilot og prod er én arbeidsflyt ----------
+//
+// Slått sammen 22.10.2026. De to filene skilte seg i fem konstanter —
+// environment, config-miljø, token-hemmelighet, bekreftelsesord og om
+// API-et rulles ut — og var ellers like. To filer som skiller seg i
+// konstanter er duplisering: den ene ville før eller siden fått en
+// rettelse den andre ikke fikk.
 {
-    const t = triggere(les('deploy-pilot.yml'));
-    sjekk('pilot: triggere', t.sort(), ['push', 'workflow_dispatch']);
-    sjekk('pilot: ingen preview per PR', t.includes('pull_request'), false);
+    const w = les('deploy-prod.yml');
+
+    sjekk('deploy-pilot.yml finnes ikke lenger',
+        fs.existsSync(path.join(mappe, 'deploy-pilot.yml')), false);
+
+    const t = triggere(w);
+    sjekk('kun manuell', t.sort(), ['workflow_dispatch']);
+    sjekk('ingen preview per PR', t.includes('pull_request'), false);
+
     // Close-jobben har ingen hendelse å kjøre på uten triggeren, og en jobb
     // som aldri kan kjøre ser ut som en sikkerhetsmekanisme som finnes.
-    sjekk('pilot: ingen død close-jobb',
-        /close_pull_request_job:/.test(les('deploy-pilot.yml')), false);
+    sjekk('ingen død close-jobb', /close_pull_request_job:/.test(w), false);
+
+    // BEKREFTELSEN MÅ STEMME MED MÅLET.
+    //
+    // Før sammenslåingen beskyttet ordet mot å kjøre prod-workflowen ved et
+    // uhell. Med et nedtrekk beskytter det i tillegg mot å ha valgt feil i
+    // nedtrekket — strengere enn før, ikke svakere. Forsvinner den
+    // koblingen, er et feilklikk i nedtrekket nok til å treffe prod.
+    sjekk('målet er et valg', /miljo:\n\s*description:/.test(w), true);
+    sjekk('med begge tenantene', /options: \[pilot, prod\]/.test(w), true);
+    sjekk('og pilot er standard — det minst farlige',
+        /default: 'pilot'/.test(w), true);
+    sjekk('bekreftelsen utledes AV målet',
+        /VENTET="DEPLOY-\$\(echo "\$MILJO" \| tr/.test(w), true);
+    sjekk('og en som ikke stemmer stopper',
+        /if \[ "\$BEKREFT" != "\$VENTET" \]/.test(w), true);
+
+    // Miljøet følger valget, ellers går en pilot-kjøring mot prod sine
+    // hemmeligheter og godkjenning.
+    sjekk('GitHub-miljøet følger valget',
+        /environment: \$\{\{ inputs\.miljo \}\}/.test(w), true);
+    sjekk('og konfigurasjonen bygges for samme miljø',
+        /build-config\.js \$\{\{ inputs\.miljo \}\}/.test(w), true);
+
+    // Tokenet må ha en standard PER MILJØ. Uten den ville en pilot-kjøring
+    // uten eget valg brukt prod-tokenet — og truffet prod.
+    sjekk('tokenet har en standard per miljø',
+        /inputs\.miljo == 'prod' &&[\s\S]{0,160}ASHY_MEADOW/.test(w), true);
 }
 
 // ---------- prod ----------
@@ -305,22 +343,40 @@ for (const fil of deployer) {
 {
     for (const fil of ['deploy-dev.yml', 'deploy-prod.yml']) {
         const w = fs.readFileSync(path.join(mappe, fil), 'utf8');
-        const standard = fil === 'deploy-dev.yml'
-            ? 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV'
-            : 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD';
 
         sjekk(`${fil}: har et valg for hemmeligheten`, /swa_token_secret:/.test(w), true);
-        sjekk(`${fil}: standarden er den som har vært brukt`,
-            w.includes(`default: '${standard}'`), true);
-        sjekk(`${fil}: uttrykket har samme standard`,
-            w.includes(`secrets[inputs.swa_token_secret || '${standard}']`), true);
 
         const iVakt = w.indexOf('Sjekk at tokenet finnes');
         sjekk(`${fil}: vakten finnes`, iVakt > -1, true);
         sjekk(`${fil}: og kommer før opplastingen`,
             iVakt > -1 && iVakt < w.indexOf('static-web-apps-deploy'), true);
-        sjekk(`${fil}: ingen hardkodet token igjen`,
-            new RegExp(`secrets\\.${standard}\\s*\\}\\}`).test(w), false);
+
+        if (fil === 'deploy-dev.yml') {
+            // Ett miljø, én standard: den kan stå som `default:`.
+            const standard = 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV';
+            sjekk(`${fil}: standarden er den som har vært brukt`,
+                w.includes(`default: '${standard}'`), true);
+            sjekk(`${fil}: uttrykket har samme standard`,
+                w.includes(`secrets[inputs.swa_token_secret || '${standard}']`), true);
+            sjekk(`${fil}: ingen hardkodet token igjen`,
+                new RegExp(`secrets\\.${standard}\\s*\\}\\}`).test(w), false);
+            continue;
+        }
+
+        // TO miljøer, og standarden må følge valget.
+        //
+        // Et `default:` på inputen kan bare ha ÉN verdi. Sto prod-tokenet
+        // der, ville en pilot-kjøring uten eget valg truffet PROD — og det
+        // er ikke en feil man oppdager før etterpå. Derfor ligger
+        // standarden i uttrykket, der den kan avhenge av miljøet.
+        sjekk(`${fil}: ingen fast standard på inputen`,
+            /swa_token_secret:[\s\S]{0,200}?default:/.test(w), false);
+        sjekk(`${fil}: standarden avhenger av miljøet`,
+            /inputs\.miljo == 'prod' &&\s*secrets\.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD/.test(w), true);
+        sjekk(`${fil}: og pilot får sin egen`,
+            /\|\|\s*secrets\.AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW/.test(w), true);
+        sjekk(`${fil}: valget overstyrer begge`,
+            /secrets\[inputs\.swa_token_secret\] \|\|/.test(w), true);
     }
 }
 

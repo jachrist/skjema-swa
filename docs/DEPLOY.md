@@ -25,22 +25,34 @@ eller deploy lytter på push til en annen gren enn `main`.
 **5. PR-en leses og merges.** Dette er porten. Ingen deploy skjer før noen
 har bestemt seg.
 
-**6. Merge = push til `main`.** To arbeidsflyter starter:
+**6. Merge = push til `main`.** Én arbeidsflyt starter: **CI** igjen, på
+merge-commiten. Den overlapper nesten helt med runde 4, men fanger tilfellet
+der `main` har flyttet seg siden PR-en ble bygget.
 
-- **CI** igjen, på merge-commiten. Overlapper nesten helt med runde 4, men
-  fanger tilfellet der `main` har flyttet seg siden PR-en ble bygget.
-- **Deploy pilot**, som er den som betyr noe.
+**Ingen deploy skjer av seg selv.** Pilot deployet automatisk ved push fram
+til 22.10.2026. Testingen foregår nå på dev, og pilot brukes lite — men
+miljøet har fortsatt ekte flyter og ekte e-postutsending, så en automatisk
+utrulling dit ruller ut halvferdig arbeid i et miljø ingen ser på.
 
-**7. Deploy pilot kjører**, i denne rekkefølgen:
+**7. Deploy kjøres manuelt**, fra Actions-fanen:
+
+| Miljø | Arbeidsflyt | Bekreftelse |
+|---|---|---|
+| dev (frontend) | **Deploy frontend til dev-SWA** | — |
+| dev (API) | **Deploy API til Function App** | — |
+| pilot | **Deploy prod eller pilot**, `miljo = pilot` | `DEPLOY-PILOT` |
+| prod | **Deploy prod eller pilot**, `miljo = prod` | `DEPLOY-PROD` |
+
+Deployen gjør, i denne rekkefølgen:
 
 - henter koden, setter opp Node 22
 - `node scripts/kjor-tester.js` — **uten** `npm ci`, så testene kjører uten
   `node_modules`. Røde tester her stopper utrullingen
-- `node scripts/build-config.js pilot` — bygger `frontend/js/config.js` og
-  `staticwebapp.config.json` for pilot
-- laster opp til SWA
+- `node scripts/build-config.js <miljø>` — bygger `frontend/js/config.js` og
+  `staticwebapp.config.json` for miljøet
+- laster opp til SWA, og verifiserer at `/api/ping` bærer riktig commit
 
-**8. Endringene er deployet til pilot.**
+**8. Endringene er deployet dit du valgte.**
 
 ### Ingen preview-miljøer per PR
 
@@ -49,8 +61,8 @@ rive det ned ved `closed`. Fram til 18.09.2026 gjorde den det, og ingen åpnet
 dem: arbeidsflyten er å merge og teste på pilot, så hver PR bygget et miljø
 som ble revet ned minutter senere.
 
-Triggeren er fjernet fra `deploy-pilot.yml`. Azures egen genererte workflow
-HAR den, så regenererer noen fila, kommer den tilbake av seg selv —
+Triggeren er fjernet. Azures egen genererte workflow HAR den, så
+regenererer noen fila, kommer den tilbake av seg selv —
 `api/test/arbeidsflyter.test.js` slår ned på det.
 
 Dette gjelder **bare** preview per PR på pilot. Det navngitte preview-miljøet
@@ -224,11 +236,16 @@ manuelt når bruker- og aksepansetest er godkjent på pilot.
 
 ### Workflows
 
-- **`.github/workflows/deploy-pilot.yml`** — deployer automatisk til pilot
-  ved push til `main`. Bygger med `env.pilot.json`.
-- **`.github/workflows/deploy-prod.yml`** — trigges kun manuelt fra
-  Actions-fanen (`workflow_dispatch`). Krever at operatøren skriver
-  `DEPLOY-PROD` som bekreftelse. Bygger med `env.prod.json`.
+- **`.github/workflows/deploy-prod.yml`** — «Deploy prod eller pilot».
+  Trigges kun manuelt. `miljo` velger tenant, og bekreftelsen må stemme med
+  valget: `DEPLOY-PROD` eller `DEPLOY-PILOT`. Bygger med
+  `env.<miljø>.json`.
+
+  De to var egne filer til 22.10.2026. Forskjellen var fem konstanter —
+  environment, config-miljø, token-hemmelighet, bekreftelsesord og om API-et
+  rulles ut som managed functions — og ellers var de like. To filer som
+  skiller seg i konstanter er duplisering: den ene ville før eller siden
+  fått en rettelse den andre ikke fikk.
 
 Samme koden deployes til begge tenanter. Kun `config/env.<miljø>.json`
 og GitHub secret for deployment-token skiller dem.

@@ -317,7 +317,8 @@ Write-Host @"
      3. Kjør frontend-arbeidsflyten og oppgi hemmeligheten under
         «swa_token_secret»:
           dev-tenanten:  «Deploy frontend til dev-SWA»
-          prod-tenanten: «Deploy prod»  (bekreft med DEPLOY-PROD)
+          prod-tenanten: «Deploy prod eller pilot», miljo=prod
+          (bekreft med DEPLOY-PROD)
 
         Arbeidsflyten «Deploy innhold til prøve-SWA (steg 1)» sto her til
         21.10.2026. Den fulgte steg 1-forsøket og ble revet med det, mens

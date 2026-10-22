@@ -1,7 +1,18 @@
-name: Deploy prod
+name: Deploy prod eller pilot
 
-# Manuell deploy til prod-tenanten. Kjøres kun etter godkjent test på pilot.
-# Krever GitHub Environment "prod" med required reviewer for ekstra sikkerhet.
+# Manuell deploy til prod- ELLER pilot-tenanten. Målet velges i `miljo`.
+#
+# Slått sammen 22.10.2026. De to workflowene skilte seg i fem konstanter —
+# environment, config-miljø, token-hemmelighet, bekreftelsesord og om API-et
+# rulles ut — og var ellers like. To filer som skiller seg i konstanter er
+# duplisering, og den ene ville før eller siden fått en rettelse den andre
+# ikke fikk.
+#
+# Når v2 og pilot rives (kapittel 13 i KOKEBOK-PROD-V3.md), fjernes ett valg
+# i et nedtrekk — ikke en hel fil.
+#
+# Prod krever GitHub Environment "prod" med required reviewer. Den ligger på
+# miljøet, ikke i denne fila, og er uendret.
 #
 # Forutsetning:
 #   1. Prod-tenant SWA er opprettet med env-vars satt i Configuration
@@ -15,8 +26,20 @@ name: Deploy prod
 on:
   workflow_dispatch:
     inputs:
+      # MÅLET, og bekreftelsen må stemme med det.
+      #
+      # Før sammenslåingen beskyttet ordet mot å kjøre prod-workflowen ved et
+      # uhell. Med et nedtrekk beskytter det i tillegg mot å ha valgt feil i
+      # nedtrekket: velger du `prod` og skriver DEPLOY-PILOT, stopper jobben.
+      # Det er strengere enn før, ikke svakere.
+      miljo:
+        description: 'Hvilken tenant?'
+        required: true
+        default: 'pilot'
+        type: choice
+        options: [pilot, prod]
       bekreft:
-        description: "Skriv 'DEPLOY-PROD' for å bekrefte deploy til produksjon"
+        description: "Skriv DEPLOY-PROD eller DEPLOY-PILOT — må stemme med valget over"
         required: true
         type: string
       # Et navngitt preview-miljø ligger på SAMME SWA-ressurs som produksjon, og
@@ -64,10 +87,11 @@ on:
       #
       # Navnet på hemmeligheten, ikke verdien. Standarden er den som har vært
       # brukt hele tiden, så en kjøring uten valg treffer v2 som før.
+      # Tomt = miljøets egen standard. Oppgis bare når en ANNEN SWA i samme
+      # tenant skal treffes, som prod v3 ved siden av v2.
       swa_token_secret:
-        description: 'Navnet på hemmeligheten med deployment token'
+        description: 'Valgfritt: navn på hemmelighet med deployment token (tomt = miljøets egen)'
         required: false
-        default: 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD'
         type: string
       # Skal API-et rulles ut som SWA Managed Functions?
       #
@@ -97,19 +121,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Sjekk bekreftelse
+        env:
+          MILJO: ${{ inputs.miljo }}
+          BEKREFT: ${{ inputs.bekreft }}
         run: |
-          if [ "${{ inputs.bekreft }}" != "DEPLOY-PROD" ]; then
-            echo "::error::Bekreftelse må være 'DEPLOY-PROD'. Fikk: '${{ inputs.bekreft }}'"
+          VENTET="DEPLOY-$(echo "$MILJO" | tr '[:lower:]' '[:upper:]')"
+          if [ "$BEKREFT" != "$VENTET" ]; then
+            echo "::error::Målet er «$MILJO», og da må bekreftelsen være '$VENTET'. Fikk: '$BEKREFT'"
+            echo "::error::Stemmer ikke de to, er ett av dem feil — og det er ikke opplagt hvilket."
             exit 1
           fi
-      # Målet skrives i klartekst i kjøringens sammendrag. Bekreftelsesordet er
-      # det samme for begge, så det er her man ser hva som faktisk skjer.
+      # Målet skrives i klartekst i kjøringens sammendrag — det er her man ser
+      # hva som faktisk skjedde, etterpå.
       - name: Vis mål
+        env:
+          MILJO: ${{ inputs.miljo }}
         run: |
           if [ -n "${{ inputs.preview }}" ]; then
-            echo "### Mål: preview-miljøet \`${{ inputs.preview }}\` — IKKE produksjon" >> $GITHUB_STEP_SUMMARY
+            echo "### Mål: preview-miljøet \`${{ inputs.preview }}\` i $MILJO — IKKE det ordinære miljøet" >> $GITHUB_STEP_SUMMARY
           else
-            echo "### Mål: PRODUKSJON" >> $GITHUB_STEP_SUMMARY
+            echo "### Mål: $(echo "$MILJO" | tr '[:lower:]' '[:upper:]')" >> $GITHUB_STEP_SUMMARY
           fi
           if [ "${{ inputs.deploy_api }}" = "false" ]; then
             echo "API-et rulles IKKE ut her (lenket Function App)." >> $GITHUB_STEP_SUMMARY
@@ -120,11 +151,14 @@ jobs:
   build_and_deploy_job:
     needs: valider
     runs-on: ubuntu-latest
-    name: Build and Deploy to Prod
-    environment: prod
+    name: Build and Deploy
+    # Godkjenningen på `prod` ligger på GitHub-miljøet. Med et uttrykk her
+    # følger den valget: velges prod, kreves godkjenning; velges pilot, ikke.
+    environment: ${{ inputs.miljo }}
     env:
       # Slås opp dynamisk, samme mønster som matrisen i backup.yml.
-      SWA_TOKEN: ${{ secrets[inputs.swa_token_secret || 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD'] }}
+      # Standard per miljø, så en kjøring uten eget valg treffer riktig SWA.
+      SWA_TOKEN: ${{ secrets[inputs.swa_token_secret] || (inputs.miljo == 'prod' && secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD || secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW_0F2A44503) }}
     steps:
       # Et navn som ikke finnes blir en TOM streng, ikke en feil. SWA-actionen
       # svarer da «deployment token is invalid», som ser ut som en utløpt
@@ -152,11 +186,17 @@ jobs:
       - name: Kjør tester
         run: node scripts/kjor-tester.js
 
-      # Eget steg, ikke app_build_command — se forklaringen i deploy-pilot.yml.
+      # Eget steg, ikke app_build_command.
+      #
+      # Oryx leter etter en kjent plattform i app_location. frontend/ har
+      # ingen package.json, så Oryx svarte «Could not detect the language
+      # from repo», hoppet over hele byggetrinnet — og dermed også vår egen
+      # kommando. Utslaget var stille: config.js og staticwebapp.config.json
+      # ble liggende slik de sist ble sjekket inn.
       # Oryx hoppet over byggetrinnet fordi frontend/ ikke har en package.json,
       # så kommandoen ble aldri kjørt.
       - name: Bygg konfigurasjon
-        run: node scripts/build-config.js prod
+        run: node scripts/build-config.js ${{ inputs.miljo }}
 
       # Dokumentasjonen blir en del av appen som lastes opp: SWA serverer
       # `app_location`, og sidene havner under /dokumentasjon/ bak
