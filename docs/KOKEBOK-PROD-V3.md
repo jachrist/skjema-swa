@@ -1361,11 +1361,12 @@ Remove-Variable token
 
 Frontend-workflowene tar navnet på token-hemmeligheten som et valg, nettopp
 fordi en tenant kan ha mer enn én SWA. Kjør **«Deploy frontend til dev-SWA»**
-(dev-tenanten) eller **«Deploy prod»** (prod-tenanten, bekreft med
+(dev-tenanten) eller **«Deploy prod eller pilot»** med `miljo = prod`
+(prod-tenanten, bekreft med
 `DEPLOY-PROD`), og oppgi hemmeligheten du satte i 5.1 under
 `swa_token_secret`.
 
-> **`deploy_api` MÅ settes til `false` for v3.** «Deploy prod» er skrevet for
+> **`deploy_api` MÅ settes til `false` for v3.** «Deploy prod eller pilot» er skrevet for
 > v2, som kjører API-et PÅ SWA-en. v3 har arkitekturen fra dev: API-et bor i
 > en lenket Function App, og app settingene står DER.
 >

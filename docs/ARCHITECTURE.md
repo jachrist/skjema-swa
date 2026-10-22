@@ -127,7 +127,8 @@ lagret denne siden du åpnet den». Bevisst utsatt 06.10.2026.
 ## CI/CD
 
 - **CI (`ci.yml`)**: kjører på PR mot `main`. `npm ci` + `npm test` + `build-config.js`.
-- **Deploy**: `deploy-pilot.yml` og `deploy-prod.yml`. Prod krever Environment approval.
+- **Deploy**: `deploy-prod.yml` («Deploy prod eller pilot», manuell, `miljo`
+  velger tenant) og `deploy-dev.yml`. Prod krever Environment approval.
 - **Åtte jobber på klokke**, fordi SWA Managed Functions ikke støtter timer-triggere: backup, refresh-FS, team-synk, postnumre, send-utsendinger, oppslagslister, purring og nøkkelsjekk. Alle kaller et HTTP-endepunkt med `x-scheduler-key`. Tidene står samlet i `docs/SIKKERHET-OG-ARKITEKTUR.md` kapittel 2.
 
 ## Logging

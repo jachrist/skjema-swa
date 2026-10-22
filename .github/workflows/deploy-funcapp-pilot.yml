@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: '22'
 
-      # Samme rekkefølge som deploy-pilot.yml: testene først, og de stopper
+      # Samme rekkefølge som deploy-prod.yml: testene først, og de stopper
       # deployen hvis de er røde.
       - name: Kjør tester
         run: node scripts/kjor-tester.js

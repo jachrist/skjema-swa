@@ -52,7 +52,7 @@ const rot = path.join(__dirname, '..', '..');
 
 /**
  * De AKTIVE miljøene. Alle tre rulles ut: `deploy-dev.yml` og «Deploy API til
- * Function App» for dev, `deploy-pilot.yml` og `deploy-prod.yml` for de to
+ * Function App» for dev, `deploy-prod.yml` («Deploy prod eller pilot») for de to
  * andre.
  *
  * `dev` kom til 15.10.2026. Kravene under gjelder den likt — et nytt miljø
