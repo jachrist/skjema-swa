@@ -1103,5 +1103,88 @@ const BASHISMER = [
         /ingenting med lagringen/.test(kap8), true);
 }
 
+// ---------- 22. variabler settes FØR første bruk, og bare ett sted ----------
+//
+// `$PRINCIPAL` ble satt i 3.1 — et VILKÅRSAVSNITT («Hvis Key Vault ligger i
+// en annen ressursgruppe»). Hoppet man over det, var variabelen tom i 3.2,
+// 3.3, 10 og 11, og `--assignee-object-id ''` gir en feil om noe annet enn
+// en manglende variabel.
+//
+// Det er tredje gang i samme kokebok: `$p` splattet tomt, `$creds` ga en
+// gh-feil, og denne. Regelen her er generell: hver `$VAR` som brukes i en
+// kommando, skal settes tidligere i dokumentet enn den brukes — og bare ett
+// sted, ellers kan de to svare ulikt.
+{
+    // To avsnitt står utenfor, og begge har en grunn som må STÅ i
+    // dokumentet — ellers er unntaket bare en tilpasning til testen:
+    //
+    //   «Om kommandoene» handler om FORMEN på et kall, ikke om et trinn.
+    //   Kapittel 0 leses før møtet, før noe finnes. Kommandoene der bruker
+    //   likevel variablene fra kapittel 1, og det er greit FORDI kapittelet
+    //   sier at den blokka kan kjøres først. Forsvinner den setningen,
+    //   gjelder ikke unntaket lenger.
+    sjekk('kapittel 0 sier at variabelblokka kan kj\u00f8res f\u00f8rst',
+        /bruker variablene fra kapittel 1[\s\S]{0,200}kan kj\u00f8res f\u00f8r/.test(tekst), true);
+
+    const start = tekst.indexOf('## 1. Navn og variabler');
+    sjekk('fant kapittel 1', start > 0, true);
+    const forsteLinje = tekst.slice(0, start).split('\n').length;
+    const blokk = blokker().filter(b => b.fra >= forsteLinje);
+
+    // Hvor hver variabel SETTES, og hvor den BRUKES.
+    const settes = new Map();
+    const brukes = new Map();
+    for (const b of blokk) {
+        for (const l of b.linjer) {
+            const s1 = /^\s*\$([A-Z][A-Z0-9_]*)\s*=/.exec(l.tekst);
+            if (s1 && !settes.has(s1[1])) settes.set(s1[1], l.nr);
+            for (const m of l.tekst.matchAll(/\$([A-Z][A-Z0-9_]*)/g)) {
+                if (s1 && m[1] === s1[1]) continue;
+                if (!brukes.has(m[1])) brukes.set(m[1], l.nr);
+            }
+        }
+    }
+
+    // Variabler kokeboka ikke setter selv, med grunnen:
+    //   $_      — PowerShells egen i en pipeline
+    //   $APPID  — fylles inn for hånd fra en administrator
+    //   $V2_ID, $SWAMI, $UTLOPER, $NOTAFTER … settes i sine egne avsnitt
+    const UTENFOR = new Set(['_']);
+
+    const forSent = [...brukes.entries()]
+        .filter(([navn]) => !UTENFOR.has(navn))
+        .filter(([navn]) => settes.has(navn))
+        .filter(([navn, nr]) => nr < settes.get(navn))
+        .map(([navn, nr]) => `${navn} (brukt ${nr}, satt ${settes.get(navn)})`);
+    sjekk('ingen variabel brukes før den settes', forSent, []);
+
+    // Filer kokeboka SKRIVER inne i repoet, må være gitignorert.
+    //
+    // 4.2 lager krav.txt og satt.txt, og kommandoen kjøres typisk fra en
+    // klone i Cloud Shell. 22.10.2026: «krav.txt opprettes, men legges bare
+    // i det klonede repositoriet — skal den tas vare på noe sted?» Svaret er
+    // nei, og da skal den heller ikke kunne havne i en commit.
+    {
+        const ignore = fs.readFileSync(path.join(rot, '.gitignore'), 'utf8')
+            .split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
+        const skrevne = [...tekst.matchAll(/Set-Content\s+([A-Za-z0-9_.-]+)\s*$/gm)]
+            .map(m => m[1])
+            .filter(n => /\.\w+$/.test(n));
+        sjekk('kokeboka skriver filer i repoet', skrevne.length > 0, true);
+        const uignorerte = [...new Set(skrevne)].filter(n => !ignore.includes(n));
+        sjekk('og alle er gitignorert', uignorerte, []);
+    }
+
+    // Og $PRINCIPAL spesielt: den skal settes UTENFOR vilkårsavsnittet 3.1.
+    const i31 = tekst.indexOf('### 3.1');
+    const iSatt = tekst.indexOf('$PRINCIPAL = az identity show');
+    sjekk('$PRINCIPAL settes i kokeboka', iSatt > 0, true);
+    sjekk('og før vilkårsavsnittet 3.1', iSatt < i31, true);
+    sjekk('og bare étt sted',
+        tekst.split('$PRINCIPAL = az identity show').length - 1, 1);
+    sjekk('med en vakt som sier fra når den er tom',
+        /if \(-not \$PRINCIPAL\)/.test(tekst), true);
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);

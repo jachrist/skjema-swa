@@ -254,19 +254,32 @@ for (const miljo of ['dev', 'pilot', 'prod']) {
     const uten = kall.filter(k => !/--velg\s+\S+/.test(k));
     sjekk('alle kallene bærer --velg', uten, []);
 
-    // Og samme medlem i alle. To kall med ulikt valg er to oppsett.
-    //
-    // Kallene uten `--velg` filtreres bort FØR uttrekket: mangler flagget,
-    // er det meldt over, og en `null[1]` her ville kastet og tatt med seg
-    // resten av fila. En rød sjekk sier hva som er galt; en kræsj sier at
-    // testen er ødelagt.
-    const valgt = [...new Set(kall
-        .map(k => /--velg\s+(\S+)/.exec(k))
-        .filter(Boolean)
-        .map(m => m[1]))];
-    sjekk('og det er samme valg i alle', valgt.length, 1);
-    sjekk('og det er et gyldig gruppemedlem',
-        valgt.length === 1 && !!gruppenTil(valgt[0]), true);
+    // ETT VALG PER GRUPPE. Første utgave krevde bare at ett `--velg` fantes,
+    // og da et par nummer to kom til (lagringen, 22.10.2026), ble kokeboka
+    // stående med bare det første. Resultatet: prod v3 ville fått
+    // STORAGE_CONNECTION_STRING satt, og gått på delt nøkkel i stedet for
+    // identitet — stille, siden strengen vinner.
+    const valgtI = (kall) => [...kall.matchAll(/--velg\s+(\S+)/g)].map(m => m[1]);
+
+    for (const gr of ENTEN_ELLER) {
+        for (const k of kall) {
+            const traff = valgtI(k).filter(v => gr.includes(v));
+            sjekk(`kallet velger i gruppa ${gr[0]}: ${k.slice(0, 48)}…`,
+                traff.length, 1);
+        }
+    }
+
+    // Og samme medlem i alle kallene. To kall med ulikt valg er to oppsett.
+    for (const gr of ENTEN_ELLER) {
+        const perKall = kall.map(k => valgtI(k).find(v => gr.includes(v)));
+        sjekk(`samme valg i alle kall for ${gr[0]}`,
+            [...new Set(perKall)].length, 1);
+    }
+
+    // Hvert navn må være et gyldig gruppemedlem — en skrivefeil i dokumentet
+    // stopper ikke skriptet før noen kjører det.
+    const ugyldige = kall.flatMap(valgtI).filter(v => !gruppenTil(v));
+    sjekk('alle --velg-navn er gyldige gruppemedlemmer', ugyldige, []);
 
     // Begrunnelsen må stå der kommandoen står, ikke bare i 0.5.
     const fra = kokebok.indexOf('### 4.0');
