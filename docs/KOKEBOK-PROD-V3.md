@@ -1276,6 +1276,11 @@ positiv er en liste folk slutter å lese.
 
 > Dette krever repoet og `node`. Har du en efemer Cloud Shell, må `scripts/`
 > og `config/` være på plass — klon, eller last opp de to filene.
+>
+> **Har du klonen fra før: `git pull` først.** Inventaret og `--velg`-gruppene
+> endrer seg mens kjøringen pågår, og en klone i Cloud Shell blir liggende.
+> 22.10.2026 ga en gammel klone «`--velg STORAGE_ACCOUNT_NAME`: ikke et navn
+> i en enten/eller-gruppe» — navnet var riktig, skriptet var gammelt.
 
 **Rydd opp etterpå.** De to filene er et øyeblikksbilde av en liste som har
 en kilde — inventaret — og en kopi som blir liggende, blir lest som fasit en

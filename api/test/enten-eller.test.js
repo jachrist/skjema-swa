@@ -169,6 +169,12 @@ for (const miljo of ['dev', 'pilot', 'prod']) {
     let kastet = null;
     try { valgteMedlemmer(['GRAPH_CLIENT_PEM']); } catch (e) { kastet = e.message; }
     sjekk('en skrivefeil i --velg stopper', /ikke et navn i en enten\/eller-gruppe/.test(kastet || ''), true);
+    // Og meldingen må nevne den sannsynligste årsaken. 22.10.2026 var
+    // navnet riktig — klonen i Cloud Shell var gammel — og meldingen sendte
+    // feilsøkingen mot en skrivefeil som ikke fantes.
+    sjekk('og peker på en gammel klone', /git pull/.test(kastet || ''), true);
+    sjekk('og lister de gyldige navnene',
+        /GRAPH_CLIENT_CERT_PEM/.test(kastet || ''), true);
 }
 
 // ---------- 4. kravlista svarer på valget ----------
