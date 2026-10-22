@@ -662,6 +662,38 @@ const BASHISMER = [
     sjekk('og alle har --output none',
         settKall.filter(m => !/'--output','none'/.test(m[0])).length, 0);
 
+    // GENERATOREN SKAL ALDRI SETTE NOE KRAVLISTA IKKE KREVER.
+    //
+    // De to er to svar på samme spørsmål, og 22.10.2026 svarte de ulikt:
+    // `--navn` filtrerte bort `kun_dokumentasjon`, `--kommandoer` gjorde det
+    // ikke, og generatoren ba derfor om å lime en ekte klienthemmelighet inn
+    // i prod — en hemmelighet helsesjekken selv sier skal stå tom der.
+    //
+    // Begge kjøres ekte, med v3-valgene, og settene sammenlignes.
+    {
+        const { execFileSync } = require('child_process');
+        const skript = path.join(rot, 'scripts', 'vis-appsettings.js');
+        const v3 = ['--velg', 'GRAPH_CLIENT_CERT_PEM', '--velg', 'STORAGE_ACCOUNT_NAME'];
+
+        const krav = new Set(execFileSync('node', [skript, 'prod', '--navn', ...v3],
+            { encoding: 'utf8' }).trim().split('\n').filter(Boolean));
+
+        const ut = execFileSync('node',
+            [skript, 'prod', '--kommandoer', '--vault', 'VAULT', ...v3],
+            { encoding: 'utf8' });
+
+        // Bare linjer som FAKTISK settes — kommentarer nevner navn med vilje.
+        const settes = [...ut.split('\n')
+            .filter(l => !/^\s*#/.test(l))
+            .join('\n')
+            .matchAll(/'([A-Z][A-Z0-9_]*)=/g)]
+            .map(m => m[1]);
+        sjekk('generatoren setter noe', settes.length > 0, true);
+
+        const utenfor = [...new Set(settes)].filter(n => !krav.has(n));
+        sjekk('alt generatoren setter, st\u00e5r i kravlista', utenfor, []);
+    }
+
     // Instansspesifikke verdier skal IKKE settes automatisk.
     sjekk('SWA_URL holdes utenfor', /INSTANSSPESIFIKKE[\s\S]{0,80}'SWA_URL'/.test(kilde), true);
     sjekk('og kokeboka sier hvorfor',
