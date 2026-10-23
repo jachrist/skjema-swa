@@ -136,6 +136,52 @@ for (const fil of deployer) {
     // uten eget valg brukt prod-tokenet — og truffet prod.
     sjekk('tokenet har en standard per miljø',
         /inputs\.miljo == 'prod' &&[\s\S]{0,160}ASHY_MEADOW/.test(w), true);
+
+    // ----- navnet på hemmeligheten, og sammendraget som skal bære det -----
+    //
+    // Kjøring #50 (22.10.2026) meldte «SWA-token fra hemmeligheten ``» —
+    // tomt, fordi linja skrev ut `inputs.swa_token_secret` og kjøringen
+    // brukte miljøets standard. Linja finnes for å svare på HVILKEN SWA som
+    // ble truffet, og svarte ikke på det.
+    //
+    // Navnet står nå ett sted (SWA_TOKEN_NAVN), og verdien slås opp der den
+    // trengs. Blir det to lister igjen, kan de skille lag.
+    sjekk('navnet på hemmeligheten står ett sted',
+        (w.match(/SWA_TOKEN_NAVN:/g) || []).length, 1);
+    sjekk('og ingen slår opp en fast hemmelighet utenom',
+        /secrets\.AZURE_STATIC_WEB_APPS/.test(w), false);
+    sjekk('vakten slår opp verdien via navnet',
+        /SWA_TOKEN: \$\{\{ secrets\[env\.SWA_TOKEN_NAVN\] \}\}/.test(w), true);
+    sjekk('og utrullingen bruker samme oppslag',
+        /azure_static_web_apps_api_token: \$\{\{ secrets\[env\.SWA_TOKEN_NAVN\] \}\}/.test(w), true);
+    sjekk('sammendraget navngir hemmeligheten som FAKTISK ble brukt',
+        /SWA-token fra hemmeligheten \\`\$SWA_TOKEN_NAVN\\`/.test(w), true);
+    sjekk('ikke valget, som er tomt i normaltilfellet',
+        /hemmeligheten \\`\$\{\{ inputs\.swa_token_secret \}\}/.test(w), false);
+
+    // ----- verifiseringen må navngi DET MILJØET den sjekket -----
+    //
+    // Etter sammenslåingen sto HVA fast på «prod», og en PILOT-deploy meldte
+    // «Deploy verifisert: prod kjører <sha>» (kjøring #50). Sjekken traff
+    // pilot; det var merkelappen som løy. Et sammendrag som sier at prod er
+    // oppdatert når prod ikke er rørt, er verre enn ingen verifisering —
+    // ingen har grunn til å mistro det.
+    const verifiser = w.slice(w.indexOf('Verifiser at deployen faktisk landet'));
+    sjekk('verifiseringen vet hvilket miljø den kjører mot',
+        /MILJO: \$\{\{ inputs\.miljo \}\}/.test(verifiser), true);
+    sjekk('og merkelappen utledes av det',
+        /HVA="\$STOR"/.test(verifiser), true);
+    sjekk('ikke en fast «prod»',
+        /HVA="prod"/.test(verifiser), false);
+    sjekk('preview-merkelappen sier også hvilket miljø',
+        /HVA="preview «\$PREVIEW» i \$STOR"/.test(verifiser), true);
+    sjekk('og feilmeldingen om manglende variabel peker på riktig miljø',
+        /Environments → \$MILJO → Variables/.test(verifiser), true);
+
+    // vars.SWA_URL har skråstrek bakerst i minst ett miljø. «…net//api/ping»
+    // gikk, men en adresse i en logg skal kunne limes rett inn.
+    sjekk('skråstrek bakerst fjernes før adressen settes sammen',
+        /MAAL="\$\{MAAL%\/\}"/.test(verifiser), true);
 }
 
 // ---------- prod ----------
@@ -371,12 +417,18 @@ for (const fil of deployer) {
         // standarden i uttrykket, der den kan avhenge av miljøet.
         sjekk(`${fil}: ingen fast standard på inputen`,
             /swa_token_secret:[\s\S]{0,200}?default:/.test(w), false);
+        //
+        // Uttrykket bærer NAVNET, ikke verdien: verdien slås opp der den
+        // trengs, med `secrets[env.SWA_TOKEN_NAVN]`. Testen spør derfor
+        // etter navnene i uttrykket, ikke etter `secrets.`-oppslag — den
+        // regelen som skal holde er at standarden følger miljøet, ikke
+        // hvordan oppslaget staves.
         sjekk(`${fil}: standarden avhenger av miljøet`,
-            /inputs\.miljo == 'prod' &&\s*secrets\.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD/.test(w), true);
+            /inputs\.miljo == 'prod' &&\s*'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD'/.test(w), true);
         sjekk(`${fil}: og pilot får sin egen`,
-            /\|\|\s*secrets\.AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW/.test(w), true);
+            /\|\|\s*'AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW/.test(w), true);
         sjekk(`${fil}: valget overstyrer begge`,
-            /secrets\[inputs\.swa_token_secret\] \|\|/.test(w), true);
+            /SWA_TOKEN_NAVN: \$\{\{ inputs\.swa_token_secret \|\|/.test(w), true);
     }
 }
 

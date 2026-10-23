@@ -2015,6 +2015,9 @@ v2 er borte.
 | «Lagring er ikke konfigurert» på en lenket SWA | Svaret kom fra en API-KOPI på SWA-en, ikke fra Function App-en | 5.2 |
 | Avvist etter MFA, uten rader i Entras innloggingslogg | Kodevekslingen feilet, ikke autentiseringen. SWA-ens egen identitet mangler | 6.1 |
 | `Resource <navn> of type Microsoft.Web/Sites doesn't exist` | **To ting:** feil navn, ELLER at deploy-objektet ikke ser ressursen. Workflowen lister nå det den ser, så de to kan skilles. Konvensjonen er `fa-skjema-3-<miljø>` — ikke visningsnavnet på SWA-en ved siden av | 8 |
+| `Deploy verifisert: prod kjører <sha>` etter en PILOT-deploy | Merkelappen sto fast på «prod» etter at de to workflowene ble slått sammen. Sjekken var riktig og traff pilot — det var navnet som løy. Verste sorten: et sammendrag ingen mistror, som sier at prod er oppdatert når prod ikke er rørt | `deploy-prod.yml` |
+| «SWA-token fra hemmeligheten» med ingenting etter | Linja skrev ut VALGET (`swa_token_secret`), og en kjøring uten eget valg bruker miljøets standard. Den svarte ikke på det eneste den finnes for: hvilken SWA ble truffet | `deploy-prod.yml` |
+| `Unexpected input(s) 'deployment_environment'` | **Advarselen peker feil vei:** `@v1` løses til taggen, og dens `action.yml` erklærer bare 11 inputs. Men det er en docker-action — løperen eksporterer `with:`-nøklene som `INPUT_*` uansett, og beholderen leser den. Preview VIRKER. Konsekvensen er at en SKRIVEFEIL i navnet ville vært like stille | `deploy-prod.yml` |
 
 ### Krav uten et trinn
 
