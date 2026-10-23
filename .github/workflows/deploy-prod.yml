@@ -156,22 +156,33 @@ jobs:
     # følger den valget: velges prod, kreves godkjenning; velges pilot, ikke.
     environment: ${{ inputs.miljo }}
     env:
-      # Slås opp dynamisk, samme mønster som matrisen i backup.yml.
-      # Standard per miljø, så en kjøring uten eget valg treffer riktig SWA.
-      SWA_TOKEN: ${{ secrets[inputs.swa_token_secret] || (inputs.miljo == 'prod' && secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD || secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW_0F2A44503) }}
+      # NAVNET på hemmeligheten — ett sted. Verdien slås opp der den trengs,
+      # med `secrets[env.SWA_TOKEN_NAVN]`. Standard per miljø, så en kjøring
+      # uten eget valg treffer riktig SWA.
+      #
+      # Navnelista lå før bare inne i verdioppslaget, og sammendraget skrev
+      # ut `inputs.swa_token_secret`. En kjøring uten eget valg — altså
+      # normaltilfellet — meldte da «SWA-token fra hemmeligheten ``», med
+      # ingenting mellom bakoversnuttene. Det svarer ikke på det linja finnes
+      # for å svare på: HVILKEN SWA ble truffet. Kjøring #50 (22.10.2026)
+      # viser det.
+      SWA_TOKEN_NAVN: ${{ inputs.swa_token_secret || (inputs.miljo == 'prod' && 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD' || 'AZURE_STATIC_WEB_APPS_API_TOKEN_ASHY_MEADOW_0F2A44503') }}
     steps:
       # Et navn som ikke finnes blir en TOM streng, ikke en feil. SWA-actionen
       # svarer da «deployment token is invalid», som ser ut som en utløpt
       # token og sender feilsøkingen mot portalen. I prod er det en dyr
       # omvei.
       - name: Sjekk at tokenet finnes
+        env:
+          SWA_TOKEN: ${{ secrets[env.SWA_TOKEN_NAVN] }}
+          MILJO: ${{ inputs.miljo }}
         run: |
           if [ -z "$SWA_TOKEN" ]; then
-            echo "::error::Hemmeligheten «${{ inputs.swa_token_secret }}» finnes ikke, eller er tom."
-            echo "Legg den inn under Settings → Secrets → Actions (repo eller miljøet «prod»)."
+            echo "::error::Hemmeligheten «$SWA_TOKEN_NAVN» finnes ikke, eller er tom."
+            echo "Legg den inn under Settings → Secrets → Actions (repo eller miljøet «$MILJO»)."
             exit 1
           fi
-          echo "### SWA-token fra hemmeligheten \`${{ inputs.swa_token_secret }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### SWA-token fra hemmeligheten \`$SWA_TOKEN_NAVN\`" >> $GITHUB_STEP_SUMMARY
       - uses: actions/checkout@v7
         with:
           submodules: true
@@ -211,7 +222,7 @@ jobs:
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ env.SWA_TOKEN }}
+          azure_static_web_apps_api_token: ${{ secrets[env.SWA_TOKEN_NAVN] }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: "./frontend"
@@ -221,6 +232,21 @@ jobs:
           # Ingen app_build_command: konfigurasjonen er alt bygget i steget over.
           skip_app_build: true
           # Tom verdi = produksjonsmiljøet, som før.
+          #
+          # Hver kjøring gir «Unexpected input(s) 'deployment_environment'».
+          # Den advarselen peker feil vei, og er sjekket 23.10.2026:
+          # `@v1` løses til TAGGEN v1, og dens `action.yml` erklærer bare 11
+          # inputs — `deployment_environment` er ikke en av dem. Men dette er
+          # en docker-action: løperen eksporterer hver nøkkel under `with:`
+          # som `INPUT_*` uansett, og beholderen
+          # (mcr.microsoft.com/appsvc/staticappsclient:stable) leser den. Den
+          # taggen oppdateres uavhengig av action.yml. Preview VIRKER derfor,
+          # og har vært brukt med ekte brukere.
+          #
+          # To ting følger av det, og de er grunnen til at dette står her:
+          # en skrivefeil i navnet ville vært like stille, siden løperen ikke
+          # validerer det — og beholderen kan endre seg uten at noe i dette
+          # repoet endrer seg.
           deployment_environment: ${{ inputs.preview }}
 
       # Preview-vertsnavnet lar seg ikke utlede pålitelig fra produksjonens —
@@ -252,21 +278,35 @@ jobs:
       # ikke pålitelig (se steget over).
       - name: Verifiser at deployen faktisk landet
         env:
-          PROD_URL: ${{ vars.SWA_URL }}
+          MILJO_URL: ${{ vars.SWA_URL }}
           PREVIEW_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
           PREVIEW: ${{ inputs.preview }}
+          MILJO: ${{ inputs.miljo }}
           FORVENTET: ${{ github.sha }}
         run: |
-          # Produksjon og preview ligger på hver sin adresse. Produksjonens
-          # står i vars.SWA_URL; previewens kommer ut av deploy-steget, og
-          # den lar seg ikke utlede (se «Vis URL» over).
+          # Miljøets egen adresse og previewens ligger hver for seg. Miljøets
+          # står i vars.SWA_URL (den er miljøscopet, så pilot og prod har
+          # hver sin); previewens kommer ut av deploy-steget, og den lar seg
+          # ikke utlede (se «Vis URL» over).
+          #
+          # HVA sto før fast på «prod». Etter sammenslåingen meldte en
+          # PILOT-deploy «Deploy verifisert: prod kjører <sha>» — kjøring #50
+          # (22.10.2026). Sjekken var riktig og traff pilot; det var bare
+          # navnet som var feil. Det er den dyreste sorten: et sammendrag
+          # ingen har grunn til å mistro, som sier at prod er oppdatert når
+          # prod ikke er rørt.
+          STOR="$(echo "$MILJO" | tr '[:lower:]' '[:upper:]')"
           if [ -n "$PREVIEW" ]; then
             MAAL="$PREVIEW_URL"
-            HVA="preview «$PREVIEW»"
+            HVA="preview «$PREVIEW» i $STOR"
           else
-            MAAL="$PROD_URL"
-            HVA="prod"
+            MAAL="$MILJO_URL"
+            HVA="$STOR"
           fi
+          # vars.SWA_URL har skråstrek bakerst i minst ett miljø, og da ble
+          # adressen «…net//api/ping». Det gikk, men en adresse i en logg
+          # skal kunne limes rett inn.
+          MAAL="${MAAL%/}"
           KORT="${FORVENTET:0:7}"
 
           if [ -z "$MAAL" ] && [ -n "$PREVIEW" ]; then
@@ -280,7 +320,7 @@ jobs:
           fi
 
           if [ -z "$MAAL" ]; then
-            echo "::error::vars.SWA_URL er ikke satt for dette miljøet. Uten den kan ikke deployen verifiseres, og en stille mislykket deploy er nettopp det dette steget finnes for. Sett den under Settings → Environments → prod → Variables."
+            echo "::error::vars.SWA_URL er ikke satt for miljøet «$MILJO». Uten den kan ikke deployen verifiseres, og en stille mislykket deploy er nettopp det dette steget finnes for. Sett den under Settings → Environments → $MILJO → Variables."
             exit 1
           fi
           echo "Forventer commit $KORT på $MAAL/api/ping"
