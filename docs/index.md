@@ -63,8 +63,19 @@ det funnet først da noen skrev en test som leste begge.
 
 Derfor: genereres det som kan genereres, og en test eier koblingen for resten.
 
+## Til nedlasting
+
+To dokumenter bygges også som PDF, av samme jobb og fra de samme filene — en
+PDF som vedlikeholdes for seg blir en annen sannhet innen et kvartal:
+
+- [Sikkerhet og arkitektur (PDF)](/dokumentasjon/pdf/SIKKERHET-OG-ARKITEKTUR.pdf)
+  — overleveringsdokumentet.
+- [API-oversikt (PDF)](/dokumentasjon/pdf/API-OVERSIKT.pdf) — hva som er
+  eksponert og hvem som slipper til. En evaluator spør om dette, og svaret må
+  være komplett, ikke representativt.
+
 | | |
 |---|---|
 | Sist bygget | ved hver deploy, fra `main` |
 | Kilden | `docs/*.md` i repoet — ingen kopi |
-| PDF for overlevering | `SIKKERHET-OG-ARKITEKTUR.md`, bygget av samme jobb |
+| PDF for overlevering | `SIKKERHET-OG-ARKITEKTUR.md` og `API-OVERSIKT.md`, bygget av samme jobb |

@@ -162,17 +162,20 @@ async function sjekkRolle(rolle, { seksjoner, sted, antallInnehavere, funn }) {
  *
  * Begge feilene er røde, og begge er sikre:
  *   - feltet finnes ikke
- *   - feltet finnes, men er ikke av typen E-post
+ *   - feltet finnes, men gir ingen kontrollert adresse
  *
  * Den andre var gul til 23.09.2026, med den begrunnelsen at et Tekst-felt
  * godt KAN inneholde en adresse. Etter avklaring med oppdragsgiver er bare
- * E-post gyldig: den typen har syntakssjekk ved utfylling, og det er nettopp
- * den garantien som gjør referansen trygg. `feltperson.js` avviser derfor
- * andre typer uansett — og et funn som sier «advarsel» om noe som garantert
- * ikke virker, er verre enn ingen advarsel.
+ * kontrollerte felter gyldige, og et funn som sier «advarsel» om noe som
+ * garantert ikke virker, er verre enn ingen advarsel.
  *
- * Typelista leses fra feltperson.js. To lister ville før eller siden gitt en
- * diagnose som godkjenner det ekspansjonen avviser.
+ * Fra 26.10.2026 er det TO veier til en kontrollert adresse: felttypen
+ * E-post, eller et flervalgsfelt som henter valgene fra en persondatakilde.
+ * Meldingen må nevne begge — en som bare sier «bruk et E-post-felt» sender
+ * skjemaeieren til å lage et felt for en adresse systemet allerede har.
+ *
+ * Regelen leses fra feltperson.js, ikke gjentas her. To regler ville før
+ * eller siden gitt en diagnose som godkjenner det ekspansjonen avviser.
  */
 function sjekkPerson(person, { seksjoner, sted, funn }) {
     const streng = String(person || '').trim();
@@ -189,13 +192,20 @@ function sjekkPerson(person, { seksjoner, sted, funn }) {
         return;
     }
     const type = String(felt.Type || '');
-    if (!feltperson.GYLDIGE_FELTTYPER.includes(type)) {
+    if (!feltperson.erPersonfelt(felt)) {
         const lovlige = feltperson.GYLDIGE_FELTTYPER.map(t => `«${t}»`).join(', ');
+        const kilder = feltperson.PERSON_DATAKILDER.map(k => `«${k}»`).join(' eller ');
+        const kilde = feltperson.datakildenTil(felt);
+        // Et flervalgsfelt med FEIL datakilde er en annen feil enn et
+        // Tekst-felt, og rettelsen er en annen: bytt datakilde, ikke felttype.
+        const hvorfor = kilde
+            ? `som henter valgene fra «${kilde}». Den datakilden gir ingen e-postadresse`
+            : `som er av typen «${type || 'ukjent'}»`;
         funn.push({
             alvor: 'feil', kode: 'person.feltref-type', sted,
             melding: `Mottakeren «${streng}» peker på feltet «${felt.Tekst?.Verdi || ref}», `
-                + `som er av typen «${type || 'ukjent'}». Bare felter av typen ${lovlige} `
-                + 'kan brukes som mottaker — ingen adresse blir hentet.'
+                + `${hvorfor}. Bruk et felt av typen ${lovlige}, eller et flervalgsfelt `
+                + `som henter valgene fra ${kilder} — ingen adresse blir hentet.`
         });
         return;
     }

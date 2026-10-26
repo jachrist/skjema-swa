@@ -174,7 +174,17 @@ function settFasteDataISkjema(skjemadefinisjon, resultater) {
                 String(r.Felt) === String(felt.Nummer)
             );
             if (treff && Array.isArray(treff.Valg)) {
-                return { ...felt, Valg: treff.Valg, FasteData: '' };
+                // `FasteData` tømmes så frontend ikke fyller på nytt — men da
+                // er datakilden borte, og det INNSENDTE skjemaet er det eneste
+                // ekspansjonen får se. `feltperson.js` må vite om valgene kom
+                // fra en persondatakilde for å tillate feltet som behandler,
+                // så navnet beholdes som et eget merke.
+                //
+                // Hentet fra `treff`, ikke fra feltet: den som faktisk ble
+                // slått opp. Leses med `datakildenTil()` i feltperson.js.
+                const ut = { ...felt, Valg: treff.Valg, FasteData: '' };
+                if (treff.Datakilde) ut.FasteData_kilde = String(treff.Datakilde);
+                return ut;
             }
             return felt;
         })
@@ -247,7 +257,10 @@ async function hentOgSettFasteData(skjemadefinisjon, hentDropdownVerdier, upn, l
             ));
             rådata = unionDedup(grupperesultater);
         }
-        return { Seksjon: f.Seksjon, Felt: f.Felt, Valg: normaliserValg(rådata) };
+        // Datakilden følger med resultatet: settFasteDataISkjema merker feltet
+        // med den, slik at ekspansjonen ved innsending vet om valgene kom fra
+        // en persondatakilde. Se datakildenTil() i feltperson.js.
+        return { Seksjon: f.Seksjon, Felt: f.Felt, Valg: normaliserValg(rådata), Datakilde: dnf.Datakilde };
     }));
 
     return settFasteDataISkjema(skjemadefinisjon, resultater);

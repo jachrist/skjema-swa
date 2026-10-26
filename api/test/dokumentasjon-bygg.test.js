@@ -19,6 +19,12 @@
  *   miljøet ingenting under /dokumentasjon/, eller — verre — det som lå der
  *   fra forrige gang.
  *
+ *   **Ingenting som lenker dit.** Oppdaget 26.10.2026: sidene hadde vært
+ *   bygget og servert i seks dager, og ingen side i appen pekte på dem. En
+ *   dokumentasjon man må kjenne stien til, er ikke funnet — den er bare ikke
+ *   borte. Dette er den stilleste av de fire: alt ser riktig ut, bygget er
+ *   grønt, og sidene svarer.
+ *
  * Testen kjører ikke MkDocs. Den leser koblingene: navigasjonen mot
  * filsystemet, ruteregelen mot alle fire konfigurasjoner, og hver
  * frontend-deploy mot byggeskriptet.
@@ -144,26 +150,62 @@ const skript = les('scripts', 'bygg-dokumentasjon.sh');
     // de to sjekkene under. Det var 3 til 22.10.2026, da deploy-pilot.yml
     // ble slått sammen med deploy-prod.yml; nå er det dev og prod/pilot.
     sjekk('fant deploy-jobbene som laster opp frontend', frontendJobber.length >= 2, true);
+
+    // Siden 26.10.2026 går alle tre gjennom den samme sammensatte actionen.
+    // De to linjene sto før i tre filer, og tre kopier av samme regel er
+    // den tilbakevendende feilklassen her.
+    //
+    // Testen følger indirektsjonen i stedet for å stole på den: den krever
+    // at flyten bruker actionen, OG at actionen faktisk kjører skriptet.
+    // Uten det siste ville en tom action bestått.
+    const ACTION = './.github/actions/dokumentasjon';
+    const actionFil = path.join(rot, '.github', 'actions', 'dokumentasjon', 'action.yml');
+    sjekk('den felles actionen finnes', fs.existsSync(actionFil), true);
+    const action = fs.existsSync(actionFil) ? fs.readFileSync(actionFil, 'utf8') : '';
+    sjekk('og den kjører byggeskriptet',
+        /bygg-dokumentasjon\.sh/.test(action), true);
+    sjekk('og den installerer pandoc',
+        /pandoc/.test(action), true);
+
     const uten = frontendJobber.filter(f =>
-        !fs.readFileSync(path.join(mappe, f), 'utf8').includes('bygg-dokumentasjon.sh'));
+        !fs.readFileSync(path.join(mappe, f), 'utf8').includes(ACTION));
     sjekk('alle bygger dokumentasjonen først', uten, []);
 
     // Rekkefølgen avgjør: bygges den etter opplastingen, lastes den aldri opp.
     for (const f of frontendJobber) {
         const t = fs.readFileSync(path.join(mappe, f), 'utf8');
         sjekk(`${f}: bygget kommer før opplastingen`,
-            t.indexOf('bygg-dokumentasjon.sh') < t.indexOf('static-web-apps-deploy'), true);
+            t.indexOf(ACTION) < t.indexOf('static-web-apps-deploy'), true);
     }
 
     // CI bygger STRENGT — der skal en død lenke stoppe en PR. Deploy bygger
     // mildt: en lenkefeil i et dokument skal ikke kunne hindre at en
-    // rettelse kommer ut.
+    // rettelse kommer ut. Forskjellen er nå inputen `strict`, ikke et flagg
+    // i tre filer.
+    sjekk('actionen har en strict-input med mildt standardvalg',
+        /strict:[\s\S]{0,200}?default: 'false'/.test(action), true);
+    sjekk('og --strict settes av den inputen',
+        /inputs\.strict == 'true' && '--strict'/.test(action), true);
+
     const ci = les('.github', 'workflows', 'ci.yml');
-    sjekk('CI bygger med --strict', /bygg-dokumentasjon\.sh --strict/.test(ci), true);
+    sjekk('CI ber om strict', /strict: 'true'/.test(ci), true);
     for (const f of frontendJobber) {
-        sjekk(`${f}: deploy bygger uten --strict`,
-            /bygg-dokumentasjon\.sh --strict/.test(fs.readFileSync(path.join(mappe, f), 'utf8')), false);
+        sjekk(`${f}: deploy ber IKKE om strict`,
+            /strict: 'true'/.test(fs.readFileSync(path.join(mappe, f), 'utf8')), false);
     }
+
+    // En buffer som aldri treffer er verre enn ingen buffer: den ser ut som
+    // en forbedring og koster et steg. Derfor skal begge veiene SIES.
+    //
+    // Telt i KOMMANDOENE, ikke i fila: første utgave av denne testen talte
+    // hele action.yml, og kommentaren over installasjonssteget nevner
+    // `::notice::` selv. Mutasjonen som fjernet det ene varselet overlevde.
+    // Det er samme feil som en test som leter i prosa etter en kommando.
+    const kommandoer = [...action.matchAll(/^\s*run: \|([\s\S]*?)(?=^\s{4}- |^\s*$\n(?=\S))/gm)]
+        .map(m => m[1]).join('\n');
+    sjekk('fant kommandoene i actionen', kommandoer.length > 100, true);
+    sjekk('actionen sier hvilken vei den gikk',
+        (kommandoer.match(/::notice::/g) || []).length >= 2, true);
 }
 
 // ---------- 5. byggeskriptet ----------
@@ -242,6 +284,62 @@ const skript = les('scripts', 'bygg-dokumentasjon.sh');
     const claude = les('CLAUDE.md');
     sjekk('CLAUDE.md nevner dokumentasjonsbygget',
         /bygg-dokumentasjon|dokumentasjon/i.test(claude.slice(0, 2000)), true);
+}
+
+// ---------- 7. appen lenker til dokumentasjonen ----------
+//
+// Sidene ble bygget og servert fra 20.10.2026, men ingen side pekte på dem
+// før 26.10. Ruteregelen er `authenticated` — ikke `admin` — så lenken hører
+// hjemme begge steder: på oversikten for alle innloggede, og i admin der
+// forvalteren står.
+{
+    const les = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', f), 'utf8');
+
+    for (const fil of ['velgskjematype.html', 'admin.html']) {
+        const w = les(fil);
+        const treff = w.match(/href="\/dokumentasjon\/"/g) || [];
+        sjekk(`${fil}: lenker til /dokumentasjon/`, treff.length >= 1, true);
+    }
+
+    // Skråstreken bakerst er ikke kosmetikk: uten den kan SWA svare 404 i
+    // stedet for å servere index.html i mappa.
+    const oversikt = les('velgskjematype.html');
+    sjekk('lenken har skråstrek bakerst',
+        /href="\/dokumentasjon"/.test(oversikt), false);
+
+    // Lenken skal IKKE være rollestyrt. Nabolenkene («Ny skjematype»,
+    // «Admin-panel») står med display:none og slås på av JS etter en
+    // rollesjekk. Arver dokumentasjonslenken det mønsteret ved en
+    // klipp-og-lim, blir den usynlig for akkurat de brukerne den er for.
+    const knapp = oversikt.match(/<a id="knapp-dokumentasjon"[^>]*>/);
+    sjekk('dokumentasjonsknappen finnes på oversikten', !!knapp, true);
+    sjekk('og er ikke skjult bak en rollesjekk',
+        /display:\s*none/.test(knapp ? knapp[0] : 'display: none'), false);
+}
+
+// ---------- 8. PDF-lenkene mot det byggeskriptet faktisk lager ----------
+//
+// `docs/index.md` lenket før bare til ett av dokumentene, og tabellen nederst
+// nevnte også bare ett — mens skriptet har bygget to siden det ble skrevet.
+// To lister, to svar: den tilbakevendende feilklassen i dette repoet.
+{
+    const skript = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'scripts', 'bygg-dokumentasjon.sh'), 'utf8');
+    const m = skript.match(/^PDF_DOKUMENTER=\(([^)]*)\)/m);
+    sjekk('fant PDF_DOKUMENTER i byggeskriptet', !!m, true);
+
+    const bygde = (m ? m[1] : '').trim().split(/\s+/).filter(Boolean).sort();
+    const forside = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'index.md'), 'utf8');
+    const lenket = [...forside.matchAll(/\/dokumentasjon\/pdf\/([A-ZÆØÅ0-9-]+)\.pdf/g)]
+        .map(x => x[1]).sort();
+
+    sjekk('forsiden lenker til NØYAKTIG de PDF-ene som bygges', lenket, bygde);
+
+    // Og kildefilene må finnes, ellers hopper skriptet stille over dem.
+    for (const navn of bygde) {
+        sjekk(`${navn}.md finnes i docs/`,
+            fs.existsSync(path.join(__dirname, '..', '..', 'docs', `${navn}.md`)), true);
+    }
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

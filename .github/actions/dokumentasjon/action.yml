@@ -1,0 +1,72 @@
+name: Bygg dokumentasjonen
+description: Installerer pandoc fra en buffer og bygger docs/*.md til frontend/dokumentasjon/.
+
+# HVORFOR EN EGEN ACTION, OG HVORFOR BARE PANDOC BUFRES.
+#
+# De to linjene «installer pandoc» + «kjør byggeskriptet» sto i TRE filer —
+# ci.yml, deploy-dev.yml og deploy-prod.yml. Samme regel tre steder er den
+# tilbakevendende feilklassen her: den ene ville før eller siden fått en
+# rettelse de to andre ikke fikk.
+#
+# Bufringen gjelder BARE pandoc, og det er målt, ikke antatt. Tre kjøringer:
+#
+#   Steg                    #49     #50       #52
+#   Installer pandoc        39s     3m44s     11m08s
+#   Bygg dokumentasjonen    10s     20s       16s
+#
+# `apt-get update` henter pakkeindeksen på nytt hver gang — GitHubs
+# runner-bilde fjerner /var/lib/apt/lists for å spare plass — og tiden
+# avhenger av speilene. Elleve minutter av en trettenminutters deploy.
+#
+# Byggeskriptets egen pip-installasjon av MkDocs ligger inne i de 16
+# sekundene. Den er ikke verdt en buffer, og en buffer som ikke løser noe er
+# bare en ting til som kan ryke.
+
+inputs:
+  strict:
+    description: "true = bygg med --strict, slik CI gjør. Deploy bygger mildt."
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Buffer for pandoc-pakkene
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pandoc-deb
+        key: pandoc-deb-${{ runner.os }}-v1
+
+    # Varm vei: installer .deb-ene rett fra bufferen. Ingen apt-get update.
+    #
+    # Kald vei: hent dem ÉN gang med apt og legg dem i bufferen. `dpkg -i`
+    # til slutt, ikke `apt-get install`, så vi vet at nøyaktig de filene som
+    # ble bufret er de som virker.
+    #
+    # Faller den varme veien, går vi den kalde. Verste utfall er altså
+    # dagens oppførsel, ikke en feilet deploy — og `::notice::` sier hvilken
+    # vei som ble gått, så en buffer som aldri treffer ikke er usynlig.
+    - name: Installer pandoc
+      shell: bash
+      run: |
+        VARM="$HOME/.cache/pandoc-deb"
+        if ls "$VARM"/*.deb >/dev/null 2>&1 && sudo dpkg -i "$VARM"/*.deb >/dev/null 2>&1; then
+          echo "::notice::pandoc fra bufferen — $(pandoc --version | head -1)"
+          exit 0
+        fi
+        echo "::notice::Ingen brukbar buffer for pandoc. Henter med apt (tar typisk 1–11 minutter) og bufrer til neste gang."
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq --download-only pandoc
+        mkdir -p "$VARM"
+        sudo cp /var/cache/apt/archives/*.deb "$VARM"/ 2>/dev/null || true
+        sudo chown -R "$(id -u):$(id -g)" "$VARM"
+        sudo dpkg -i "$VARM"/*.deb >/dev/null 2>&1 || true
+        # -f retter opp avhengigheter dpkg ikke kunne løse alene. Uten denne
+        # ville en halvkonfigurert pakke gitt «pandoc mangler» i byggeskriptet,
+        # og det peker feil vei.
+        command -v pandoc >/dev/null 2>&1 || sudo apt-get install -y -qq -f pandoc
+        pandoc --version | head -1
+
+    - name: Bygg dokumentasjonen
+      shell: bash
+      run: scripts/bygg-dokumentasjon.sh ${{ inputs.strict == 'true' && '--strict' || '' }}

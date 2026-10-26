@@ -197,9 +197,18 @@ function les(...deler) {
     sjekk('diagnosen sjekker personreferanser', /function sjekkPerson\(/.test(diagnose), true);
     sjekk('manglende felt er rødt', /alvor: 'feil', kode: 'person\.feltref-mangler'/.test(diagnose), true);
     sjekk('feil felttype er rødt', /alvor: 'feil', kode: 'person\.feltref-type'/.test(diagnose), true);
-    // Diagnosen må bruke ekspansjonens typeliste, ikke sin egen.
-    sjekk('typelista leses fra feltperson',
-        /feltperson\.GYLDIGE_FELTTYPER\.includes\(type\)/.test(diagnose), true);
+    // Diagnosen må bruke ekspansjonens REGEL, ikke sin egen. Fra 26.10.2026
+    // er regelen to veier — felttype eller persondatakilde — og den bor i
+    // `erPersonfelt`. En diagnose som bare sjekket typelista ville meldt feil
+    // på nøyaktig de feltene utvidelsen gjorde lovlige.
+    sjekk('regelen leses fra feltperson',
+        /feltperson\.erPersonfelt\(felt\)/.test(diagnose), true);
+    sjekk('og diagnosen har ingen egen typesjekk',
+        /GYLDIGE_FELTTYPER\.includes\(/.test(diagnose), false);
+    // Meldingen må nevne BEGGE veiene. En som bare sier «bruk et E-post-felt»
+    // sender skjemaeieren til å lage et felt for en adresse systemet har.
+    sjekk('meldingen nevner persondatakildene',
+        /PERSON_DATAKILDER\.map/.test(diagnose), true);
 }
 
 // ---------- diagnosen, i praksis ----------
@@ -231,7 +240,80 @@ function les(...deler) {
     }).then(r => {
         sjekk('ferdigvarslingen sjekkes også', koder(r).includes('person.feltref-mangler'), true);
         sjekk('og stedet sier hvor', r.funn[0].sted, 'Ferdigvarsling · mottakere');
-        console.log(`\n${ok} OK, ${feil} feil`);
+        // ---------- merket overlever hele veien ----------
+//
+// Persondatakilde-veien hviler på en kjede med TRE ledd, og hvert ledd er i
+// sin fil:
+//
+//   1. faste-data.js fyller Valg og TØMMER FasteData (ellers fyller frontend
+//      på nytt) — men beholder navnet som `FasteData_kilde`
+//   2. frontend/index.html sender merket tilbake i det smale feltet
+//      { Id, Nummer, Type, Svar, SvarTekst }
+//   3. feltperson.js leser det med `datakildenTil`
+//
+// Ryker ett ledd, finner ekspansjonen ingen datakilde, feltet avvises, og
+// steget står uten behandler. Ingenting feiler høylytt — og det er nettopp
+// derfor kjeden må ha en test som går hele veien.
+{
+    const fasteData = require('../src/lib/faste-data');
+    const feltperson = require('../src/lib/feltperson');
+
+    // Ledd 1: kjør den EKTE funksjonen, ikke en etterligning av den.
+    const skjematype = {
+        Seksjoner: [{
+            Seksjon_nummer: 2,
+            Felter: [{
+                Nummer: '01',
+                Type: 'Flervalg-dropdown',
+                FasteData: { Datakilde: 'Studenter', EllerAv: [] }
+            }]
+        }]
+    };
+    const fylt = fasteData.settFasteDataISkjema(skjematype, [{
+        Seksjon: 2, Felt: '01', Datakilde: 'Studenter',
+        Valg: [{ Tekst: 'Nordmann, Ola (ola@fhs.no)', Verdi: 'ola@fhs.no' }]
+    }]);
+    const feltEtterFylling = fylt.Seksjoner[0].Felter[0];
+
+    sjekk('FasteData tømmes', feltEtterFylling.FasteData, '');
+    sjekk('men datakilden beholdes som merke', feltEtterFylling.FasteData_kilde, 'Studenter');
+    sjekk('og feltperson finner den igjen',
+        feltperson.datakildenTil(feltEtterFylling), 'Studenter');
+    sjekk('så feltet er et personfelt', feltperson.erPersonfelt(feltEtterFylling), true);
+
+    // Ledd 2: frontend må faktisk sende merket tilbake. Uten dette er ledd 1
+    // og 3 riktige hver for seg, og kjeden virker likevel ikke.
+    const index = utenKommentarer(fs.readFileSync(
+        path.join(__dirname, '..', '..', 'frontend', 'index.html'), 'utf8'));
+    const samle = index.slice(index.indexOf('function samleSvar()'),
+        index.indexOf('function validerAlle()'));
+    sjekk('fant samleSvar', samle.length > 100, true);
+    sjekk('innsendingen bærer merket videre',
+        /feltUt\.FasteData_kilde = String\(felt\.FasteData_kilde\)/.test(samle), true);
+
+    // Ledd 3: hele veien, med et felt formet som det INNSENDTE — smalt, uten
+    // Valg og uten FasteData.
+    const innsendt = [{
+        Nummer: 2,
+        Felter: [{
+            Nummer: '01', Type: 'Flervalg-dropdown',
+            FasteData_kilde: 'Studenter',
+            Svar: ['ola@fhs.no', 'kari@fhs.no']
+        }]
+    }];
+    const r = feltperson.slaOppEposter('2-01', innsendt);
+    sjekk('ekspansjonen godtar feltet', r.feilType, null);
+    sjekk('og hvert valg blir en mottaker', r.eposter, ['ola@fhs.no', 'kari@fhs.no']);
+
+    // Og at feil datakilde fortsatt stoppes HELE veien.
+    const feilKilde = [{
+        Nummer: 2,
+        Felter: [{ Nummer: '01', Type: 'Flervalg-dropdown', FasteData_kilde: 'Klasser', Svar: ['FHSBA|22H|A'] }]
+    }];
+    sjekk('feil datakilde avvises', feltperson.slaOppEposter('2-01', feilKilde).feilType, 'Flervalg-dropdown');
+}
+
+console.log(`\n${ok} OK, ${feil} feil`);
         process.exit(feil ? 1 : 0);
     });
 }

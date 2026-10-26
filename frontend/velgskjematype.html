@@ -417,6 +417,16 @@
                  hverandre, gjorde at den øverste ble tatt for den andre. -->
             <a id="knapp-rapporter" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/velgrapporttype.html" title="Alle rapporter du har tilgang til, uansett skjematype">📊 Alle rapporter</a>
             <a id="knapp-admin-panel" class="knapp sekundær" style="display: none; padding: 4px 12px; font-size: 12px; text-decoration: none; margin-left: auto;" href="/admin.html">🔧 Admin-panel</a>
+            <!-- Dokumentasjonen ligger på /dokumentasjon/, bygget fra docs/*.md
+                 ved hver deploy og servert bak samme Entra-innlogging som
+                 appen. Fram til 26.10.2026 lenket ingenting dit: den var bare
+                 å finne for den som kjente stien, og en dokumentasjon ingen
+                 finner er ingen dokumentasjon.
+
+                 Ingen display:none her. Rollen kreves ikke — ruteregelen er
+                 `authenticated`, ikke `admin` — og er du ikke logget inn,
+                 sender 401-overstyringen deg til Entra og tilbake hit. -->
+            <a id="knapp-dokumentasjon" class="knapp sekundær" style="padding: 4px 12px; font-size: 12px; text-decoration: none;" href="/dokumentasjon/" title="Arkitektur, sikkerhet, forvaltning og deploy">📖 Dokumentasjon</a>
         </div>
 
         <div id="status" class="status-melding">Laster…</div>
