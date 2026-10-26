@@ -323,6 +323,7 @@
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
+        import { enkeltutfall, samletUtfall } from './js/behandling-utfall.js';
         import { kommentarerFor, KOMMENTAR_STIL } from './js/behandling-kommentar.js';
         import { behandlerlinje } from './js/behandler-visning.js';
         import { statusTekst, statusKlasse } from './js/skjemastatus.js';
@@ -578,6 +579,17 @@
                     rad.appendChild(beh);
                 }
 
+                // Hver behandlers eget svar. Med flere behandlere sier det
+                // uthevede utfallet bare «Ulike vurderinger»; det er her
+                // innsenderen ser HVA hver enkelt mente.
+                const enkeltHtml = enkeltutfallSomHtml(steg);
+                if (enkeltHtml) {
+                    const e = document.createElement('div');
+                    e.style.cssText = 'width: 100%;';
+                    e.innerHTML = enkeltHtml;
+                    rad.appendChild(e);
+                }
+
                 // Behandlerens begrunnelse. Innsenderen så den ikke noe sted
                 // før 19.09.2026 — bare i e-posten, og bare hvis malen
                 // tilfeldigvis brukte $kommentar.
@@ -647,17 +659,25 @@
             return div;
         }
 
+        /** Hver behandlers eget svar — vises bare når det er flere. */
+        function enkeltutfallSomHtml(steg) {
+            const e = enkeltutfall(steg);
+            if (e.length < 2) return '';
+            return `<div style="font-size: 11px; margin-top: 2px;">` + e.map(x => {
+                const u = samletUtfall({ ...steg, Beslutninger: [{ Aktor: x.aktor, Beslutning: x.beslutning }] });
+                return `<div><span style="color: var(--text-secondary);">${escapeHtml(x.aktor)}:</span> `
+                    + `<span style="color: ${u.farge}; font-weight: 600;">${escapeHtml(x.tekst)}</span></div>`;
+            }).join('') + `</div>`;
+        }
+
+        // Samme regel som evaluering.html og PDF-en — se
+        // js/behandling-utfall.js. «Enkel heuristikk for fargekoding» sto her
+        // i tre eksemplarer med ulikt innhold.
         function tolkStatus(steg) {
             const b = Number(steg.Beslutning || 0);
             if (b === 0) return { tekst: 'Venter', farge: '#ff9500' };
-            if (b === 5) return { tekst: 'Hoppet over', farge: '#8e8e93' };
-            const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === b);
-            const tekst = valg?.Tekst || `Beslutning ${b}`;
-            // Enkel heuristikk for fargekoding
-            const t = tekst.toLowerCase();
-            if (t.includes('avslå') || t.includes('avvis')) return { tekst, farge: '#ff3b30' };
-            if (t.includes('ompuss') || t.includes('revid')) return { tekst, farge: '#af52de' };
-            return { tekst, farge: '#34c759' };
+            const u = samletUtfall(steg);
+            return { tekst: u.tekst || `Beslutning ${b}`, farge: u.farge };
         }
 
         function byggFelt(felt, visningsNr, svar, skjematypeId, skjemaId, svarTekst = null) {

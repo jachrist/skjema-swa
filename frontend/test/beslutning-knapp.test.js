@@ -36,7 +36,19 @@ const kilde = fs.readFileSync(path.join(__dirname, '..', 'evaluering.html'), 'ut
 const start = kilde.indexOf('function erAvvisning(');
 sjekk('fant erAvvisning', start !== -1, true);
 const slutt = kilde.indexOf('\n        }', start) + '\n        }'.length;
-const erAvvisning = new Function(`${kilde.slice(start, slutt)}\nreturn erAvvisning;`)();
+// `erAvvisning` delegerer til `typeFor` i js/behandling-utfall.js siden
+// 26.10.2026 — den var en fjerde kopi av «hva er negativt», og den smaleste.
+// Den EKTE typeFor sendes inn, ikke en etterligning: en håndskrevet kopi her
+// ville vært enda en kopi, og testen ville sluttet å si noe om den som
+// faktisk kjører.
+const typeForKilde = fs.readFileSync(
+    path.join(__dirname, '..', 'js', 'behandling-utfall.js'), 'utf8');
+const tfStart = typeForKilde.indexOf('export function typeFor(');
+const tfSlutt = typeForKilde.indexOf('\n}', tfStart) + 2;
+const typeFor = new Function(
+    `${typeForKilde.slice(tfStart, tfSlutt).replace('export ', '')}\nreturn typeFor;`)();
+const erAvvisning = new Function(
+    `const typeFor = arguments[0];\n${kilde.slice(start, slutt)}\nreturn erAvvisning;`)(typeFor);
 
 sjekk('avslå', erAvvisning('Avslått'), true);
 sjekk('avvis', erAvvisning('Avvis'), true);
@@ -45,6 +57,12 @@ sjekk('godkjenn er ikke avvisning', erAvvisning('Godkjenn'), false);
 // «Send tilbake» avslutter ikke saken negativt — den ber om mer. Rød knapp
 // der ville sagt noe annet enn det som skjer.
 sjekk('send tilbake er ikke avvisning', erAvvisning('Send tilbake'), false);
+// Kom til med modulen: et skjema med «Anbefalt»/«Ikke anbefalt» fikk blå
+// knapp på avslaget, fordi den gamle regelen bare kjente «avslå» og «avvis».
+sjekk('ikke anbefalt er avvisning', erAvvisning('Ikke anbefalt'), true);
+sjekk('ikke godkjent er avvisning', erAvvisning('Ikke godkjent'), true);
+// Men ikke alt som begynner på «ikke» er et avslag.
+sjekk('ikke relevant er ikke avvisning', erAvvisning('Ikke relevant'), false);
 sjekk('tom tekst', erAvvisning(''), false);
 sjekk('undefined', erAvvisning(undefined), false);
 

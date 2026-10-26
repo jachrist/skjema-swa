@@ -201,6 +201,13 @@ const HTML_PRODUSENTER = [
     // js/behandling-kommentar.js: tar escape-funksjonen som argument og
     // bruker den på både aktør og kommentar.
     'kommentarerSomHtml',
+    // enkeltutfallSomHtml — evaluering.html og visning.html, lest
+    // 26.10.2026. Den bygger én rad per behandler: aktørnavnet og
+    // utfallsteksten går gjennom escapeHtml, og det eneste uescapede er
+    // fargen, som kommer fra FARGER i behandling-utfall.js — en fast
+    // tabell med seks heksadesimale literaler. Ingen verdi fra lagring
+    // når attributtet.
+    'enkeltutfallSomHtml',
     // js/skjemastatus.js: returnerer et klassenavn fra et fast sett
     // (STATUSKLASSER), aldri noe som kommer fra lagring.
     'statusKlasse'

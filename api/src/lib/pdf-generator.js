@@ -13,6 +13,7 @@
 
 const { PDFDocument, StandardFonts, rgb, PageSizes } = require('pdf-lib');
 const { kommentarerFor } = require('./behandling-kommentar');
+const utfall = require('./behandling-utfall');
 
 const BLAA = rgb(0, 0.47, 0.83);
 const TEKST = rgb(0.2, 0.2, 0.2);
@@ -187,15 +188,28 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
         skrivTekst('Behandlingshistorikk', 10, fontBold, BLAA);
         nyLinje(14);
         for (const b of behandling) {
-            const valg = (b.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(b.Beslutning));
-            const beslTekst = valg ? valg.Tekst
-                : (Number(b.Beslutning) === 5 ? 'Hoppet over' : String(b.Beslutning));
+            // Utfallet kommer fra behandling-utfall.js — samme regel som
+            // evaluering.html og visning.html. Linja leste `b.Beslutning`
+            // alene, og i alle-modus er det den SISTE avgivelsen: to
+            // behandlere med ulike anbefalinger ga én linje i utskriften,
+            // og den andre vurderingen fantes bare i dataene.
+            const samlet = utfall.samletUtfall(b);
+            const beslTekst = samlet.tekst || (Number(b.Beslutning) === 5 ? 'Hoppet over' : String(b.Beslutning));
             const dato = formatKortDato(b.BehandletDato || b.Tidspunkt);
             skrivTekst(
                 `Steg ${b.Steg}: ${b.Stegnavn || ''} - ${beslTekst} (${b.BehandletAv || b.Epost || ''}, ${dato})`,
                 7, font, TEKST
             );
             nyLinje(10);
+            // Hver behandlers eget svar, når det er flere. Står det «Ulike
+            // vurderinger» over, er det denne linja som bærer innholdet.
+            const enkelt = utfall.enkeltutfall(b);
+            if (enkelt.length > 1) {
+                for (const e of enkelt) {
+                    skrivTekst(`    ${e.aktor}: ${e.tekst}`, 7, font, TEKST);
+                    nyLinje(9);
+                }
+            }
             // Kommentaren ligger i steg.Kommentar i standardmodus og i
             // Beslutninger[] når alle må avgjøre. PDF-en leste bare den
             // første, så en kommentar fra en kollegial behandling sto ikke
