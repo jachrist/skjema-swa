@@ -1031,6 +1031,13 @@
                     // når skjemaet leses igjen — arkivet skal vise det som ble valgt.
                     const tekster = svarTekstFor(felt, svarVerdi);
                     if (tekster) feltUt.SvarTekst = tekster;
+                    // Datakilden feltet hentet valgene fra. Samme grunn som
+                    // SvarTekst: feltet som sendes inn er smalt, og serveren
+                    // har alt tømt FasteData da den fylte Valg. Uten dette
+                    // merket kan ikke ekspansjonen vite at «klassesjef» ble
+                    // valgt fra Studenter — og et behandlingssteg som peker
+                    // på feltet ville ikke fått noen behandler.
+                    if (felt.FasteData_kilde) feltUt.FasteData_kilde = String(felt.FasteData_kilde);
                     seksjonUt.Felter.push(feltUt);
                 }
                 svar.Seksjoner.push(seksjonUt);

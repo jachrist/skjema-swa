@@ -18,15 +18,30 @@
  * adresse satt sammen av et svar vi ikke kontrollerer — og den hadde vi sendt
  * saksdokumenter til.
  *
- * **Bare felter av typen E-post er gyldige.** Den typen har syntakssjekk ved
- * utfylling, så verdien er kontrollert allerede før den når oss — ingen annen
- * felttype gir den garantien. Et Tekst-felt som *tilfeldigvis* inneholder en
- * adresse avvises altså også: regelen skal være mulig å lese av felttypen
- * alene, ikke av hva noen kan ha skrevet.
+ * **Feltet må gi en KONTROLLERT adresse.** To veier gir den garantien, og
+ * ingen tredje:
+ *
+ *   1. Felttypen **E-post**. Den har syntakssjekk ved utfylling, så verdien er
+ *      kontrollert før den når oss.
+ *   2. Et **flervalgsfelt som henter valgene fra en persondatakilde**
+ *      (`Personer`, `Studenter`). De returnerer `Verdi: <EP>` fra masterdata,
+ *      og `felt-render.js` lagrer `Verdi`, ikke visningsteksten. Svaret ER
+ *      altså adressen, og den er aldri skrevet for hånd — en strengere
+ *      garanti enn syntakssjekken i punkt 1.
+ *
+ * Et Tekst-felt som *tilfeldigvis* inneholder en adresse avvises fortsatt, og
+ * et flervalgsfelt med håndskrevne valg likeså: regelen skal være mulig å lese
+ * av feltdefinisjonen alene, ikke av hva noen kan ha skrevet.
+ *
+ * Vei 2 kom til 26.10.2026. Uten den måtte en kadett som velger klassesjefen
+ * sin fra en Studenter-nedtrekk ALLIKEVEL skrive adressen i et eget
+ * E-post-felt — en adresse systemet allerede hadde, skrevet av hånd av den
+ * som minst kjenner den.
  *
  * Konsekvens verdt å kjenne: E-post er ikke en flervalgstype, så én referanse
- * gir én mottaker. Et flervalgsfelt med adresser kan ikke brukes til å sende
- * til flere — det er rollene som er verktøyet for det.
+ * til et E-post-felt gir én mottaker. Et persondatakilde-felt ER en
+ * flervalgstype, så der gir hvert valg sin egen mottaker — samme regel som
+ * dynamiske roller allerede har.
  *
  * **Verdier som ikke ser ut som e-post forkastes likevel.** Typesjekken sier
  * at feltet SKAL være kontrollert; den sier ikke at raden i lagringen er det.
@@ -45,7 +60,7 @@
  * Peker referansen på et flervalgsfelt, gir hvert valg sin egen mottaker —
  * samme regel som for dynamiske roller.
  */
-const { finnFeltViaRef, finnFeltViaId, alleSvarIFelt } = require('./placeholder');
+const { finnFeltViaRef, finnFeltViaId, alleSvarIFelt, FLERVALGSTYPER } = require('./placeholder');
 
 /** Hele oppføringen, ikke en del av den. Se toppkommentaren. */
 const HEL_REFERANSE = /^\s*\{([^{}]+)\}\s*$/;
@@ -69,6 +84,63 @@ const EPOST = /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]{2,}$/;
  * lov» ville gitt en velger som tilbyr noe diagnosen underkjenner.
  */
 const GYLDIGE_FELTTYPER = ['E-post'];
+
+/**
+ * Datakildene som gir `Verdi` = e-post/UPN fra masterdata.
+ *
+ * Lest ut av `lib/oppslag.js`: `_hentPersoner` (alle tre grenene) og
+ * `_hentStudenter` setter `Verdi: <EP>`. De øvrige kildene gir noe annet —
+ * `Roller` gir «Rolle(Omfang)», `Klasser` gir FS-nøkkelen, `Postnumre` gir
+ * postnummeret — og et felt med dem ville gitt en «adresse» som ikke er en.
+ *
+ * Står her og ikke i oppslag.js fordi det er DENNE modulen som avgjør hva en
+ * personreferanse får peke på. Editoren speiler lista, og
+ * `frontend/test/feltperson-ui.test.js` krever at de er like.
+ */
+const PERSON_DATAKILDER = ['Personer', 'Studenter'];
+
+/**
+ * Datakilden til et felt, uansett hvilken form den har overlevd i.
+ *
+ * Tre former, og det er ikke valgfritt å kjenne alle tre:
+ *   - `FasteData: { Datakilde: 'Studenter', ... }`  — skjematypen, slik
+ *     editoren og diagnosen ser den
+ *   - `FasteData: 'Studenter|Kolonne|=|Verdi'`      — den eldre pipe-formen,
+ *     se `parseFasteData` i faste-data.js
+ *   - `FasteData_kilde: 'Studenter'`                — det INNSENDTE skjemaet
+ *
+ * Den siste finnes fordi `settFasteDataISkjema` tømmer `FasteData` når den
+ * har fylt `Valg` (ellers ville frontend fylt på nytt), og fordi `samleSvar`
+ * sender et smalt felt tilbake: { Id, Nummer, Type, Svar, SvarTekst }. Uten
+ * et eget merke ville datakilden vært borte nettopp der ekspansjonen leser.
+ *
+ * Én funksjon, ikke tre avlesninger: hadde editoren lest `FasteData` og
+ * ekspansjonen `FasteData_kilde` hver for seg, ville velgeren tilbudt felter
+ * ekspansjonen ikke kjente igjen.
+ */
+function datakildenTil(felt) {
+    const fd = felt && felt.FasteData;
+    if (fd && typeof fd === 'object' && !Array.isArray(fd)) {
+        return String(fd.Datakilde || '').trim();
+    }
+    if (typeof fd === 'string' && fd.trim()) {
+        return String(fd).split('|')[0].trim();
+    }
+    return String((felt && felt.FasteData_kilde) || '').trim();
+}
+
+/**
+ * Kan dette feltet brukes som personreferanse? Se de to veiene øverst.
+ *
+ * Eksportert og brukt av diagnosen; editoren har en tvilling. Tre kopier av
+ * «hvilke felter er lov» ville gitt en velger som tilbyr noe ekspansjonen
+ * avviser — og den feilen ser man først når et varsel ikke kom fram.
+ */
+function erPersonfelt(felt) {
+    const type = String((felt && felt.Type) || '');
+    if (GYLDIGE_FELTTYPER.includes(type)) return true;
+    return FLERVALGSTYPER.has(type) && PERSON_DATAKILDER.includes(datakildenTil(felt));
+}
 
 function erEpost(verdi) {
     return EPOST.test(String(verdi || '').trim());
@@ -110,7 +182,7 @@ function slaOppEposter(ref, seksjoner) {
     if (!felt) return { eposter: [], mangler: true, feilType: null, ubesvart: false, ugyldige: [] };
 
     const type = String(felt.Type || '');
-    if (!GYLDIGE_FELTTYPER.includes(type)) {
+    if (!erPersonfelt(felt)) {
         return { eposter: [], mangler: false, feilType: type || 'ukjent', ubesvart: false, ugyldige: [] };
     }
 
@@ -210,6 +282,9 @@ function ekspanderBehandlingPersoner(skjema) {
 
 module.exports = {
     GYLDIGE_FELTTYPER,
+    PERSON_DATAKILDER,
+    datakildenTil,
+    erPersonfelt,
     erEpost,
     erFeltreferanse,
     referansen,

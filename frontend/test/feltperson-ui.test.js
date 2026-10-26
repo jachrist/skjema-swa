@@ -84,13 +84,121 @@ const api = utenKommentarer(
         sjekk('og inneholder E-post', eval(apiListe[1]), ['E-post']);
     }
 
-    // Velgeren må faktisk BRUKE lista, ikke bare ha den liggende.
-    sjekk('dropdownen filtreres på typen',
-        /feltReferanser\.filter\(f => FELTPERSON_TYPER\.includes\(String\(f\.type \|\| ''\)\)\)/.test(ui), true);
+    // Velgeren må faktisk BRUKE regelen, ikke bare ha den liggende.
+    sjekk('dropdownen filtreres på regelen',
+        /feltReferanser\.filter\(erPersonfelt\)/.test(ui), true);
     sjekk('knappen sperrer også',
-        /if \(!FELTPERSON_TYPER\.includes\(String\(valgt\?\.type \|\| ''\)\)\)/.test(ui), true);
-    sjekk('uten E-post-felt er velgeren deaktivert',
+        /if \(!erPersonfelt\(valgt\)\)/.test(ui), true);
+    sjekk('uten brukbart felt er velgeren deaktivert',
         /velg\.disabled = aktuelle\.length === 0;/.test(ui), true);
+}
+
+// ---------- persondatakildene, og at tvillingene svarer likt ----------
+//
+// Fra 26.10.2026 er det TO veier til en kontrollert adresse: felttypen
+// E-post, eller et flervalgsfelt som henter valgene fra en persondatakilde.
+// Den andre veien kom fordi en kadett som velger klassesjefen sin fra en
+// Studenter-nedtrekk ellers måtte skrive adressen på nytt i et E-post-felt —
+// en adresse systemet allerede hadde.
+//
+// Regelen finnes nødvendigvis to steder (frontend kan ikke require backend).
+// Her kjøres BEGGE implementasjonene mot de samme feltene og må svare likt.
+// Det er sterkere enn å sammenligne listene: `datakildenTil` må også være
+// enig om pipe-formen og om merket `FasteData_kilde`.
+{
+    const uiKilder = /export const FELTPERSON_DATAKILDER = (\[[^\]]*\]);/.exec(ui);
+    const apiKilder = /const PERSON_DATAKILDER = (\[[^\]]*\]);/.exec(api);
+    sjekk('editoren har en kildeliste', !!uiKilder, true);
+    sjekk('api-et har en kildeliste', !!apiKilder, true);
+    if (uiKilder && apiKilder) {
+        // eslint-disable-next-line no-eval
+        sjekk('kildelistene er like', eval(uiKilder[1]), eval(apiKilder[1]));
+    }
+
+    // Flervalgstypene eies av placeholder.js. Editorens kopi må stemme med
+    // den, ellers tilbyr velgeren en type ekspansjonen leser annerledes.
+    const ph = utenKommentarer(fs.readFileSync(
+        path.join(__dirname, '..', '..', 'api', 'src', 'lib', 'placeholder.js'), 'utf8'));
+    const uiFlerv = /export const FLERVALGSTYPER = (\[[^\]]*\]);/.exec(ui);
+    const apiFlerv = /const FLERVALGSTYPER = new Set\((\[[^\]]*\])\);/.exec(ph);
+    sjekk('begge kjenner flervalgstypene', !!uiFlerv && !!apiFlerv, true);
+    if (uiFlerv && apiFlerv) {
+        // eslint-disable-next-line no-eval
+        sjekk('flervalgstypene er like', eval(uiFlerv[1]).sort(), eval(apiFlerv[1]).sort());
+    }
+
+    // Kjør begge implementasjonene. Hentet ut som kildetekst og evaluert —
+    // en håndskrevet kopi i testen ville vært en TREDJE regel.
+    const hent = (kilde, navn) => {
+        const i = kilde.indexOf(`function ${navn}(`);
+        if (i < 0) return null;
+        let dybde = 0, start = kilde.indexOf('{', i);
+        for (let j = start; j < kilde.length; j++) {
+            if (kilde[j] === '{') dybde++;
+            else if (kilde[j] === '}' && --dybde === 0) return kilde.slice(i, j + 1);
+        }
+        return null;
+    };
+    const lag = (kilde, flervalgUttrykk) => {
+        const d = hent(kilde, 'datakildenTil'), e = hent(kilde, 'erPersonfelt');
+        if (!d || !e) return null;
+        // eslint-disable-next-line no-new-func
+        return new Function(`
+            const GYLDIGE_FELTTYPER = ['E-post'];
+            const FELTPERSON_TYPER = ['E-post'];
+            const PERSON_DATAKILDER = ['Personer', 'Studenter'];
+            const FELTPERSON_DATAKILDER = PERSON_DATAKILDER;
+            const FLERVALGSTYPER = ${flervalgUttrykk};
+            ${d}
+            ${e}
+            return { datakildenTil, erPersonfelt };
+        `)();
+    };
+    const uiImpl = lag(ui, "['Flervalg-dropdown', 'Flervalg-knapper']");
+    const apiImpl = lag(api, "new Set(['Flervalg-dropdown', 'Flervalg-knapper'])");
+    sjekk('fant begge implementasjonene', !!uiImpl && !!apiImpl, true);
+
+    if (uiImpl && apiImpl) {
+        const tilfeller = [
+            // Vei 1: felttypen
+            { Type: 'E-post' },
+            { Type: 'Tekst' },
+            // Vei 2: persondatakilde, i alle tre formene FasteData kan ha
+            { Type: 'Flervalg-dropdown', FasteData: { Datakilde: 'Studenter' } },
+            { Type: 'Flervalg-knapper', FasteData: { Datakilde: 'Personer' } },
+            { Type: 'Flervalg-dropdown', FasteData: 'Studenter|Klasse|=|A' },
+            { Type: 'Flervalg-dropdown', FasteData_kilde: 'Studenter' },
+            { Type: 'Flervalg-dropdown', FasteData: '', FasteData_kilde: 'Personer' },
+            // Feil datakilde — gir ikke en adresse
+            { Type: 'Flervalg-dropdown', FasteData: { Datakilde: 'Klasser' } },
+            { Type: 'Flervalg-dropdown', FasteData: { Datakilde: 'Roller' } },
+            { Type: 'Flervalg-dropdown', FasteData: 'Postnumre|||' },
+            // Riktig datakilde, men feil felttype
+            { Type: 'Tekst', FasteData: { Datakilde: 'Studenter' } },
+            // Valglister uten datakilde i det hele tatt
+            { Type: 'Flervalg-dropdown' },
+            { Type: 'Flervalg-dropdown', FasteData: null },
+            // Rusk
+            {}, { Type: '' }, { Type: 'Flervalg-dropdown', FasteData: [] }
+        ];
+        const ulike = tilfeller.filter(f =>
+            uiImpl.erPersonfelt(f) !== apiImpl.erPersonfelt(f)
+            || uiImpl.datakildenTil(f) !== apiImpl.datakildenTil(f));
+        sjekk('tvillingene svarer likt på alle tilfellene', ulike, []);
+
+        // Og at reglene faktisk SKILLER. Svarte begge «nei» overalt, ville
+        // testen over vært grønn og utvidelsen gjort ingenting.
+        sjekk('persondatakilde-feltet godtas',
+            apiImpl.erPersonfelt({ Type: 'Flervalg-dropdown', FasteData: { Datakilde: 'Studenter' } }), true);
+        sjekk('merket fra det innsendte skjemaet godtas',
+            apiImpl.erPersonfelt({ Type: 'Flervalg-dropdown', FasteData_kilde: 'Studenter' }), true);
+        sjekk('feil datakilde avvises',
+            apiImpl.erPersonfelt({ Type: 'Flervalg-dropdown', FasteData: { Datakilde: 'Klasser' } }), false);
+        sjekk('Tekst-felt avvises fortsatt',
+            apiImpl.erPersonfelt({ Type: 'Tekst' }), false);
+        sjekk('Tekst-felt med persondatakilde avvises også',
+            apiImpl.erPersonfelt({ Type: 'Tekst', FasteData: { Datakilde: 'Studenter' } }), false);
+    }
 }
 
 // ---------- velgeren finnes, og bare der den betyr noe ----------

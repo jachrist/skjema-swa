@@ -2568,12 +2568,19 @@
                     if (s === sIdx && fIdx >= 0 && f >= fIdx) break;
                     const felt = seksjon.Felter[f];
                     if (felt.Type === 'Informasjon' || felt.Type === 'Opplasting') continue;
-                    // type følger med: mottakervelgeren i tilgang-editoren
-                    // godtar bare E-post-felter. De andre bruksstedene
-                    // (dynamisk rolle, vilkår) ser bort fra den.
+                    // type OG datakilde følger med: mottakervelgeren i
+                    // tilgang-editoren godtar E-post-felter og flervalgsfelter
+                    // som henter valgene fra en persondatakilde. De andre
+                    // bruksstedene (dynamisk rolle, vilkår) ser bort fra begge.
+                    //
+                    // Datakilden leses av `datakildenTil` i tilgang-editor.js,
+                    // tvillingen til den i api/src/lib/feltperson.js — her er
+                    // FasteData intakt, for editoren redigerer skjematypen og
+                    // ikke et innsendt skjema.
                     felter.push({
                         ref: feltRef(seksjon, felt),
                         type: felt.Type || '',
+                        fasteData: felt.FasteData || '',
                         tekst: feltEtikett(seksjon, felt)
                     });
                 }

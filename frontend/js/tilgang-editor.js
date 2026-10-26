@@ -34,6 +34,44 @@
  */
 export const FELTPERSON_TYPER = ['E-post'];
 
+/**
+ * Datakildene som gir e-post/UPN som `Verdi`.
+ *
+ * Tvilling til `PERSON_DATAKILDER` i api/src/lib/feltperson.js — den avgjør
+ * ved innsending. `frontend/test/feltperson-ui.test.js` leser begge og krever
+ * at de er like.
+ */
+export const FELTPERSON_DATAKILDER = ['Personer', 'Studenter'];
+
+/**
+ * Datakilden til et felt. Tvilling til `datakildenTil` i feltperson.js.
+ *
+ * Editoren ser skjematypen, der `FasteData` er intakt — enten som objekt
+ * eller som den eldre pipe-formen. Merket `FasteData_kilde` er med for at de
+ * to tvillingene skal svare likt på ALLE formene; testen kjører begge mot de
+ * samme tilfellene.
+ */
+export function datakildenTil(felt) {
+    const fd = felt && felt.fasteData !== undefined ? felt.fasteData : (felt && felt.FasteData);
+    if (fd && typeof fd === 'object' && !Array.isArray(fd)) {
+        return String(fd.Datakilde || '').trim();
+    }
+    if (typeof fd === 'string' && fd.trim()) {
+        return String(fd).split('|')[0].trim();
+    }
+    return String((felt && felt.FasteData_kilde) || '').trim();
+}
+
+/** Kan feltet brukes som mottaker? Tvilling til `erPersonfelt`. */
+export function erPersonfelt(felt) {
+    const type = String((felt && (felt.type ?? felt.Type)) || '');
+    if (FELTPERSON_TYPER.includes(type)) return true;
+    return FLERVALGSTYPER.includes(type) && FELTPERSON_DATAKILDER.includes(datakildenTil(felt));
+}
+
+/** Samme sett som FLERVALGSTYPER i api/src/lib/placeholder.js. */
+export const FLERVALGSTYPER = ['Flervalg-dropdown', 'Flervalg-knapper'];
+
 let _rolleGrupperCache = null;
 let _teamNavnCache = null;
 
@@ -232,20 +270,21 @@ export function byggTilgangEditor(container, verdi, options = {}) {
      * er lett å bomme på, og en referanse som peker feil gir ingen mottaker
      * uten at noe sier fra før skjemaet er sendt inn.
      *
-     * BARE E-post-felter listes. Den typen har syntakssjekk ved utfylling, og
-     * det er den garantien som gjør referansen trygg — et Tekst-felt kan
-     * inneholde hva som helst. `feltperson.js` avviser andre typer ved
+     * To slags felter listes, og ingen tredje: E-post-felter, og
+     * flervalgsfelter som henter valgene fra en persondatakilde
+     * (`Personer`, `Studenter`). Begge gir en adresse som ikke er skrevet for
+     * hånd — se `erPersonfelt`. `feltperson.js` avviser alt annet ved
      * innsending, så en velger som tilbød dem ville tilbudt noe som ikke
      * virker.
      *
-     * Har skjemaet ingen E-post-felter, vises velgeren likevel — deaktivert,
-     * med grunnen. En kontroll som forsvinner, forklarer ingenting.
+     * Har skjemaet ingen av delene, vises velgeren likevel — deaktivert, med
+     * grunnen. En kontroll som forsvinner, forklarer ingenting.
      */
     function byggFeltperson() {
         const boks = document.createElement('div');
         boks.style.cssText = 'display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 6px 0 0 0;';
 
-        const aktuelle = feltReferanser.filter(f => FELTPERSON_TYPER.includes(String(f.type || '')));
+        const aktuelle = feltReferanser.filter(erPersonfelt);
 
         const velg = document.createElement('select');
         velg.style.cssText = `flex: 1; min-width: 180px; padding: 3px 8px; font-size: ${kompakt ? '12px' : '13px'}; border: 1px solid var(--input-border, #d1d1d6); border-radius: 6px;`;
@@ -253,12 +292,16 @@ export function byggTilgangEditor(container, verdi, options = {}) {
         tom.value = '';
         tom.textContent = aktuelle.length > 0
             ? 'e-post fra felt…'
-            : '(skjemaet har ingen felt av typen E-post)';
+            : '(skjemaet har ingen E-post-felt eller persondatakilde-felt)';
         velg.appendChild(tom);
         for (const f of aktuelle) {
             const o = document.createElement('option');
             o.value = f.ref;
-            o.textContent = f.tekst;
+            // Datakilden i etiketten: to felter kan hete det samme, og
+            // «hvor kommer adressen fra» er det skjemaeieren må kunne se
+            // uten å åpne feltet.
+            const kilde = datakildenTil(f);
+            o.textContent = kilde ? `${f.tekst} (${kilde})` : f.tekst;
             velg.appendChild(o);
         }
         velg.disabled = aktuelle.length === 0;
@@ -282,8 +325,10 @@ export function byggTilgangEditor(container, verdi, options = {}) {
             // heller la være enn å legge inn en referanse som avvises ved
             // innsending.
             const valgt = feltReferanser.find(f => f.ref === ref);
-            if (!FELTPERSON_TYPER.includes(String(valgt?.type || ''))) {
-                alert(`Bare felter av typen ${FELTPERSON_TYPER.join(', ')} kan brukes som mottaker.`);
+            if (!erPersonfelt(valgt)) {
+                alert(`Bare felter av typen ${FELTPERSON_TYPER.join(', ')} — eller flervalgsfelter `
+                    + `som henter valgene fra ${FELTPERSON_DATAKILDER.join(' eller ')} — `
+                    + 'kan brukes som mottaker.');
                 return;
             }
             const streng = `{${ref}}`;
