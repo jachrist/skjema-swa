@@ -2038,8 +2038,24 @@ dager:
 | Kravlista krevde `AAD_CLIENT_SECRET` i prod; helsesjekken sa den skal stå tom | Ba om å lime v2 sin klienthemmelighet inn på v3 |
 | `--navn` filtrerte `kun_dokumentasjon`, `--kommandoer` gjorde det ikke | Generatoren ba om å sette noe kravlista ikke krevde |
 | `--sdk-auth` i kokeboka, `--json-auth` i beslutningsnotatet | Avviklingsadvarsel midt i en prod-kjøring |
+| **Tokenet** sa hvilken SWA deployen gikk til; **`vars.SWA_URL`** sa hvilken som skulle verifiseres | Prod-deployen i kjøring #49 verifiserte PILOT og ble grønn — se under |
 
-Alle fire er nå bundet av tester som leser BEGGE kildene.
+Alle fem er nå bundet av tester som leser BEGGE kildene.
+
+**Den siste er verdt å lese nøye**, for den er feilen verifiseringssteget ble
+skrevet for å fange, gjort av steget selv.
+
+Kjøring #49 (22.10.2026) rullet ut til prod-SWA-en og sjekket `/api/ping` på
+pilot. Den ble grønn bare fordi den automatiske pilot-deployen fortsatt sto
+på den formiddagen, så pilot bar samme commit. Da den ble slått av (#173),
+sto feilen igjen uten det som skjulte den.
+
+Roten er at `miljo` har **to** verdier mens prod har **to SWA-er** — v2 og v3,
+valgt med `swa_token_secret`. Én variabel per miljø kan ikke være riktig for
+begge. Adressen må følge TOKENET, og den eneste kilden som vet hvor
+opplastingen havnet, er deploy-stegets eget `static_web_app_url`. Det er nå
+den eneste kilden, uten reserve: en reserve som kan peke på en annen SWA er
+nettopp det som ga det grønne svaret.
 
 ### Ting kokeboka ba om som ikke kan gjøres
 

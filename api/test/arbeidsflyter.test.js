@@ -175,13 +175,30 @@ for (const fil of deployer) {
         /HVA="prod"/.test(verifiser), false);
     sjekk('preview-merkelappen sier også hvilket miljø',
         /HVA="preview «\$PREVIEW» i \$STOR"/.test(verifiser), true);
-    sjekk('og feilmeldingen om manglende variabel peker på riktig miljø',
-        /Environments → \$MILJO → Variables/.test(verifiser), true);
+    // ----- og den må sjekke SWA-EN SOM FAKTISK BLE DEPLOYET -----
+    //
+    // Adressen sto i vars.SWA_URL fram til 26.10.2026, og den peker på
+    // PILOT. Kjøring #49 rullet ut til prod-SWA-en og verifiserte mot pilot;
+    // den ble grønn bare fordi pilot tilfeldigvis bar samme commit den
+    // formiddagen. Det er nøyaktig den stille feilen steget finnes for.
+    //
+    // `static_web_app_url` følger TOKENET, ikke miljønavnet — og det er
+    // avgjørende, for `miljo` har to verdier mens prod har to SWA-er (v2 og
+    // v3) som velges med swa_token_secret. Én variabel per miljø kan ikke
+    // være riktig for begge.
+    sjekk('adressen kommer fra deploy-steget selv',
+        /DEPLOYET_URL: \$\{\{ steps\.builddeploy\.outputs\.static_web_app_url \}\}/.test(verifiser), true);
+    sjekk('og ikke fra en variabel som kan peke på en annen SWA',
+        /vars\.SWA_URL/.test(verifiser), false);
+    // En reserve som kan peke feil er verre enn ingen reserve: det var
+    // nettopp reserven som ga det grønne svaret i #49.
+    sjekk('ingen reserveadresse å falle tilbake på',
+        /MAAL="\$MILJO_URL"|MAAL="\$\{MILJO_URL/.test(verifiser), false);
 
-    // vars.SWA_URL har skråstrek bakerst i minst ett miljø. «…net//api/ping»
-    // gikk, men en adresse i en logg skal kunne limes rett inn.
+    // Skråstrek bakerst ga «…net//api/ping». Det gikk, men en adresse i en
+    // logg skal kunne limes rett inn.
     sjekk('skråstrek bakerst fjernes før adressen settes sammen',
-        /MAAL="\$\{MAAL%\/\}"/.test(verifiser), true);
+        /MAAL="\$\{DEPLOYET_URL%\/\}"/.test(verifiser), true);
 }
 
 // ---------- prod ----------
@@ -224,8 +241,12 @@ for (const fil of deployer) {
 
     // Mangler adressen, kan ingenting verifiseres — og da skal steget si fra,
     // ikke hoppe stille over. En sjekk som kan slå seg selv av er ingen sjekk.
-    sjekk('manglende SWA_URL feller steget i stedet for å hoppe over',
-        /SWA_URL er ikke satt[\s\S]{0,400}exit 1/.test(steget), true);
+    //
+    // Adressen kom fra vars.SWA_URL fram til 26.10.2026; nå kommer den fra
+    // deploy-steget selv. Testen spør derfor etter REGELEN — tom adresse,
+    // ingen verifisering, exit 1 — og ikke etter den gamle ordlyden.
+    sjekk('manglende adresse feller steget i stedet for å hoppe over',
+        /ingen URL, så det er ingenting å verifisere mot[\s\S]{0,500}exit 1/.test(steget), true);
 
     // Preview skal verifiseres også. En preview-deploy som ikke landet er
     // like villedende som en prod-deploy som ikke landet — og preview er
