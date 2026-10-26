@@ -87,8 +87,21 @@ const api = utenKommentarer(
     // Velgeren må faktisk BRUKE regelen, ikke bare ha den liggende.
     sjekk('dropdownen filtreres på regelen',
         /feltReferanser\.filter\(erPersonfelt\)/.test(ui), true);
-    sjekk('knappen sperrer også',
+    sjekk('og sperrer på valget',
         /if \(!erPersonfelt\(valgt\)\)/.test(ui), true);
+
+    // LEGGER TIL VED VALG — ikke ved et klikk på en knapp ved siden av.
+    //
+    // Roller og Team i det samme panelet legger til med én gang man velger.
+    // Da feltreferansen krevde et ekstra klikk, ble et behandlingssteg lagret
+    // uten behandler i prod, med valget synlig i nedtrekket. Tre kontroller
+    // med to oppførsler er fella; testen holder dem like.
+    sjekk('feltreferansen legges til ved valg',
+        /velg\.addEventListener\('change'/.test(ui), true);
+    sjekk('og det finnes ingen egen knapp å glemme',
+        /\+ Feltreferanse/.test(ui), false);
+    sjekk('nedtrekket nullstilles etterpå',
+        /velg\.value = '';[\s\S]{0,200}state\.Personer\.push/.test(ui), true);
     sjekk('uten brukbart felt er velgeren deaktivert',
         /velg\.disabled = aktuelle\.length === 0;/.test(ui), true);
 }
@@ -208,7 +221,10 @@ const api = utenKommentarer(
         /if \(feltReferanser\.length > 0\) sek\.appendChild\(byggFeltperson\(\)\);/.test(ui), true);
     sjekk('hele oppføringen blir referansen', /const streng = `\{\$\{ref\}\}`;/.test(ui), true);
     sjekk('duplikat legges ikke til', /if \(!state\.Personer\.includes\(streng\)\)/.test(ui), true);
-    sjekk('tomt valg avvises', /Velg et felt f/.test(ui), true);
+    // Tomt valg skal ikke legge til noe. Var før en alert («Velg et felt
+    // først»); med change-hendelsen er det bare en tidlig retur. Regelen er
+    // den samme, og den er det testen spør etter.
+    sjekk('tomt valg legger ikke til noe', /if \(!ref\) return;/.test(ui), true);
 
     // Publikum og Eiere sender ingen feltReferanser — kontrollen på at
     // editoren faktisk kalles uten dem, ligger i editor.html.
