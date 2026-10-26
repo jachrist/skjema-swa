@@ -395,6 +395,7 @@
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
         import { kommentarerSomHtml } from './js/behandling-kommentar.js';
+        import { enkeltutfall, samletUtfall, typeFor } from './js/behandling-utfall.js';
         import { formaterBehandler } from './js/behandler-visning.js';
         import { visningslenke } from './js/visningsgrunn.js';
 
@@ -941,9 +942,15 @@
          * bomme på: en rød knapp på et godkjenningsvalg er verre enn en
          * nøytral knapp på et avslag.
          */
+        // Fargen på bekreft-knappen. Var en FJERDE kopi av «hva er negativt»
+        // — og den smaleste: den kjente bare «avslå» og «avvis», så et
+        // skjema med «Ikke anbefalt» fikk blå knapp på et avslag.
+        //
+        // Teksten er alt kalleren har her. Er valget erklært med
+        // Handling: 'avvisning', fanges det av typeFor på de andre
+        // visningene; her er teksten god nok til å velge en knappefarge.
         function erAvvisning(tekst) {
-            const t = String(tekst || '').toLowerCase();
-            return t.includes('avslå') || t.includes('avvis');
+            return typeFor({ Tekst: tekst }) === 'negativ';
         }
 
         async function taBeslutning(stegNr, beslutningNr, tekst) {
@@ -1029,6 +1036,7 @@
                     <span style="font-weight: 600; flex: 1;">${escapeHtml(steg.Stegnavn || `Steg ${steg.Steg}`)}</span>
                     <span style="color: ${status.farge}; font-weight: 600;">${escapeHtml(status.tekst)}</span>
                     ${steg.BehandletAv ? `<div style="width: 100%; font-size: 11px; color: var(--text-secondary);">Behandlet av ${escapeHtml(behandlerNavn(steg))} ${escapeHtml(formaterDato(steg.BehandletDato))}</div>` : ''}
+                    ${enkeltutfallSomHtml(steg)}
                     ${kommentarerSomHtml(steg, escapeHtml)}
                 `;
                 div.appendChild(rad);
@@ -1036,16 +1044,38 @@
             return div;
         }
 
+        // Utfallet og fargen kommer fra js/behandling-utfall.js. Regelen sto
+        // her, i visning.html og i pdf-generator.js — tre kopier, og den her
+        // kjente ikke «revid» mens visningens gjorde. Verre: alle tre leste
+        // `steg.Beslutning`, som i alle-modus er den SISTE avgivelsen. To
+        // behandlere med ulike anbefalinger ga én linje, og den andre
+        // vurderingen fantes bare i dataene.
         function tolkStatus(steg, erAktiv) {
             const b = Number(steg.Beslutning || 0);
             if (b === 0) return { tekst: erAktiv ? 'Aktivt — venter behandling' : 'Venter', farge: erAktiv ? '#0a84ff' : '#ff9500' };
-            if (b === 5) return { tekst: 'Hoppet over', farge: '#8e8e93' };
-            const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === b);
-            const tekst = valg?.Tekst || `Beslutning ${b}`;
-            const t = tekst.toLowerCase();
-            if (t.includes('avslå') || t.includes('avvis')) return { tekst, farge: '#ff3b30' };
-            if (t.includes('ompuss')) return { tekst, farge: '#af52de' };
-            return { tekst, farge: '#34c759' };
+            const u = samletUtfall(steg);
+            return { tekst: u.tekst || `Beslutning ${b}`, farge: u.farge };
+        }
+
+        /**
+         * Hver behandlers eget svar, på linja under «Behandlet av».
+         *
+         * Vises bare når det ER flere: med én behandler gjentar den bare det
+         * uthevede utfallet rett over.
+         */
+        function enkeltutfallSomHtml(steg) {
+            const e = enkeltutfall(steg);
+            if (e.length < 2) return '';
+            const rader = e.map(x => {
+                const navn = formaterBehandler({ epost: x.aktor, navn: (skjema?._behandlere?.[String(steg.Steg)]?.behandletAv || [])
+                    .find(b => String(b.epost || '').toLowerCase() === String(x.aktor).toLowerCase())?.navn || '' });
+                const u = samletUtfall({ ...steg, Beslutninger: [{ Aktor: x.aktor, Beslutning: x.beslutning }] });
+                return `<div style="display: flex; gap: 6px;">`
+                    + `<span style="color: var(--text-secondary);">${escapeHtml(navn)}:</span>`
+                    + `<span style="color: ${u.farge}; font-weight: 600;">${escapeHtml(x.tekst)}</span>`
+                    + `</div>`;
+            }).join('');
+            return `<div style="width: 100%; font-size: 11px; margin-top: 2px;">${rader}</div>`;
         }
 
         function byggFelt(felt, visningsNr, svar, svarTekst = null) {
