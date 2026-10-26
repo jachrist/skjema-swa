@@ -19,6 +19,12 @@
  *   miljøet ingenting under /dokumentasjon/, eller — verre — det som lå der
  *   fra forrige gang.
  *
+ *   **Ingenting som lenker dit.** Oppdaget 26.10.2026: sidene hadde vært
+ *   bygget og servert i seks dager, og ingen side i appen pekte på dem. En
+ *   dokumentasjon man må kjenne stien til, er ikke funnet — den er bare ikke
+ *   borte. Dette er den stilleste av de fire: alt ser riktig ut, bygget er
+ *   grønt, og sidene svarer.
+ *
  * Testen kjører ikke MkDocs. Den leser koblingene: navigasjonen mot
  * filsystemet, ruteregelen mot alle fire konfigurasjoner, og hver
  * frontend-deploy mot byggeskriptet.
@@ -242,6 +248,62 @@ const skript = les('scripts', 'bygg-dokumentasjon.sh');
     const claude = les('CLAUDE.md');
     sjekk('CLAUDE.md nevner dokumentasjonsbygget',
         /bygg-dokumentasjon|dokumentasjon/i.test(claude.slice(0, 2000)), true);
+}
+
+// ---------- 7. appen lenker til dokumentasjonen ----------
+//
+// Sidene ble bygget og servert fra 20.10.2026, men ingen side pekte på dem
+// før 26.10. Ruteregelen er `authenticated` — ikke `admin` — så lenken hører
+// hjemme begge steder: på oversikten for alle innloggede, og i admin der
+// forvalteren står.
+{
+    const les = (f) => fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', f), 'utf8');
+
+    for (const fil of ['velgskjematype.html', 'admin.html']) {
+        const w = les(fil);
+        const treff = w.match(/href="\/dokumentasjon\/"/g) || [];
+        sjekk(`${fil}: lenker til /dokumentasjon/`, treff.length >= 1, true);
+    }
+
+    // Skråstreken bakerst er ikke kosmetikk: uten den kan SWA svare 404 i
+    // stedet for å servere index.html i mappa.
+    const oversikt = les('velgskjematype.html');
+    sjekk('lenken har skråstrek bakerst',
+        /href="\/dokumentasjon"/.test(oversikt), false);
+
+    // Lenken skal IKKE være rollestyrt. Nabolenkene («Ny skjematype»,
+    // «Admin-panel») står med display:none og slås på av JS etter en
+    // rollesjekk. Arver dokumentasjonslenken det mønsteret ved en
+    // klipp-og-lim, blir den usynlig for akkurat de brukerne den er for.
+    const knapp = oversikt.match(/<a id="knapp-dokumentasjon"[^>]*>/);
+    sjekk('dokumentasjonsknappen finnes på oversikten', !!knapp, true);
+    sjekk('og er ikke skjult bak en rollesjekk',
+        /display:\s*none/.test(knapp ? knapp[0] : 'display: none'), false);
+}
+
+// ---------- 8. PDF-lenkene mot det byggeskriptet faktisk lager ----------
+//
+// `docs/index.md` lenket før bare til ett av dokumentene, og tabellen nederst
+// nevnte også bare ett — mens skriptet har bygget to siden det ble skrevet.
+// To lister, to svar: den tilbakevendende feilklassen i dette repoet.
+{
+    const skript = fs.readFileSync(
+        path.join(__dirname, '..', '..', 'scripts', 'bygg-dokumentasjon.sh'), 'utf8');
+    const m = skript.match(/^PDF_DOKUMENTER=\(([^)]*)\)/m);
+    sjekk('fant PDF_DOKUMENTER i byggeskriptet', !!m, true);
+
+    const bygde = (m ? m[1] : '').trim().split(/\s+/).filter(Boolean).sort();
+    const forside = fs.readFileSync(path.join(__dirname, '..', '..', 'docs', 'index.md'), 'utf8');
+    const lenket = [...forside.matchAll(/\/dokumentasjon\/pdf\/([A-ZÆØÅ0-9-]+)\.pdf/g)]
+        .map(x => x[1]).sort();
+
+    sjekk('forsiden lenker til NØYAKTIG de PDF-ene som bygges', lenket, bygde);
+
+    // Og kildefilene må finnes, ellers hopper skriptet stille over dem.
+    for (const navn of bygde) {
+        sjekk(`${navn}.md finnes i docs/`,
+            fs.existsSync(path.join(__dirname, '..', '..', 'docs', `${navn}.md`)), true);
+    }
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

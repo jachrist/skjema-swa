@@ -95,6 +95,16 @@
             border: 1px solid transparent;
         }
         .sidebar .fane:hover { background: var(--accent-light); }
+        /* Dokumentasjonslenken er IKKE en fane: den forlater siden i stedet
+           for å bytte innhold. Den låner paddingen, men er dempet og mangler
+           :hover-rammen, så den ikke ser ut som noe den ikke er. `markerFane`
+           går gjennom `.sidebar .fane` og ville aldri merket den aktiv. */
+        .sidebar .ekstern {
+            display: block; padding: 8px 12px; font-size: 13px;
+            color: var(--text-secondary); text-decoration: none;
+            border-radius: var(--radius-sm);
+        }
+        .sidebar .ekstern:hover { background: var(--accent-light); color: var(--accent); }
         .sidebar .fane.aktiv { background: var(--accent-light); color: var(--accent); border-color: var(--accent); }
         .sidebar .fane .badge {
             font-size: 10px; color: var(--warning);
@@ -350,6 +360,8 @@
                 <a class="fane" data-fane="logoer" href="#logoer">🖼 Logoer</a>
                 <a class="fane" data-fane="jobber" href="#jobber">⏱ Jobber</a>
                 <a class="fane" data-fane="system" href="#system">⚙️ System</a>
+                <div class="skille"></div>
+                <a class="ekstern" href="/dokumentasjon/" title="Arkitektur, sikkerhet, forvaltning og deploy — bygget fra docs/*.md ved hver deploy">📖 Dokumentasjon ↗</a>
             </nav>
             <div class="innhold" id="innhold">
                 <div class="laster">Laster…</div>
