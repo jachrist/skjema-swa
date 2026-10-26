@@ -199,6 +199,20 @@ app.http('lagreBeslutning', {
 
             const erOmpuss = erOmpussValg(valgtValg);
 
+            // HVA SKJEDDE EGENTLIG. Settes i alle-modus under.
+            //
+            // 26.10.2026: en behandler trykket «Anbefalt» flere ganger og så
+            // steget stå uendret. Svaret var `status: 'ok'` hver gang, og
+            // siden rendret seg likt på nytt. «Ok» på noe som ikke flyttet
+            // seg er like misvisende som en feilmelding som peker feil vei —
+            // og her kostet det en runde med å lete etter en feil i koden.
+            //
+            // Settes ALLTID når alle-modus kjører, aldri utelatt: et felt som
+            // kan mangle kan ikke feilsøkes.
+            let utfall = null;
+            let venterPaa = [];
+            let levert = null;
+
             if (erOmpuss) {
                 // Ompuss: skjemaet sendes tilbake til innsender for revidering.
                 // Steget nullstilles så det kan re-behandles etter re-innsending.
@@ -235,10 +249,14 @@ app.http('lagreBeslutning', {
                     // Hindre duplikat fra samme aktør (idempotens ved retry)
                     const eksisterende = stegObj.Beslutninger.find(b => String(b.Aktor || '').toLowerCase() === aktor);
                     if (eksisterende) {
+                        const likBeslutning = Number(eksisterende.Beslutning) === Number(beslutning);
+                        const likKommentar = String(eksisterende.Kommentar || '') === String(body?.kommentar || '');
+                        utfall = (likBeslutning && likKommentar) ? 'uendret' : 'oppdatert';
                         eksisterende.Beslutning = beslutning;
                         eksisterende.Dato = new Date().toISOString();
                         eksisterende.Kommentar = body?.kommentar || '';
                     } else {
+                        utfall = 'registrert';
                         stegObj.Beslutninger.push({
                             Aktor: upn || 'ekstern-flyt',
                             Beslutning: beslutning,
@@ -251,6 +269,8 @@ app.http('lagreBeslutning', {
                     // rollemedlemskap i nettleseren.
                     const { krav, gjenstar, alleLevert } = await beregnAlleKrav(stegObj, lagTilgangsCache());
                     stegObj.BeslutningKrav = krav;
+                    venterPaa = [...gjenstar];
+                    levert = { av: krav.filter(k => k.dekket).length, av_totalt: krav.length };
 
                     if (alleLevert) {
                         // Sluttbeslutning = siste avgivelse (i praksis samme siden alle må godkjenne)
@@ -376,6 +396,13 @@ app.http('lagreBeslutning', {
                 jsonBody: {
                     status: 'ok',
                     alleFerdig,
+                    // Hvem beslutningen ble registrert PÅ. Testes det med to
+                    // kontoer i samme nettleser, er det denne som avslører at
+                    // begge klikkene havnet på den samme.
+                    aktor: upn || 'ekstern-flyt',
+                    utfall,
+                    venterPaa,
+                    levert,
                     nyeAktive: nyeAktive.map(s => ({ Steg: s.Steg, Stegnavn: s.Stegnavn }))
                 }
             };
