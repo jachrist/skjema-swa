@@ -40,7 +40,8 @@ jobs:
       #
       # pandoc ligger ikke på runneren. Uten den hopper skriptet over PDF-ene
       # med en advarsel, og da var PDF-veien aldri prøvd før den trengtes.
-      - name: Installer pandoc
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq pandoc
+      # Installasjonen er bufret — se .github/actions/dokumentasjon.
       - name: Bygg dokumentasjonen (strict)
-        run: scripts/bygg-dokumentasjon.sh --strict
+        uses: ./.github/actions/dokumentasjon
+        with:
+          strict: 'true'
