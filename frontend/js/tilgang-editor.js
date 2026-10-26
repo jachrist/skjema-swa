@@ -279,6 +279,18 @@ export function byggTilgangEditor(container, verdi, options = {}) {
      *
      * Har skjemaet ingen av delene, vises velgeren likevel — deaktivert, med
      * grunnen. En kontroll som forsvinner, forklarer ingenting.
+     *
+     * LEGGER TIL VED VALG, ikke ved et klikk på en knapp ved siden av.
+     *
+     * Fram til 26.10.2026 var dette en nedtrekk PLUSS en «+ Feltreferanse»-
+     * knapp. Roller og Team i det SAMME panelet legger til med én gang man
+     * velger. Tre kontroller, to oppførsler — og den ene som krevde et ekstra
+     * klikk så ut som om den var ferdig når valget sto i nedtrekket.
+     *
+     * Utslaget i prod: et behandlingssteg ble lagret uten behandler, med
+     * valget synlig i nedtrekket. Diagnosen meldte riktig at steget ikke
+     * hadde noen — men ingenting pekte på hvorfor, og nedtrekket så ut som
+     * et svar.
      */
     function byggFeltperson() {
         const boks = document.createElement('div');
@@ -305,33 +317,29 @@ export function byggTilgangEditor(container, verdi, options = {}) {
             velg.appendChild(o);
         }
         velg.disabled = aktuelle.length === 0;
-
-        const knapp = document.createElement('button');
-        knapp.type = 'button';
-        knapp.textContent = '+ Feltreferanse';
-        knapp.disabled = aktuelle.length === 0;
-        knapp.title = aktuelle.length > 0
+        velg.title = aktuelle.length > 0
             ? 'Adressen hentes fra innsenderens svar når skjemaet sendes inn'
-            : 'Krever et felt av typen E-post. Legg til ett i skjemaet først.';
-        knapp.style.cssText = `padding: 4px 10px; font-size: 12px; border: 1px solid var(--accent); background: transparent; color: var(--accent); border-radius: 4px; cursor: ${aktuelle.length > 0 ? 'pointer' : 'not-allowed'}; opacity: ${aktuelle.length > 0 ? '1' : '0.5'};`;
-        knapp.addEventListener('click', () => {
+            : 'Krever et E-post-felt, eller et flervalgsfelt med en persondatakilde.';
+
+        velg.addEventListener('change', () => {
             const ref = velg.value;
-            if (!ref) {
-                alert('Velg et felt først.');
-                return;
-            }
-            // Siste sperre. Dropdownen er allerede filtrert, men lista kan
-            // komme fra en kaller som ikke sendte `type` — og da skal vi
-            // heller la være enn å legge inn en referanse som avvises ved
-            // innsending.
+            if (!ref) return;
+            // Sperre. Nedtrekket er allerede filtrert, men lista kan komme fra
+            // en kaller som ikke sendte `type` — og da skal vi heller la være
+            // enn å legge inn en referanse som avvises ved innsending.
             const valgt = feltReferanser.find(f => f.ref === ref);
             if (!erPersonfelt(valgt)) {
+                velg.value = '';
                 alert(`Bare felter av typen ${FELTPERSON_TYPER.join(', ')} — eller flervalgsfelter `
                     + `som henter valgene fra ${FELTPERSON_DATAKILDER.join(' eller ')} — `
                     + 'kan brukes som mottaker.');
                 return;
             }
             const streng = `{${ref}}`;
+            // Nullstill uansett: står valget igjen i nedtrekket etter at chipen
+            // er lagt til, ser kontrollen ut som om den ikke gjorde noe — og
+            // det var nettopp den tvetydigheten som kostet en prod-runde.
+            velg.value = '';
             if (!state.Personer.includes(streng)) {
                 state.Personer.push(streng);
                 ferdig();
@@ -339,7 +347,7 @@ export function byggTilgangEditor(container, verdi, options = {}) {
             }
         });
 
-        boks.append(velg, knapp);
+        boks.append(velg);
         return boks;
     }
 
