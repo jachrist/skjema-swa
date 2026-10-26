@@ -968,8 +968,23 @@
             // Disable alle knapper for å hindre dobbelt-klikk
             document.querySelectorAll('.beslutning-knapp').forEach(k => k.disabled = true);
             try {
-                await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/beslutning`,
+                const res = await api.post(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/beslutning`,
                     { steg: stegNr, beslutning: beslutningNr, kommentar: svar.kommentar });
+                // SI HVA SOM SKJEDDE når ingenting flyttet seg.
+                //
+                // 26.10.2026: en behandler trykket «Anbefalt» flere ganger og
+                // så steget stå uendret. Kallet svarte ok, og siden rendret
+                // seg likt på nytt — det eneste sporet var at tallet «1 av 2»
+                // ikke endret seg. Med to testkontoer i samme nettleser er
+                // det nettopp da man trenger å få vite HVEM beslutningen ble
+                // registrert på.
+                if (res && res.utfall === 'uendret') {
+                    alert(`Du (${res.aktor}) hadde allerede avgitt denne beslutningen, `
+                        + 'så ingenting endret seg.'
+                        + ((res.venterPaa || []).length
+                            ? `\n\nSteget venter fortsatt på: ${res.venterPaa.join(', ')}`
+                            : ''));
+                }
                 // Refresh
                 skjema = await api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`);
                 rendrer();
