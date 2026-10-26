@@ -156,27 +156,78 @@ async function ekspanderBehandling(skjema) {
  * satt). Reserverollen kommer i tillegg til — ikke i stedet for — den
  * ekspanderte rollen: fylles klassesjefen inn senere, treffer begge.
  *
- * Endrer skjemaet in-place. Returnerer array av
- * { steg, roller, reserverolle, dekket } for de stegene som manglet behandler.
+ * TELLER PER ROLLE, ikke bare totalt.
+ *
+ * Ett valg i et flervalgsfelt gir én rolle — tre emner gir
+ * Emneansvarlig(CU1), (CU2) og (CU3). Har bare det første en registrert
+ * innehaver, er totalen positiv, og steget HAR en behandler. Fram til
+ * 26.10.2026 var det alt som ble sjekket, og de to tomme gikk stille
+ * igjennom: innsenderen valgte tre emner og fikk behandling av én.
+ *
+ * Rollelista vedlikeholdes manuelt, så det er en tilstand som oppstår av seg
+ * selv — og den eneste som kan rette den, er den som får vite om den.
+ *
+ * Endrer skjemaet in-place. Returnerer { mangler, delvis }:
+ *
+ *   mangler — steg UTEN behandler i det hele tatt. Reserverollen er lagt på
+ *             der den finnes. Som før.
+ *   delvis  — steg som HAR en behandler, men der minst én av de ekspanderte
+ *             rollene er tom. Ikke en feil som kan rettes her, men et svar
+ *             på «hvorfor fikk bare én av tre emner behandling».
  */
 async function sikreBehandler(skjema, log = () => {}) {
     const mangler = [];
+    const delvis = [];
+
     for (const steg of (skjema?.Behandling || [])) {
         if (!Array.isArray(steg.RollerMal) || steg.RollerMal.length === 0) continue;
-        if (Number(steg.Beslutning || 0) !== 0) continue;
-        if ((steg.Personer || []).length > 0 || (steg.Team || []).length > 0) continue;
 
+        // Telles ALLTID, også for steg som er ferdigbehandlet eller har egne
+        // personer. En tom rolle er like verdt å vite om der — og å telle er
+        // bare lesing. Reserverollen under har fortsatt sine egne vilkår.
+        const perRolle = [];
         let antall = 0;
         for (const r of (steg.Roller || [])) {
             try {
-                antall += (await rollerStorage.hentInnehavere(r)).length;
+                const n = (await rollerStorage.hentInnehavere(r)).length;
+                perRolle.push({ rolle: r, antall: n });
+                antall += n;
             } catch (e) {
                 // Oppslagsfeil skal ikke se ut som «ingen behandler» — da ville
-                // vi lagt på reserverollen på feil grunnlag.
+                // vi lagt på reserverollen på feil grunnlag. Av samme grunn
+                // skal den heller ikke se ut som en TOM rolle: da ville vi
+                // meldt et hull som kanskje ikke finnes.
                 log(`dynamisk-rolle: oppslag av "${r}" feilet — ${e.message}`);
+                perRolle.push({ rolle: r, antall: null, feil: e.message });
                 antall++;
             }
         }
+
+        // `antall === 0` og ikke `!p.antall`: et feilet oppslag har `null`, og
+        // vi vet ikke om den rollen er tom. Den holdes utenfor `tomme` — men
+        // den stopper ikke meldingen om de ANDRE.
+        //
+        // Første utgave undertrykte hele meldingen når ett oppslag feilet.
+        // Det kastet bort det vi faktisk visste: feilet oppslaget for CU2 mens
+        // CU3 svarte 0, er CU3 tom uansett hva CU2 er. Og undertrykkingen
+        // gjorde `antall: null` umulig å observere — en vakt ingen test kan
+        // skille fra ingenting.
+        const tomme = perRolle.filter(p => p.antall === 0).map(p => p.rolle);
+
+        // Delvis dekket: noen har behandler, minst én rolle er sikkert tom.
+        if (antall > 0 && tomme.length > 0) {
+            delvis.push({
+                steg: steg.Steg,
+                roller: [...(steg.Roller || [])],
+                tomme,
+                perRolle,
+                mal: [...(steg.RollerMal || [])]
+            });
+        }
+
+        // Reserverollen — uendrede vilkår.
+        if (Number(steg.Beslutning || 0) !== 0) continue;
+        if ((steg.Personer || []).length > 0 || (steg.Team || []).length > 0) continue;
         if (antall > 0) continue;
 
         const reserve = String(steg.Reserverolle || '').trim();
@@ -186,11 +237,12 @@ async function sikreBehandler(skjema, log = () => {}) {
         mangler.push({
             steg: steg.Steg,
             roller: [...(steg.Roller || [])],
+            perRolle,
             reserverolle: reserve,
             dekket: !!reserve
         });
     }
-    return mangler;
+    return { mangler, delvis };
 }
 
 module.exports = {

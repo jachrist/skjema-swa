@@ -932,7 +932,23 @@ app.http('lagreSkjema', {
             // så steg som uansett ikke skal kjøre ikke gir falsk alarm.
             if (erInnsending && Array.isArray(skjemaData.Behandling)) {
                 try {
-                    const mangler = await dynamiskRolle.sikreBehandler(skjemaData, (m) => context.log(m));
+                    const { mangler, delvis } = await dynamiskRolle.sikreBehandler(skjemaData, (m) => context.log(m));
+                    // Delvis dekket: steget HAR en behandler, men en eller
+                    // flere av de ekspanderte rollene er tomme. Velger
+                    // innsenderen tre emner og bare ett har en emneansvarlig,
+                    // får to av emnene ingen behandling — og uten denne
+                    // linja er det ingenting å finne når noen spør hvorfor.
+                    for (const d of delvis) {
+                        context.log(`dynamisk-rolle: steg ${d.steg} er bare delvis dekket — ` +
+                            `uten innehavere: ${d.tomme.join(', ')}`);
+                        hendelser.logg({
+                            Type: 'behandling.rolle-uten-innehavere', Aktor: innsenderId,
+                            ObjektType: 'skjema', ObjektId: skjemaId,
+                            Melding: `Steg ${d.steg}: ${d.tomme.length} av ${d.roller.length} roller ` +
+                                `har ingen innehavere (${d.tomme.join(', ')})`,
+                            Detaljer: d
+                        });
+                    }
                     for (const m of mangler) {
                         context.log(`dynamisk-rolle: steg ${m.steg} har ingen innehavere (${m.roller.join(', ')})` +
                             (m.dekket ? ` — reserverolle "${m.reserverolle}" lagt til` : ' — INGEN reserverolle satt'));
