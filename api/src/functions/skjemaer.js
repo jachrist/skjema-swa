@@ -159,6 +159,18 @@ app.http('lagreBeslutning', {
             const stegObj = (skjema.Behandling || []).find(s => Number(s.Steg) === stegNr);
             if (!stegObj) return { status: 404, jsonBody: { status: 'feil', melding: 'Behandlingssteg ikke funnet' } };
 
+            // HVILKE STEG VAR AKTIVE FØR beslutningen. Må leses her, før noe
+            // er endret — etterpå er svaret et annet, og det er nettopp
+            // forskjellen varslingen skal bygge på.
+            //
+            // 26.10.2026: et steg med «alle må avgjøre» og to behandlere sendte
+            // «Skjema til behandling» på nytt til BEGGE hver gang én av dem
+            // avga sin beslutning — også til den som nettopp hadde avgjort.
+            // Steget er fortsatt aktivt til begge har levert, og varslingen
+            // gikk på «aktive steg» uten å spørre om de var aktive fra før.
+            const aktiveFor = new Set(
+                beregnAktiveSteg(skjema).map(s => String(s.Steg)));
+
             // Flow-callback får kun fullføre steg som faktisk har Flyt_url — så nøkkelen
             // ikke kan misbrukes til å avgjøre menneske-behandlede steg.
             if (erFlowCallback) {
@@ -320,7 +332,15 @@ app.http('lagreBeslutning', {
             // Varsling (fire-and-forget) — kalles etter lagring
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             const skjematype = st?.JSON || {};
-            const nyeAktive = beregnAktiveSteg(skjemaKlartekst);
+            // Bare steg som BLE aktive av denne beslutningen. Et steg som var
+            // aktivt fra før har allerede fått sitt varsel; å sende det på
+            // nytt er enten støy eller — for den som nettopp avgjorde — en
+            // beskjed om å gjøre noe hen allerede har gjort.
+            //
+            // Påminnelser til dem som ennå ikke har svart er en annen sak, og
+            // har sin egen jobb (purre-utsendinger).
+            const nyeAktive = beregnAktiveSteg(skjemaKlartekst)
+                .filter(s => !aktiveFor.has(String(s.Steg)));
             const alleFerdig = alleStegFerdig(skjemaKlartekst);
             const beslutningTekst = valgtValg?.Tekst || '';
             const varslOpts = { log: (m) => context.log(m), request };
