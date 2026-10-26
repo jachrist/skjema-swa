@@ -274,39 +274,50 @@ jobs:
       # gjeldende. /api/ping og /js/config.js bærer commit-SHA-en de kjører.»
       # Dette steget håndhever den i stedet for å be noen huske den.
       #
-      # Kjøres ikke for preview: der er vertsnavnet et annet, og det utledes
-      # ikke pålitelig (se steget over).
+      # ADRESSEN KOMMER FRA DEPLOY-STEGET SELV, ikke fra en variabel.
+      #
+      # Fram til 26.10.2026 sto den i `vars.SWA_URL`, og den peker på PILOT.
+      # Kjøring #49 (22.10.2026) rullet ut til prod-SWA-en
+      # (`kind-mud-…`, som deploy-steget returnerte) og verifiserte mot
+      # `ashy-meadow-…`, som er pilot. Den ble grønn bare fordi den
+      # automatiske pilot-deployen fortsatt sto på den formiddagen, så pilot
+      # bar samme commit.
+      #
+      # To utslag, og det ene er nøyaktig feilen steget finnes for å fange:
+      #   - Den automatiske pilot-deployen er borte siden #173. Da vil en
+      #     prod-deploy sjekke en pilot som ligger på en ANNEN commit, og
+      #     feile etter tre minutter. Falsk rød.
+      #   - Deployes pilot først og så prod fra samme commit, blir
+      #     prod-kjøringen GRØNN uten at prod er sjekket i det hele tatt.
+      #
+      # `static_web_app_url` er den eneste kilden som vet hvor opplastingen
+      # faktisk havnet: den følger TOKENET, ikke miljønavnet. Det er avgjørende
+      # her, for `miljo` har to verdier mens prod har to SWA-er (v2 og v3) som
+      # velges med `swa_token_secret`. En variabel per miljø kan ikke være
+      # riktig for begge; deploy-stegets eget svar er det alltid.
+      #
+      # Derfor er det ingen reserveløsning her. En reserve som kan peke på en
+      # annen SWA er nettopp det som ga det grønne svaret over.
       - name: Verifiser at deployen faktisk landet
         env:
-          MILJO_URL: ${{ vars.SWA_URL }}
-          PREVIEW_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
+          DEPLOYET_URL: ${{ steps.builddeploy.outputs.static_web_app_url }}
           PREVIEW: ${{ inputs.preview }}
           MILJO: ${{ inputs.miljo }}
           FORVENTET: ${{ github.sha }}
         run: |
-          # Miljøets egen adresse og previewens ligger hver for seg. Miljøets
-          # står i vars.SWA_URL (den er miljøscopet, så pilot og prod har
-          # hver sin); previewens kommer ut av deploy-steget, og den lar seg
-          # ikke utlede (se «Vis URL» over).
-          #
           # HVA sto før fast på «prod». Etter sammenslåingen meldte en
           # PILOT-deploy «Deploy verifisert: prod kjører <sha>» — kjøring #50
-          # (22.10.2026). Sjekken var riktig og traff pilot; det var bare
-          # navnet som var feil. Det er den dyreste sorten: et sammendrag
-          # ingen har grunn til å mistro, som sier at prod er oppdatert når
-          # prod ikke er rørt.
+          # (22.10.2026). Merkelappen må følge målet, ellers sier sammendraget
+          # at prod er oppdatert når prod ikke er rørt.
           STOR="$(echo "$MILJO" | tr '[:lower:]' '[:upper:]')"
           if [ -n "$PREVIEW" ]; then
-            MAAL="$PREVIEW_URL"
             HVA="preview «$PREVIEW» i $STOR"
           else
-            MAAL="$MILJO_URL"
             HVA="$STOR"
           fi
-          # vars.SWA_URL har skråstrek bakerst i minst ett miljø, og da ble
-          # adressen «…net//api/ping». Det gikk, men en adresse i en logg
-          # skal kunne limes rett inn.
-          MAAL="${MAAL%/}"
+          # Skråstrek bakerst ga «…net//api/ping». Det gikk, men en adresse i
+          # en logg skal kunne limes rett inn.
+          MAAL="${DEPLOYET_URL%/}"
           KORT="${FORVENTET:0:7}"
 
           if [ -z "$MAAL" ] && [ -n "$PREVIEW" ]; then
@@ -320,7 +331,7 @@ jobs:
           fi
 
           if [ -z "$MAAL" ]; then
-            echo "::error::vars.SWA_URL er ikke satt for miljøet «$MILJO». Uten den kan ikke deployen verifiseres, og en stille mislykket deploy er nettopp det dette steget finnes for. Sett den under Settings → Environments → $MILJO → Variables."
+            echo "::error::Deploy-steget returnerte ingen URL, så det er ingenting å verifisere mot. Opplastingen kan ha gått bra — men det er ikke det samme som at den landet, og en stille mislykket deploy er nettopp det dette steget finnes for. Finn adressen i loggen for «Build And Deploy» («Visit your site at:») og åpne <adresse>/api/ping: den skal melde commit $KORT."
             exit 1
           fi
           echo "Forventer commit $KORT på $MAAL/api/ping"
