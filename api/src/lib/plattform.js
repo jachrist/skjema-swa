@@ -109,6 +109,34 @@ function miljonavn() {
 const KJORER_TIMERE = new Set(['dev', 'prod']);
 
 /**
+ * Miljøer der verten FULLFØRER INVOKASJONEN når handleren returnerer.
+ *
+ * Altså: der «start jobben, svar 202, la den gå» ikke er en vei. Microsoft
+ * sier det rett ut om Functions: «the Functions runtime does not track
+ * threads or tasks your code starts … they must complete before your
+ * function code returns», og en tidlig retur bokføres som vellykket uansett
+ * hva som skjedde etterpå.
+ *
+ * SWA Managed Functions holder en langlivet vert, og der HAR fire-and-forget
+ * virket. Det er grunnen til at mønsteret ble skrevet i det hele tatt — og
+ * grunnen til at det så ut til å virke helt til v3.
+ *
+ * Utslaget i prod v3 27.10.2026: fire av ni jobber svarte 202 «startet» og
+ * gjorde ingenting. De fem som allerede `await`-et, virket.
+ *
+ * SAMME INNHOLD SOM `KJORER_TIMERE` I DAG, og likevel en egen liste: de
+ * svarer på to ulike spørsmål. «Kan jeg registrere en timer her» og «dør
+ * bakgrunnsarbeid her» er ikke samme spørsmål, og den dagen de skiller lag
+ * skal ikke den ene ha dratt den andre med seg.
+ */
+const FULLFOERER_VED_RETUR = new Set(['dev', 'prod']);
+
+/** Må vi vente på jobben, eller kan den gå i bakgrunnen? */
+function maaVentePaaBakgrunnsarbeid() {
+    return gjelderHer(FULLFOERER_VED_RETUR);
+}
+
+/**
  * Gjelder en evne-liste for miljøet vi står i?
  *
  * Egen funksjon av én grunn: **aliaset må normaliseres FØR oppslaget.**
@@ -133,5 +161,6 @@ function stotterTimere() {
 
 module.exports = {
     MILJO_ALIAS, KJENTE_MILJOER, miljonavn, gjelderHer,
-    LØSER_KEYVAULT_REFERANSER, KJORER_TIMERE, stotterTimere
+    LØSER_KEYVAULT_REFERANSER, KJORER_TIMERE, stotterTimere,
+    FULLFOERER_VED_RETUR, maaVentePaaBakgrunnsarbeid
 };

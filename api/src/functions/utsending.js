@@ -390,9 +390,9 @@ app.http('utsendingValider', {
  * Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
  *
  * Går gjennom alle ubesvarte utsendinger som ikke ble purret nylig, kaller
- * flyten med batch av mottakere, og markerer hver som purret. Fire-and-forget
- * — feiler ikke om PA er nede, og markerer likevel, så vi ikke purrer på nytt
- * dagen etter.
+ * flyten med batch av mottakere, og markerer hver som purret. Ruta VENTER på
+ * jobben (den har alltid gjort det), men en feil i PA feiler den ikke:
+ * mottakerne markeres likevel, så vi ikke purrer på nytt dagen etter.
  *
  * Body (valgfritt):
  *   { batchId?: "...",      // hvis satt: purr KUN denne batchen (manuell trigger)

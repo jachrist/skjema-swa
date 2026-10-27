@@ -20,7 +20,7 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { jobbOversikt, lesStatusrad } = require('../lib/jobber');
-const { miljonavn } = require('../lib/plattform');
+const { miljonavn, maaVentePaaBakgrunnsarbeid } = require('../lib/plattform');
 
 app.http('jobberListe', {
     methods: ['GET'],
@@ -50,6 +50,12 @@ app.http('jobberListe', {
         return {
             jsonBody: {
                 miljø: miljonavn() || 'ukjent',
+                // Om «Kjør nå» venter på jobben eller svarer 202 med én gang.
+                // Panelet skal IKKE utlede dette av miljønavnet: regelen bor i
+                // lib/plattform.js, og en kopi her ville svart feil den dagen
+                // lista endres. Den som trykker må vite at et tidsavbrudd i
+                // nettleseren ikke betyr at jobben stoppet.
+                venterPaaJobb: maaVentePaaBakgrunnsarbeid(),
                 // Hvorfor triggeren er som den er. Står det «timer» uten
                 // dette, er det ikke mulig å se om pilot mangler en timer ved
                 // en feil eller fordi plattformen der ikke har dem.

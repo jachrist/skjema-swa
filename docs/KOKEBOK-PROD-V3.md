@@ -1886,11 +1886,19 @@ Kjør så workflowen **Deploy API til Function App** med
 | 5 | **Administrasjon → ⏱ Jobber** | Ni timere, alle med `registrert: …` |
 | 6 | **Skjematyper → 📥 Importer definisjoner** | Last inn pakken fra v2. Les forhåndsvisningen |
 | 7 | Send inn et testskjema | Skrives til `stskjema3prod` |
-| 8 | **Jobber → Kjør nå** på oppslagslister | Statusraden går til `ok` |
+| 8 | **Jobber → Kjør nå** på oppslagslister | Panelet svarer «✓ Ferdig», og statusraden går til `ok` |
 
 > Punkt 1 sparer mest tid senere: `/api/ping` og `/js/config.js` bærer hver sin
 > SHA. Avvik mellom dem betyr en halv deploy — og symptomet er en funksjon som
 > «mangler», ikke en feilmelding.
+
+> **Punkt 8 er valgt med vilje: oppslagslister er en RASK jobb.** På en Function
+> App venter verten på invokasjonen, så «Kjør nå» venter nå på jobben og svarer
+> «✓ Ferdig» når den er ferdig. For postnumre (30–90 s), FS-data (2–4 min) og
+> backup rekker gatewayen å gi opp først — panelet sier da «Ingen svar … jobben
+> kan likevel ha kjørt», og det er riktig: verten venter fortsatt, jobben
+> fullfører og bokfører seg selv. Trykk **Oppdater** og les statusraden, ikke
+> svaret på knappen.
 
 ---
 
@@ -2124,6 +2132,7 @@ v2 er borte.
 | `Failed to fetch Kudu App Settings. Unauthorized (CODE: 401)` med publiseringsprofil | **To ting:** basic auth på SCM er av, ELLER profilen ble hentet FØR den ble slått på. Den andre ser ut som at bryteren ikke hjalp — samme 401 etterpå. Profilen må hentes på nytt. Prøv den ferske mot `/api/settings` fra Cloud Shell: 200 betyr at det er den i GitHub som er gammel | 8.1 |
 | `Operation returned an invalid status 'Not Found'` på `basicPublishingCredentialsPolicies` | **To ting:** Function App-en finnes ikke, ELLER `--api-version` mangler og `az` gjettet en versjon som ikke kjenner underressurstypen | 8.1 |
 | «Vi må bestille en app-registrering for å deploye API-et» | **Ikke nødvendigvis.** `Azure/functions-action` tar en publiseringsprofil og trenger da ingen Entra-identitet. Hele kapittel 8.2 — og ventetiden på `Application Administrator` — faller bort når basic publishing er påslått. Sjekk det FØR du bestiller | 8.1 |
+| `202 startet` på en jobb som står på «aldri kjørt» | **Fire-and-forget dør på en Function App.** Verten fullfører invokasjonen ved retur, og dreper det ingen ventet på — jobben rakk ikke engang sin første statusskriving. «Aldri kjørt» var det ene svaret som var sant. Fem ruter og tre varslingssteder gjorde det samme; de går nå gjennom `lib/bakgrunn.js`, som venter der plattformen krever det | 9 |
 | `Unexpected input(s) 'deployment_environment'` | **Advarselen peker feil vei:** `@v1` løses til taggen, og dens `action.yml` erklærer bare 11 inputs. Men det er en docker-action — løperen eksporterer `with:`-nøklene som `INPUT_*` uansett, og beholderen leser den. Preview VIRKER. Konsekvensen er at en SKRIVEFEIL i navnet ville vært like stille | `deploy-prod.yml` |
 
 ### Krav uten et trinn

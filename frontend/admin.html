@@ -2681,7 +2681,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
         // «Kjør nå» går mot jobbens egen HTTP-rute — den samme GitHub Actions
         // kaller. Ingen egen admin-vei inn til jobben, så det som prøves her
         // er det som faktisk kjører om natta.
-        let jobberState = { jobber: [] };
+        let jobberState = { jobber: [], venterPaaJobb: false };
 
         /** Hva som trigger jobben her. Teksten skal navngi hvem som eier planen. */
         function jobbTriggerTekst(j) {
@@ -2862,6 +2862,10 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
             try {
                 const d = await api.get('/api/jobber');
                 jobberState.jobber = d.jobber || [];
+                // Alltid satt til en boolean. `undefined` fra et gammelt API
+                // skal lese som «venter ikke» — det var oppførselen før
+                // feltet fanst — og ikke bli en tredje tilstand i meldingene.
+                jobberState.venterPaaJobb = d.venterPaaJobb === true;
                 document.getElementById('jobber-merknad').textContent =
                     `Miljø: ${d.miljø || 'ukjent'}. ${d.merknad || ''}`;
                 if (jobberState.jobber.length === 0) {
@@ -2883,15 +2887,36 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
             const j = jobberState.jobber.find(x => x.id === id);
             const m = document.getElementById('jobber-melding');
             if (!j) { m.innerHTML = '<div class="banner feil">Fant ikke jobben. Trykk Oppdater.</div>'; return; }
-            if (!confirm(`Kjøre «${j.navn}» nå? Jobben kjører asynkront.`)) return;
-            m.innerHTML = '<div class="banner info">Starter jobben…</div>';
+            // To helt ulike ventetider, og den som trykker må vite hvilken.
+            // Venter ruta på jobben, kommer svaret først når jobben er ferdig
+            // — og gatewayen kan gi opp lenge før det, uten at jobben stopper.
+            // Et tidsavbrudd lest som «jobben feilet» sender feilsøkingen i
+            // gal retning. Svaret på hvilken vei dette miljøet går, kommer fra
+            // /api/jobber, ikke av en regel gjentatt her.
+            const venter = jobberState.venterPaaJobb === true;
+            if (!confirm(venter
+                ? `Kjøre «${j.navn}» nå? Svaret kommer først når jobben er ferdig `
+                    + '— det kan ta flere minutter.'
+                : `Kjøre «${j.navn}» nå? Jobben kjører asynkront.`)) return;
+            m.innerHTML = venter
+                ? '<div class="banner info">Jobben kjører… Svaret kommer når den er ferdig. '
+                    + 'Får nettleseren tidsavbrudd, stopper ikke jobben av det — trykk Oppdater.</div>'
+                : '<div class="banner info">Starter jobben…</div>';
             try {
                 const res = await api.post(`/api/${j.rute}`, {});
-                m.innerHTML = `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. `
-                    + 'Trykk Oppdater om et par minutter for å se utfallet.</div>';
+                // «ferdig» betyr at jobben kjørte ferdig, «startet» at den er i
+                // gang. Ett ord fra API-et, ikke en gjetning her.
+                m.innerHTML = res.status === 'ferdig'
+                    ? `<div class="banner suksess">✓ Ferdig. ${escHtml(res.melding || '')}</div>`
+                    : `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. `
+                        + 'Trykk Oppdater om et par minutter for å se utfallet.</div>';
                 setTimeout(jobberLast, 3000);
             } catch (e) {
-                m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
+                // Ventet vi, er tidsavbrudd det forventede utfallet for en lang
+                // jobb — og det sier ingenting om hvordan jobben gikk.
+                m.innerHTML = `<div class="banner ${venter ? 'advarsel' : 'feil'}">`
+                    + `${venter ? 'Ingen svar: ' : 'Feil: '}${escHtml(e.message)}`
+                    + `${venter ? ' — jobben kan likevel ha kjørt. Trykk Oppdater.' : ''}</div>`;
             }
         };
 

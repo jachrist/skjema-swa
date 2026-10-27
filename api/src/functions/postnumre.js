@@ -10,6 +10,7 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const postnumreStorage = require('../lib/postnumre-storage');
 const { stotterTimere } = require('../lib/plattform');
 const { jobbForId, jobbSchedule, lesStatusrad, meldTimer } = require('../lib/jobber');
+const { startBakgrunnsjobb, jobbSvar } = require('../lib/bakgrunn');
 
 app.http('postnumreSok', {
     methods: ['GET'],
@@ -63,7 +64,9 @@ const EKSEMPEL_POSTNUMRE = [
  * POST /api/postnumre/refresh-bring
  * Auth: x-scheduler-key (SCHEDULER_KEY) eller admin.
  * Henter Bring sitt postnummerregister og importerer med erstattAlt=true.
- * Fire-and-forget — status leses via GET /api/postnumre/status.
+ * Svarer 202 «startet» der plattformen holder bakgrunnsarbeid i live, og
+ * 200 «ferdig» der den ikke gjør det — se lib/bakgrunn.js. Status leses
+ * uansett via GET /api/postnumre/status.
  */
 app.http('postnumreRefreshBring', {
     methods: ['POST'],
@@ -83,15 +86,20 @@ app.http('postnumreRefreshBring', {
         const startTid = new Date().toISOString();
         const jobbLog = (...a) => context.log(...a);
 
-        // Fire-and-forget: SWA-proxyen har ~45 s response timeout, og jobben
-        // tar 30-90 s. Vi svarer 202 og lar hosten holde prosessen i live.
-        // Bokføringen skjer inne i jobben — se lib/postnummer-jobb.js.
-        kjorBringOppdatering({ kilde, log: jobbLog });
+        // Fire-and-forget BARE der plattformen holder prosessen i live. Valget
+        // står i lib/plattform.js og tas i lib/bakgrunn.js — ikke her. Se
+        // kommentaren der for hvorfor 202 uten await ga «aldri kjørt» i
+        // prod v3. Bokføringen skjer inne i jobben, se lib/postnummer-jobb.js.
+        const utfall = await startBakgrunnsjobb(
+            () => kjorBringOppdatering({ kilde, log: jobbLog }),
+            { log: jobbLog, navn: 'postnumre/refresh-bring' }
+        );
 
-        return {
-            status: 202,
-            jsonBody: { status: 'startet', startet: startTid, melding: 'Jobben kjører asynkront (30-90 s). Sjekk /api/postnumre/status.' }
-        };
+        return jobbSvar(utfall, {
+            startet: startTid,
+            asynkronMelding: 'Jobben kjører asynkront (30-90 s). Sjekk /api/postnumre/status.',
+            ferdigMelding: 'Jobben kjørte ferdig. Sjekk /api/postnumre/status for tallene.'
+        });
     }
 });
 
