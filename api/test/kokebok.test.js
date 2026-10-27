@@ -975,21 +975,33 @@ const BASHISMER = [
     const wf = fs.readFileSync(
         path.join(rot, '.github', 'workflows', 'deploy-funcapp-pilot.yml'), 'utf8');
 
-    const m = /creds:\s*\$\{\{\s*secrets\.(\w+)\s*\}\}/.exec(wf);
-    sjekk('fant secret-navnet i workflowen', !!m, true);
+    // TO VEIER siden 27.10.2026: publiseringsprofil eller tjenestehovedobjekt.
+    // Begge hemmelighetene leses av workflowen, og begge settes i kapittel 8
+    // — så det holder ikke å sammenligne den FØRSTE i hver. Settene må være
+    // like, ellers kan den ene veien ha et navn kokeboka aldri setter.
+    const iWf = [...wf.matchAll(/secrets\.(AZURE_FUNCAPP_\w+)/g)].map(x => x[1]);
+    sjekk('fant secret-navnene i workflowen', iWf.length >= 1, true);
 
-    // Leses den i et miljø, må kokeboka sette den DER.
+    // Leses de i et miljø, må kokeboka sette dem DER.
     const iMiljo = /^\s*environment:\s*\$\{\{\s*inputs\.miljo/m.test(wf);
     sjekk('workflowen kjører i et GitHub-miljø', iMiljo, true);
 
-    const satt = /gh secret set (\S+)([^\n]*)/.exec(tekst.slice(tekst.indexOf('## 8. Deploy av API-et')));
-    sjekk('kokeboka setter en secret i kapittel 8', !!satt, true);
-    if (m && satt) {
-        sjekk('og navnet er det workflowen leser', satt[1], m[1]);
-        if (iMiljo) {
-            sjekk('og den settes i miljøet, ikke på repoet',
-                /--env\s+prod/.test(satt[2]), true);
-        }
+    // Bare KODEBLOKKENE, ikke prosaen. Kapittel 8 forklarer en felle med
+    // linja «`gh secret set --body $creds` svarer `flag needs an argument`»,
+    // og en skanning av hele teksten leste den som en kommando som setter en
+    // secret ved navn «--body». Samme lærdom som ellers i dette repoet: en
+    // test som leter etter en kommando i prosa svarer på feil spørsmål.
+    const kapittel8 = tekst.slice(tekst.indexOf('## 8. Deploy av API-et'));
+    const blokker8 = [...kapittel8.matchAll(/```[a-z]*\n([\s\S]*?)```/g)].map(x => x[1]).join('\n');
+    const satte = [...blokker8.matchAll(/gh secret set (\S+)([^\n]*)/g)];
+    sjekk('kokeboka setter minst én secret i kapittel 8', satte.length >= 1, true);
+
+    sjekk('og navnene er nøyaktig dem workflowen leser',
+        [...new Set(satte.map(x => x[1]))].sort(), [...new Set(iWf)].sort());
+
+    if (iMiljo) {
+        sjekk('og alle settes i miljøet, ikke på repoet',
+            satte.filter(x => !/--env\s+prod/.test(x[2])).map(x => x[1]), []);
     }
 
     // Flagget til create-for-rbac står to steder, og de skal være enige.
