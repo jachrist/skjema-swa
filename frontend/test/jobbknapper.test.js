@@ -129,8 +129,43 @@ async function kastet(fn) {
         sjekk('ferdig sier ferdig', /✓ Ferdig/.test(h4(f, '')), true);
         sjekk('startet sier startet',
             /✓ Startet 12:00/.test(h4({ svar: { status: 'startet', startet: '12:00' }, utenSvar: false }, '')), true);
+        sjekk('startet uten tid gir ingen tom plass',
+            h4({ svar: { status: 'startet' }, utenSvar: false }, 'X').includes('Startet .'), false);
+
+        // De synkrone jobbene svarer «ok» — oppslagslistene i v3-prod
+        // 27.10.2026 ble meldt «✓ Startet .» etter en kjøring på 0 s.
+        const okHtml = h4({ svar: { status: 'ok', resultater: [] }, utenSvar: false }, '');
+        sjekk('ok er ferdig', /✓ Ferdig/.test(okHtml), true);
+        sjekk('og ikke startet', /Startet/.test(okHtml), false);
+        const delvis = h4({ svar: { status: 'delvis' }, utenSvar: false }, '');
+        sjekk('delvis er en advarsel', /banner advarsel/.test(delvis) && /delvis/.test(delvis), true);
+        sjekk('og ikke startet', /Startet/.test(delvis), false);
+        sjekk('ukjent status er ikke startet',
+            /Startet/.test(h4({ svar: {}, utenSvar: false }, '')), false);
         sjekk('ingenting havner uescapet',
             h4({ svar: { status: 'ferdig', melding: '<img>' }, utenSvar: false }, '').includes('<img>'), false);
+    }
+
+    // ---------- 2b. «startet» kommer bare fra jobbSvar ----------
+    {
+        // Panelet leser «startet» som «går i bakgrunnen» og alt annet som
+        // ferdig. Det holder bare så lenge ingen annen rute svarer «startet»
+        // på en jobb som har kjørt ferdig. Leses i hele api/src.
+        const { hoppOverMappe } = require('../../scripts/test-kilde.js');
+        const funn = [];
+        const gaa = (mappe) => {
+            for (const f of fs.readdirSync(mappe, { withFileTypes: true })) {
+                const sti = path.join(mappe, f.name);
+                // Regelen for genererte mapper gjelder alle vandringer, også
+                // denne — se dokumentasjon.test.js.
+                if (f.isDirectory()) { if (!hoppOverMappe(f.name)) gaa(sti); }
+                else if (f.name.endsWith('.js') && /status:\s*'startet'/.test(fs.readFileSync(sti, 'utf8'))) {
+                    funn.push(path.relative(rot, sti));
+                }
+            }
+        };
+        gaa(path.join(rot, 'api', 'src'));
+        sjekk('«startet» svares bare av lib/bakgrunn.js', funn, [path.join('api', 'src', 'lib', 'bakgrunn.js')]);
     }
 
     // ---------- 3. hver jobbrute går gjennom startJobb ----------

@@ -412,13 +412,26 @@
                     + 'Det betyr ikke at jobben feilet — den kan ha gått ferdig. '
                     + `${escHtml(hvorStatus)}</div>`;
             }
-            // «ferdig» betyr at jobben kjørte ferdig, «startet» at den er i
-            // gang. Ett ord fra API-et, ikke en gjetning her.
-            if (svar && svar.status === 'ferdig') {
-                return `<div class="banner suksess">✓ Ferdig. ${escHtml(svar.melding || '')}</div>`;
+            // BARE «startet» betyr at jobben går i bakgrunnen — det er ordet
+            // jobbSvar() i api/src/lib/bakgrunn.js gir et 202, og ingen andre
+            // ruter bruker det. Alt annet er et svar på en jobb som HAR kjørt.
+            //
+            // Til 27.10.2026 var det omvendt: bare «ferdig» var ferdig, og alt
+            // annet ble «Startet .». Men de synkrone jobbene (oppslagslister,
+            // team-synk, nøkkelkalender, utsendinger) svarer «ok» eller
+            // «delvis», så en jobb på 0 s ble meldt som startet — med tom tid.
+            const status = svar && svar.status;
+            if (status === 'startet') {
+                const tid = svar.startet ? ` ${escHtml(svar.startet)}` : '';
+                return `<div class="banner suksess">✓ Startet${tid}. ${escHtml(hvorStatus)}</div>`;
             }
-            return `<div class="banner suksess">✓ Startet ${escHtml((svar && svar.startet) || '')}. `
-                + `${escHtml(hvorStatus)}</div>`;
+            const melding = svar && svar.melding ? ` ${escHtml(svar.melding)}` : '';
+            if (status === 'ferdig' || status === 'ok') {
+                return `<div class="banner suksess">✓ Ferdig.${melding}</div>`;
+            }
+            // «delvis», eller noe vi ikke kjenner: jobben kjørte, men ikke rent.
+            return `<div class="banner advarsel">Ferdig med status «${escHtml(status || 'ukjent')}».`
+                + `${melding} Se statusraden.</div>`;
         }
 
         async function init() {
