@@ -86,9 +86,27 @@ function miljonavn() {
  * HTTP-rutene borte også. Registreringen er altså ikke noe som skal
  * forsøkes og feile pent.
  *
- * Lista utvides i steg 6, sammen med LØSER_KEYVAULT_REFERANSER.
+ * **Prod kom til 27.10.2026**, da prod v3 ble en frittstående Function App.
+ * Det var ikke en opprydding — det var nødvendig: HTTP-veien de åtte
+ * cron-jobbene bruker er FIRE-AND-FORGET, og den virket bare fordi SWA
+ * Managed Functions holder en langlivet vert. På en Function App fullfører
+ * verten invokasjonen når handleren returnerer, og Microsoft er eksplisitt:
+ * «the Functions runtime does not track threads or tasks your code starts …
+ * they must complete before your function code returns».
+ *
+ * Utslaget i prod v3: alle ni jobbene sto på «aldri kjørt». Ruta svarte 202
+ * «startet», og jobben rakk ikke engang sin første statusskriving — den som
+ * står FØR alt arbeid, nettopp for at «startet, men feilet» skal kunne
+ * skilles fra «startet aldri».
+ *
+ * En timer-invokasjon venter verten derimot på. Det er hele grunnen til at
+ * timerne finnes.
+ *
+ * PILOT STÅR IGJEN, og skal det: den kjører fortsatt på SWA Managed
+ * Functions, der en timer-registrering kan velte oppstarten. Lista tømmes
+ * for miljøer først når alle kjører på Function Apps.
  */
-const KJORER_TIMERE = new Set(['dev']);
+const KJORER_TIMERE = new Set(['dev', 'prod']);
 
 /**
  * Gjelder en evne-liste for miljøet vi står i?

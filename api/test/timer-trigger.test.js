@@ -63,12 +63,19 @@ const plattform = require('../src/lib/plattform');
         }
     };
     sjekk('dev kjører timere', med('dev'), true);
+    // Prod kom til 27.10.2026, da prod v3 ble en frittstående Function App.
+    // HTTP-veien er fire-and-forget og virket bare på SWA Managed Functions;
+    // på en Function App fullfører verten invokasjonen når handleren
+    // returnerer, og alle ni jobbene sto på «aldri kjørt».
+    sjekk('prod kjører timere', med('prod'), true);
+    // PILOT SKAL IKKE. Den kjører fortsatt på SWA Managed Functions, der en
+    // timer-registrering kan velte oppstarten for hele appen.
     sjekk('pilot gjør ikke', med('pilot'), false);
     // `production` er pilotens gamle navn, og må normaliseres FØR oppslaget.
-    // Gjør den ikke det, svarer vakten «nei» av feil grunn i dag — og «ja» av
-    // feil grunn den dagen pilot legges inn i lista.
-    sjekk('production er pilot, ikke et ukjent miljø', med('production'), false);
-    sjekk('prod gjør ikke', med('prod'), false);
+    // DETTE ER IKKE LENGER EN TEORETISK SJEKK: lista inneholder nå `prod`, og
+    // «production» ligner nok til at en manglende normalisering ville gitt
+    // pilot timere — altså nettopp den registreringen som kan ta ned appen.
+    sjekk('production er pilot, ikke prod', med('production'), false);
     sjekk('lokal gjør ikke', med('lokal'), false);
     sjekk('ukjent miljø gjør ikke', med('staging'), false);
     sjekk('usatt gjør ikke', med(undefined), false);
@@ -85,6 +92,25 @@ const plattform = require('../src/lib/plattform');
             else process.env.MILJO = foer;
         }
     };
+    // EN ALIAS I SELVE EVNELISTA ER EN STILLE NO-OP.
+    //
+    // `miljonavn()` normaliserer FØR oppslaget, så `KJORER_TIMERE` som
+    // inneholder 'production' aldri kan treffe: navnet er allerede blitt
+    // 'pilot'. Oppdaget ved mutasjonstesting 27.10.2026 — mutasjonen som la
+    // 'production' inn i lista endret ingenting, og ingen test kunne se
+    // forskjell på den og originalen.
+    //
+    // Det er ikke en teoretisk pirk: den som vil gi pilot timere i steg 6 og
+    // skriver 'production' fordi det er det MILJO er satt til, får en liste
+    // som ser riktig ut og ikke gjør noe.
+    for (const [navn, sett] of [
+        ['KJORER_TIMERE', plattform.KJORER_TIMERE],
+        ['LØSER_KEYVAULT_REFERANSER', plattform.LØSER_KEYVAULT_REFERANSER]
+    ]) {
+        const aliaser = [...sett].filter(m => m in plattform.MILJO_ALIAS);
+        sjekk(`${navn} inneholder ingen alias — de ville aldri truffet`, aliaser, []);
+    }
+
     sjekk('production treffer en liste med pilot i',
         medSett('production', new Set(['pilot'])), true);
     sjekk('og treffer ikke en liste med production i',
@@ -183,11 +209,25 @@ const lastAlle = (miljo) => {
     const forventede = JOBBER.map(j => jobbSchedule(j).schedule).sort();
     sjekk('de registrerte schedulene er registerets', registrerte, forventede);
 
-    for (const miljo of ['production', 'prod', 'staging']) {
+    // `production` er pilotens gamle navn og skal IKKE få timere, selv om
+    // lista nå inneholder `prod`. De to ligner nok til at en manglende
+    // normalisering ville gitt pilot nettopp den registreringen som kan ta
+    // ned appen — derfor står den fremst her.
+    for (const miljo of ['production', 'staging']) {
         const m = lastAlle(miljo);
         sjekk(`${miljo} registrerer INGEN timer`, m.timere.length, 0);
         // Og rutene er uberørt — vakten skal ikke ha slått ut noe annet.
         sjekk(`${miljo} har like mange ruter som dev`, m.ruter.length, dev.ruter.length);
+    }
+
+    // Prod registrerer de samme timerne som dev — det er hele poenget med
+    // endringen 27.10.2026.
+    {
+        const m = lastAlle('prod');
+        sjekk('prod registrerer like mange timere som dev', m.timere.length, dev.timere.length);
+        sjekk('og rutene er uberørt', m.ruter.length, dev.ruter.length);
+        sjekk('og schedulene er de samme',
+            m.timere.map(t => t.opts?.schedule).sort(), registrerte);
     }
 
     // ---- registreringen MELDES, og meldingen stemmer ----

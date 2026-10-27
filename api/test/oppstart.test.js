@@ -86,7 +86,10 @@ sjekk('dev: rutene registreres', dev.ruter.length > 100, true);
 // `production` er pilotens MILJO-verdi den dag i dag, `prod` er prodens,
 // og `lokal` brukes ved kjøring på egen maskin. Et ukjent navn er også med:
 // et miljø vi ikke kjenner skal starte, ikke feile.
-for (const miljo of ['pilot', 'production', 'prod', 'lokal', 'staging', undefined]) {
+// PROD ER UTE AV LISTA siden 27.10.2026: den registrerer ni timere nå, og
+// dekkes av dev-tilfellet over. De andre skal fortsatt ikke registrere noen —
+// pilot kjører på SWA Managed Functions, der en timer kan ta ned appen.
+for (const miljo of ['pilot', 'production', 'lokal', 'staging', undefined]) {
     const m = startMed(miljo);
     sjekk(`${miljo}: appen starter`, m.feilmelding, null);
     sjekk(`${miljo}: like mange ruter som dev`, m.ruter.length, dev.ruter.length);
