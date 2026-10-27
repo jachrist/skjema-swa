@@ -323,27 +323,49 @@ jobs:
             # dette feller ikke kjøringen — men det sies HØYT, med hva som må
             # gjøres i stedet. En sjekk som hopper stille over seg selv er
             # ingen sjekk; en som sier fra at den ikke kunne kjøre, er det.
-            echo "::warning::Preview-miljøet «$PREVIEW» ble deployet, men Azure returnerte ingen URL. Deployen er IKKE verifisert. Finn adressen i loggen for «Build And Deploy» («Visit your site at:») og åpne <adresse>/api/ping — den skal melde commit $KORT."
-            echo "### Preview deployet, men IKKE verifisert — Azure ga ingen URL. Sjekk \`/api/ping\` manuelt mot \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+            echo "::warning::Preview-miljøet «$PREVIEW» ble deployet, men Azure returnerte ingen URL. Deployen er IKKE verifisert. Finn adressen i loggen for «Build And Deploy» («Visit your site at:») og åpne <adresse>/js/config.js — BUILD.commit skal være $KORT."
+            echo "### Preview deployet, men IKKE verifisert — Azure ga ingen URL. Sjekk \`/js/config.js\` manuelt mot \`$KORT\`" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
           if [ -z "$MAAL" ]; then
-            echo "::error::Deploy-steget returnerte ingen URL, så det er ingenting å verifisere mot. Opplastingen kan ha gått bra — men det er ikke det samme som at den landet, og en stille mislykket deploy er nettopp det dette steget finnes for. Finn adressen i loggen for «Build And Deploy» («Visit your site at:») og åpne <adresse>/api/ping: den skal melde commit $KORT."
+            echo "::error::Deploy-steget returnerte ingen URL, så det er ingenting å verifisere mot. Opplastingen kan ha gått bra — men det er ikke det samme som at den landet, og en stille mislykket deploy er nettopp det dette steget finnes for. Finn adressen i loggen for «Build And Deploy» («Visit your site at:») og åpne <adresse>/js/config.js: BUILD.commit skal være $KORT."
             exit 1
           fi
-          echo "Forventer commit $KORT på $MAAL/api/ping"
+
+          # VERIFISERES MOT /js/config.js, IKKE /api/ping.
+          #
+          # Denne jobben ruller ut FRONTEND. På v2 lå API-et på samme SWA, og
+          # da bar /api/ping samme SHA — så sjekken virket. På v3 er API-et en
+          # LENKET Function App med sin egen deploy, og /api/ping melder dens
+          # commit. Frontend-deployen kunne da aldri bli grønn, uansett hvor
+          # mange ganger den ble kjørt.
+          #
+          # 27.10.2026: frontend ble rullet ut til prod v3 med ac371d0, og
+          # steget feilet tolv forsøk på rad fordi /api/ping meldte 11e6041 —
+          # API-ets egen, helt riktige, SHA. Meldingen sa «PROD kjører IKKE
+          # denne commiten», og det var feil: prod kjørte den, bare ikke der
+          # steget så etter.
+          #
+          # `build-config.js` skriver samme stempel to steder — BUILD i
+          # config.js og api/src/versjon.json — nettopp fordi «en av dem kan
+          # bli hengende, og da vil man vite hvilken». Hver jobb må lese SITT.
+          # API-jobben leser /api/ping; denne leser /js/config.js.
+          #
+          # /js/* er anonym og `no-cache` i ruteoppsettet, så den kan leses
+          # uten innlogging og svarer ikke fra en mellomlagring.
+          echo "Forventer commit $KORT i BUILD.commit på $MAAL/js/config.js"
           # SWA bruker et par minutter på å bytte innhold. Prøv i opptil 3 min.
           for FORSOK in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            SVAR=$(curl -sS --max-time 20 "$MAAL/api/ping" || echo '')
-            UTE=$(printf '%s' "$SVAR" | python3 -c "import json,sys; print(json.load(sys.stdin).get('bygg',{}).get('commit',''))" 2>/dev/null || echo '')
-            echo "  forsøk $FORSOK: /api/ping melder '${UTE:-(intet svar)}'"
+            SVAR=$(curl -sS --max-time 20 "$MAAL/js/config.js" || echo '')
+            UTE=$(printf '%s' "$SVAR" | python3 -c "import sys; t=sys.stdin.read(); i=t.find('BUILD'); j=t.find('\"commit\"', i); print(t[j:].split('\"')[3] if j>-1 else '')" 2>/dev/null || echo '')
+            echo "  forsøk $FORSOK: /js/config.js melder '${UTE:-(intet svar)}'"
             if [ "$UTE" = "$KORT" ] || [ "$UTE" = "$FORVENTET" ]; then
               echo "### Deploy verifisert: $HVA kjører \`$KORT\`" >> $GITHUB_STEP_SUMMARY
               exit 0
             fi
             sleep 15
           done
-          echo "::error::Deployen ble rapportert vellykket, men /api/ping på $MAAL melder fortsatt '${UTE:-(intet svar)}' og ikke '$KORT'. $HVA kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026."
-          echo "### Deploy IKKE verifisert — $HVA melder \`${UTE:-ukjent}\`, forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+          echo "::error::Deployen ble rapportert vellykket, men BUILD.commit i /js/config.js på $MAAL melder fortsatt '${UTE:-(intet svar)}' og ikke '$KORT'. FRONTEND i $HVA kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026. (API-et har sin egen SHA i /api/ping og sin egen deploy-jobb — den sier ingenting om denne.)"
+          echo "### Deploy IKKE verifisert — frontend i $HVA melder \`${UTE:-ukjent}\`, forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
           exit 1

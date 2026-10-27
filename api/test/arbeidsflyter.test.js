@@ -233,12 +233,30 @@ for (const fil of deployer) {
 // ---------- 4. prod-deployen verifiserer seg selv ----------
 //
 // En grønn workflow beviser at FILENE ble lastet opp, ikke at de serveres.
-// Steget leser /api/ping og sammenligner commit-SHA-en med den som ble
-// deployet.
+// Steget leser byggstempelet og sammenligner med commiten som ble deployet.
+//
+// MOT /js/config.js, IKKE /api/ping. Denne jobben ruller ut FRONTEND. På v2
+// lå API-et på samme SWA og bar samme SHA, så /api/ping virket. På v3 er
+// API-et en lenket Function App med sin egen deploy og sin egen SHA, og
+// frontend-deployen kunne aldri bli grønn: 27.10.2026 feilet den tolv
+// forsøk på rad mens prod kjørte nøyaktig den commiten som ble rullet ut.
+//
+// `build-config.js` skriver stempelet to steder nettopp fordi «en av dem kan
+// bli hengende, og da vil man vite hvilken». Hver jobb må lese SITT.
 {
     const prod = fs.readFileSync(path.join(mappe, 'deploy-prod.yml'), 'utf8');
 
-    sjekk('deploy-prod leser /api/ping etter deploy', /\/api\/ping/.test(prod), true);
+    // Lest fra KOMMANDOEN. Første utgave av denne testen spurte bare om
+    // «/api/ping» fantes et sted i fila — og da feilmeldingen fikk en
+    // parentes om at API-et har sin egen SHA i /api/ping, besto den fortsatt
+    // mens steget hadde byttet til config.js. En test som leter i prosa
+    // etter en kommando svarer på feil spørsmål.
+    sjekk('deploy-prod henter byggstempelet fra frontend',
+        /curl [^\n]*"\$MAAL\/js\/config\.js"/.test(prod), true);
+    sjekk('og ikke fra API-ets eget stempel',
+        /curl [^\n]*\/api\/ping/.test(prod), false);
+    sjekk('og leser BUILD-blokken, ikke en annen commit-nøkkel',
+        /t\.find\('BUILD'\)/.test(prod), true);
     sjekk('og sammenligner med commit-SHA-en som ble deployet',
         /github\.sha/.test(prod), true);
 
