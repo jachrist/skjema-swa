@@ -2929,6 +2929,17 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         Servertid: d.miljø.servertid
                     })}
 
+                    <h3 style="font-size: 14px; margin: 16px 0 8px 0;">Avgjorte valg</h3>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 6px;">Svarene fra reglene selv — ikke utledet av hvilke env-varer som står under.</div>
+                    ${nokkelVerdiTabell({
+                        'Lagring': d.lagring?.maate || '(ukjent)',
+                        'Lagringskonto': d.lagring?.konto || '',
+                        'Klient-ID': d.lagring?.klientId || '',
+                        'Lagring — hvorfor': d.lagring?.grunn || '',
+                        'Flyt-auth': d.flytAuth?.modus || '(ukjent)',
+                        'Flyt-auth — hvorfor': d.flytAuth?.grunn || ''
+                    }, { markerTom: true })}
+
                     <h3 style="font-size: 14px; margin: 16px 0 8px 0;">Env-vars (offentlige)</h3>
                     ${nokkelVerdiTabell(d.offentligeEnv, { markerTom: true })}
 
