@@ -96,6 +96,8 @@ function manglerKonfig(k = konfig()) {
  * Tar imot både full URL og ferdig referanse, siden begge deler er det folk
  * har for hånden når de setter env-varen.
  */
+const VERTSNAVN = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i;
+
 function siteReferanse(verdi) {
     const s = String(verdi || '').trim().replace(/\/+$/, '');
     if (!s) return null;
@@ -114,7 +116,12 @@ function siteReferanse(verdi) {
         sti = i < 0 ? '' : s.slice(i);
     }
     sti = sti.replace(/\/+$/, '');
-    if (!vert) return null;
+    // Et vertsnavn har minst ett punktum og ingen mellomrom. Uten denne
+    // vakten gikk visningsnavnet til et område — «Backup Skjemasystem (FHS)»,
+    // v3-prod 27.10.2026 — gjennom som «bare vertsnavn», og Graph svarte 403
+    // accessDenied. Det leses som manglende rettighet på området, og sender
+    // feilsøkingen til Sites.Selected i stedet for til verdien.
+    if (!VERTSNAVN.test(vert)) return null;
     return sti && sti !== '/' ? `${vert}:${sti}` : vert;
 }
 
@@ -286,7 +293,12 @@ async function graphGet(sti, token, fetchFn) {
 /** Slå opp område og bibliotek. Begge er stabile, men slås opp per kjøring. */
 async function finnDrive(k, token, fetchFn, log) {
     const ref = siteReferanse(k.site);
-    if (!ref) throw graphFeil(`BACKUP_SHAREPOINT_SITE er ikke en gyldig områdeadresse: «${k.site}»`, 400);
+    if (!ref) {
+        throw graphFeil(`BACKUP_SHAREPOINT_SITE er ikke en gyldig områdeadresse: «${k.site}». `
+            + 'Forventet adressen, ikke visningsnavnet — f.eks. '
+            + '«https://<tenant>.sharepoint.com/sites/<navn>», slik den står i nettleseren '
+            + 'når området er åpent', 400);
+    }
 
     const omrade = await graphGet(`/sites/${ref}`, token, fetchFn);
     if (!omrade?.id) throw graphFeil(`Fant ikke SharePoint-området «${k.site}»`, 404);

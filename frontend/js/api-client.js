@@ -15,10 +15,24 @@
 const SWA_BACKEND_FEIL = /^\s*Backend call failure/i;
 
 function tolkFeiltekst(tekst, status) {
-    if (!SWA_BACKEND_FEIL.test(String(tekst || ''))) return tekst;
-    return `Backend-kallet ble avbrutt av SWA (${status}). Funksjonen svarte ikke i tide — `
-        + 'tunge endepunkt som gjør flere eksterne kall rekker ikke alltid fram '
-        + 'på SWA Managed Functions.';
+    if (!erTidsavbrudd(tekst)) return tekst;
+    return `Backend-kallet ble avbrutt av SWA (${status}). Funksjonen svarte ikke `
+        + 'innen SWA-proxyens tidsgrense. Det gjelder både SWA Managed Functions '
+        + 'og en lenket Function App — og der funksjonen venter på arbeidet sitt, '
+        + 'kan arbeidet likevel ha gått ferdig.';
+}
+
+/**
+ * Ble svaret kuttet av SWA-proxyen, og ikke avvist av funksjonen?
+ *
+ * Skillet kom 27.10.2026, da en full FS-refresh i v3-prod meldte «Feil» i
+ * admin og samtidig sto som `ok` med 132,8 s i statusraden. På en Function
+ * App venter ruta på jobben (`lib/bakgrunn.js`), så et tidsavbrudd er det
+ * VENTEDE utfallet for en lang jobb — og sier ingenting om hvordan den gikk.
+ * Kalleren leser `e.tidsavbrudd` og sier «ingen svar», ikke «feil».
+ */
+function erTidsavbrudd(tekst) {
+    return typeof tekst === 'string' && SWA_BACKEND_FEIL.test(tekst);
 }
 
 async function les(response) {
@@ -75,6 +89,8 @@ async function utfør(path, options = {}, { hopperOver401 = false } = {}) {
             : (feil.melding || `${r.status} ${r.statusText}`);
         const e = new Error(melding);
         e.status = r.status;
+        // Alltid en boolean — en nøkkel som kan forsvinne kan ikke feilsøkes.
+        e.tidsavbrudd = erTidsavbrudd(feil);
         throw e;
     }
     return await les(r);

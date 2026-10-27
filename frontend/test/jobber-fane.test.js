@@ -289,8 +289,9 @@ const jobbStatusFarge = bygg('jobbStatusFarge');
     const seksjon = kilde.slice(start, slutt);
     sjekk('ingen skjemafelt for schedule', /<input|<select|contenteditable/.test(seksjon), false);
     sjekk('ingen lagring av schedule', /api\.(put|patch)\(/.test(seksjon), false);
-    // Den ene POST-en som finnes, er «Kjør nå» mot jobbens egen rute.
-    sjekk('én POST, mot jobbens rute', (seksjon.match(/api\.post\(/g) || []).length, 1);
+    // Den ene POST-en som finnes, er «Kjør nå» mot jobbens egen rute — via
+    // startJobb, som skiller tidsavbrudd fra feil (jobbknapper.test.js).
+    sjekk('én POST, mot jobbens rute', (seksjon.match(/\b(?:api\.post|startJobb)\(/g) || []).length, 1);
     sjekk('og den går mot rute-feltet fra API-et', seksjon.includes('`/api/${j.rute}`'), true);
 
     // Og den gamle håndskrevne setningen om tidspunktet skal være borte: den

@@ -63,7 +63,7 @@ function hentFunksjon(kilde, navn, forspill = []) {
 
 const les = hentFunksjon(klientKilde, 'les');
 const tolkFeiltekst = hentFunksjon(klientKilde, 'tolkFeiltekst',
-    [/^const SWA_BACKEND_FEIL = .*$/m]);
+    [/^const SWA_BACKEND_FEIL = .*$/m, /^function erTidsavbrudd\([\s\S]*?\n\}/m]);
 
 /** Et svar slik fetch leverer det, med headeren vi ber om å få. */
 function svar(contentType, kropp) {
@@ -98,7 +98,12 @@ function svar(contentType, kropp) {
         sjekk('«Backend call failure» oversettes', m === 'Backend call failure', false);
         sjekk('og meldingen sier at kallet ble avbrutt', /avbrutt/i.test(m), true);
         sjekk('og nevner statuskoden', m.includes('500'), true);
-        sjekk('og peker på managed functions', /managed functions/i.test(m), true);
+        // Gjelder begge vertene: også en lenket Function App står bak
+        // SWA-proxyen. Meldingen sa «SWA Managed Functions» til 27.10.2026, og
+        // det var feil i v3-prod — der jobben dessuten gikk ferdig.
+        sjekk('og sier at det gjelder begge vertene',
+            /managed functions/i.test(m) && /function app/i.test(m), true);
+        sjekk('og at arbeidet likevel kan ha gått', /likevel/.test(m), true);
 
         // Med innledende mellomrom, slik en proxy kan levere den.
         sjekk('tåler innledende mellomrom',

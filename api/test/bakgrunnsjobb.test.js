@@ -263,10 +263,12 @@ sjekk('prod v2 beholder fire-and-forget', iMiljo('Production', maaVentePaaBakgru
         /jobberState\.venterPaaJobb/.test(kjorNa), true);
     // Ikke utledet av miljønavnet — det er den andre kopien av regelen.
     sjekk('og utleder det IKKE av miljøet', /miljø|MILJO/.test(kjorNa), false);
-    sjekk('panelet skiller ferdig fra startet',
-        /res\.status === 'ferdig'/.test(kjorNa), true);
-    sjekk('og sier at tidsavbrudd ikke stopper jobben',
-        /tidsavbrudd/i.test(kjorNa), true);
+    // Hvordan svaret og et tidsavbrudd leses, står i startJobb og
+    // jobbUtfallHtml — felles for alle jobbknappene, og prøvd med ekte kall i
+    // frontend/test/jobbknapper.test.js. Her holdes bare fast at fanen
+    // bruker dem.
+    sjekk('panelet starter jobben via startJobb', /startJobb\(/.test(kjorNa), true);
+    sjekk('og leser utfallet via jobbUtfallHtml', /jobbUtfallHtml\(/.test(kjorNa), true);
 
     const last = admin.slice(admin.indexOf('window.jobberLast'), admin.indexOf('window.jobberKjorNa'));
     // `undefined` fra et gammelt API skal lese som «venter ikke», ikke bli en

@@ -382,6 +382,58 @@
         let bruker = null;
         let erAdmin = false;
 
+        // ==================== JOBBKNAPPER ====================
+        //
+        // Én vei inn for alle knapper som starter en jobb. 27.10.2026 meldte
+        // «Trigg full refresh» i v3-prod «Feil: Backend-kallet ble avbrutt»,
+        // mens statusraden rett over sto på `ok` med 132,8 s. På en Function
+        // App venter ruta på jobben (api/src/lib/bakgrunn.js), og SWA-proxyen
+        // gir opp lenge før en jobb på to minutter er ferdig. Jobber-fanen
+        // visste det; de sju andre knappene gjorde det ikke, fordi hver hadde
+        // sin egen catch.
+
+        /**
+         * Start en jobb. Et tidsavbrudd fra SWA-proxyen er «ingen svar», ikke
+         * en feil — alt annet kastes videre som før.
+         */
+        async function startJobb(sti, body = {}) {
+            try {
+                return { svar: await api.post(sti, body), utenSvar: false };
+            } catch (e) {
+                if (e && e.tidsavbrudd === true) return { svar: null, utenSvar: true };
+                throw e;
+            }
+        }
+
+        /** Banneret for utfallet. `hvorStatus` sier hvor svaret kan leses. */
+        function jobbUtfallHtml({ svar, utenSvar }, hvorStatus) {
+            if (utenSvar) {
+                return '<div class="banner advarsel">Ingen svar innen SWA-proxyens tidsgrense. '
+                    + 'Det betyr ikke at jobben feilet — den kan ha gått ferdig. '
+                    + `${escHtml(hvorStatus)}</div>`;
+            }
+            // BARE «startet» betyr at jobben går i bakgrunnen — det er ordet
+            // jobbSvar() i api/src/lib/bakgrunn.js gir et 202, og ingen andre
+            // ruter bruker det. Alt annet er et svar på en jobb som HAR kjørt.
+            //
+            // Til 27.10.2026 var det omvendt: bare «ferdig» var ferdig, og alt
+            // annet ble «Startet .». Men de synkrone jobbene (oppslagslister,
+            // team-synk, nøkkelkalender, utsendinger) svarer «ok» eller
+            // «delvis», så en jobb på 0 s ble meldt som startet — med tom tid.
+            const status = svar && svar.status;
+            if (status === 'startet') {
+                const tid = svar.startet ? ` ${escHtml(svar.startet)}` : '';
+                return `<div class="banner suksess">✓ Startet${tid}. ${escHtml(hvorStatus)}</div>`;
+            }
+            const melding = svar && svar.melding ? ` ${escHtml(svar.melding)}` : '';
+            if (status === 'ferdig' || status === 'ok') {
+                return `<div class="banner suksess">✓ Ferdig.${melding}</div>`;
+            }
+            // «delvis», eller noe vi ikke kjenner: jobben kjørte, men ikke rent.
+            return `<div class="banner advarsel">Ferdig med status «${escHtml(status || 'ukjent')}».`
+                + `${melding} Se statusraden.</div>`;
+        }
+
         async function init() {
             bruker = await hentInnloggetBruker();
             if (!bruker) {
@@ -1687,7 +1739,8 @@
                         <button class="knapp" onclick="utsPurre()">Trigg purring nå</button>
                     </div>
                     <div style="margin-top: 6px; font-size: 12px; color: var(--text-secondary);">
-                        Purring skjer også automatisk daglig via GitHub Actions.
+                        Purring skjer også automatisk — hva som trigger den, står under
+                        <a href="#jobber">Jobber</a>.
                     </div>
                 </div>
                 <div id="u-resultat"></div>
@@ -1742,7 +1795,12 @@
             const resultat = document.getElementById('u-resultat');
             resultat.innerHTML = '<div class="laster">Purrer…</div>';
             try {
-                const res = await api.post('/api/utsending/purre', batchId ? { batchId } : {});
+                const { svar: res, utenSvar } = await startJobb('/api/utsending/purre', batchId ? { batchId } : {});
+                if (utenSvar) {
+                    resultat.innerHTML = '<div class="banner advarsel">Ingen svar innen SWA-proxyens '
+                        + 'tidsgrense. Purringen kan ha gått — sjekk utsendingen før du trykker igjen.</div>';
+                    return;
+                }
                 resultat.innerHTML = `
                     <div class="banner ${res.feil ? 'advarsel' : 'suksess'}">
                         ✓ Purret ${res.antallPurret} utsending${res.antallPurret === 1 ? '' : 'er'}
@@ -1988,12 +2046,14 @@
 
             s.innerHTML = '<div class="banner info">Starter…</div>';
             try {
-                const res = await api.post('/api/backup/kjor-eksternt', {
+                const { svar: res, utenSvar } = await startJobb('/api/backup/kjor-eksternt', {
                     connectionString: cs, miljo, passphrase: pass, bekreftelse: 'EKSTERN'
                 });
                 document.getElementById('be-cs').value = '';
                 document.getElementById('be-pass').value = '';
-                s.innerHTML = `<div class="banner info">Kjører mot <strong>${escHtml(res.konto || '')}</strong>
+                s.innerHTML = utenSvar
+                    ? '<div class="banner info">Ingen svar innen SWA-proxyens tidsgrense — følger statusen.</div>'
+                    : `<div class="banner info">Kjører mot <strong>${escHtml(res.konto || '')}</strong>
                     som «${escHtml(res.miljo || '')}» — passphrase: ${escHtml(res.passphrase || '')}.</div>`;
                 await bEksternFolg(s);
             } catch (e) {
@@ -2035,7 +2095,7 @@
             const maal = kilde === 'sharepoint' ? 'kopien i SharePoint' : 'fila i blob-storage';
             s.innerHTML = `<div class="banner info">Starter verifisering av ${escHtml(maal)}…</div>`;
             try {
-                await api.post('/api/backup/verifiser-lagret', { kilde });
+                await startJobb('/api/backup/verifiser-lagret', { kilde });
             } catch (e) {
                 s.innerHTML = `<div class="banner feil">Kunne ikke starte: ${escHtml(e.message)}</div>`;
                 return;
@@ -2270,7 +2330,13 @@
         async function oppslagKjor(url, tørr) {
             const ut = document.getElementById('oppslag-resultat');
             try {
-                const d = await api.post(url, {});
+                const { svar: d, utenSvar } = await startJobb(url);
+                if (utenSvar) {
+                    oppslagMelding('Ingen svar innen SWA-proxyens tidsgrense. Det betyr ikke at '
+                        + 'oppdateringen feilet — sjekk «Sist kjørt» etter en stund.', 'advarsel');
+                    if (ut) ut.innerHTML = '';
+                    return;
+                }
                 oppslagMelding(tørr
                     ? 'Forhåndsvisning — ingenting er skrevet.'
                     : `Ferdig: ${(d.resultater || []).length} liste(r) oppdatert`
@@ -2339,7 +2405,8 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     <div id="fs-melding" style="margin-top: 10px;"></div>
                     <div id="fs-diag-resultat" style="margin-top: 10px;"></div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
-                        Full refresh tar 2-4 min og kjøres asynkront. Automatisk hver dag 04:00 UTC via GitHub Actions.
+                        Full refresh tar 2-4 min. Hva som trigger den automatisk — og når —
+                        står under <a href="#jobber">Jobber</a>.
                     </div>
                 </div>
                 <div class="panel">
@@ -2352,7 +2419,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     </div>
                     <div id="pn-melding" style="margin-top: 10px;"></div>
                     <div style="margin-top: 8px; font-size: 12px; color: var(--text-secondary);">
-                        Manuell trigger tar 30-90 sekunder å kjøre asynkront. Hva som trigger
+                        Manuell trigger tar 30-90 sekunder. Hva som trigger
                         importen automatisk — og når — står under
                         <a href="#jobber">Jobber</a>: det er ikke det samme i alle miljøene, og
                         en setning her ville vært en kopi som drev fra virkeligheten.
@@ -2402,12 +2469,12 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
         }
 
         window.fsTrigger = async () => {
-            if (!confirm('Trigg full FS-refresh nå? Kjører asynkront i 2-4 min.')) return;
+            if (!confirm('Trigg full FS-refresh nå? Tar 2-4 min.')) return;
             const m = document.getElementById('fs-melding');
             m.innerHTML = '<div class="banner info">Starter jobben…</div>';
             try {
-                const res = await api.post('/api/refresh-fs', {});
-                m.innerHTML = `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. Kom tilbake om et par min og trykk 'Oppdater status'.</div>`;
+                const utfall = await startJobb('/api/refresh-fs');
+                m.innerHTML = jobbUtfallHtml(utfall, "Trykk 'Oppdater status' om et par minutter.");
                 setTimeout(fsStatusLast, 2000);
             } catch (e) {
                 m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
@@ -2465,12 +2532,12 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
         };
 
         window.pnRefreshBring = async () => {
-            if (!confirm('Hente og importere postnumre fra Bring nå? Tar 30-90 sekunder, kjører asynkront.')) return;
+            if (!confirm('Hente og importere postnumre fra Bring nå? Tar 30-90 sekunder.')) return;
             const m = document.getElementById('pn-melding');
             m.innerHTML = '<div class="banner info">Starter Bring-import…</div>';
             try {
-                const res = await api.post('/api/postnumre/refresh-bring', {});
-                m.innerHTML = `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. Kom tilbake om ~1 min og trykk 'Oppdater status'.</div>`;
+                const utfall = await startJobb('/api/postnumre/refresh-bring');
+                m.innerHTML = jobbUtfallHtml(utfall, "Trykk 'Oppdater status' om et minutt.");
                 setTimeout(pnStatusLast, 3000);
             } catch (e) {
                 m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
@@ -2903,20 +2970,11 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     + 'Får nettleseren tidsavbrudd, stopper ikke jobben av det — trykk Oppdater.</div>'
                 : '<div class="banner info">Starter jobben…</div>';
             try {
-                const res = await api.post(`/api/${j.rute}`, {});
-                // «ferdig» betyr at jobben kjørte ferdig, «startet» at den er i
-                // gang. Ett ord fra API-et, ikke en gjetning her.
-                m.innerHTML = res.status === 'ferdig'
-                    ? `<div class="banner suksess">✓ Ferdig. ${escHtml(res.melding || '')}</div>`
-                    : `<div class="banner suksess">✓ Startet ${escHtml(res.startet || '')}. `
-                        + 'Trykk Oppdater om et par minutter for å se utfallet.</div>';
+                const utfall = await startJobb(`/api/${j.rute}`);
+                m.innerHTML = jobbUtfallHtml(utfall, 'Trykk Oppdater om et par minutter for å se utfallet.');
                 setTimeout(jobberLast, 3000);
             } catch (e) {
-                // Ventet vi, er tidsavbrudd det forventede utfallet for en lang
-                // jobb — og det sier ingenting om hvordan jobben gikk.
-                m.innerHTML = `<div class="banner ${venter ? 'advarsel' : 'feil'}">`
-                    + `${venter ? 'Ingen svar: ' : 'Feil: '}${escHtml(e.message)}`
-                    + `${venter ? ' — jobben kan likevel ha kjørt. Trykk Oppdater.' : ''}</div>`;
+                m.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
             }
         };
 
@@ -3673,7 +3731,9 @@ Skriv SLETT for å bekrefte.`);
             const s = document.getElementById('b-kjor-status');
             s.innerHTML = `<div class="banner info">Starter ${escHtml(modus)}-backup…</div>`;
             try {
-                await api.post('/api/backup/kjor', { modus });
+                // Får vi ikke svar, går backupen likevel — framdriften leses
+                // fra statusraden uansett.
+                await startJobb('/api/backup/kjor', { modus });
                 await bFolgStatus();
             } catch (e) {
                 s.innerHTML = `<div class="banner feil">Feil: ${escHtml(e.message)}</div>`;
@@ -4190,7 +4250,12 @@ Skriv SLETT for å bekrefte.`);
         window.nkTorrkjor = async () => {
             nkMelding('Kjører…');
             try {
-                const res = await api.post('/api/nokkelkalender/sjekk', { tørrkjør: true });
+                const { svar: res, utenSvar } = await startJobb('/api/nokkelkalender/sjekk', { tørrkjør: true });
+                if (utenSvar) {
+                    nkMelding('Ingen svar innen SWA-proxyens tidsgrense. Tørrkjøringen sender '
+                        + 'ingenting, så den kan trygt prøves igjen.', 'advarsel');
+                    return;
+                }
                 const ville = res.villeVarslet || [];
                 if (ville.length === 0) {
                     nkMelding(`Ingenting ville blitt varslet nå (${res.vurdert ?? 0} rader vurdert i «${escHtml(res.miljo || '')}»).`);

@@ -38,6 +38,12 @@
  * ingenting. Men den som trykker på knappen MÅ få vite det, ellers leser de
  * tidsavbruddet som «jobben feilet». `GET /api/jobber` svarer derfor med
  * `venterPaaJobb`, og admin-panelet sier det i klartekst.
+ *
+ * Det gjelder HVER knapp som starter en jobb, ikke bare Jobber-fanen. Til
+ * 27.10.2026 hadde de andre sin egen catch, og «Trigg full refresh» meldte
+ * «Feil» på en jobb som sto `ok` i statusraden. Nå går alle gjennom
+ * `startJobb` i admin.html, og `frontend/test/jobbknapper.test.js` leser
+ * rutene HERFRA — de som pakker inn `startBakgrunnsjobb` — og krever det.
  */
 const { maaVentePaaBakgrunnsarbeid } = require('./plattform');
 
