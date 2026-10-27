@@ -1676,22 +1676,84 @@ trenger verken app-registrering, bestilling eller venting.
 SCM-endepunkt, uten noen Entra-identitet. Da faller hele resten av dette
 kapitlet bort.
 
-Forutsetningen er at *basic publishing* er påslått på ressursen. Prøvd i prod
-27.10.2026, og den var det. Sjekk slik:
+**REKKEFØLGEN ER DET VIKTIGSTE I DETTE AVSNITTET.** Slå på bryteren FØRST,
+hent profilen ETTERPÅ. En profil hentet mens basic auth var av, virker ikke —
+heller ikke etter at bryteren er slått på. Den må hentes på nytt.
+
+Gjennomkjøringen 27.10.2026 gikk i nettopp den fella: profilen ble hentet,
+bryteren slått på, deployen kjørt på nytt med den GAMLE profilen, og
+feilmeldingen var den samme 401 som før. Det så ut som at bryteren ikke
+hjalp.
+
+Forutsetningen er at **basic auth på SCM** er påslått på ressursen. Det er
+policyen `basicPublishingCredentialsPolicies/scm` som avgjør det, og den må
+leses direkte:
 
 ```powershell
-$pp = az functionapp deployment list-publishing-profiles --resource-group $RG --name $FA --xml 2>&1
-if ($pp -match 'asic authentication|is disabled') { 'STENGT' } elseif ($pp) { 'AAPEN' } else { 'ukjent - les $pp' }
+az resource show --resource-group $RG --name "$FA/scm" --resource-type Microsoft.Web/sites/basicPublishingCredentialsPolicies --api-version 2023-01-01 --query properties.allow
 ```
 
-**`$pp` er en hemmelighet.** Den bærer publiseringslegitimasjon i klartekst.
-Ikke skriv den ut, ikke lim den i en sak. Linja over leser bare om den finnes.
+**`--api-version` er ikke valgfri.** Uten den gjetter `az` en standardversjon
+som ikke kjenner underressurstypen, og svarer `Operation returned an invalid
+status 'Not Found'` — en melding som leses som «Function App-en finnes ikke».
+Skill dem med `az functionapp show -g $RG -n $FA --query name -o tsv` først.
 
-Svarer den `AAPEN`, legg profilen rett i GitHub-miljøet og fjern variabelen:
+Går ikke `az`-kommandoen gjennom i det hele tatt — den har svart
+`Not Found` på flere former — svarer portalen på det samme: Function App →
+Settings → Configuration → General settings → **«SCM Basic Auth Publishing
+Credentials»**. Husk **Apply**; avkryssingen alene lagrer ingenting.
+
+**At profilen lar seg HENTE er ikke en sjekk.** 27.10.2026 ble
+`list-publishing-profiles` brukt som prøve, den svarte, og konklusjonen ble at
+veien var åpen. Deployen feilet likevel med `Failed to fetch Kudu App
+Settings. Unauthorized (CODE: 401)` — profilen ble lest riktig, men Kudu
+avviste legitimasjonen. Hentingen går mot ARM; bruken går mot SCM, og det er
+to ulike dører.
+
+Svarer policyen `false`, kan den slås på — hvis ingen Azure Policy hindrer det:
+
+```powershell
+az resource update --resource-group $RG --name "$FA/scm" --resource-type Microsoft.Web/sites/basicPublishingCredentialsPolicies --set properties.allow=true --api-version 2023-01-01
+```
+
+Blir den stående `false` etter oppdateringen, er den styrt av en policy på
+abonnementet, og da er 8.2 veien.
+
+Svarer policyen `true`, hent profilen **nå** — etter at bryteren er på — og
+legg den rett i GitHub-miljøet:
 
 ```powershell
 az functionapp deployment list-publishing-profiles --resource-group $RG --name $FA --xml | gh secret set AZURE_FUNCAPP_PUBLISH_PROFILE --env prod
-Remove-Variable pp
+```
+
+`gh` må være logget inn (`gh auth login`); `az`-påloggingen i Cloud Shell
+gjelder ikke for GitHub. Kloning trengs ikke når `--repo <eier>/<repo>` er med.
+
+#### Får du 401 likevel
+
+> `Successfully parsed SCM credential from publish-profile format.`
+> `Failed to fetch Kudu App Settings. Unauthorized (CODE: 401)`
+
+Profilen er altså LEST riktig — formatet og hemmeligheten er på plass. Det er
+SCM som avviser den. Denne prøven skiller de to årsakene, og skriver ingenting
+hemmelig:
+
+```powershell
+$x = [xml](az functionapp deployment list-publishing-profiles -g $RG -n $FA --xml)
+$p = $x.publishData.publishProfile | Where-Object { $_.publishMethod -eq 'MSDeploy' }
+$b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($p.userName):$($p.userPWD)"))
+try { "HTTP " + (Invoke-WebRequest -Uri "https://$FA.scm.azurewebsites.net/api/settings" -Headers @{Authorization="Basic $b64"} -UseBasicParsing).StatusCode }
+catch { "HTTP " + $_.Exception.Response.StatusCode.value__ }
+Remove-Variable x,p,b64
+```
+
+| Svar | Hva det betyr |
+|---|---|
+| **200** | Kudu tar imot den FERSKE profilen. Da er det den i GitHub som er gammel — hent på nytt og sett hemmeligheten igjen. Det var utfallet 27.10.2026 |
+| **401** | Kudu avviser legitimasjonen uansett hvem som spør. Sjekk nettverksrestriksjonene under; er de åpne, er 8.2 veien |
+
+```powershell
+az functionapp config access-restriction show --resource-group $RG --name $FA --query "{hoved: ipSecurityRestrictions[].name, scm: scmIpSecurityRestrictions[].name, scmArverHoved: scmIpSecurityRestrictionsUseMain}"
 ```
 
 Arbeidsflyten velger vei av seg selv: er `AZURE_FUNCAPP_PUBLISH_PROFILE` satt,
@@ -1705,7 +1767,7 @@ To ting å vite om profilen:
 | Den er like hemmelig som SP-legitimasjonen | den flytter hvor hemmeligheten ligger, den fjerner den ikke |
 | Den blir ugyldig hvis noen nullstiller publiseringslegitimasjonen | ingenting varsler om det — deployen feiler på autentisering neste gang |
 
-Svarer sjekken `STENGT`, er veien under den riktige.
+Lar policyen seg ikke slå på, er veien under den riktige.
 
 ### 8.2 Tjenestehovedobjekt (når basic publishing er av)
 
@@ -2059,6 +2121,8 @@ v2 er borte.
 | `Resource <navn> of type Microsoft.Web/Sites doesn't exist` | **To ting:** feil navn, ELLER at deploy-objektet ikke ser ressursen. Workflowen lister nå det den ser, så de to kan skilles. Konvensjonen er `fa-skjema-3-<miljø>` — ikke visningsnavnet på SWA-en ved siden av | 8 |
 | `Deploy verifisert: prod kjører <sha>` etter en PILOT-deploy | Merkelappen sto fast på «prod» etter at de to workflowene ble slått sammen. Sjekken var riktig og traff pilot — det var navnet som løy. Verste sorten: et sammendrag ingen mistror, som sier at prod er oppdatert når prod ikke er rørt | `deploy-prod.yml` |
 | «SWA-token fra hemmeligheten» med ingenting etter | Linja skrev ut VALGET (`swa_token_secret`), og en kjøring uten eget valg bruker miljøets standard. Den svarte ikke på det eneste den finnes for: hvilken SWA ble truffet | `deploy-prod.yml` |
+| `Failed to fetch Kudu App Settings. Unauthorized (CODE: 401)` med publiseringsprofil | **To ting:** basic auth på SCM er av, ELLER profilen ble hentet FØR den ble slått på. Den andre ser ut som at bryteren ikke hjalp — samme 401 etterpå. Profilen må hentes på nytt. Prøv den ferske mot `/api/settings` fra Cloud Shell: 200 betyr at det er den i GitHub som er gammel | 8.1 |
+| `Operation returned an invalid status 'Not Found'` på `basicPublishingCredentialsPolicies` | **To ting:** Function App-en finnes ikke, ELLER `--api-version` mangler og `az` gjettet en versjon som ikke kjenner underressurstypen | 8.1 |
 | «Vi må bestille en app-registrering for å deploye API-et» | **Ikke nødvendigvis.** `Azure/functions-action` tar en publiseringsprofil og trenger da ingen Entra-identitet. Hele kapittel 8.2 — og ventetiden på `Application Administrator` — faller bort når basic publishing er påslått. Sjekk det FØR du bestiller | 8.1 |
 | `Unexpected input(s) 'deployment_environment'` | **Advarselen peker feil vei:** `@v1` løses til taggen, og dens `action.yml` erklærer bare 11 inputs. Men det er en docker-action — løperen eksporterer `with:`-nøklene som `INPUT_*` uansett, og beholderen leser den. Preview VIRKER. Konsekvensen er at en SKRIVEFEIL i navnet ville vært like stille | `deploy-prod.yml` |
 
