@@ -82,8 +82,19 @@ for (const fil of deployer) {
     // Sto navnet hardkodet, ville en ny arbeidsflyt med en annen action fått
     // indexOf === -1, og sammenligningen svart «testene kjøres ikke først» om
     // en fil der de gjør nøyaktig det.
+    // `uses: `-linja, ikke navnet hvor som helst. 27.10.2026 fikk
+    // deploy-funcapp-pilot.yml en kommentar øverst som nevner
+    // `Azure/functions-action` for å forklare de to autentiseringsveiene —
+    // og da fant indexOf den FØR «Kjør tester», i en fil der rekkefølgen var
+    // uendret. En test som leter etter en kommando i prosa svarer på feil
+    // spørsmål.
+    // Markørene står uten eiernavn (`Azure/`), så `uses: ` + markør treffer
+    // ikke — den ekte linja er `uses: Azure/functions-action@v1`. Regexen
+    // hopper over eiernavnet, men krever fortsatt at det ER en uses-linje.
     const UTRULLING = ['static-web-apps-deploy', 'functions-action', 'azure/webapps-deploy'];
-    const utrulling = UTRULLING.map(a => kilde.toLowerCase().indexOf(a)).filter(i => i !== -1);
+    const utrulling = UTRULLING
+        .map(a => kilde.toLowerCase().search(new RegExp('uses:\\s*\\S*' + a.replace('/', '\\/'))))
+        .filter(i => i !== -1);
     sjekk(`${fil}: har et utrullingssteg`, utrulling.length > 0, true);
     sjekk(`${fil}: testene kjøres før deployen`,
         utrulling.every(i => kilde.indexOf('kjor-tester.js') < i), true);
@@ -557,6 +568,63 @@ for (const fil of deployer) {
     // Og navnekonvensjonen må stå i input-beskrivelsen, der den skrives inn.
     sjekk('appnavn-feltet viser formen',
         /description: '[^']*fa-skjema-3-dev/.test(wf), true);
+}
+
+// ---------- API-deployen: to autentiseringsveier, profil vinner ----------
+//
+// `Azure/functions-action` kan autentisere seg med en publiseringsprofil
+// (direkte mot SCM) eller med RBAC via `azure/login`. Den andre krever et
+// tjenestehovedobjekt, og å OPPRETTE det krever `Application Administrator`
+// i Entra — en rolle vi ikke har, og som måtte bestilles.
+//
+// Profilen fjerner den avhengigheten helt. Prod ble prøvd 27.10.2026 og har
+// basic publishing påslått.
+//
+// Begge veiene må bli stående: et miljø flyttes over ved å legge inn én
+// hemmelighet, og miljøer som ennå har et tjenestehovedobjekt skal gå som
+// før. Men da MÅ kjøringen si hvilken vei den gikk — en autentiseringsfeil
+// ser lik ut uansett, og det første spørsmålet er hvilken som ble brukt.
+{
+    const w = les('deploy-funcapp-pilot.yml');
+
+    sjekk('deploy-steget tar imot en publiseringsprofil',
+        /publish-profile: \$\{\{ secrets\.AZURE_FUNCAPP_PUBLISH_PROFILE \}\}/.test(w), true);
+    sjekk('og veien avgjøres av om hemmeligheten er satt',
+        /HAR_PROFIL: \$\{\{ secrets\.AZURE_FUNCAPP_PUBLISH_PROFILE != '' \}\}/.test(w), true);
+
+    // azure/login MÅ være betinget. Kjører den med tom `creds`, feiler den
+    // med en JSON-feil om en tom verdi — en melding som peker mot
+    // hemmeligheten, ikke mot at vi ikke trengte den.
+    sjekk('innloggingen hoppes over når profilen finnes',
+        /if: steps\.auth\.outputs\.profil != 'true'\s*\n\s*uses: azure\/login@v2/.test(w), true);
+
+    // Betingelsen leses fra et STEG-UTDATA. `env` i en `if:` er ikke
+    // bekreftet tillatt, og en betingelse som ikke lar seg evaluere ville
+    // enten kjørt begge veiene eller ingen.
+    sjekk('veien settes som steg-utdata',
+        /echo "profil=\$HAR_PROFIL" >> "\$GITHUB_OUTPUT"/.test(w), true);
+    sjekk('og ingen if leser env for valget',
+        /if: env\.HAR_PROFIL/.test(w), false);
+
+    // «Finnes appen?» kaller `az` og krever innlogging. Står den igjen uten
+    // betingelse, feiler den på profilveien — i et steg som bare skulle
+    // forklare en annen feil.
+    const iFinnes = w.indexOf('- name: Finnes appen?');
+    sjekk('appsjekken finnes', iFinnes > -1, true);
+    sjekk('og hoppes også over på profilveien',
+        /- name: Finnes appen\?\s*\n\s*if: steps\.auth\.outputs\.profil != 'true'/.test(w), true);
+
+    // Begge veiene skal SIES. En buffer eller en gaffel som aldri sier
+    // hvilken vei den gikk, er umulig å feilsøke utenfra.
+    // Telt på `echo "::notice::`, ikke på ordet. Første utgave prøvde å
+    // klippe ut run-blokkene med en lookahead på `\\Z` — som ikke finnes i
+    // JS-regex og bare matcher bokstaven Z, så uttrekket ble tomt. Å telle
+    // selve kommandoen er både enklere og umulig å forveksle med en
+    // kommentar som nevner den.
+    sjekk('begge autentiseringsveiene sies fra om',
+        (w.match(/echo "::notice::/g) || []).length >= 2, true);
+    sjekk('og sammendraget bærer den også',
+        /API-deploy: publiseringsprofil/.test(w) && /API-deploy: tjenestehovedobjekt/.test(w), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);

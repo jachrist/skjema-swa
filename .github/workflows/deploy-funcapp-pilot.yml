@@ -43,6 +43,36 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ inputs.miljo }}
+    env:
+      # TO VEIER INN, OG VALGET STÅR HER.
+      #
+      # `Azure/functions-action` kan autentisere seg på to måter:
+      #
+      #   publiseringsprofil — handlingen snakker direkte med Function
+      #                        App-ens SCM-endepunkt. Ingen Entra-identitet
+      #                        involvert.
+      #   tjenestehovedobjekt — `azure/login` først, og handlingen bruker
+      #                        RBAC-legitimasjonen.
+      #
+      # Den andre krever en app-registrering, og den krever `Application
+      # Administrator` i Entra å opprette — en rolle vi ikke har, og som
+      # måtte bestilles (kapittel 8 i KOKEBOK-PROD-V3.md). Profilen krever
+      # ingenting av Entra i det hele tatt.
+      #
+      # Profilen VINNER når den er satt. Det gjør at et miljø kan flyttes
+      # over ved å legge inn én hemmelighet, uten at noe annet endres — og at
+      # miljøer som ennå har et tjenestehovedobjekt fortsetter som før.
+      #
+      # Profilen forutsetter at basic publishing er påslått på ressursen.
+      # Prøvd i prod 27.10.2026 og den er det. Er den slått av i et miljø,
+      # svarer `list-publishing-profiles` med at den er deaktivert — og da
+      # settes ikke hemmeligheten, og kjøringen går den andre veien av seg
+      # selv.
+      #
+      # Boolsk, ikke selve profilen: hemmeligheten skal ikke ligge i et
+      # miljøvariabel-navn som alle steg ser. Den sendes bare til
+      # deploy-steget.
+      HAR_PROFIL: ${{ secrets.AZURE_FUNCAPP_PUBLISH_PROFILE != '' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -68,7 +98,27 @@ jobs:
         run: npm ci --omit=dev
         working-directory: api
 
+      # Si hvilken vei kjøringen gikk. En deploy som feiler på autentisering
+      # ser lik ut uansett vei, og da er det første spørsmålet hvilken av dem
+      # som ble brukt.
+      # Veien settes som et STEG-UTDATA, ikke lest som `env` i `if:`.
+      # `steps.<id>.outputs` er utvetydig tillatt i en `if:`; at `env` er
+      # det, fikk jeg ikke bekreftet, og en betingelse som ikke lar seg
+      # evaluere ville enten kjørt begge veiene eller ingen.
+      - name: Vis autentiseringsvei
+        id: auth
+        run: |
+          echo "profil=$HAR_PROFIL" >> "$GITHUB_OUTPUT"
+          if [ "$HAR_PROFIL" = "true" ]; then
+            echo "::notice::Autentiserer med publiseringsprofil (AZURE_FUNCAPP_PUBLISH_PROFILE). Ingen Entra-identitet involvert."
+            echo "### API-deploy: publiseringsprofil" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "::notice::Ingen publiseringsprofil satt — logger inn med tjenestehovedobjekt (AZURE_FUNCAPP_CREDENTIALS)."
+            echo "### API-deploy: tjenestehovedobjekt" >> $GITHUB_STEP_SUMMARY
+          fi
+
       - name: Logg inn i Azure
+        if: steps.auth.outputs.profil != 'true'
         uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_FUNCAPP_CREDENTIALS }}
@@ -85,7 +135,12 @@ jobs:
       # hindrer ikke nødvendigvis deployen, og en vakt som stopper en
       # kjøring som ville gått er verre enn ingen. Den sier fra, og lar
       # handlingen avgjøre.
+      # Krever en Azure-innlogging, så den hoppes over på profilveien. Der
+      # er den heller ikke nyttig: profilen peker PÅ ressursen, så «ser vi
+      # den» er ikke spørsmålet lenger — en feil profil gir en
+      # autentiseringsfeil, ikke «doesn't exist».
       - name: Finnes appen?
+        if: steps.auth.outputs.profil != 'true'
         env:
           APPNAVN: ${{ inputs.appnavn }}
         run: |
@@ -101,12 +156,16 @@ jobs:
             exit 1
           fi
 
+      # `publish-profile` er tom når hemmeligheten ikke er satt, og da faller
+      # handlingen tilbake på RBAC-legitimasjonen fra `azure/login` over —
+      # samme oppførsel som før 27.10.2026.
       - name: Deploy
         uses: Azure/functions-action@v1
         with:
           app-name: ${{ inputs.appnavn }}
           package: api
           respect-funcignore: true
+          publish-profile: ${{ secrets.AZURE_FUNCAPP_PUBLISH_PROFILE }}
 
       # En grønn deploy er ikke et bevis på at koden er ute.
       #

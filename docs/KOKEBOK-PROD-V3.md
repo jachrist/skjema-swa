@@ -1667,6 +1667,48 @@ hvor blank lagringen er.
 
 ## 8. Deploy av API-et
 
+**Prøv 8.1 først. Lykkes den, hopper du over resten av kapitlet** — og
+trenger verken app-registrering, bestilling eller venting.
+
+### 8.1 Publiseringsprofil (førstevalget)
+
+`Azure/functions-action` kan autentisere seg rett mot Function App-ens
+SCM-endepunkt, uten noen Entra-identitet. Da faller hele resten av dette
+kapitlet bort.
+
+Forutsetningen er at *basic publishing* er påslått på ressursen. Prøvd i prod
+27.10.2026, og den var det. Sjekk slik:
+
+```powershell
+$pp = az functionapp deployment list-publishing-profiles --resource-group $RG --name $FA --xml 2>&1
+if ($pp -match 'asic authentication|is disabled') { 'STENGT' } elseif ($pp) { 'AAPEN' } else { 'ukjent - les $pp' }
+```
+
+**`$pp` er en hemmelighet.** Den bærer publiseringslegitimasjon i klartekst.
+Ikke skriv den ut, ikke lim den i en sak. Linja over leser bare om den finnes.
+
+Svarer den `AAPEN`, legg profilen rett i GitHub-miljøet og fjern variabelen:
+
+```powershell
+az functionapp deployment list-publishing-profiles --resource-group $RG --name $FA --xml | gh secret set AZURE_FUNCAPP_PUBLISH_PROFILE --env prod
+Remove-Variable pp
+```
+
+Arbeidsflyten velger vei av seg selv: er `AZURE_FUNCAPP_PUBLISH_PROFILE` satt,
+hoppes `azure/login` over, og kjøringen melder «API-deploy:
+publiseringsprofil» i sammendraget. Er den ikke satt, går den veien under.
+
+To ting å vite om profilen:
+
+| | |
+|---|---|
+| Den er like hemmelig som SP-legitimasjonen | den flytter hvor hemmeligheten ligger, den fjerner den ikke |
+| Den blir ugyldig hvis noen nullstiller publiseringslegitimasjonen | ingenting varsler om det — deployen feiler på autentisering neste gang |
+
+Svarer sjekken `STENGT`, er veien under den riktige.
+
+### 8.2 Tjenestehovedobjekt (når basic publishing er av)
+
 **Hva dette objektet er:** den tredje identiteten i tabellen i 0.5 — den
 GitHub Actions logger inn med for å legge kode på Function App-en. Den
 brukes aldri i drift, og den har ingenting med lagringen å gjøre.
@@ -2017,6 +2059,7 @@ v2 er borte.
 | `Resource <navn> of type Microsoft.Web/Sites doesn't exist` | **To ting:** feil navn, ELLER at deploy-objektet ikke ser ressursen. Workflowen lister nå det den ser, så de to kan skilles. Konvensjonen er `fa-skjema-3-<miljø>` — ikke visningsnavnet på SWA-en ved siden av | 8 |
 | `Deploy verifisert: prod kjører <sha>` etter en PILOT-deploy | Merkelappen sto fast på «prod» etter at de to workflowene ble slått sammen. Sjekken var riktig og traff pilot — det var navnet som løy. Verste sorten: et sammendrag ingen mistror, som sier at prod er oppdatert når prod ikke er rørt | `deploy-prod.yml` |
 | «SWA-token fra hemmeligheten» med ingenting etter | Linja skrev ut VALGET (`swa_token_secret`), og en kjøring uten eget valg bruker miljøets standard. Den svarte ikke på det eneste den finnes for: hvilken SWA ble truffet | `deploy-prod.yml` |
+| «Vi må bestille en app-registrering for å deploye API-et» | **Ikke nødvendigvis.** `Azure/functions-action` tar en publiseringsprofil og trenger da ingen Entra-identitet. Hele kapittel 8.2 — og ventetiden på `Application Administrator` — faller bort når basic publishing er påslått. Sjekk det FØR du bestiller | 8.1 |
 | `Unexpected input(s) 'deployment_environment'` | **Advarselen peker feil vei:** `@v1` løses til taggen, og dens `action.yml` erklærer bare 11 inputs. Men det er en docker-action — løperen eksporterer `with:`-nøklene som `INPUT_*` uansett, og beholderen leser den. Preview VIRKER. Konsekvensen er at en SKRIVEFEIL i navnet ville vært like stille | `deploy-prod.yml` |
 
 ### Krav uten et trinn
