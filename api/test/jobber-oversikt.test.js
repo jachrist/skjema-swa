@@ -87,7 +87,10 @@ async function medAsync(valg, fn) {
     sjekk('og kilden sier det', dev[0].scheduleKilde, 'standard');
     sjekk('og ingenting er ignorert', dev[0].overstyringIgnorert, null);
 
-    for (const miljo of ['pilot', 'production', 'prod', 'staging', undefined]) {
+    // PROD ER UTE AV DENNE LISTA siden 27.10.2026 — den kjører timere nå, og
+    // har sin egen sjekk under. `production` står igjen med vilje: det er
+    // pilotens gamle navn, og den må fortsatt svare «github-actions».
+    for (const miljo of ['pilot', 'production', 'staging', undefined]) {
         const o = med({ miljo }, jobbOversikt);
         sjekk(`${miljo}: trigges av GitHub Actions`, o[0].trigger, 'github-actions');
         // Og tidspunktet som vises er workflowens, ikke en app-setting som
@@ -96,6 +99,12 @@ async function medAsync(valg, fn) {
         sjekk(`${miljo}: og sier hvor den kommer fra`, o[0].scheduleKilde, 'workflow');
         sjekk(`${miljo}: workflownavnet er med`, o[0].workflow, JOBBER[0].workflow);
     }
+
+    // Prod kjører timere siden 27.10.2026 — samme form som dev.
+    const prod = med({ miljo: 'prod' }, jobbOversikt);
+    sjekk('prod trigges av timer', prod[0].trigger, 'timer');
+    sjekk('og schedulen er standarden', prod[0].schedule, JOBBER[0].standardSchedule);
+    sjekk('og kilden sier det', prod[0].scheduleKilde, 'standard');
 }
 
 // ---------- 2. overstyringen, i begge retninger ----------
