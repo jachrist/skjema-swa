@@ -304,8 +304,8 @@ for (const miljo of MILJOER) {
 
 // ---------- de to utgåtte filene ----------
 {
-    // `env.production.json` ble aldri lest: `build-config.js` ruter
-    // «production» til pilot så lenge `env.pilot.json` finnes. En fil som
+    // `env.production.json` ble aldri lest: `build-config.js` rutet
+    // «production» til pilot (og godtar ikke navnet lenger). En fil som
     // ingen leser og ingen vedlikeholder, ser like autoritativ ut som de to
     // ekte — og det var nettopp forvirringen.
     sjekk('env.production.json er fjernet',

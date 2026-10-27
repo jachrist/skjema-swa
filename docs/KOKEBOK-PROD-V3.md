@@ -1952,6 +1952,24 @@ Utsending og purring ville gått dobbelt til eksterne mottakere.
 etterpå. Som belte: roter `SCHEDULER_KEY` på v2, så et gjenglemt cron-kall får
 401 i stedet for å kjøre.
 
+### Miljønavnet skifter: `Production` → `prod`
+
+v2-prod har `MILJO=Production`, v3-prod har `MILJO=prod` (pinget
+27.10.2026). Tre steder bruker verdien **rått** som identitet — med vilje,
+fordi de må skille v2-prod fra v2-dev, og `miljonavn()` ville gjort begge til
+`pilot`. Det er også derfor de skifter ved cutover, uten at noen kode endres:
+
+| Hvor | Hva skjer ved skiftet | Gjør dette |
+|---|---|---|
+| Nøkkelkalenderen (`lib/nokkelkalender-storage.js`) | `MILJO` i små bokstaver er `PartitionKey`. Varslingsjobben (`lib/nokkelkalender-jobb.js`) leser **bare sin egen** partisjon, mens admin-lista viser alle. Radene under `production` står altså fortsatt i lista — og varsles aldri igjen | Flytt radene fra `production` til `prod` før cutover, eller seed `prod` og slett de gamle. Sjekk etterpå at «Kjør nå» på nøkkelkalender-jobben ser dem |
+| Flytene (`miljø` i kroppen, `lib/flyt-kaller.js` og backup) | Alt v3-prod sender har `"miljø": "prod"`. `SkjemaMiljo` er dokumentert som `pilot` / `production` | Gå gjennom hver flyt som forgrener på `miljø` eller `SkjemaMiljo`. Tester en av dem `== "production"` for å velge ekte mottakere eller Planner-plan, havner v3-prod i else-grenen — som er test |
+| Backupfilnavnet (`functions/backup.js`) | Nye filer heter `prod-backup-…` / `prod-delta-…`, ikke `Production-…` | Har biblioteket eller lagringskontoen livssyklusregler på prefiks, må de få det nye prefikset. Ellers ligger de nye filene utenfor oppbevaringsregelen |
+
+Dette er ikke en grunn til å gi v3-prod `MILJO=Production`. Da ville v3-prod
+lest som pilot, mistet timerne og gått tilbake til fire-and-forget — som er
+det som ikke virker på en Function App. Se `KJORER_TIMERE` i
+`lib/plattform.js`.
+
 ### Tilbakevei
 
 Gjør cutover til et **domenebytte**, ikke en ny URL. Da er tilbakeveien én
@@ -2193,7 +2211,7 @@ versjoner kjører samtidig, eller fordi pilot har en annen arkitektur:
 | `AAD_CLIENT_SECRET` i prod-inventaret | Står igjen bare fordi pilot bruker secret-navnet |
 | `SWA_URL` som instansspesifikk | Relevant bare under parallellkjøring |
 | 0.3 og 0.5 i sin helhet | Begge handler om å dele ressursgruppe og app-registreringer med v2 |
-| `production` som miljønavn | Et gammelt navn for pilot |
+| `production` i `MILJO_ALIAS` | v2-prods `MILJO`. Aliaset får den til å lese som pilot, og må stå så lenge v2-prod finnes |
 
 > **Rydd ikke før v3 er verifisert i begge tenantene.** Hver av linjene over
 > er en gaffel som bærer to oppsett. Fjernes den ene siden før den andre er

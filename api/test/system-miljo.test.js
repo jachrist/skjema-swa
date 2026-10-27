@@ -11,9 +11,10 @@
  *
  * Og det var nettopp den feilen som lå her til 17.09.2026. Testen slo fast at
  * «production regnes som prod», mens kommentaren rett over sa at Production var
- * PILOT sitt navn. Pilot kjører med MILJO=production den dag i dag
- * (config/env.pilot.json), så pilot arvet prodens unntak: en manglende
- * AAD_CLIENT_SECRET — som tar ned innloggingen helt — ble meldt som forventet.
+ * PILOT sitt navn. Det var feil begge veier: `Production` står på v2-prod
+ * (pinget 27.10.2026), og v2-dev (pilot) svarer `pilot`. Men konsekvensen
+ * gjelder like fullt: v2-prod er en SWA Managed Functions-vert, og skal ha
+ * pilots regler, ikke v3-prods.
  *
  * Kjøres med:  node api/test/system-miljo.test.js
  */
@@ -79,10 +80,10 @@ const SATT = { satt: true, lengde: 40 };
     sjekk('pilot: rapporten er uendret', r, TOM);
 }
 
-// ---------- «production» er pilot, ikke prod ----------
+// ---------- «production» (v2-prod) leses som pilot, ikke prod ----------
 {
-    // Det gamle navnet på pilot. env.pilot.json setter det fortsatt, og
-    // build-config.js gjør samme oversettelse ved bygg.
+    // v2-prod sin app setting. Den er en SWA Managed Functions-vert, som
+    // pilot — ikke en Function App, som v3-prod.
     process.env.MILJO = 'production';
     sjekk('production normaliseres til pilot', miljonavn(), 'pilot');
     sjekk('production: ingen unnskyldning for tom verdi',
@@ -258,14 +259,20 @@ const SATT = { satt: true, lengde: 40 };
     sjekk('fant KJENTE_MILJOER', Array.isArray(kjente), true);
     sjekk('fant lista i build-config', Array.isArray(godtatt), true);
 
-    // build-config godtar i tillegg `production` som gammelt alias. Alt ANNET
-    // skal være det samme settet.
-    const utenAlias = (godtatt || []).filter(n => n !== 'production');
-    sjekk('samme miljønavn i system.js og build-config.js', utenAlias, kjente);
+    sjekk('samme miljønavn i system.js og build-config.js', godtatt, kjente);
 
-    // Og aliaset skal bare finnes ett sted: det som rutes om, skal rutes om
-    // likt. `development` er fjernet begge steder.
+    // Ingen byggnavn rutes om. `development` bygde pilot til 15.10.2026,
+    // `production` gjorde det til 27.10.2026 — og var da navnet på v2-PROD.
     sjekk('development er borte fra build-config', /'development'/.test(byggKilde), false);
+    sjekk('production er borte fra build-config', /'production'/.test(byggKilde), false);
+
+    // INVENTARET BRUKER IKKE ALIASET. env.pilot.json sa `MILJO=production` til
+    // 27.10.2026, mens pilot faktisk svarte `pilot` — og hele repoet bygde
+    // på inventaret. Fila heter etter miljøet, og MILJO skal si det samme.
+    for (const m of ['dev', 'pilot', 'prod']) {
+        const verdi = JSON.parse(fs.readFileSync(path.join(rot, 'config', `env.${m}.json`), 'utf8')).MILJO?.value;
+        sjekk(`env.${m}.json: MILJO er ${m}`, verdi, m);
+    }
     sjekk('development er borte fra system.js', /'development'/.test(sysKilde), false);
 }
 

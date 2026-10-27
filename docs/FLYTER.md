@@ -192,8 +192,19 @@ det, så en treg flyt ikke kveler kjøringen og feilen kommer som en naken 502:
 
 ## Miljøet står i payloaden
 
-Alle utgående kall har `miljø` i kroppen — `"pilot"`, `"production"` eller
-`"ukjent"` hvis `MILJO` ikke er satt. Én flyt kan dermed forgrene på miljø i
+Alle utgående kall har `miljø` i kroppen — verdien av `MILJO`, rått, eller
+`"ukjent"` hvis den ikke er satt. Pinget 27.10.2026:
+
+| Vert | `miljø` |
+|---|---|
+| v2-dev (pilot) | `"pilot"` |
+| v3-dev | `"dev"` |
+| v2-prod | `"Production"` |
+| v3-prod | `"prod"` |
+
+**Prod skifter verdi ved cutover**, fra `"Production"` til `"prod"`. En flyt
+som tester på `"production"` for å velge ekte mottakere, vil sende v3-prod
+til else-grenen. Se kapittel 10 i `docs/KOKEBOK-PROD-V3.md`. Én flyt kan dermed forgrene på miljø i
 stedet for at det vedlikeholdes en kopi per miljø.
 
 Adressen flyten kalles på sier ingenting om avsenderen: den er den samme
@@ -323,7 +334,7 @@ miljøer uten redigering. To miljøvariabler dekker det:
 | Variabel | Innhold | Til hva |
 |---|---|---|
 | `SwaBaseUrl` | `https://<swa>` uten skråstrek til slutt | adressen flyter som kaller **inn** bygger URL-en fra |
-| `SkjemaMiljo` | `pilot` / `production` | å skille miljøene: logging, valg av Planner-plan, mottakere i test |
+| `SkjemaMiljo` | `pilot` / `production` — og `prod` etter cutover | å skille miljøene: logging, valg av Planner-plan, mottakere i test |
 
 **Lagre adressen, ikke bare navnet.** Utleder hver flyt URL-en fra miljønavnet,
 har hver av dem sin egen `pilot → https://…`-mapping. Bytter SWA-en adresse —

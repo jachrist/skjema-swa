@@ -89,7 +89,7 @@ async function medAsync(valg, fn) {
 
     // PROD ER UTE AV DENNE LISTA siden 27.10.2026 — den kjører timere nå, og
     // har sin egen sjekk under. `production` står igjen med vilje: det er
-    // pilotens gamle navn, og den må fortsatt svare «github-actions».
+    // v2-prod, og den må fortsatt svare «github-actions».
     for (const miljo of ['pilot', 'production', 'staging', undefined]) {
         const o = med({ miljo }, jobbOversikt);
         sjekk(`${miljo}: trigges av GitHub Actions`, o[0].trigger, 'github-actions');
@@ -280,7 +280,8 @@ async function endepunktsjekk() {
     sjekk('ingen statusfeil', kropp.jobber[0].statusFeil, null);
     sjekk('merknaden forklarer triggeren', /timer-trigger/i.test(kropp.merknad), true);
 
-    // «production» er pilot, og merknaden skal si det motsatte der.
+    // «production» er v2-prod, som leses som pilot, og merknaden skal si det
+    // motsatte der.
     const pilot = await medAsync({ miljo: 'production' }, () => kjor({ upn: 'a@b.no', admin: true, getEntity: okRad }));
     sjekk('pilot: trigges av GitHub Actions', pilot.svar.jsonBody.jobber[0].trigger, 'github-actions');
     sjekk('pilot: merknaden sier at timere ikke kjører',

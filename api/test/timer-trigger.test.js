@@ -71,11 +71,12 @@ const plattform = require('../src/lib/plattform');
     // PILOT SKAL IKKE. Den kjører fortsatt på SWA Managed Functions, der en
     // timer-registrering kan velte oppstarten for hele appen.
     sjekk('pilot gjør ikke', med('pilot'), false);
-    // `production` er pilotens gamle navn, og må normaliseres FØR oppslaget.
-    // DETTE ER IKKE LENGER EN TEORETISK SJEKK: lista inneholder nå `prod`, og
+    // `production` er v2-prod (SWA Managed Functions), og må normaliseres FØR
+    // oppslaget. DETTE ER IKKE EN TEORETISK SJEKK: lista inneholder `prod`, og
     // «production» ligner nok til at en manglende normalisering ville gitt
-    // pilot timere — altså nettopp den registreringen som kan ta ned appen.
-    sjekk('production er pilot, ikke prod', med('production'), false);
+    // v2-prod timere — altså nettopp den registreringen som kan ta ned appen,
+    // i produksjon.
+    sjekk('production (v2-prod) leses som pilot, ikke prod', med('production'), false);
     sjekk('lokal gjør ikke', med('lokal'), false);
     sjekk('ukjent miljø gjør ikke', med('staging'), false);
     sjekk('usatt gjør ikke', med(undefined), false);
@@ -100,9 +101,9 @@ const plattform = require('../src/lib/plattform');
     // 'production' inn i lista endret ingenting, og ingen test kunne se
     // forskjell på den og originalen.
     //
-    // Det er ikke en teoretisk pirk: den som vil gi pilot timere i steg 6 og
-    // skriver 'production' fordi det er det MILJO er satt til, får en liste
-    // som ser riktig ut og ikke gjør noe.
+    // Det er ikke en teoretisk pirk: den som vil gi v2-prod timere og skriver
+    // 'production' fordi det er det MILJO er satt til, får en liste som ser
+    // riktig ut og ikke gjør noe.
     for (const [navn, sett] of [
         ['KJORER_TIMERE', plattform.KJORER_TIMERE],
         ['LØSER_KEYVAULT_REFERANSER', plattform.LØSER_KEYVAULT_REFERANSER]
@@ -209,10 +210,10 @@ const lastAlle = (miljo) => {
     const forventede = JOBBER.map(j => jobbSchedule(j).schedule).sort();
     sjekk('de registrerte schedulene er registerets', registrerte, forventede);
 
-    // `production` er pilotens gamle navn og skal IKKE få timere, selv om
-    // lista nå inneholder `prod`. De to ligner nok til at en manglende
-    // normalisering ville gitt pilot nettopp den registreringen som kan ta
-    // ned appen — derfor står den fremst her.
+    // `production` er v2-prod og skal IKKE få timere, selv om lista nå
+    // inneholder `prod`. De to ligner nok til at en manglende normalisering
+    // ville gitt v2-prod nettopp den registreringen som kan ta ned appen —
+    // derfor står den fremst her.
     for (const miljo of ['production', 'staging']) {
         const m = lastAlle(miljo);
         sjekk(`${miljo} registrerer INGEN timer`, m.timere.length, 0);
