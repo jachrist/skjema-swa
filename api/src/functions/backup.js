@@ -2,9 +2,12 @@
  * Backup-endepunkter.
  *
  *   POST /api/backup/kjor
- *     Auth: x-scheduler-key eller admin. Svarer 202 med én gang og kjører
- *     jobben videre i bakgrunnen — bygging, kryptering og opplasting tar
- *     lengre tid enn SWA-gatewayen holder en forbindelse åpen.
+ *     Auth: x-scheduler-key eller admin. Bygging, kryptering og opplasting
+ *     tar lengre tid enn SWA-gatewayen holder en forbindelse åpen, så der
+ *     plattformen holder bakgrunnsarbeid i live svarer ruta 202 med én
+ *     gang. Der den IKKE gjør det, ventes jobben ut og svaret er 200
+ *     «ferdig» — selv om gatewayen kan ha gitt opp lenge før. Valget står
+ *     i lib/plattform.js, se lib/bakgrunn.js.
  *     Bygger komplett backup (tabeller + blobs), AES-krypterer, lagrer i
  *     midlertidig blob-container 'backups', kaller BACKUP_FLOW_URL (PA-flyt)
  *     så PA laster opp til OneDrive.
@@ -42,6 +45,7 @@
 const { app } = require('@azure/functions');
 const { stotterTimere } = require('../lib/plattform');
 const { jobbForId, jobbSchedule, meldTimer } = require('../lib/jobber');
+const { startBakgrunnsjobb, jobbSvar } = require('../lib/bakgrunn');
 const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin, harFlytNokkel } = require('../lib/auth');
 const { flytHeadere } = require('../lib/flyt-kaller');
@@ -498,17 +502,18 @@ app.http('backupKjor', {
         });
 
         const jobbLog = (...a) => context.log(...a);
-        jobbLog(`backup/kjor: trigget av ${auth.upn}, modus=${onsketModus} (fire-and-forget)`);
-        kjorBackupJobb(auth.upn, jobbLog, onsketModus).catch(e => jobbLog(`backup/kjor: uventet feil i bakgrunnsjobb — ${e.message}`));
+        jobbLog(`backup/kjor: trigget av ${auth.upn}, modus=${onsketModus}`);
+        // Venter bare der plattformen krever det — se lib/bakgrunn.js.
+        const utfall = await startBakgrunnsjobb(
+            () => kjorBackupJobb(auth.upn, jobbLog, onsketModus),
+            { log: jobbLog, navn: 'backup/kjor' }
+        );
 
-        return {
-            status: 202,
-            jsonBody: {
-                status: 'startet',
-                startet: startTid,
-                melding: 'Backupen kjører i bakgrunnen. Følg med på /api/backup/status.'
-            }
-        };
+        return jobbSvar(utfall, {
+            startet: startTid,
+            asynkronMelding: 'Backupen kjører i bakgrunnen. Følg med på /api/backup/status.',
+            ferdigMelding: 'Backupen kjørte ferdig. Følg med på /api/backup/status.'
+        });
     }
 });
 
@@ -972,17 +977,17 @@ app.http('backupKjorEksternt', {
         });
 
         const jobbLog = (...m) => context.log(...m);
-        kjorEksternBackup(a.upn, { connectionString, miljo, passphrase }, jobbLog)
-            .catch(e => jobbLog(`backup/eksternt: uventet feil — ${e.message}`));
+        const utfall = await startBakgrunnsjobb(
+            () => kjorEksternBackup(a.upn, { connectionString, miljo, passphrase }, jobbLog),
+            { log: jobbLog, navn: 'backup/eksternt' }
+        );
 
-        return {
-            status: 202,
-            jsonBody: {
-                status: 'startet', miljo, konto,
-                passphrase: passphrase ? 'egen' : 'dette miljøets',
-                melding: 'Backupen kjører i bakgrunnen. Følg med på /api/backup/eksternt-status.'
-            }
-        };
+        return jobbSvar(utfall, {
+            startet: null,
+            ekstra: { miljo, konto, passphrase: passphrase ? 'egen' : 'dette miljøets' },
+            asynkronMelding: 'Backupen kjører i bakgrunnen. Følg med på /api/backup/eksternt-status.',
+            ferdigMelding: 'Backupen kjørte ferdig. Følg med på /api/backup/eksternt-status.'
+        });
     }
 });
 
@@ -1161,15 +1166,17 @@ app.http('backupVerifiserLagret', {
         });
 
         const jobbLog = (...m) => context.log(...m);
-        kjorVerifisering(auth.upn, filnavn, kilde, jobbLog);
+        const utfall = await startBakgrunnsjobb(
+            () => kjorVerifisering(auth.upn, filnavn, kilde, jobbLog),
+            { log: jobbLog, navn: 'backup/verifiser' }
+        );
 
-        return {
-            status: 202,
-            jsonBody: {
-                status: 'startet', filnavn, kilde,
-                melding: 'Verifiseringen kjører i bakgrunnen. Følg med på /api/backup/verifiser-status.'
-            }
-        };
+        return jobbSvar(utfall, {
+            startet: startTid,
+            ekstra: { filnavn, kilde },
+            asynkronMelding: 'Verifiseringen kjører i bakgrunnen. Følg med på /api/backup/verifiser-status.',
+            ferdigMelding: 'Verifiseringen kjørte ferdig. Følg med på /api/backup/verifiser-status.'
+        });
     }
 });
 

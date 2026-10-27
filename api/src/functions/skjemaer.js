@@ -19,6 +19,7 @@ const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg } = require('../lib/behandling');
+const { startBakgrunnsjobb } = require('../lib/bakgrunn');
 const { listekolonner } = require('../lib/listekolonne');
 const vilkar = require('../lib/vilkar');
 const { sisteBeslutning } = require('../lib/datauttrekk');
@@ -349,7 +350,8 @@ app.http('lagreBeslutning', {
                 Detaljer: { skjematypeId, steg: stegNr, beslutning, tekst: valgtValg?.Tekst || '', nyStatus: skjema.Skjema_status, kilde: erFlowCallback ? 'ekstern-flyt' : 'bruker' }
             });
 
-            // Varsling (fire-and-forget) — kalles etter lagring
+            // Varsling — kalles etter lagring, og ventes på der
+            // plattformen krever det (se lib/bakgrunn.js).
             const st = await skjemaStorage.hentSkjematype(skjematypeId);
             const skjematype = st?.JSON || {};
             // Bare steg som BLE aktive av denne beslutningen. Et steg som var
@@ -390,7 +392,14 @@ app.http('lagreBeslutning', {
             // varsling som ble hoppet over etterlot seg ingen spor. Regelen
             // bor i varsling.js, fordi innsendingsveien hadde den IKKE — og
             // den forskjellen var usynlig helt til en flyt sluttet å bli kalt.
-            varsling.loggVarslingsutfall(varslinger, log, 'beslutning');
+            // Venter der plattformen dreper det som ikke er ventet på — se
+            // lib/bakgrunn.js. Løftene er ALLEREDE startet over, så i pilot
+            // er dette ord for ord den gamle oppførselen; i dev og prod er
+            // forskjellen at e-postene faktisk kommer fram.
+            await startBakgrunnsjobb(
+                () => varsling.loggVarslingsutfall(varslinger, log, 'beslutning'),
+                { log, navn: 'varsling (beslutning)' }
+            );
 
             return {
                 jsonBody: {
@@ -535,8 +544,10 @@ app.http('videresend', {
             const skjematype = st?.JSON || {};
             const nyMottakerSteg = { ...stegObj, Personer: [tilUpn], Roller: [], Varsling: ['epost'] };
             const varslOpts = { log: (m) => context.log(m), request };
-            varsling.sendBehandlerVarsling(skjema, skjematype, nyMottakerSteg, varslOpts)
-                .catch(e => context.log(`varsling FEIL (videresend): ${e.message}`));
+            await startBakgrunnsjobb(
+                () => varsling.sendBehandlerVarsling(skjema, skjematype, nyMottakerSteg, varslOpts),
+                { log: (m) => context.log(m), navn: 'varsling (videresend)' }
+            );
 
             return { jsonBody: { status: 'ok', personerNa: stegObj.Personer } };
         } catch (e) {
@@ -1121,7 +1132,7 @@ app.http('lagreSkjema', {
                 const log = (m) => context.log(m);
                 log(`innsending: varsler ${vanligeSteg.length} aktive steg`
                     + `${flytSteg.length ? `, ${flytSteg.length} eksterne flyt-steg` : ''}`);
-                varsling.loggVarslingsutfall([
+                const varslinger = [
                     varsling.sendInnsenderKvittering(skjemaKlartekst, skjematype, varslOpts),
                     ...(bleFerdigVedInnsending && harBehandling
                         ? [varsling.sendFerdigVarsling(skjemaKlartekst, skjematype, varslOpts)]
@@ -1129,7 +1140,12 @@ app.http('lagreSkjema', {
                     varsling.sendVarslingAktiveSteg(skjemaKlartekst, skjematype, vanligeSteg, varslOpts),
                     ...flytSteg.map(s => kallEksternFlyt(s.Flyt_url, skjemaKlartekst, s, log)),
                     oppdaterSPListe(skjemaKlartekst, skjematype, log)
-                ], log, 'innsending');
+                ];
+                // Samme grunn som i beslutningsveien — se lib/bakgrunn.js.
+                await startBakgrunnsjobb(
+                    () => varsling.loggVarslingsutfall(varslinger, log, 'innsending'),
+                    { log, navn: 'varsling (innsending)' }
+                );
             } else {
                 // DEN TAUSE TREDJE SAKEN. Et lagret skjema som ikke gikk til
                 // behandling varsler ingen — og sa det ikke. «Jeg lagret, og

@@ -16,6 +16,7 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { tabellKlient } = require('../lib/storage');
 const { stotterTimere } = require('../lib/plattform');
 const { jobbForId, jobbSchedule, meldTimer } = require('../lib/jobber');
+const { startBakgrunnsjobb, jobbSvar } = require('../lib/bakgrunn');
 
 function autorisert(request) {
     const schedulerKey = request.headers.get('x-scheduler-key');
@@ -38,23 +39,25 @@ app.http('refreshFs', {
             return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin eller service-key' } };
         }
 
-        // Fire-and-forget: SWA-proxyen har ~45 s response timeout og full FS-refresh
-        // tar 2-4 min. Vi svarer 202 og lar hosten holde prosessen i live.
-        // Bokføringen skjer inne i jobben — se lib/refresh-fs-jobb.js.
+        // Fire-and-forget BARE der plattformen holder prosessen i live — valget
+        // står i lib/plattform.js og tas i lib/bakgrunn.js. Full FS-refresh tar
+        // 2-4 min, så i et miljø som venter kommer tidsavbruddet mot
+        // nettleseren FØR jobben er ferdig. Verten venter likevel, så jobben
+        // kjører ferdig og bokfører seg selv — se lib/refresh-fs-jobb.js.
         // Status leses via GET /api/refresh-fs/status.
         const { kjorRefreshFs } = require('../lib/refresh-fs-jobb');
         const startTid = new Date().toISOString();
         const jobbLog = (...a) => context.log(...a);
-        kjorRefreshFs({ kilde: auth.kilde, log: jobbLog });
+        const utfall = await startBakgrunnsjobb(
+            () => kjorRefreshFs({ kilde: auth.kilde, log: jobbLog }),
+            { log: jobbLog, navn: 'refresh-fs' }
+        );
 
-        return {
-            status: 202,
-            jsonBody: {
-                status: 'startet',
-                startet: startTid,
-                melding: 'Jobben kjører asynkront. Sjekk /api/refresh-fs/status om et par minutter.'
-            }
-        };
+        return jobbSvar(utfall, {
+            startet: startTid,
+            asynkronMelding: 'Jobben kjører asynkront. Sjekk /api/refresh-fs/status om et par minutter.',
+            ferdigMelding: 'Jobben kjørte ferdig. Sjekk /api/refresh-fs/status for tallene.'
+        });
     }
 });
 
