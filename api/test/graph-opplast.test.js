@@ -103,6 +103,16 @@ async function kjor() {
         'fhs.sharepoint.com:/sites/Skjemasystem');
     sjekk('rot-området uten sti', graph.siteReferanse('https://fhs.sharepoint.com'), 'fhs.sharepoint.com');
     sjekk('tom verdi gir null', graph.siteReferanse(''), null);
+    // Visningsnavnet er ikke en adresse. Det gikk gjennom som «bare
+    // vertsnavn» til 27.10.2026, og Graph svarte 403 — som så ut som en
+    // rettighetsfeil.
+    sjekk('visningsnavn gir null', graph.siteReferanse('Backup Skjemasystem (FHS)'), null);
+    sjekk('ett ord uten punktum gir null', graph.siteReferanse('Skjemasystem'), null);
+    sjekk('mellomrom i vertsnavnet gir null', graph.siteReferanse('fhs sharepoint.com/sites/X'), null);
+    // Mellomrom i STIEN er lov — det er områdets URL-navn, og Graph tar det.
+    sjekk('mellomrom i stien er lov',
+        graph.siteReferanse('https://fhs.sharepoint.com/sites/Backup%20Skjema'),
+        'fhs.sharepoint.com:/sites/Backup Skjema');
 
     // ---------- stier ----------
     sjekk('mappe og filnavn settes sammen',
@@ -176,6 +186,28 @@ async function kjor() {
         sjekk('sesjonen ble opprettet én gang',
             g.kall.filter(k => k.url.includes('createUploadSession')).length, 1);
         sjekk('standardbiblioteket brukes uten navn', res.bibliotek, 'Dokumenter');
+    }
+
+    // ---------- visningsnavn i stedet for adresse ----------
+    {
+        // v3-prod 27.10.2026: BACKUP_SHAREPOINT_SITE var områdets
+        // visningsnavn. Graph fikk `GET /sites/Backup Skjemasystem (FHS)` og
+        // svarte 403 — som så ut som en rettighetsfeil. Nå skal verdien
+        // avvises før noe kall går til /sites, og meldingen si hva som er galt.
+        const g = lagGraph({ totalStorrelse: 1024 });
+        graph.tomTokenCache();
+        let feilen = null, res = null;
+        try {
+            res = await graph.lastOppBackup(
+                { blob: lagBlob(1024), filnavn: 'f.fsbk', storrelseBytes: 1024 },
+                () => {},
+                { fetchFn: g.fetchFn, konfig: { ...KONFIG, site: 'Backup Skjemasystem (FHS)' } }
+            );
+        } catch (e) { feilen = e; }
+        const melding = feilen ? feilen.message : JSON.stringify(res);
+        sjekk('visningsnavnet avvises', /ikke en gyldig områdeadresse/.test(melding), true);
+        sjekk('og meldingen sier hva som forventes', /visningsnavnet/.test(melding) && /sharepoint\.com\/sites\//.test(melding), true);
+        sjekk('ingen Graph-oppslag på området', g.kall.some(k => k.url.includes('/sites/')), false);
     }
 
     // ---------- navngitt bibliotek ----------
