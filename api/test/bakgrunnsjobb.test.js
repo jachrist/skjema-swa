@@ -27,7 +27,8 @@ const fs = require('fs');
 const path = require('path');
 const { utenKommentarer } = require('../../scripts/test-kilde.js');
 const { startBakgrunnsjobb, jobbSvar } = require('../src/lib/bakgrunn');
-const { maaVentePaaBakgrunnsarbeid, FULLFOERER_VED_RETUR, gjelderHer } = require('../src/lib/plattform');
+const { maaVentePaaBakgrunnsarbeid, FULLFOERER_VED_RETUR, gjelderHer,
+    KJORER_TIMERE, stotterTimere, miljonavn } = require('../src/lib/plattform');
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -64,6 +65,25 @@ sjekk('gjelderHer normaliserer aliaset',
 // Et alias INNE i lista er en stille no-op — det slås aldri opp.
 sjekk('ingen alias-nøkkel i FULLFOERER_VED_RETUR',
     [...FULLFOERER_VED_RETUR].filter(n => n === 'production'), []);
+sjekk('ingen alias-nøkkel i KJORER_TIMERE',
+    [...KJORER_TIMERE].filter(n => n === 'production'), []);
+
+// ---------- 1b. de TO prod-SWA-ene ----------
+//
+// «prod» i listene over betyr prod v3. Det finnes en prod v2 også, den er i
+// drift, og den kjører på SWA Managed Functions — der en timer-registrering
+// kan velte oppstarten for hele appen og fire-and-forget er nødvendig.
+//
+// `MILJO` skiller dem ikke av seg selv: begge er «prod» for et menneske, og
+// env.prod.json sier `MILJO=prod`. Det som skiller dem er at app-settingen på
+// v2-SWA-en står til `Production` — med stor P — og normaliseres til pilot.
+//
+// Så lenge begge finnes er den settingen en VAKT, ikke en levning. Testen
+// leser den påstanden, slik at «rydd bort det gamle pilot-navnet» ikke blir et
+// stille produksjonsutfall.
+sjekk('prod v2 sin setting leser som pilot', iMiljo('Production', miljonavn), 'pilot');
+sjekk('prod v2 får ingen timere', iMiljo('Production', stotterTimere), false);
+sjekk('prod v2 beholder fire-and-forget', iMiljo('Production', maaVentePaaBakgrunnsarbeid), false);
 
 // ---------- 2. venter den faktisk? ----------
 //

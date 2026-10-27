@@ -105,6 +105,28 @@ function miljonavn() {
  * PILOT STÅR IGJEN, og skal det: den kjører fortsatt på SWA Managed
  * Functions, der en timer-registrering kan velte oppstarten. Lista tømmes
  * for miljøer først når alle kjører på Function Apps.
+ *
+ * **«prod» HER BETYR PROD V3, OG DET ER ALIASET SOM HOLDER DE TO FRA
+ * HVERANDRE.** Det finnes to prod-SWA-er. v3 er Function App-en; v2 er den
+ * som er i drift, og den kjører på SWA Managed Functions. `MILJO` er det
+ * eneste signalet koden har, og det skiller dem IKKE av seg selv — begge er
+ * «prod» for et menneske, og `config/env.prod.json` sier `MILJO=prod`.
+ *
+ * Det som faktisk skiller dem er at app-settingen på v2-SWA-en står til
+ * `Production`. Den normaliseres til `pilot` (se MILJO_ALIAS), så v2 leser som
+ * pilot og får ingen timere. Det er riktig — v2 ER en SWA Managed
+ * Functions-vert — men det er ikke SKREVET noe sted før nå, og det er to grep
+ * fra å bli galt:
+ *
+ *   - Settes v2 til `MILJO=prod` — f.eks. for å gjøre System-siden ærlig om
+ *     hvilket miljø det er — registreres åtte timere på en vert som ikke
+ *     støtter dem, i produksjon.
+ *   - Ryddes aliaset bort som «et gammelt pilot-navn», gjelder det samme.
+ *
+ * Så lenge begge prod-SWA-ene finnes, er `Production` på v2 en VAKT, ikke en
+ * levning. Den kan ryddes først når v2 er revet (kapittel 10 og 11 i
+ * `docs/KOKEBOK-PROD-V3.md`). `api/test/bakgrunnsjobb.test.js` leser den
+ * påstanden.
  */
 const KJORER_TIMERE = new Set(['dev', 'prod']);
 
