@@ -53,9 +53,9 @@ const iMiljo = (navn, fn) => { process.env.MILJO = navn; try { return fn(); } fi
 sjekk('dev venter', iMiljo('dev', maaVentePaaBakgrunnsarbeid), true);
 sjekk('prod venter', iMiljo('prod', maaVentePaaBakgrunnsarbeid), true);
 sjekk('pilot venter IKKE', iMiljo('pilot', maaVentePaaBakgrunnsarbeid), false);
-// `MILJO=production` er pilot — env.pilot.json setter det den dag i dag. Leses
-// det som et ukjent navn, får pilot prodens oppførsel og cron-en der dør.
-sjekk('production (= pilot) venter IKKE', iMiljo('production', maaVentePaaBakgrunnsarbeid), false);
+// `MILJO=production` er v2-prod, som leses som pilot. Leses det som et ukjent
+// navn, er utfallet det samme i dag — men det er aliaset som bærer det.
+sjekk('production (v2-prod) venter IKKE', iMiljo('production', maaVentePaaBakgrunnsarbeid), false);
 sjekk('ukjent miljø venter IKKE', iMiljo('tull', maaVentePaaBakgrunnsarbeid), false);
 
 // Aliaset må normaliseres FØR oppslaget. Ingen av listene inneholder et
@@ -70,17 +70,17 @@ sjekk('ingen alias-nøkkel i KJORER_TIMERE',
 
 // ---------- 1b. de TO prod-SWA-ene ----------
 //
-// «prod» i listene over betyr prod v3. Det finnes en prod v2 også, den er i
+// «prod» i listene over betyr v3-prod. Det finnes en v2-prod også, den er i
 // drift, og den kjører på SWA Managed Functions — der en timer-registrering
 // kan velte oppstarten for hele appen og fire-and-forget er nødvendig.
 //
 // `MILJO` skiller dem ikke av seg selv: begge er «prod» for et menneske, og
 // env.prod.json sier `MILJO=prod`. Det som skiller dem er at app-settingen på
-// v2-SWA-en står til `Production` — med stor P — og normaliseres til pilot.
+// v2-prod står til `Production` — med stor P — og normaliseres til pilot.
 //
 // Så lenge begge finnes er den settingen en VAKT, ikke en levning. Testen
-// leser den påstanden, slik at «rydd bort det gamle pilot-navnet» ikke blir et
-// stille produksjonsutfall.
+// leser den påstanden, slik at «rydd bort aliaset» ikke blir et stille
+// produksjonsutfall.
 sjekk('prod v2 sin setting leser som pilot', iMiljo('Production', miljonavn), 'pilot');
 sjekk('prod v2 får ingen timere', iMiljo('Production', stotterTimere), false);
 sjekk('prod v2 beholder fire-and-forget', iMiljo('Production', maaVentePaaBakgrunnsarbeid), false);

@@ -17,15 +17,26 @@
 /**
  * Normaliser MILJO til ett navn per miljø.
  *
- * `production` er det GAMLE navnet på pilot — ikke et annet ord for prod.
- * `config/env.pilot.json` setter `MILJO=production` den dag i dag, og
- * `scripts/build-config.js` gjør den samme oversettelsen ved bygg
- * («alias production → pilot»). Prod setter `MILJO=prod`.
+ * **`production` er v2-PROD, og det leses som pilot med vilje.** Pinget
+ * 27.10.2026 — de fire vertene svarer:
  *
- * Skillet er ikke kosmetisk. Leses `production` som prod, arver pilot prodens
- * unntak — og en manglende `AAD_CLIENT_SECRET`, som tar ned innloggingen helt,
- * meldes da som «forventet tom her» i det ene miljøet som faktisk trenger den.
- * Det er nøyaktig feilen KUN_I_MILJO er laget for å unngå, speilvendt.
+ *   | Navn    | Vert                   | MILJO        | miljonavn() |
+ *   |---------|------------------------|--------------|-------------|
+ *   | v2-dev  | SWA Managed Functions  | `pilot`      | pilot       |
+ *   | v3-dev  | lenket Function App    | `dev`        | dev         |
+ *   | v2-prod | SWA Managed Functions  | `Production` | pilot       |
+ *   | v3-prod | lenket Function App    | `prod`       | prod        |
+ *
+ * Repoet trodde til samme dag at det var PILOT som satte `production`. Det
+ * var feil, men aliaset er riktig likevel: `miljonavn()` svarer på «hvilke
+ * regler gjelder for denne verten», og v2-prod er en SWA Managed
+ * Functions-vert, som pilot. Leses `production` som prod, får v2-prod timere
+ * og vente-på-bakgrunnsarbeid den ikke tåler — se KJORER_TIMERE.
+ *
+ * Det motsatte spørsmålet — «hvem er det som skriver» — skal IKKE gå
+ * gjennom denne funksjonen. Backupfilnavn, nøkkelkalenderens partisjon og
+ * `miljø` i flytkallene leser `MILJO` rått, fordi de må skille v2-prod fra
+ * v2-dev. Gikk de via aliaset, ville prod skrevet i pilots rader.
  *
  * Et ukjent navn sendes uendret videre, og medForventning() behandler det som
  * «vet ikke» — se KJENTE_MILJOER der.
@@ -44,9 +55,8 @@ const MILJO_ALIAS = { production: 'pilot' };
  *
  * `KUN_I_MILJO.miljoer` er en positivliste: står miljøet ikke der, blir en tom
  * verdi friskmeldt. Det er riktig for prod, som vi vet ikke trenger
- * `AAD_CLIENT_SECRET` — men det var også grunnen til at `production` arvet
- * prodens unntak, og det ville gjort det samme for et hvilket som helst nytt
- * miljønavn. En hemmelighet som mangler i et miljø vi ikke kjenner skal meldes,
+ * `AAD_CLIENT_SECRET` — men det ville også gitt et hvilket som helst nytt
+ * miljønavn prodens unntak. En hemmelighet som mangler i et miljø vi ikke kjenner skal meldes,
  * ikke ties i hjel.
  */
 const KJENTE_MILJOER = new Set(['dev', 'pilot', 'prod', 'lokal']);
@@ -106,22 +116,21 @@ function miljonavn() {
  * Functions, der en timer-registrering kan velte oppstarten. Lista tømmes
  * for miljøer først når alle kjører på Function Apps.
  *
- * **«prod» HER BETYR PROD V3, OG DET ER ALIASET SOM HOLDER DE TO FRA
- * HVERANDRE.** Det finnes to prod-SWA-er. v3 er Function App-en; v2 er den
- * som er i drift, og den kjører på SWA Managed Functions. `MILJO` er det
+ * **«prod» HER BETYR v3-PROD, OG DET ER ALIASET SOM HOLDER DE TO FRA
+ * HVERANDRE.** Det finnes to prod-SWA-er. v3-prod er Function App-en; v2-prod
+ * er den som er i drift, og den kjører på SWA Managed Functions. `MILJO` er det
  * eneste signalet koden har, og det skiller dem IKKE av seg selv — begge er
  * «prod» for et menneske, og `config/env.prod.json` sier `MILJO=prod`.
  *
- * Det som faktisk skiller dem er at app-settingen på v2-SWA-en står til
- * `Production`. Den normaliseres til `pilot` (se MILJO_ALIAS), så v2 leser som
- * pilot og får ingen timere. Det er riktig — v2 ER en SWA Managed
- * Functions-vert — men det er ikke SKREVET noe sted før nå, og det er to grep
- * fra å bli galt:
+ * Det som faktisk skiller dem er at app-settingen på v2-prod står til
+ * `Production`. Den normaliseres til `pilot` (se MILJO_ALIAS), så v2-prod
+ * leser som pilot og får ingen timere. Det er riktig — v2-prod ER en SWA
+ * Managed Functions-vert — og det er to grep fra å bli galt:
  *
  *   - Settes v2 til `MILJO=prod` — f.eks. for å gjøre System-siden ærlig om
  *     hvilket miljø det er — registreres åtte timere på en vert som ikke
  *     støtter dem, i produksjon.
- *   - Ryddes aliaset bort som «et gammelt pilot-navn», gjelder det samme.
+ *   - Ryddes aliaset bort, gjelder det samme.
  *
  * Så lenge begge prod-SWA-ene finnes, er `Production` på v2 en VAKT, ikke en
  * levning. Den kan ryddes først når v2 er revet (kapittel 10 og 11 i
@@ -162,10 +171,10 @@ function maaVentePaaBakgrunnsarbeid() {
  * Gjelder en evne-liste for miljøet vi står i?
  *
  * Egen funksjon av én grunn: **aliaset må normaliseres FØR oppslaget.**
- * `MILJO=production` er pilot, og en liste som inneholder `'pilot'` må svare
- * ja på den. Gjør den ikke det, er feilen usynlig i dag — ingen av listene
- * inneholder et alias-mål ennå — og slår inn først den dagen pilot legges
- * inn i steg 6. Det er den verste typen tidsinnstilt feil: den plantes nå og
+ * `MILJO=production` (v2-prod) leses som pilot, og en liste som inneholder
+ * `'pilot'` må svare ja på den. Gjør den ikke det, er feilen usynlig i dag —
+ * ingen av listene inneholder et alias-mål ennå — og slår inn først den dagen
+ * pilot legges inn i steg 6. Det er den verste typen tidsinnstilt feil: den plantes nå og
  * oppdages av noen andre.
  *
  * At den tar settet som argument er nettopp det som gjør den prøvbar i dag:

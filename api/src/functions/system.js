@@ -237,7 +237,7 @@ app.http('systemInfo', {
                 miljø: {
                     MILJO: process.env.MILJO || 'ukjent',
                     // Hvilket miljø helsesjekken under REGNER dette som.
-                    // «production» er pilot; se miljonavn().
+                    // «Production» er v2-prod, og leses som pilot; se miljonavn().
                     normalisert: miljonavn() || 'ukjent',
                     node: process.version,
                     plattform: `${os.type()} ${os.release()}`,

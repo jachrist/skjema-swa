@@ -306,10 +306,13 @@ Når prod-tenanten er oppe og bruker-/aksepansetestet:
 
 `build-config.js` godtar disse miljø-navnene:
 
-- `pilot` — leser `env.pilot.json` (samme som gammel `production`)
-- `prod` — leser `env.prod.json` (ny)
-- `production` — bakoverkompatibelt alias for `pilot`
-- `development` / `lokal` — for lokal utvikling
+- `dev` — leser `env.dev.json` (v3-dev)
+- `pilot` — leser `env.pilot.json` (v2-dev)
+- `prod` — leser `env.prod.json` (v3-prod, og frontend til v2-prod)
+- `lokal` — for lokal utvikling
+
+`production` og `development` avvises. Begge rutet til pilot, og begge lignet
+på et annet miljø — `production` er `MILJO` på v2-prod.
 
 Ved hvert bygg kopieres også `staticwebapp.config.<miljø>.json` →
 `frontend/staticwebapp.config.json`, som er den SWA faktisk leser, og til en

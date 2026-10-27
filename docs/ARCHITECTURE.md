@@ -146,10 +146,10 @@ linjene det er verdt å kjenne igjen.
 - **pilot**: `config/env.pilot.json` + Key Vault `kv-fhsskjema-pilot`.
 - **prod**: `config/env.prod.json` + Key Vault `fhs-kv-01`. Deploy krever Environment approval.
 
-Det finnes ikke noe tredje miljø. Navnene `development` og `production` er
-gamle; `env.development.json` og `env.production.json` er fjernet, og begge
-navnene rutes til pilot av `build-config.js` slik at en gammel kommando ikke
-brekker.
+Fire verter står parallelt til cutover — v2-dev, v3-dev, v2-prod og
+v3-prod. Tabellen med `MILJO` per vert står i `CLAUDE.md` under «Miljøer».
+`env.development.json` og `env.production.json` er fjernet, og
+`build-config.js` godtar ingen av de to navnene.
 
 ## Sikkerhetsprinsipper
 

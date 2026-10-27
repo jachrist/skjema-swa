@@ -130,6 +130,26 @@ brukeren merger, blir liggende igjen.
 
 ## Miljøer
 
+**Fire verter, fire navn.** Så lenge v2 står parallelt med v3, er dette
+navnene vi bruker om dem — i samtale, i dokumentasjon og i kommentarer.
+`MILJO` er pinget, ikke lest av inventaret:
+
+| Navn | Hva | Vert | `MILJO` | Inventar |
+|---|---|---|---|---|
+| **v2-dev** | «pilot» | SWA Managed Functions | `pilot` | `env.pilot.json` |
+| **v3-dev** | «dev» | lenket Function App | `dev` | `env.dev.json` |
+| **v2-prod** | prod i drift | SWA Managed Functions | `Production` | — |
+| **v3-prod** | prod v3 | lenket Function App | `prod` | `env.prod.json` |
+
+v2-versjonene legges ned når cutover er kjørt og v3-prod er bekreftet. v3-dev
+blir stående: det er der testbrukere med ulike roller finnes.
+
+`MILJO`-verdiene skal **ikke** byttes til de fire navnene. Verdien er
+partisjonsnøkkel i nøkkelkalenderen, `miljø` i hvert flytkall og prefiks på
+backupfilene — et bytte er en datamigrering på fire verter, for å rydde i to
+som skal bort. Se «Miljønavnet skifter» i kapittel 10 i
+`docs/KOKEBOK-PROD-V3.md`.
+
 - **dev** — `config/env.dev.json`. Dev-tenanten. **Lenket Function App**, ikke
   SWA Managed Functions: her har koden en managed identity, og lagringen går
   uten tilkoblingsstreng. Deploy er manuell (`deploy-dev.yml` for frontend,
@@ -141,10 +161,14 @@ Dev kom til 15.10.2026, som steg 0 i `docs/BESLUTNING-EGEN-FUNCTION-APP.md`.
 **Pilot og prod er uendret** og kjører fortsatt på tilkoblingsstreng; koden
 bærer begge veier og velger på konfigurasjon. Den gaffelen skal bort i steg 6.
 
-`production` er et gammelt navn for pilot og rutes dit av `build-config.js`,
-fordi `env.pilot.json` setter `MILJO=production`. **`development` er ikke et
-navn lenger** — det rutet til pilot, og med `dev` som et ekte miljø ville to
-navn som ligner pekt på hver sin ting. Begge listene over miljønavn
+**`production` er v2-prod, ikke pilot.** Repoet trodde det motsatte til
+27.10.2026, fordi `env.pilot.json` sa `MILJO=production` — pilot svarte
+`pilot`. `miljonavn()` leser likevel `production` som pilot, og det er
+riktig: v2-prod er en SWA Managed Functions-vert og skal ha pilots regler
+(ingen timere, fire-and-forget), ikke v3-prods. Det som skal skille v2-prod
+fra pilot — backupnavn, nøkkelkalender, flytkall — leser `MILJO` rått.
+`build-config.js` godtar verken `production` eller `development`: begge
+rutet til pilot, og begge lignet på et annet miljø. Begge listene over miljønavn
 (`build-config.js` og `system.js`) leses av `api/test/system-miljo.test.js`,
 som krever at de svarer likt.
 

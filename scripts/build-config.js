@@ -11,9 +11,8 @@ const fs = require('fs');
 const path = require('path');
 
 const miljo = process.argv[2];
-if (!['production', 'dev', 'pilot', 'prod', 'lokal'].includes(miljo)) {
+if (!['dev', 'pilot', 'prod', 'lokal'].includes(miljo)) {
     console.error('Bruk: node scripts/build-config.js <dev|pilot|prod|lokal>');
-    console.error('(production er et gammelt navn for pilot — bakoverkompatibilitet)');
     process.exit(1);
 }
 
@@ -25,16 +24,14 @@ if (!['production', 'dev', 'pilot', 'prod', 'lokal'].includes(miljo)) {
 // PILOT mens den som skrev det mente dev. Navnet avvises nå i stedet, og
 // feilmeldingen viser de gyldige.
 //
-// `production` → pilot står igjen, og det er ikke en forglemmelse:
-// `config/env.pilot.json` setter `MILJO=production`, så det navnet bærer
-// vekt. Å endre det rører et miljø i drift.
-let effektivtMiljo = miljo;
-if (miljo === 'production') {
-    effektivtMiljo = 'pilot';
-    console.log(`(${miljo} er et gammelt miljønavn — bruker pilot)`);
-}
-
-const envFil = path.join(__dirname, '..', 'config', `env.${effektivtMiljo}.json`);
+// `PRODUCTION`-ALIASET ER FJERNET (27.10.2026), av samme grunn.
+//
+// Det sto igjen fordi `config/env.pilot.json` skulle sette
+// `MILJO=production`. Det var feil: pinget 27.10.2026 svarer v2-dev (pilot)
+// `pilot`, og den som har `Production` er v2-PROD. Et byggnavn som heter
+// production og bygger pilot, er nøyaktig fellen over — med prod i stedet
+// for dev. Ingen workflow sendte det.
+const envFil = path.join(__dirname, '..', 'config', `env.${miljo}.json`);
 if (!fs.existsSync(envFil)) {
     console.error(`Fant ikke ${envFil}`);
     process.exit(1);
@@ -63,7 +60,7 @@ const bygg = {
     commit: (process.env.GITHUB_SHA || '').slice(0, 7) || 'lokal',
     kjoring: process.env.GITHUB_RUN_NUMBER || '',
     tid: new Date().toISOString(),
-    miljø: effektivtMiljo
+    miljø: miljo
 };
 
 const ut = `// GENERERT av scripts/build-config.js — ikke rediger manuelt.\n`
@@ -83,7 +80,7 @@ console.log(`Publiserte ${Object.keys(publicVerdier).length} public-verdier: ${O
 
 // Kopier riktig staticwebapp.config.<miljø>.json → staticwebapp.config.json
 // Pilot og prod har ulik auth-konfig (ClientSecret vs sertifikat via KV).
-const swaConfigKilde = path.join(__dirname, '..', `staticwebapp.config.${effektivtMiljo}.json`);
+const swaConfigKilde = path.join(__dirname, '..', `staticwebapp.config.${miljo}.json`);
 if (fs.existsSync(swaConfigKilde)) {
     // SWA leser staticwebapp.config.json fra app_location — som er frontend/,
     // ikke repo-roten. Kopien i roten er derfor bare til lesing og lokal
@@ -97,7 +94,7 @@ if (fs.existsSync(swaConfigKilde)) {
         path.join(__dirname, '..', 'frontend', 'staticwebapp.config.json')
     ];
     for (const m of mal) fs.copyFileSync(swaConfigKilde, m);
-    console.log(`Kopierte staticwebapp.config.${effektivtMiljo}.json → ${mal.map(m => path.relative(path.join(__dirname, '..'), m)).join(' og ')}`);
-} else if (effektivtMiljo !== 'lokal') {
+    console.log(`Kopierte staticwebapp.config.${miljo}.json → ${mal.map(m => path.relative(path.join(__dirname, '..'), m)).join(' og ')}`);
+} else if (miljo !== 'lokal') {
     console.warn(`ADVARSEL: ${swaConfigKilde} finnes ikke — beholder eksisterende staticwebapp.config.json`);
 }

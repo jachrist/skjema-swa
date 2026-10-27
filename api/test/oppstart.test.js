@@ -83,7 +83,7 @@ const dev = startMed('dev');
 sjekk('dev: appen starter', dev.feilmelding, null);
 sjekk('dev: rutene registreres', dev.ruter.length > 100, true);
 
-// `production` er pilotens MILJO-verdi den dag i dag, `prod` er prodens,
+// `production` er v2-prods MILJO-verdi, `prod` er v3-prods,
 // og `lokal` brukes ved kjøring på egen maskin. Et ukjent navn er også med:
 // et miljø vi ikke kjenner skal starte, ikke feile.
 // PROD ER UTE AV LISTA siden 27.10.2026: den registrerer ni timere nå, og
