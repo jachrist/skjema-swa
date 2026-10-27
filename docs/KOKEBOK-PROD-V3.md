@@ -1676,22 +1676,39 @@ trenger verken app-registrering, bestilling eller venting.
 SCM-endepunkt, uten noen Entra-identitet. Da faller hele resten av dette
 kapitlet bort.
 
-Forutsetningen er at *basic publishing* er påslått på ressursen. Prøvd i prod
-27.10.2026, og den var det. Sjekk slik:
+Forutsetningen er at **basic auth på SCM** er påslått på ressursen. Det er
+policyen `basicPublishingCredentialsPolicies/scm` som avgjør det, og den må
+leses direkte:
 
 ```powershell
-$pp = az functionapp deployment list-publishing-profiles --resource-group $RG --name $FA --xml 2>&1
-if ($pp -match 'asic authentication|is disabled') { 'STENGT' } elseif ($pp) { 'AAPEN' } else { 'ukjent - les $pp' }
+az resource show --resource-group $RG --name "$FA/scm" --resource-type Microsoft.Web/sites/basicPublishingCredentialsPolicies --api-version 2023-01-01 --query properties.allow
 ```
 
-**`$pp` er en hemmelighet.** Den bærer publiseringslegitimasjon i klartekst.
-Ikke skriv den ut, ikke lim den i en sak. Linja over leser bare om den finnes.
+**`--api-version` er ikke valgfri.** Uten den gjetter `az` en standardversjon
+som ikke kjenner underressurstypen, og svarer `Operation returned an invalid
+status 'Not Found'` — en melding som leses som «Function App-en finnes ikke».
+Skill dem med `az functionapp show -g $RG -n $FA --query name -o tsv` først.
 
-Svarer den `AAPEN`, legg profilen rett i GitHub-miljøet og fjern variabelen:
+**At profilen lar seg HENTE er ikke en sjekk.** 27.10.2026 ble
+`list-publishing-profiles` brukt som prøve, den svarte, og konklusjonen ble at
+veien var åpen. Deployen feilet likevel med `Failed to fetch Kudu App
+Settings. Unauthorized (CODE: 401)` — profilen ble lest riktig, men Kudu
+avviste legitimasjonen. Hentingen går mot ARM; bruken går mot SCM, og det er
+to ulike dører.
+
+Svarer policyen `false`, kan den slås på — hvis ingen Azure Policy hindrer det:
+
+```powershell
+az resource update --resource-group $RG --name "$FA/scm" --resource-type Microsoft.Web/sites/basicPublishingCredentialsPolicies --set properties.allow=true --api-version 2023-01-01
+```
+
+Blir den stående `false` etter oppdateringen, er den styrt av en policy på
+abonnementet, og da er 8.2 veien.
+
+Svarer policyen `true`, legg profilen rett i GitHub-miljøet:
 
 ```powershell
 az functionapp deployment list-publishing-profiles --resource-group $RG --name $FA --xml | gh secret set AZURE_FUNCAPP_PUBLISH_PROFILE --env prod
-Remove-Variable pp
 ```
 
 Arbeidsflyten velger vei av seg selv: er `AZURE_FUNCAPP_PUBLISH_PROFILE` satt,
@@ -2059,6 +2076,8 @@ v2 er borte.
 | `Resource <navn> of type Microsoft.Web/Sites doesn't exist` | **To ting:** feil navn, ELLER at deploy-objektet ikke ser ressursen. Workflowen lister nå det den ser, så de to kan skilles. Konvensjonen er `fa-skjema-3-<miljø>` — ikke visningsnavnet på SWA-en ved siden av | 8 |
 | `Deploy verifisert: prod kjører <sha>` etter en PILOT-deploy | Merkelappen sto fast på «prod» etter at de to workflowene ble slått sammen. Sjekken var riktig og traff pilot — det var navnet som løy. Verste sorten: et sammendrag ingen mistror, som sier at prod er oppdatert når prod ikke er rørt | `deploy-prod.yml` |
 | «SWA-token fra hemmeligheten» med ingenting etter | Linja skrev ut VALGET (`swa_token_secret`), og en kjøring uten eget valg bruker miljøets standard. Den svarte ikke på det eneste den finnes for: hvilken SWA ble truffet | `deploy-prod.yml` |
+| `Failed to fetch Kudu App Settings. Unauthorized (CODE: 401)` med publiseringsprofil | Profilen er LEST riktig — meldingen over sier «Successfully parsed SCM credential». Det er SCM som avviser den. Nesten alltid at basic auth på SCM er av. At profilen lot seg HENTE beviser ikke det motsatte: hentingen går mot ARM, bruken mot SCM | 8.1 |
+| `Operation returned an invalid status 'Not Found'` på `basicPublishingCredentialsPolicies` | **To ting:** Function App-en finnes ikke, ELLER `--api-version` mangler og `az` gjettet en versjon som ikke kjenner underressurstypen | 8.1 |
 | «Vi må bestille en app-registrering for å deploye API-et» | **Ikke nødvendigvis.** `Azure/functions-action` tar en publiseringsprofil og trenger da ingen Entra-identitet. Hele kapittel 8.2 — og ventetiden på `Application Administrator` — faller bort når basic publishing er påslått. Sjekk det FØR du bestiller | 8.1 |
 | `Unexpected input(s) 'deployment_environment'` | **Advarselen peker feil vei:** `@v1` løses til taggen, og dens `action.yml` erklærer bare 11 inputs. Men det er en docker-action — løperen eksporterer `with:`-nøklene som `INPUT_*` uansett, og beholderen leser den. Preview VIRKER. Konsekvensen er at en SKRIVEFEIL i navnet ville vært like stille | `deploy-prod.yml` |
 
