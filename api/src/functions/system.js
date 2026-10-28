@@ -4,6 +4,7 @@
  */
 const { app } = require('@azure/functions');
 const os = require('os');
+const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { lagringsvalg } = require('../lib/lagringsvalg');
 const { flytAuthModus, sasIUrlTrossEntra } = require('../lib/flyt-auth');
@@ -171,6 +172,39 @@ function uloestReferanse() {
         + 'secreten/tilgangen mangler (Function App).';
 }
 
+/**
+ * Hemmeligheter som må ha SAMME verdi i alle apper som deler lagringen.
+ *
+ * De fleste hemmelighetene er per app: `SCHEDULER_KEY` skal være ulik på
+ * v2-prod og v3-prod, nettopp så et gjenglemt cron-kall mot den ene ikke
+ * virker på den andre. Disse tre er bundet til dataene eller til flytene, og
+ * en ulik verdi feiler stille:
+ *
+ *   HASH_SALT          Pseudonymene i lagrede, anonymiserte svar. Ulikt salt
+ *                      gir samme person to pseudonymer — svargrensen og
+ *                      koblingen mellom innsendinger ryker.
+ *   OTP_HMAC_KEY       Signerer utsendingslenkene, som er gyldige i 90 dager.
+ *                      Ulik nøkkel: lenkene sendt fra den ene appen avvises
+ *                      av den andre.
+ *   FLOW_CALLBACK_KEY  Det flytene sender i `x-flow-key`. Flytene er felles,
+ *                      så verdien må være den de har.
+ *
+ * Funnet 28.10.2026, før cutover: v3-prod har egen Key Vault, og ingenting
+ * sa at disse tre måtte kopieres fra v2-prod i stedet for å lages på nytt.
+ * Helsesjekken viste bare lengden, og to ulike verdier kan ha samme lengde.
+ */
+const DELES_MED_DATAENE = ['HASH_SALT', 'OTP_HMAC_KEY', 'FLOW_CALLBACK_KEY'];
+
+/**
+ * Et kort avtrykk av verdien: de første 8 heksetegnene av SHA-256.
+ *
+ * Nok til å se om to apper har samme verdi, uten å si noe om hva den er. Ikke
+ * brukbart til å gjette verdien: 32 bit av en hash av en tilfeldig streng.
+ */
+function avtrykk(verdi) {
+    return crypto.createHash('sha256').update(String(verdi)).digest('hex').slice(0, 8);
+}
+
 function maskLengde(verdi) {
     if (!verdi) return { satt: false };
     const s = String(verdi);
@@ -228,6 +262,13 @@ app.http('systemInfo', {
         const hemmelige = {};
         for (const k of HEMMELIGE_ENV) {
             const info = k.endsWith('_FLOW_URL') ? maskFlytUrl(process.env[k]) : maskLengde(process.env[k]);
+            // Alltid satt for de tre — null når det ikke finnes en brukbar
+            // verdi. En uløst Key Vault-referanse har et avtrykk, men det er
+            // avtrykket av referansestrengen, og det ville sett likt ut i to
+            // apper som begge mangler verdien.
+            if (DELES_MED_DATAENE.includes(k)) {
+                info.avtrykk = info.satt && !info.feil ? avtrykk(process.env[k]) : null;
+            }
             hemmelige[k] = medForventning(k, info);
         }
 
@@ -277,4 +318,5 @@ app.http('systemInfo', {
 module.exports = { _medForventning: medForventning, _KUN_I_MILJO: KUN_I_MILJO, _miljonavn: miljonavn,
     _VIST_UTEN_AT_KODEN_LESER: VIST_UTEN_AT_KODEN_LESER,
     _maskLengde: maskLengde, _uloestReferanse: uloestReferanse,
+    _DELES_MED_DATAENE: DELES_MED_DATAENE, _avtrykk: avtrykk,
     _LØSER_KEYVAULT_REFERANSER: LØSER_KEYVAULT_REFERANSER };

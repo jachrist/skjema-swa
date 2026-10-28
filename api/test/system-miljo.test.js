@@ -28,9 +28,11 @@
 // installerer avhengigheter foer testene — saa denne fila har aldri kjoert. En
 // test som alltid hopper over er verre enn ingen test: den teller som groenn.
 const Module = require('module');
+// Rutene system.js registrerer, slik at testen kan kjøre den ekte handleren.
+const ruter = {};
 const origLoad = Module._load;
 Module._load = function (forespurt, ...rest) {
-    if (forespurt === '@azure/functions') return { app: { http() { } } };
+    if (forespurt === '@azure/functions') return { app: { http(navn, def) { ruter[navn] = def; } } };
     return origLoad.call(this, forespurt, ...rest);
 };
 
@@ -276,7 +278,56 @@ const SATT = { satt: true, lengde: 40 };
     sjekk('development er borte fra system.js', /'development'/.test(sysKilde), false);
 }
 
-if (før === undefined) delete process.env.MILJO; else process.env.MILJO = før;
+// ---------- avtrykk for hemmelighetene som deles med dataene ----------
+//
+// HASH_SALT, OTP_HMAC_KEY og FLOW_CALLBACK_KEY må være like i alle apper som
+// deler lagringen. Helsesjekken viste bare lengden, og to ulike verdier kan ha
+// samme lengde. Funnet 28.10.2026, før cutover. Handleren kjøres ekte.
+(async () => {
+    const avtrykk = modul._avtrykk;
+    sjekk('avtrykket er 8 heksetegn', /^[0-9a-f]{8}$/.test(avtrykk('en-verdi')), true);
+    sjekk('samme verdi gir samme avtrykk', avtrykk('abc'), avtrykk('abc'));
+    sjekk('ulik verdi gir ulikt avtrykk', avtrykk('abc') === avtrykk('abd'), false);
+    sjekk('de tre står i lista', [...modul._DELES_MED_DATAENE].sort(),
+        ['FLOW_CALLBACK_KEY', 'HASH_SALT', 'OTP_HMAC_KEY']);
 
-console.log(`\n${ok} OK, ${feil} feil`);
-process.exit(feil ? 1 : 0);
+    const handler = ruter.systemInfo && ruter.systemInfo.handler;
+    sjekk('systemInfo-handleren ble fanget', typeof handler, 'function');
+    if (typeof handler !== 'function') return;
+
+    const lagret = {};
+    const sett = (k, v) => { lagret[k] = process.env[k]; if (v === undefined) delete process.env[k]; else process.env[k] = v; };
+    sett('ADMIN_UPNS', 'admin@test.no');
+    sett('MILJO', 'prod');
+    sett('HASH_SALT', 'et-hemmelig-salt');
+    sett('OTP_HMAC_KEY', '@Microsoft.KeyVault(SecretUri=https://kv-fhsskjema-pilot.vault.azure.net/secrets/otp/)');
+    sett('FLOW_CALLBACK_KEY', undefined);
+    sett('SCHEDULER_KEY', 'skal-ikke-ha-avtrykk');
+    const principal = Buffer.from(JSON.stringify({ userDetails: 'admin@test.no', userRoles: ['authenticated'] })).toString('base64');
+    const request = { headers: { get: (h) => (h.toLowerCase() === 'x-ms-client-principal' ? principal : null) } };
+    try {
+        const svar = await handler(request, { log() {} });
+        const h = (svar.jsonBody || {}).hemmeligeEnv || {};
+        sjekk('satt verdi får avtrykk', h.HASH_SALT && h.HASH_SALT.avtrykk, avtrykk('et-hemmelig-salt'));
+        sjekk('og verdien selv står ikke i svaret',
+            JSON.stringify(svar.jsonBody).includes('et-hemmelig-salt'), false);
+        // En referanse som ikke ble løst har ingen verdi å sammenligne.
+        sjekk('uløst referanse får avtrykk null', h.OTP_HMAC_KEY && h.OTP_HMAC_KEY.avtrykk, null);
+        // Alltid satt for de tre — null, ikke en manglende nøkkel.
+        sjekk('ikke satt gir avtrykk null',
+            h.FLOW_CALLBACK_KEY && 'avtrykk' in h.FLOW_CALLBACK_KEY ? h.FLOW_CALLBACK_KEY.avtrykk : 'mangler', null);
+        // Per-app-nøkler skal IKKE ha avtrykk: de skal være ulike.
+        sjekk('SCHEDULER_KEY har ikke avtrykk', h.SCHEDULER_KEY && 'avtrykk' in h.SCHEDULER_KEY, false);
+    } catch (e) {
+        sjekk('handleren kjørte uten å kaste', e.message, null);
+    } finally {
+        for (const [k, v] of Object.entries(lagret)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
+})().then(() => {
+    if (før === undefined) delete process.env.MILJO; else process.env.MILJO = før;
+    console.log(`\n${ok} OK, ${feil} feil`);
+    process.exit(feil ? 1 : 0);
+}).catch((e) => {
+    console.log('FEIL  testen kastet:', e.message);
+    process.exit(1);
+});

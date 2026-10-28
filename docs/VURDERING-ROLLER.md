@@ -135,10 +135,16 @@ skriving og hver lesing. Stedene:
 |---|---|
 | adminportalen (`functions/roller.js`) | `lib/tilgang.js` |
 | import (`lib/rolle-import.js`) | `lib/rapport-rollefilter.js` |
-| team-synk (`lib/team-synk-jobb.js`) | `lib/dynamisk-rolle.js` |
-| FS-oppdatering (`lib/refresh-fs-jobb.js`) | `lib/oppslag.js` |
+| | `lib/dynamisk-rolle.js` |
+| | `lib/oppslag.js` |
+| | `lib/team-synk-jobb.js` |
 
-Åtte steder som må svare likt. Etter husreglene i `CLAUDE.md` betyr det én
+**Rettet 28.10.2026:** tabellen oppga team-synk og FS-oppdateringen som
+skrivere. Ingen av dem skriver til `Rollemedlemskap`. Team-synk LESER
+rollene og melder innehaverne inn i Teams, og FS-jobben lagrer lærerne på
+emneraden, ikke som roller — se `FORSLAG-ROLLER-FRA-FS.md`.
+
+Sju steder som må svare likt. Etter husreglene i `CLAUDE.md` betyr det én
 regel ett sted, og en test som leser alle brukerne av den.
 
 ### 2. Skjemaspesifikke roller — den som ikke kan estimeres ennå

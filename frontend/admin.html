@@ -3066,6 +3066,7 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                             ${v.satt
                                 ? `<span style="color: var(--success);">✓ satt</span> <small style="color: var(--text-secondary);">(${v.lengde} tegn)</small>`
                                 : `<span style="color: var(--danger);">✗ ikke satt</span>`}
+                            ${v.avtrykk ? `<small style="color: var(--text-secondary);" title="Første 8 tegn av SHA-256. Skal være likt i alle apper som deler lagringen."> · avtrykk <code>${escHtml(v.avtrykk)}</code></small>` : ''}
                             ${v.vertsnavn ? `<small style="color: var(--text-secondary);"> — ${escHtml(v.vertsnavn)}${v.sti ? escHtml(v.sti) : ''}</small>` : ''}
                             ${v.feil ? `<div style="color: var(--danger); margin-top: 2px;">⚠ ${escHtml(v.feil)}</div>` : ''}
                         </div>

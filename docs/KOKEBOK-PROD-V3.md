@@ -2004,12 +2004,31 @@ v3 sin konto til v2 sin. Pausen er satt til to timer.
 | ☐ | 5. Rollene for v3-prod sin MI på v2 sin lagringskonto | Kommandoen under form A øverst i kapittelet. Kan gjøres når som helst — rollene gjør ingenting før `STORAGE_ACCOUNT_NAME` peker dit |
 | ☐ | 6. Redirect-URI for `www.fskjema.no` på påloggingsappen | v2 og v3 bruker samme app (kapittel 6), så den er på plass hvis `www` virker på v2 i dag. Kontroller med `az ad app show` |
 | ☐ | 7. Ny `SCHEDULER_KEY` til v2-prod, klar til å limes inn | Lag den nå, ikke i pausen |
+| ☐ | 7b. `HASH_SALT`, `OTP_HMAC_KEY` og `FLOW_CALLBACK_KEY` er LIKE på v2-prod og v3-prod | Se under. `FLOW_CALLBACK_KEY` var ikke satt på v3-prod 28.10.2026 |
 
 Ny nøkkel:
 
 ```powershell
 [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
+
+**7b — tre hemmeligheter som følger dataene, ikke appen.** v3-prod har egen
+Key Vault, men disse tre skal ha v2-prod sin verdi, ikke en ny:
+
+| Hemmelighet | Ulik verdi gir |
+|---|---|
+| `HASH_SALT` | Nye pseudonymer for anonymiserte innsendere. Samme person blir to, og svargrensen teller feil. Kan ikke repareres i etterkant |
+| `OTP_HMAC_KEY` | Utsendingslenkene sendt fra v2-prod — gyldige i 90 dager — avvises av v3-prod |
+| `FLOW_CALLBACK_KEY` | Flytene sender den i `x-flow-key`. Uten den, eller med en annen, avviser v3-prod kvitteringen fra backup-flyten, hendelser og callbacks fra eksterne flyter (`lib/auth.js`) |
+
+Sammenlign under **Administrasjon → System** i begge appene: de tre har et
+**avtrykk** (første 8 tegn av SHA-256) ved siden av lengden. Avtrykket skal
+være likt. Verdien vises aldri, og lengden alene sier ingenting — to ulike
+verdier kan ha samme lengde.
+
+Er de ulike: legg v2-prod sin verdi i v3-prod sin vault under samme
+secret-navn, og start Function App-en på nytt så referansen leses igjen.
+`SCHEDULER_KEY` skal derimot være ULIK — se trinn 9.
 
 **I pausen — i denne rekkefølgen**
 
@@ -2077,6 +2096,29 @@ Trinn 16, kontroll:
 | ☐ | Neste morgen | Nattjobbene står `ok` i Jobber-fanen, og GitHub Actions viser prod-raden som hoppet over |
 
 **Etterpå:** sett TTL på `www` tilbake til 1 time når v3-prod er bekreftet.
+
+### Parallelldrift: v2-prod og v3-prod på samme lagring
+
+Går fint, og er i praksis det form A er — men bare med fire ting på plass:
+
+1. **Bare én av dem kjører jobbene.** Ellers går utsending og purring
+   dobbelt. Med `SWA_URL_PROD` slettet kjører v2-prod ingen jobber på egen
+   hånd; «Kjør nå» i v2-prod sitt admin-panel gjør det fortsatt — ikke bruk
+   den.
+2. **De tre hemmelighetene i 7b er like.**
+3. **Samme kode.** De to deployes hver for seg:
+   - v2-prod med «Deploy prod eller pilot» (standard-token, `deploy_api` på)
+   - v3-prod med begge jobbene
+
+   Deployes bare den ene, kan den nye koden skrive noe den gamle ikke leser.
+   Sjekk commit-SHA-en i `/api/ping` på begge.
+4. **Nøkkelkalenderen er ikke delt mellom dem** — partisjonene er
+   `production` og `prod`. Det er riktig, siden nøklene er ulike.
+
+Det som tåler to skrivere fra før, fordi det allerede må tåle flere
+instanser av samme app: skjemanummeret (`lib/skjema-id.js`, ETag mot
+samtidige innsendinger), krypteringsnøklene (ligger i lagringen og følger
+dataene), og lesecachene (60 sekunder i `lib/emner-storage.js`).
 
 ### Tilbakevei
 
