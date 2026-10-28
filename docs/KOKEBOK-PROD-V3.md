@@ -1924,8 +1924,9 @@ lar v2 sine data stå helt urørt.
 
 ### Er v2 den eneste som skriver?
 
-**Observert 19.10.2026, ikke bekreftet:** den opprinnelige løsningen (v1) ser
-ut til å kjøre oppdateringer fortsatt, mot sin egen lagringskonto. Det ble
+**Observert 19.10.2026, bekreftet 28.10.2026:** den opprinnelige løsningen
+(v1) kjører fortsatt cron-jobber mot sin egen lagringskonto. Den tas ned
+før cutover — se trinn 0 i sjekklisten under. Det ble
 oppdaget fordi en tom LU-kolonne ble feilsøkt i v1 sin `Emner`-tabell i den
 tro at det var prod — tabellen har samme navn og samme form, og v1 sine
 jobber skriver ikke LU-feltet.
@@ -1940,7 +1941,9 @@ To ting følger av det, og begge hører hjemme FØR cutover:
    i en portal. Fra 19.10.2026 melder `/api/system/info` hvilken konto
    miljøet faktisk leser fra — sjekk den, ikke hukommelsen.
 
-Avklar hva v1 fortsatt gjør, og om noe eller noen leser fra den.
+v1 skriver ikke i v2 sin lagring, så den ødelegger ingen data der. Men den
+kan sende varsler og e-post som ser ut til å komme fra løsningen, og da er
+det tre stabler å holde rede på i stedet for to.
 
 ### Uansett form: stopp de doble kjøringene
 
@@ -1948,9 +1951,16 @@ v2 trigges av GitHub Actions-cron; v3 har timere. Peker begge på samme
 lagring, kjører hver jobb **to ganger** — og fire av dem sender ut av huset.
 Utsending og purring ville gått dobbelt til eksterne mottakere.
 
-**Ta prod ut av matrisene i de åtte workflowene i samme operasjon**, ikke
-etterpå. Som belte: roter `SCHEDULER_KEY` på v2, så et gjenglemt cron-kall får
-401 i stedet for å kjøre.
+**Slett repo-variabelen `SWA_URL_PROD` i samme operasjon**, ikke etterpå.
+Det er ingen kodeendring: hver av de åtte cron-workflowene har en matrise
+med en `pilot`- og en `prod`-rad, og prod-raden hopper over med en
+`::notice::` når `SWA_URL_PROD` eller `SCHEDULER_KEY_PROD` er tom. Jobben
+blir grønn, og pilot-raden går som før. Ingenting annet i repoet leser de to
+navnene.
+
+Som belte: roter `SCHEDULER_KEY` på **v2-prod-SWA-en**, ikke i GitHub, så et
+gjenglemt cron-kall får 401 i stedet for å kjøre. `SCHEDULER_KEY_PROD` i
+GitHub kan stå; den er ubrukt når variabelen er borte.
 
 ### Miljønavnet skifter: `Production` → `prod`
 
@@ -1961,7 +1971,7 @@ fordi de må skille v2-prod fra v2-dev, og `miljonavn()` ville gjort begge til
 
 | Hvor | Hva skjer ved skiftet | Gjør dette |
 |---|---|---|
-| Nøkkelkalenderen (`lib/nokkelkalender-storage.js`) | `MILJO` i små bokstaver er `PartitionKey`. Varslingsjobben (`lib/nokkelkalender-jobb.js`) leser **bare sin egen** partisjon, mens admin-lista viser alle. Radene under `production` står altså fortsatt i lista — og varsles aldri igjen | Flytt radene fra `production` til `prod` før cutover, eller seed `prod` og slett de gamle. Sjekk etterpå at «Kjør nå» på nøkkelkalender-jobben ser dem |
+| Nøkkelkalenderen (`lib/nokkelkalender-storage.js`) | `MILJO` i små bokstaver er `PartitionKey`. Varslingsjobben (`lib/nokkelkalender-jobb.js`) leser **bare sin egen** partisjon, mens admin-lista viser alle. Radene under `production` står altså fortsatt i lista — og varsles aldri igjen | **Ikke flytt radene.** `production` beskriver v2-prod sine nøkler, og v3-prod har egne: egen Key Vault, eget auth-sertifikat, egen MI. Fyll `prod` med v3 sine — «Legg inn standardinventaret» i admin på v3-prod, deretter utløpsdatoene. Nøkler de to deler (FS-passordet, den delte SAS-en, flyt-URL-ene) kopieres over. `production`-radene slettes når v2-prod rives |
 | Flytene (`miljø` i kroppen, `lib/flyt-kaller.js` og backup) | Alt v3-prod sender har `"miljø": "prod"`. `SkjemaMiljo` er dokumentert som `pilot` / `production` | Gå gjennom hver flyt som forgrener på `miljø` eller `SkjemaMiljo`. Tester en av dem `== "production"` for å velge ekte mottakere eller Planner-plan, havner v3-prod i else-grenen — som er test |
 | Backupfilnavnet (`functions/backup.js`) | Nye filer heter `prod-backup-…` / `prod-delta-…`, ikke `Production-…` | Har biblioteket eller lagringskontoen livssyklusregler på prefiks, må de få det nye prefikset. Ellers ligger de nye filene utenfor oppbevaringsregelen |
 
@@ -1970,20 +1980,178 @@ lest som pilot, mistet timerne og gått tilbake til fire-and-forget — som er
 det som ikke virker på en Function App. Se `KJORER_TIMERE` i
 `lib/plattform.js`.
 
+### Sjekkliste for cutover
+
+Gjelder **form A, ompeking**, og domenet slik det er satt opp 28.10.2026:
+
+| Navn | Post (ServeTheWorld) | Peker på |
+|---|---|---|
+| `fskjema.no` | Videresending, 301, uten `+www` | `https://www.fskjema.no` |
+| `www.fskjema.no` | CNAME | v2-prod i dag (`gentle-dune-00a313603.7.azurestaticapps.net.`), v3-prod etter cutover |
+
+Cutover er altså å flytte `www` fra v2-prod til v3-prod, og lagringen fra
+v3 sin konto til v2 sin. Pausen er satt til to timer.
+
+**Dager før**
+
+| ☐ | Hva | Merknad |
+|---|---|---|
+| ☐ | 0. Ta ned v1 | Se «Er v2 den eneste som skriver?» over |
+| ☐ | 1. Senk TTL på `www` fra 1 time til 5 minutter | Minst en time før pausen, så den gamle verdien er glemt. Uten dette kan både DNS-endringen og tilbakeveien bruke en time |
+| ☐ | 2. Fyll `prod` i nøkkelkalenderen med v3 sine nøkler | Se tabellen i «Miljønavnet skifter» |
+| ☐ | 3. Gå gjennom flytene som forgrener på `miljø` / `SkjemaMiljo` | v3-prod sender `"prod"`, ikke `"production"` |
+| ☐ | 4. Livssyklusregler på backupprefiks | `prod-` i stedet for `Production-` |
+| ☐ | 5. Rollene for v3-prod sin MI på v2 sin lagringskonto | Kommandoen under form A øverst i kapittelet. Kan gjøres når som helst — rollene gjør ingenting før `STORAGE_ACCOUNT_NAME` peker dit |
+| ☐ | 6. Redirect-URI for `www.fskjema.no` på påloggingsappen | v2 og v3 bruker samme app (kapittel 6), så den er på plass hvis `www` virker på v2 i dag. Kontroller med `az ad app show` |
+| ☐ | 7. Ny `SCHEDULER_KEY` til v2-prod, klar til å limes inn | Lag den nå, ikke i pausen |
+| ☐ | 7b. `HASH_SALT`, `OTP_HMAC_KEY` og `FLOW_CALLBACK_KEY` er LIKE på v2-prod og v3-prod | Se under. `FLOW_CALLBACK_KEY` var ikke satt på v3-prod 28.10.2026 |
+
+Ny nøkkel:
+
+```powershell
+[Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+```
+
+**7b — tre hemmeligheter som følger dataene, ikke appen.** v3-prod har egen
+Key Vault, men disse tre skal ha v2-prod sin verdi, ikke en ny:
+
+| Hemmelighet | Ulik verdi gir |
+|---|---|
+| `HASH_SALT` | Nye pseudonymer for anonymiserte innsendere. Samme person blir to, og svargrensen teller feil. Kan ikke repareres i etterkant |
+| `OTP_HMAC_KEY` | Utsendingslenkene sendt fra v2-prod — gyldige i 90 dager — avvises av v3-prod |
+| `FLOW_CALLBACK_KEY` | Flytene sender den i `x-flow-key`. Uten den, eller med en annen, avviser v3-prod kvitteringen fra backup-flyten, hendelser og callbacks fra eksterne flyter (`lib/auth.js`) |
+
+Sammenlign under **Administrasjon → System** i begge appene: de tre har et
+**avtrykk** (første 8 tegn av SHA-256) ved siden av lengden. Avtrykket skal
+være likt. Verdien vises aldri, og lengden alene sier ingenting — to ulike
+verdier kan ha samme lengde.
+
+Er de ulike: legg v2-prod sin verdi i v3-prod sin vault under samme
+secret-navn, og start Function App-en på nytt så referansen leses igjen.
+`SCHEDULER_KEY` skal derimot være ULIK — se trinn 9.
+
+**I pausen — i denne rekkefølgen**
+
+Varsle brukerne. Ingen datakopi trengs i form A, og en bruker som går inn
+via v2-prod sin gamle `gentle-dune`-adresse etter cutover, skriver i den
+samme lagringen — det er ufarlig. Det som IKKE skal skje to ganger, er
+jobbene: utsending og purring sender ut av huset. Derfor er trinn 8 først.
+
+| ☐ | Hva | Merknad |
+|---|---|---|
+| ☐ | 8. Slett repo-variabelen `SWA_URL_PROD` | *Settings → Secrets and variables → Actions → Variables*. Stopper alle åtte cron-jobbene mot v2-prod |
+| ☐ | 9. Sett ny `SCHEDULER_KEY` på v2-prod-SWA-en | Belte i tillegg til 8 |
+| ☐ | 10. `STORAGE_ACCOUNT_NAME` på v3-prod til v2 sin konto | Fra nå leser og skriver v3 produksjonsdataene |
+| ☐ | 11. Fjern `VARSLING_DEAKTIVERT` på v3-prod | Satt i trinn 4 for testingen. Står den, sender v3-prod ingen varsler i drift |
+| ☐ | 12. `SWA_URL` på v3-prod til `https://www.fskjema.no` | E-postlenker og flyt-callbacks bygges fra den |
+| ☐ | 13. Flytt `www.fskjema.no` fra v2-prod til v3-prod | Se under. Et vertsnavn kan bare ligge på én SWA om gangen |
+| ☐ | 14. `SWA_URL` på v2-prod til sin egen `gentle-dune`-adresse | Bare én stabel skal påstå å være den offentlige adressen |
+| ☐ | 15. Full backup på v3-prod | Deltaene bygger på siste fulle. Den første etter ompekingen skal være full |
+| ☐ | 16. Kontroller | Under |
+
+Trinn 10–12 på Function App-en:
+
+```powershell
+az functionapp config appsettings set --name $FA --resource-group $RG --settings STORAGE_ACCOUNT_NAME=<v2-konto> SWA_URL=https://www.fskjema.no --output none
+az functionapp config appsettings delete --name $FA --resource-group $RG --setting-names VARSLING_DEAKTIVERT --output none
+az functionapp config appsettings list --name $FA --resource-group $RG --query "[].name" -o tsv | Select-String -Pattern '^(STORAGE_ACCOUNT_NAME|SWA_URL|VARSLING_DEAKTIVERT)$'
+```
+
+Den siste skal liste `STORAGE_ACCOUNT_NAME` og `SWA_URL`, og **ikke**
+`VARSLING_DEAKTIVERT`.
+
+Trinn 13, domenet. Fjern det fra v2-prod, endre CNAME-en hos ServeTheWorld
+til v3-prod sin adresse, og legg det på v3-prod:
+
+```powershell
+az staticwebapp hostname delete --name <v2-swa> --resource-group <v2-rg> --hostname www.fskjema.no --yes
+az staticwebapp show --name $SWA --resource-group $RG --query defaultHostname -o tsv
+nslookup -type=CNAME www.fskjema.no 8.8.8.8
+az staticwebapp hostname set --name $SWA --resource-group $RG --hostname www.fskjema.no --validation-method cname-delegation
+az staticwebapp hostname show --name $SWA --resource-group $RG --hostname www.fskjema.no -o table
+```
+
+Den andre linja gir adressen CNAME-en skal peke på — med punktum bakerst i
+ServeTheWorld sitt panel, og med bare `www` i navnefeltet (panelet legger
+til domenet selv; `www.fskjema.no` i feltet ga `www.fskjema.no.fskjema.no`
+28.10.2026). Vent til `nslookup` viser den nye adressen før `hostname set`,
+ellers svarer Azure «CNAME Record is invalid». `ns3.servetheworld.net` svarer
+med en gang; 8.8.8.8 kan henge etter med TTL-en fra trinn 1. Sertifikatet
+tar noen minutter etter det.
+
+`Resolve-DnsName` finnes ikke i Cloud Shell — det er Linux også i
+PowerShell-modus. Bruk `nslookup`.
+
+Trinn 16, kontroll:
+
+| ☐ | Hva | Forventet |
+|---|---|---|
+| ☐ | `https://www.fskjema.no/api/ping` | `miljø` er `prod`, og commit-SHA-en er den som er deployet |
+| ☐ | `https://fskjema.no` | Havner på `https://www.fskjema.no` — test i en nettleser som ikke har vært der før. En 301 huskes, og Edge i privat vindu slapp ikke innloggingen gjennom 28.10.2026 |
+| ☐ | Innlogging og skjemalista | De samme skjematypene som på v2-prod |
+| ☐ | `/api/system/info` | Kontoen som leses fra er v2 sin |
+| ☐ | Send inn et testskjema | Kvittering og varsel kommer fram |
+| ☐ | Jobber-fanen | Timerne er registrert; kjør oppslagslister og nøkkelkalenderen |
+| ☐ | Backupen fra trinn 15 | Ligger i SharePoint som `prod-backup-…` |
+| ☐ | Neste morgen | Nattjobbene står `ok` i Jobber-fanen, og GitHub Actions viser prod-raden som hoppet over |
+
+**Etterpå:** sett TTL på `www` tilbake til 1 time når v3-prod er bekreftet.
+
+### Parallelldrift: v2-prod og v3-prod på samme lagring
+
+Går fint, og er i praksis det form A er — men bare med fire ting på plass:
+
+1. **Bare én av dem kjører jobbene.** Ellers går utsending og purring
+   dobbelt. Med `SWA_URL_PROD` slettet kjører v2-prod ingen jobber på egen
+   hånd; «Kjør nå» i v2-prod sitt admin-panel gjør det fortsatt — ikke bruk
+   den.
+2. **De tre hemmelighetene i 7b er like.**
+3. **Samme kode.** De to deployes hver for seg:
+   - v2-prod med «Deploy prod eller pilot» (standard-token, `deploy_api` på)
+   - v3-prod med begge jobbene
+
+   Deployes bare den ene, kan den nye koden skrive noe den gamle ikke leser.
+   Sjekk commit-SHA-en i `/api/ping` på begge.
+4. **Nøkkelkalenderen er ikke delt mellom dem** — partisjonene er
+   `production` og `prod`. Det er riktig, siden nøklene er ulike.
+
+Det som tåler to skrivere fra før, fordi det allerede må tåle flere
+instanser av samme app: skjemanummeret (`lib/skjema-id.js`, ETag mot
+samtidige innsendinger), krypteringsnøklene (ligger i lagringen og følger
+dataene), og lesecachene (60 sekunder i `lib/emner-storage.js`).
+
 ### Tilbakevei
 
 Gjør cutover til et **domenebytte**, ikke en ny URL. Da er tilbakeveien én
 DNS-endring. Får folk en ny adresse å bokmerke, er fallback rotete uansett
 hvor ren koden er.
 
-Med et eget domene kan versjonene adresseres hver for seg — `fskjema.no` for
-gjeldende prod, `v3.fskjema.no` mens den testes, `dev.fskjema.no` for dev.
-Må avtales med Cyberforsvaret.
+Tilbakeveien er sjekklisten baklengs:
+
+1. `www.fskjema.no` fra v3-prod tilbake til v2-prod (trinn 13 med navnene
+   byttet), og `SWA_URL` tilbake på begge.
+2. `STORAGE_ACCOUNT_NAME` på v3-prod tilbake til `stskjema3prod`.
+3. Legg inn `SWA_URL_PROD` igjen med `gentle-dune`-adressen, og den nye
+   `SCHEDULER_KEY` fra trinn 9 i `SCHEDULER_KEY_PROD`. Da kjører v2-prod sine
+   jobber fra neste tidspunkt.
+
+Lagringen er felles i form A, så v2-prod ser det v3-prod skrev i
+mellomtiden. Det er meningen — men det er også det eneste i tilbakeveien som
+ikke er prøvd. Prøv det på en kopi før cutover, ikke for første gang under.
+
+Med et eget domene kan versjonene også adresseres hver for seg, f.eks.
+`v3prod.fskjema.no` for v3-prod mens v2-prod har `www`. Hvert navn trenger
+sin egen redirect-URI.
 
 ### Domenet: DNS, egendefinert domene og CORS
 
 Et eget domene er det som gjør cutover til én DNS-endring. Oppsettet er tre
 ting, og den tredje er at det ikke er noe å gjøre.
+
+> **Slik ble det, 28.10.2026:** ServeTheWorld har ikke ALIAS/ANAME på apex.
+> `fskjema.no` videresendes derfor (301) til `www.fskjema.no`, som er en
+> CNAME. Tabellen øverst i «Sjekkliste for cutover» er det gjeldende
+> oppsettet; resten av dette avsnittet beskriver alternativene.
 
 **1. Postene. CNAME på subdomenene, ALIAS eller ANAME på apex.**
 
