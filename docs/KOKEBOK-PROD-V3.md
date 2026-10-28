@@ -2414,6 +2414,9 @@ versjoner kjører samtidig, eller fordi pilot har en annen arkitektur:
 | `SWA_URL` som instansspesifikk | Relevant bare under parallellkjøring |
 | 0.3 og 0.5 i sin helhet | Begge handler om å dele ressursgruppe og app-registreringer med v2 |
 | `production` i `MILJO_ALIAS` | v2-prods `MILJO`. Aliaset får den til å lese som pilot, og må stå så lenge v2-prod finnes |
+| **De åtte cron-workflowene** (`refresh-fs.yml`, `refresh-postnumre.yml`, `refresh-oppslagsliste.yml`, `team-synk.yml`, `sjekk-nokler.yml`, `send-utsendinger.yml`, `purre-utsendinger.yml`, `backup.yml`) | De kjører jobbene der plattformen ikke har timere — pilot og v2-prod. Når begge er revet, har alle miljøene timere. Ta med det som leser workflowene: `workflow` og `workflowCron` i `lib/jobber.js`, cron-sammenligningen i `api/test/timer-trigger.test.js`, og GitHub Actions-merknaden i `functions/jobber.js`. `SCHEDULER_KEY` og HTTP-veien inn til jobbene kan stå — «Kjør nå» bruker den |
+| **Tre deploy-workflows → én** (`deploy-dev.yml`, `deploy-prod.yml`, `deploy-funcapp-pilot.yml`) | Tre fordi tre arkitekturer: frontend til dev-SWA, SWA med Managed Functions, og API til Function App. Med bare v3-dev og v3-prod igjen er det én: én workflow med `miljo: dev \| prod` som ruller ut API-et til Function App-en og så frontenden til SWA-en, **fra samme commit**. Da forsvinner `swa_token_secret`, `deploy_api`, `appnavn` og to SHA-er som kan skille lag. Prod beholder Environment approval |
+| `refresh-fs-diag.yml` og `refresh-fs-diag-lu.yml` | Kaller pilot (`vars.SWA_URL`). Diagnostikk-knappen i FS-panelet gjør det samme fra appen |
 
 > **Rydd ikke før v3 er verifisert i begge tenantene.** Hver av linjene over
 > er en gaffel som bærer to oppsett. Fjernes den ene siden før den andre er
