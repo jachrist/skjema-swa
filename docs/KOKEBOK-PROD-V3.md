@@ -2040,6 +2040,7 @@ jobbene: utsending og purring sender ut av huset. Derfor er trinn 8 først.
 | ☐ | Hva | Merknad |
 |---|---|---|
 | ☐ | 8. Slett repo-variabelen `SWA_URL_PROD` | *Settings → Secrets and variables → Actions → Variables*. Stopper alle åtte cron-jobbene mot v2-prod |
+| ☐ | 8b. Slå PÅ timerne på v3-prod, hvis de ble slått av i en testperiode | *Functions* → hver av de ni → *Enable*. Se «Parallelldrift» |
 | ☐ | 9. Sett ny `SCHEDULER_KEY` på v2-prod-SWA-en | Belte i tillegg til 8 |
 | ☐ | 10. `STORAGE_ACCOUNT_NAME` på v3-prod til v2 sin konto | Fra nå leser og skriver v3 produksjonsdataene |
 | ☐ | 11. Fjern `VARSLING_DEAKTIVERT` på v3-prod | Satt i trinn 4 for testingen. Står den, sender v3-prod ingen varsler i drift |
@@ -2101,10 +2102,43 @@ Trinn 16, kontroll:
 
 Går fint, og er i praksis det form A er — men bare med fire ting på plass:
 
-1. **Bare én av dem kjører jobbene.** Ellers går utsending og purring
-   dobbelt. Med `SWA_URL_PROD` slettet kjører v2-prod ingen jobber på egen
-   hånd; «Kjør nå» i v2-prod sitt admin-panel gjør det fortsatt — ikke bruk
-   den.
+1. **Bare én av dem kjører jobbene.** To veier, og valget er hvem som eier
+   jobbene i perioden:
+
+   | Jobbene kjøres av | Gjør dette |
+   |---|---|
+   | **v2-prod** (testperiode før cutover) | Slå av de ni timerne på v3-prod — under |
+   | **v3-prod** (etter cutover) | Slett `SWA_URL_PROD`, se trinn 8 |
+
+   **Begge samtidig er ikke bare dobbelt arbeid.** FS-refreshen kjører kl.
+   04:00 UTC i begge, og to samtidige kjøringer sletter hverandres rader i
+   `FilterStudent`: hver av dem sletter det som ikke har dens egen generasjon
+   (`slettGamleGenerasjoner` i `lib/emner-storage.js`). Utsending og purring
+   ville i tillegg gått dobbelt til eksterne mottakere.
+
+   «Kjør nå» i Jobber-fanen kjører jobben i den appen du står i, uansett
+   hvem som eier timerne. Bruk den bare i appen som eier jobbene.
+
+   **Slå av timerne på v3-prod** i portalen: Function App-en → *Functions* →
+   hver av de ni → *Disable*. Portalen lager app-settingen
+   (`AzureWebJobs.<navn>.Disabled`) i riktig form for plattformen; skriv den
+   ikke for hånd. Navnene står i Jobber-fanen under «registrert»:
+   `postnumreTimer`, `refreshFsTimer`, `oppslaglisterTimer`, `teamSynkTimer`,
+   `nokkelsjekkTimer`, `sendUtsendingerTimer`, `purreUtsendingerTimer`,
+   `backupFullTimer`, `backupDeltaTimer`.
+
+   Jobber-fanen vet ikke at de er slått av — den viser fortsatt «Timer i
+   appen». Kontroller i portalen, og neste morgen at statusradene er skrevet
+   av `scheduler` (v2-prod sin cron), ikke av `timer`.
+
+   **`VARSLING_DEAKTIVERT=true` på v3-prod** i samme periode stopper det
+   testerne gjør der fra å varsle: behandlingsvarsler, team-synk, og — fra
+   28.10.2026 — også utsending og purring. Husk at det er EKTE skjemaer i
+   felles lagring: en behandler som får en sak via v3-prod, får ikke vite
+   det.
+
+   Ved cutover snus alt: timerne på igjen, bryteren av, `SWA_URL_PROD` bort.
+
 2. **De tre hemmelighetene i 7b er like.**
 3. **Samme kode.** De to deployes hver for seg:
    - v2-prod med «Deploy prod eller pilot» (standard-token, `deploy_api` på)

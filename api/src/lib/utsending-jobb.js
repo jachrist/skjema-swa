@@ -24,7 +24,7 @@
 const utsendingStorage = require('./utsending-storage');
 const utsendingToken = require('./utsending-token');
 const flytUtfall = require('./flyt-utfall');
-const { miljo, flytHeadere } = require('./flyt-kaller');
+const { miljo, flytHeadere, varslingAv } = require('./flyt-kaller');
 const hendelser = require('./hendelser-storage');
 const skjemaStorage = require('./skjema-storage');
 
@@ -195,6 +195,37 @@ async function kallUtsendingsflyt(handling, mottakere, log, navn) {
     }
 }
 
+/**
+ * Statusraden av utfallet. «deaktivert» er sin egen status: kjøringen gikk
+ * som den skulle, men ingenting ble sendt — og det skal ikke se ut som verken
+ * «ok» eller «feil» i Jobber-fanen.
+ */
+function statusFor(utfall) {
+    if (utfall === 'ok' || utfall === 'ingenting') return 'ok';
+    if (utfall === 'deaktivert') return 'deaktivert';
+    return 'feil';
+}
+
+/**
+ * Stopper `VARSLING_DEAKTIVERT` jobben? Da sendes ingenting, og INGENTING
+ * markeres — radene står som før og går ved første kjøring etter at bryteren
+ * er slått av.
+ *
+ * Til 28.10.2026 sjekket ingen av de to jobbene bryteren. De kaller flyten
+ * direkte, ikke via `kallVarslingFlyt`, og gikk derfor forbi den — mens
+ * bryteren ellers betyr «ikke rør noe utenfor systemet». Utsending og
+ * purring er de eneste jobbene som sender til EKSTERNE mottakere, så det var
+ * akkurat de som burde vært stoppet.
+ *
+ * Regelen for hva som teller som «av» er `varslingAv()` i flyt-kaller.js,
+ * ikke en egen lesing av env-varen her.
+ */
+function deaktivertSvar(kandidater, navn, log) {
+    const melding = `VARSLING_DEAKTIVERT=true — ${kandidater.length} venter, ingenting sendt eller markert`;
+    log(`${navn}: ${melding}`);
+    return melding;
+}
+
 /** Felles bokføring for begge utsendingsjobbene. */
 function bokfoerer(pk, rk) {
     return async (felter) => {
@@ -221,7 +252,7 @@ async function kjorSendForfalte({ kilde, batchFilter = '', request = null, log =
 
     const ferdig = async (utfall, felter, svar) => {
         await settStatus({
-            Status: utfall === 'ok' || utfall === 'ingenting' ? 'ok' : 'feil',
+            Status: statusFor(utfall),
             Ferdig: new Date().toISOString(),
             SistOppdatert: new Date().toISOString(),
             Utfall: utfall, ...felter
@@ -237,13 +268,21 @@ async function kjorSendForfalte({ kilde, batchFilter = '', request = null, log =
                 { antallSendt: 0, antallKandidater: 0, melding: 'Ingen forfalte utsendinger' });
         }
 
+        // Bryteren står FØR alt annet: radene skal stå urørt, slik at de går
+        // neste gang. Markerer vi som sendt uten å sende, får mottakeren
+        // aldri lenka, og ingenting plukker den opp igjen.
+        if (varslingAv()) {
+            const melding = deaktivertSvar(kandidater, 'utsending/send-forfalte', log);
+            return ferdig('deaktivert',
+                { AntallSendt: 0, AntallKandidater: kandidater.length, SistFeil: '' },
+                { antallSendt: 0, antallKandidater: kandidater.length, melding });
+        }
+
         // KASTER hvis adressen ikke finnes — se baseUrl(). Da er ingenting
         // sendt, og catch-en under bokfører årsaken.
         const basis = baseUrl(request);
         const mottakere = await byggUtsendingsposter(kandidater, basis, log, 'utsending/send-forfalte');
 
-        // Ingen dry-run her: markerer vi som sendt uten å sende, får
-        // mottakeren aldri lenka, og ingenting plukker den opp igjen.
         const res = await kallUtsendingsflyt('sendUtsendinger', mottakere, log, 'utsending/send-forfalte');
 
         if (res.mangler) {
@@ -314,7 +353,7 @@ async function kjorPurring({ kilde, batchFilter = '', tekstOverstyring = '', req
 
     const ferdig = async (utfall, felter, svar) => {
         await settStatus({
-            Status: utfall === 'ok' || utfall === 'ingenting' ? 'ok' : 'feil',
+            Status: statusFor(utfall),
             Ferdig: new Date().toISOString(),
             SistOppdatert: new Date().toISOString(),
             Utfall: utfall, ...felter
@@ -335,6 +374,15 @@ async function kjorPurring({ kilde, batchFilter = '', tekstOverstyring = '', req
         if (kandidater.length === 0) {
             return ferdig('ingenting', { AntallPurret: 0, SistFeil: '' },
                 { antallPurret: 0, antallHoppetOver: 0, melding: 'Ingen kandidater å purre' });
+        }
+
+        // Samme bryter, samme plass. En purring som markeres uten å gå ut, er
+        // brukt opp — mottakeren purres ikke igjen før minDagerMellom.
+        if (varslingAv()) {
+            const melding = deaktivertSvar(kandidater, 'utsending/purre', log);
+            return ferdig('deaktivert',
+                { AntallPurret: 0, AntallKandidater: kandidater.length, SistFeil: '' },
+                { antallPurret: 0, antallKandidater: kandidater.length, melding });
         }
 
         const basis = baseUrl(request);

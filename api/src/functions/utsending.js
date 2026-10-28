@@ -448,6 +448,9 @@ app.http('utsendingPurre', {
         // ikke kosmetikk: cron-jobben blir rød, og en purring som ikke ble
         // sendt skal ikke se ut som en vellykket kjøring.
         const { utfall, ...kropp } = res;
+        // Bryteren står: 200, men ikke «ok» — panelet og cron-loggen skal se
+        // at ingenting gikk ut.
+        if (utfall === 'deaktivert') return { jsonBody: { status: 'deaktivert', ...kropp } };
         if (utfall === 'kom-ikke-fram') return { status: 502, jsonBody: { status: 'feil', ...kropp } };
         if (utfall === 'feil') return { status: 500, jsonBody: { status: 'feil', ...kropp } };
         return { jsonBody: { status: 'ok', ...kropp } };
@@ -527,6 +530,7 @@ app.http('utsendingSendForfalte', {
         // mangler. Den skiller «vi klarte ikke å sende» fra «vi er ikke satt
         // opp til å sende», og de to krever ulik handling.
         const { utfall, ...kropp } = res;
+        if (utfall === 'deaktivert') return { jsonBody: { status: 'deaktivert', ...kropp } };
         if (utfall === 'mangler-flyt') return { status: 503, jsonBody: { status: 'feil', ...kropp } };
         if (utfall === 'flyt-feilet') return { status: 502, jsonBody: { status: 'feil', ...kropp } };
         if (utfall === 'feil') return { status: 500, jsonBody: { status: 'feil', ...kropp } };

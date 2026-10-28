@@ -381,7 +381,7 @@ let resultatTeller = 0;
 // utlede verten fra — e-posten ville båret «https://» med tom vert, til ekte
 // mottakere, og lenka ville vært brukt opp.
 async function utsendingSjekk() {
-    const kjor = async (hvilken, { kandidater = [], flytSvar = { ok: true }, swaUrl = 'https://skjema.example.no', request = null, komFram = true } = {}) => {
+    const kjor = async (hvilken, { kandidater = [], flytSvar = { ok: true }, swaUrl = 'https://skjema.example.no', request = null, komFram = true, av = false } = {}) => {
         const f = fangst();
         const markert = [];
         const kalt = [];
@@ -397,7 +397,7 @@ async function utsendingSjekk() {
             },
             './utsending-token': { utsted: () => 'token-123' },
             './flyt-utfall': { svarKomFram: () => komFram },
-            './flyt-kaller': { miljo: () => 'dev', flytHeadere: async () => ({}) },
+            './flyt-kaller': { miljo: () => 'dev', flytHeadere: async () => ({}), varslingAv: () => av },
             './skjema-storage': { hentSkjematype: async () => ({ navn: 'Skjema', JSON: {} }) }
         };
         try {
@@ -497,6 +497,24 @@ async function utsendingSjekk() {
     sjekk('purring: og INGENTING markeres da', kom_ikke.markert, []);
     sjekk('purring: statusraden ender på feil',
         kom_ikke.skrevet.map(e => e.Status), ['kjører', 'feil']);
+
+    // ---- VARSLING_DEAKTIVERT ----
+    //
+    // Til 28.10.2026 gikk begge jobbene forbi bryteren og sendte til eksterne
+    // mottakere selv når den sto på. Nå skal ingenting gå ut — og ingenting
+    // markeres, så radene går neste gang bryteren er av.
+    for (const hvilken of ['send', 'purre']) {
+        const av = await kjor(hvilken, { kandidater: kandidat, av: true });
+        sjekk(`${hvilken}: bryteren gir eget utfall`, av.res.utfall, 'deaktivert');
+        sjekk(`${hvilken}: INGENTING ble sendt`, av.kalt, []);
+        sjekk(`${hvilken}: og INGENTING markert`, av.markert, []);
+        sjekk(`${hvilken}: statusraden sier deaktivert, ikke ok eller feil`,
+            av.skrevet.map(e => e.Status), ['kjører', 'deaktivert']);
+        sjekk(`${hvilken}: meldingen sier hvor mange som venter`, /1 venter/.test(av.res.melding || ''), true);
+    }
+    // Og uten kandidater er det ingenting å stoppe — samme utfall som før.
+    const tomtAv = await kjor('send', { kandidater: [], av: true });
+    sjekk('utsending: uten kandidater er utfallet ingenting, også med bryteren på', tomtAv.res.utfall, 'ingenting');
 }
 
 
