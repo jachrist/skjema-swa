@@ -1988,6 +1988,7 @@ Gjelder **form A, ompeking**, og domenet slik det er satt opp 28.10.2026:
 |---|---|---|
 | `fskjema.no` | Videresending, 301, uten `+www` | `https://www.fskjema.no` |
 | `www.fskjema.no` | CNAME | v2-prod i dag (`gentle-dune-00a313603.7.azurestaticapps.net.`), v3-prod etter cutover |
+| `v3.fskjema.no` | CNAME | v3-prod (`swa-skjema-3-prod`), fra 28.10.2026. Blir stående etter cutover |
 
 Cutover er altså å flytte `www` fra v2-prod til v3-prod, og lagringen fra
 v3 sin konto til v2 sin. Pausen er satt til to timer.
@@ -2082,6 +2083,20 @@ tar noen minutter etter det.
 
 `Resolve-DnsName` finnes ikke i Cloud Shell — det er Linux også i
 PowerShell-modus. Bruk `nslookup`.
+
+**«does not have authorization to perform action
+'Microsoft.Web/locations/staticSitesOperationStatuses/read'»** — kom i
+portalen 28.10.2026 da `v3.fskjema.no` ble lagt på v3-prod, og domenet ble
+likevel lagt til og validert. Portalen spør om operasjonen er ferdig mot
+ABONNEMENTET, og med en rolle bare på ressursgruppa får den nei på det
+spørsmålet — ikke på selve endringen. Teksten foran, «Failed to add records
+to DNS zone», er portalens standardmelding og sier ingenting om DNS. Bruk
+CLI-en med `--no-wait`, og les resultatet i lista:
+
+```powershell
+az staticwebapp hostname set --name $SWA --resource-group $RG --hostname www.fskjema.no --validation-method cname-delegation --no-wait
+az staticwebapp hostname list --name $SWA --resource-group $RG -o table
+```
 
 Trinn 16, kontroll:
 
