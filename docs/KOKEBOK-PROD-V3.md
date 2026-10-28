@@ -2040,6 +2040,7 @@ jobbene: utsending og purring sender ut av huset. Derfor er trinn 8 først.
 | ☐ | Hva | Merknad |
 |---|---|---|
 | ☐ | 8. Slett repo-variabelen `SWA_URL_PROD` | *Settings → Secrets and variables → Actions → Variables*. Stopper alle åtte cron-jobbene mot v2-prod |
+| ☐ | 8b. Slå PÅ timerne på v3-prod, hvis de ble slått av i en testperiode | *Functions* → hver av de ni → *Enable*. Se «Parallelldrift» |
 | ☐ | 9. Sett ny `SCHEDULER_KEY` på v2-prod-SWA-en | Belte i tillegg til 8 |
 | ☐ | 10. `STORAGE_ACCOUNT_NAME` på v3-prod til v2 sin konto | Fra nå leser og skriver v3 produksjonsdataene |
 | ☐ | 11. Fjern `VARSLING_DEAKTIVERT` på v3-prod | Satt i trinn 4 for testingen. Står den, sender v3-prod ingen varsler i drift |
@@ -2101,10 +2102,43 @@ Trinn 16, kontroll:
 
 Går fint, og er i praksis det form A er — men bare med fire ting på plass:
 
-1. **Bare én av dem kjører jobbene.** Ellers går utsending og purring
-   dobbelt. Med `SWA_URL_PROD` slettet kjører v2-prod ingen jobber på egen
-   hånd; «Kjør nå» i v2-prod sitt admin-panel gjør det fortsatt — ikke bruk
-   den.
+1. **Bare én av dem kjører jobbene.** To veier, og valget er hvem som eier
+   jobbene i perioden:
+
+   | Jobbene kjøres av | Gjør dette |
+   |---|---|
+   | **v2-prod** (testperiode før cutover) | Slå av de ni timerne på v3-prod — under |
+   | **v3-prod** (etter cutover) | Slett `SWA_URL_PROD`, se trinn 8 |
+
+   **Begge samtidig er ikke bare dobbelt arbeid.** FS-refreshen kjører kl.
+   04:00 UTC i begge, og to samtidige kjøringer sletter hverandres rader i
+   `FilterStudent`: hver av dem sletter det som ikke har dens egen generasjon
+   (`slettGamleGenerasjoner` i `lib/emner-storage.js`). Utsending og purring
+   ville i tillegg gått dobbelt til eksterne mottakere.
+
+   «Kjør nå» i Jobber-fanen kjører jobben i den appen du står i, uansett
+   hvem som eier timerne. Bruk den bare i appen som eier jobbene.
+
+   **Slå av timerne på v3-prod** i portalen: Function App-en → *Functions* →
+   hver av de ni → *Disable*. Portalen lager app-settingen
+   (`AzureWebJobs.<navn>.Disabled`) i riktig form for plattformen; skriv den
+   ikke for hånd. Navnene står i Jobber-fanen under «registrert»:
+   `postnumreTimer`, `refreshFsTimer`, `oppslaglisterTimer`, `teamSynkTimer`,
+   `nokkelsjekkTimer`, `sendUtsendingerTimer`, `purreUtsendingerTimer`,
+   `backupFullTimer`, `backupDeltaTimer`.
+
+   Jobber-fanen vet ikke at de er slått av — den viser fortsatt «Timer i
+   appen». Kontroller i portalen, og neste morgen at statusradene er skrevet
+   av `scheduler` (v2-prod sin cron), ikke av `timer`.
+
+   **`VARSLING_DEAKTIVERT=true` på v3-prod** i samme periode stopper det
+   testerne gjør der fra å varsle: behandlingsvarsler, team-synk, og — fra
+   28.10.2026 — også utsending og purring. Husk at det er EKTE skjemaer i
+   felles lagring: en behandler som får en sak via v3-prod, får ikke vite
+   det.
+
+   Ved cutover snus alt: timerne på igjen, bryteren av, `SWA_URL_PROD` bort.
+
 2. **De tre hemmelighetene i 7b er like.**
 3. **Samme kode.** De to deployes hver for seg:
    - v2-prod med «Deploy prod eller pilot» (standard-token, `deploy_api` på)
@@ -2380,6 +2414,9 @@ versjoner kjører samtidig, eller fordi pilot har en annen arkitektur:
 | `SWA_URL` som instansspesifikk | Relevant bare under parallellkjøring |
 | 0.3 og 0.5 i sin helhet | Begge handler om å dele ressursgruppe og app-registreringer med v2 |
 | `production` i `MILJO_ALIAS` | v2-prods `MILJO`. Aliaset får den til å lese som pilot, og må stå så lenge v2-prod finnes |
+| **De åtte cron-workflowene** (`refresh-fs.yml`, `refresh-postnumre.yml`, `refresh-oppslagsliste.yml`, `team-synk.yml`, `sjekk-nokler.yml`, `send-utsendinger.yml`, `purre-utsendinger.yml`, `backup.yml`) | De kjører jobbene der plattformen ikke har timere — pilot og v2-prod. Når begge er revet, har alle miljøene timere. Ta med det som leser workflowene: `workflow` og `workflowCron` i `lib/jobber.js`, cron-sammenligningen i `api/test/timer-trigger.test.js`, og GitHub Actions-merknaden i `functions/jobber.js`. `SCHEDULER_KEY` og HTTP-veien inn til jobbene kan stå — «Kjør nå» bruker den |
+| **Tre deploy-workflows → én** (`deploy-dev.yml`, `deploy-prod.yml`, `deploy-funcapp-pilot.yml`) | Tre fordi tre arkitekturer: frontend til dev-SWA, SWA med Managed Functions, og API til Function App. Med bare v3-dev og v3-prod igjen er det én: én workflow med `miljo: dev \| prod` som ruller ut API-et til Function App-en og så frontenden til SWA-en, **fra samme commit**. Da forsvinner `swa_token_secret`, `deploy_api`, `appnavn` og to SHA-er som kan skille lag. Prod beholder Environment approval |
+| `refresh-fs-diag.yml` og `refresh-fs-diag-lu.yml` | Kaller pilot (`vars.SWA_URL`). Diagnostikk-knappen i FS-panelet gjør det samme fra appen |
 
 > **Rydd ikke før v3 er verifisert i begge tenantene.** Hver av linjene over
 > er en gaffel som bærer to oppsett. Fjernes den ene siden før den andre er
