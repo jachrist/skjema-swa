@@ -16,7 +16,7 @@
  *
  * Env-vars:
  *   ANTHROPIC_API_KEY   — påkrevd (KV-referanse anbefalt)
- *   ANTHROPIC_MODELL    — valgfri, default 'claude-sonnet-5-20260201'
+ *   ANTHROPIC_MODELL    — valgfri, default se DEFAULT_MODELL
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
@@ -24,7 +24,42 @@ const hendelser = require('../lib/hendelser-storage');
 const { formatStorrelse } = require('../lib/storrelse');
 
 const MAKS_STORRELSE = 20 * 1024 * 1024;
-const DEFAULT_MODELL = 'claude-sonnet-5-20260201';
+// `claude-sonnet-5-20260201` sto her til 29.10.2026, og fantes ikke:
+// Anthropic svarte 404 not_found_error, og AI-importen hadde aldri virket.
+// Modell-ID-ene har ingen datosuffiks. `config/env.prod.json` setter samme
+// verdi, og `api/test/ai-analyser.test.js` krever at de to er like.
+const DEFAULT_MODELL = 'claude-sonnet-5-5';
+
+// Tenkning er PÅ som standard på denne modellen når `thinking` utelates, og
+// tenkningen teller mot max_tokens. 8192 ga for lite rom til både tenkning
+// og en skjemadefinisjon.
+const MAKS_TOKENS = 16000;
+
+/**
+ * Teksten i et svar fra Messages API, og hvorfor det eventuelt ikke er noen.
+ *
+ * Leste `content[0].text` til 29.10.2026. Med tenkning på er første blokk en
+ * `thinking`-blokk uten `text`, og da ble svaret tomt — «Ingen JSON i
+ * AI-responsen» på et svar som var helt i orden. Teksten samles nå fra alle
+ * `text`-blokkene, i rekkefølge.
+ *
+ * `feil` er alltid satt: null når svaret er brukbart, ellers årsaken. Et
+ * svar som ble avvist eller kuttet, skal si det — ikke dukke opp som en
+ * parsefeil langt unna.
+ */
+function lesSvar(data) {
+    const blokker = Array.isArray(data?.content) ? data.content : [];
+    const tekst = blokker.filter(b => b && b.type === 'text').map(b => b.text || '').join('');
+    const stopp = data?.stop_reason || null;
+    let feil = null;
+    if (stopp === 'refusal') {
+        const kategori = data?.stop_details?.category;
+        feil = `Modellen avviste forespørselen${kategori ? ` (${kategori})` : ''}`;
+    } else if (stopp === 'max_tokens') {
+        feil = `Svaret ble kuttet ved max_tokens (${MAKS_TOKENS}) — skjemaet er trolig for stort for én analyse`;
+    }
+    return { tekst, stopp, feil };
+}
 
 const PROMPT = `Analyser det vedlagte skjemaet/spørreskjemaet og konverter det til JSON-strukturen under.
 
@@ -143,7 +178,7 @@ app.http('aiDiag', {
                 jsonBody: {
                     status: resp.ok ? 'ok' : 'feil',
                     httpStatus: resp.status,
-                    svar: json?.content?.[0]?.text || tekst.slice(0, 500),
+                    svar: (json && lesSvar(json).tekst) || tekst.slice(0, 500),
                     tokens: json?.usage || null,
                     trinn,
                     modell
@@ -255,7 +290,7 @@ app.http('aiAnalyserSkjema', {
                     },
                     body: JSON.stringify({
                         model: modell,
-                        max_tokens: 8192,
+                        max_tokens: MAKS_TOKENS,
                         messages: [{ role: 'user', content: innhold }]
                     }),
                     signal: controller.signal
@@ -287,8 +322,12 @@ app.http('aiAnalyserSkjema', {
             }
 
             const data = await resp.json();
-            const aiTekst = data?.content?.[0]?.text || '';
+            const { tekst: aiTekst, feil: svarFeil } = lesSvar(data);
             const tokens = { input: data?.usage?.input_tokens || 0, output: data?.usage?.output_tokens || 0 };
+            if (svarFeil) {
+                context.log(`ai/analyser-skjema: ${svarFeil}`);
+                return { status: 502, jsonBody: { status: 'feil', melding: svarFeil, tokens } };
+            }
 
             // Parse JSON — kan være wrapped i markdown-code-fences hvis modellen ignorerer instruksjonen
             let skjema;
@@ -317,3 +356,6 @@ app.http('aiAnalyserSkjema', {
         }
     }
 });
+
+// Eksporteres for test: svarlesingen og modellvalget.
+module.exports = { _lesSvar: lesSvar, _DEFAULT_MODELL: DEFAULT_MODELL, _MAKS_TOKENS: MAKS_TOKENS };
