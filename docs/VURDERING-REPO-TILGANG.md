@@ -81,6 +81,44 @@ I tillegg: Actions-minutter er gratis for offentlige repoer, men trekkes fra
 planens kvote for private. De åtte cron-jobbene kjører daglig mot to miljøer
 til v2 er revet.
 
+### Hvilken plan, og hva den koster
+
+| Plan | Miljøhemmeligheter, privat | Godkjenning før deploy, privat | Listepris (ikke fra GitHub selv) |
+|---|---|---|---|
+| Free | Nei | Nei | 0 |
+| Team | **Ja** | **Nei** | ca. 4 USD per bruker per måned |
+| Enterprise (Cloud) | Ja | **Ja** | ca. 21 USD per bruker per måned |
+
+**Enterprise er den eneste planen som dekker begge punktene for et privat
+repo.** GitHub sin egen dokumentasjon sier at required reviewers bare finnes
+for offentlige repoer på Free, Pro og Team, og en diskusjon i GitHub
+Community bekrefter at Team-planen ikke har det for private repoer.
+
+Prisene er hentet fra tredjepartsoversikter 30.10.2026, ikke fra GitHub sin
+prisside, og skal bekreftes der. Det betales per **medlem av
+organisasjonen** — de som skal se og endre koden, ikke brukerne av
+løsningen. Med tre medlemmer gir det i størrelsesorden 750 USD i året for
+Enterprise og 150 USD for Team. Enterprise kan i tillegg kreve avtale eller
+et minste antall lisenser; det er ikke undersøkt.
+
+**Sjekk først om Forsvaret allerede har GitHub Enterprise.** Store
+virksomheter har det ofte, og da er spørsmålet om FHS kan få en organisasjon
+under den eksisterende avtalen — ikke hva en ny plan koster. Det avklares med
+IT, ikke med GitHub.
+
+**Team uten godkjenning før deploy** er et mulig kompromiss, med to
+innstillinger som Team har for private repoer:
+
+1. **Påkrevd gjennomgang før endringer flettes inn i `main`.**
+2. **Miljøet `prod` begrenset til grenen `main`** («deployment branches»).
+   Det er IKKE satt i dag: deploy-workflowene kan startes fra hvilken som
+   helst gren (målt 30.10.2026), så uten denne innstillingen kan kode som
+   aldri er gjennomgått, rulles ut.
+
+Da sjekker en annen person KODEN, men ikke tidspunktet den rulles ut. Alle
+med skrivetilgang kan starte en deploy, så antallet med skrivetilgang må
+holdes lite. Innstilling 2 er verdt å sette uansett plan.
+
 ---
 
 ## Alternativene
@@ -145,8 +183,9 @@ godkjenningen flyttes et annet sted før repoet gjøres privat, ikke etterpå.
 
 ## Spørsmål til møtet
 
-1. **Har FHS en GitHub-organisasjon, og på hvilken plan?** Avgjør om
-   godkjenningssteget og miljøhemmelighetene overlever et privat repo.
+1. **Har Forsvaret eller FHS GitHub Enterprise allerede?** Avgjør om
+   godkjenningssteget og miljøhemmelighetene overlever et privat repo, og om
+   det koster noe.
 2. **Skal repoet være privat, eller holder det at FHS eier det?** Koden er
    ikke hemmelig; tenant-ID-er og ressursnavn er det heller ikke, men de er
    nyttige for kartlegging.
@@ -169,5 +208,11 @@ godkjenningen flyttes et annet sted før repoet gjøres privat, ikke etterpå.
   <https://docs.github.com/actions/managing-workflow-runs-and-deployments/managing-deployments/managing-environments-for-deployment>
 - GitHub Community, diskusjon 170307 — Team-plan uten required reviewers på
   private repoer: <https://github.com/orgs/community/discussions/170307>
+- Priser, tredjepart (ikke GitHub): Capterra,
+  <https://www.capterra.com/p/129067/GitHub/pricing/>, og costbench,
+  <https://costbench.com/software/developer-tools/github/>. Bekreft mot
+  <https://github.com/pricing>.
+- GitHub Community, diskusjon 202852 — required reviewers i private repoer
+  krever Enterprise: <https://github.com/orgs/community/discussions/202852>
 - GitHub Docs, «Transferring a repository» — hva som følger med:
   <https://docs.github.com/en/enterprise-cloud@latest/repositories/creating-and-managing-repositories/transferring-a-repository>
