@@ -75,6 +75,7 @@ nav:
   - Overlevering og sikkerhet:
       - SIKKERHET-OG-ARKITEKTUR.md
       - SECURITY.md
+      - VURDERING-REPO-TILGANG.md
       - ARCHITECTURE.md
       - DATA-MODELL.md
       - API-OVERSIKT.md
