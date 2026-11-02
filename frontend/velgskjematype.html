@@ -316,6 +316,24 @@
         .fase-badge.test       { background: var(--badge-test); }
         .fase-badge.mal        { background: var(--badge-mal); }
 
+        /* Kompakte merker i tittelraden — se kortMerkerHtml(). Informasjonen
+           står i title (mus) og aria-label (skjermleser), ikke i teksten. */
+        .merke-beh {
+            display: inline-flex; align-items: center; gap: 3px;
+            padding: 1px 7px; border-radius: 999px;
+            background: #ff3b30; color: white;
+            font-size: 12px; font-weight: 700; white-space: nowrap; cursor: default;
+        }
+        .merke-ikon { font-size: 15px; line-height: 1; cursor: default; }
+        .fase-prikk {
+            display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+            flex: 0 0 auto; cursor: default;
+        }
+        .fase-prikk.produksjon { background: var(--badge-produksjon); }
+        .fase-prikk.utvikling  { background: var(--badge-utvikling); }
+        .fase-prikk.test       { background: var(--badge-test); }
+        .fase-prikk.mal        { background: var(--badge-mal); }
+
         .forklaring {
             background: var(--forklaring-bg);
             border-left: 3px solid var(--forklaring-border);
@@ -806,8 +824,39 @@
             container.innerHTML = liste.map(t => kortHtml(t)).join('');
         }
 
+        /**
+         * Merkene i tittelraden på et skjematypekort, i kompakt form.
+         *
+         * Til 03.11.2026 var alle tre tekstmerker («🔔 2», «📉 MANGLER
+         * NULLPUNKT», «PRODUKSJON»), og de tok mye av raden. Nå:
+         *
+         *   saker til behandling — 🔔 og tallet
+         *   mangler nullpunkt    — bare 📉
+         *   fase                 — en farget prikk
+         *
+         * Det som ikke lenger står i teksten, står i title og aria-label.
+         * Uten aria-label sier en skjermleser ingenting om en farget prikk.
+         */
+        function kortMerkerHtml(t, antBeh, nullpunktMangler) {
+            const deler = [];
+            if (antBeh > 0) {
+                const tekst = `${antBeh} ${antBeh === 1 ? 'sak' : 'saker'} til behandling`;
+                deler.push(`<span class="merke-beh" title="${tekst}" aria-label="${tekst}">🔔 ${antBeh}</span>`);
+            }
+            if (nullpunktMangler) {
+                const tekst = 'Mangler nullpunkt for gevinst';
+                deler.push(`<span class="merke-ikon" role="img" title="${tekst}" aria-label="${tekst}">📉</span>`);
+            }
+            if (t.AlleTilgang) {
+                deler.push('<span class="fase-badge" style="background: #34c759;" title="Alle innloggede kan fylle ut">Åpen for alle</span>');
+            }
+            const faseNavn = String(t.Fase || 'Produksjon');
+            const faseKlasse = faseNavn.toLowerCase().replace(/[^a-zæøå]/g, '');
+            deler.push(`<span class="fase-prikk ${faseKlasse}" role="img" title="${escapeHtml(faseNavn)}" aria-label="Fase: ${escapeHtml(faseNavn)}"></span>`);
+            return deler.join('');
+        }
+
         function kortHtml(t) {
-            const fase = (t.Fase || 'Produksjon').toLowerCase();
             const forklaringHtml = t.Skjema_forklaring?.Format === 'Markdown'
                 ? parseMdSimpel(t.Skjema_forklaring.Verdi || '')
                 : escapeHtml(t.Skjema_forklaring?.Verdi || '');
@@ -897,9 +946,6 @@
 
             const kollapsetKlasse = erKollapset(t.Skjematype_id) ? ' kollapset' : '';
             const antBeh = (behandlingerMap[t.Skjematype_id] || []).length;
-            const behBadge = antBeh > 0
-                ? `<span class="fase-badge" style="background: #ff3b30;" title="${antBeh} skjema venter på deg som behandler">🔔 ${antBeh}</span>`
-                : '';
             return `
                 <div class="skjematype-kort${kollapsetKlasse}" data-skjematype-id="${escapeHtml(String(t.Skjematype_id))}">
                     <div class="kort-tittelrad" onclick="toggleKort('${escapeJsIAttributt(String(t.Skjematype_id))}')">
@@ -909,11 +955,7 @@
                             ${escapeHtml(t.Skjema_navn || '(uten navn)')}
                         </h2>
                         <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-                            ${behBadge}
-                            ${manglerNullpunkt(t) ? `<span class="fase-badge" style="background: #ff9500;"
-                                title="Nullpunktdefinisjon (baseline) for gevinstoppfølging er ikke registrert for denne skjematypen. Vises bare for eiere og admin.">📉 Mangler nullpunkt</span>` : ''}
-                            ${t.AlleTilgang ? '<span class="fase-badge" style="background: #34c759;" title="Alle innloggede kan fylle ut">Åpen for alle</span>' : ''}
-                            <span class="fase-badge ${fase}">${escapeHtml(t.Fase || 'Produksjon')}</span>
+                            ${kortMerkerHtml(t, antBeh, manglerNullpunkt(t))}
                         </div>
                     </div>
                     <div class="kort-innhold">

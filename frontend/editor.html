@@ -2665,8 +2665,12 @@
                     });
                 }
                 (seksjon.Felter || []).forEach((felt, fIdx) => {
-                    if (felt.Type === 'Informasjon') return;
-
+                    // «Vises kun hvis» gjelder ALLE felt, også informasjonsfelt —
+                    // en forklaring som bare er relevant for ett svar, skal kunne
+                    // skjules for de andre. Utfyllingssiden har alltid tatt
+                    // hensyn til Vises på alle felttyper (oppdaterVises() i
+                    // index.html); det var bare editoren som ikke tilbød valget,
+                    // til 03.11.2026.
                     const vSlot = document.querySelector(`.dnf-slot[data-slot="felt-vises-${sIdx}-${fIdx}"]`);
                     if (vSlot) {
                         byggDNFEditor(vSlot, felt.Vises, {
@@ -2676,6 +2680,9 @@
                             onEndring: (ny) => { if (ny) felt.Vises = ny; else delete felt.Vises; }
                         });
                     }
+
+                    // Resten handler om svaret, og et informasjonsfelt har ikke noe.
+                    if (felt.Type === 'Informasjon') return;
                     const oSlot = document.querySelector(`.dnf-slot[data-slot="felt-oblig-${sIdx}-${fIdx}"]`);
                     if (oSlot) {
                         byggDNFEditor(oSlot, felt.ObligatoriskHvis, {
@@ -2963,7 +2970,7 @@
                         </div>
                     </div>
                     <div class="felt-config">${config}</div>
-                    ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-vises-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
+                    <div class="dnf-slot" data-slot="felt-vises-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>
                     ${felt.Type !== 'Informasjon' ? `<div class="dnf-slot" data-slot="felt-oblig-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${kanValideres(felt.Type) ? `<div class="dnf-slot" data-slot="felt-validering-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
                     ${kanHaFasteData(felt.Type) ? `<div class="dnf-slot" data-slot="felt-fastedata-${sIdx}-${fIdx}" style="margin-top: 8px;"></div>` : ''}
