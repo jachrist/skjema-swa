@@ -43,21 +43,24 @@ async function nesteSkjematypeId() {
 }
 
 /**
- * Er brukeren behandler på et aktivt steg i dette ene skjemaet?
+ * Er brukeren behandler i dette ene skjemaet — på et hvilket som helst steg?
  *
- * Samme vurdering som `hentSkjema` gjør. Den ligger her fordi behandleren også
- * må få lese skjematypens definisjon for å kunne se skjemaet hun skal behandle
- * — men bare den definisjonen, og bare fordi hun har et konkret skjema å
- * behandle. Uten skjemaet i hånden gir dette ingen tilgang.
+ * Behandleren må få lese skjematypens definisjon for å kunne se skjemaet hun
+ * skal behandle — men bare den definisjonen, og bare fordi hun har et konkret
+ * skjema. Uten skjemaet i hånden gir dette ingen tilgang.
+ *
+ * SAMME REGEL SOM `hentSkjema` i skjemaer.js: `erBehandlerPaaNoeSteg`, ikke
+ * en kopi. Til 03.11.2026 krevde denne et AKTIVT steg, mens `hentSkjema` siden
+ * 05.10.2026 har godtatt ethvert steg. Behandlingssiden henter begge, så når
+ * steget var avgjort — eller blokkert av en avhengighet — slapp skjemaet
+ * gjennom og definisjonen ikke, og siden sa «Kunne ikke hente skjemaet:
+ * Ingen tilgang» på lenka behandleren nettopp hadde fått.
  */
 async function erBehandlerPaaSkjema(skjematypeId, skjemaId, upn) {
     try {
         const skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
         if (!skjema) return false;
-        for (const steg of behandling.beregnAktiveSteg(skjema)) {
-            if (await behandling.brukerErBehandlerAsync(steg, upn)) return true;
-        }
-        return false;
+        return await behandling.erBehandlerPaaNoeSteg(skjema, upn);
     } catch (_) {
         // Et oppslag som feiler skal ikke gi tilgang.
         return false;
@@ -498,7 +501,13 @@ app.http('hentSkjematype', {
                 if (eier.length === 0 && publikum.length === 0) {
                     const forSkjema = request.query.get('skjema_id');
                     if (!forSkjema || !(await erBehandlerPaaSkjema(id, forSkjema, upn))) {
-                        return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+                        const melding = forSkjema
+                            ? `Ingen tilgang til skjematype ${id}: du er verken eier, i publikum eller behandler på sak ${forSkjema}`
+                            : `Ingen tilgang til skjematype ${id}: du er verken eier eller i publikum`;
+                        await behandling.loggAvvistTilgang({
+                            kall: 'skjematype', skjematypeId: id, skjemaId: forSkjema || '', upn, melding, log: (m) => context.log(m)
+                        });
+                        return { status: 403, jsonBody: { status: 'avvist', melding } };
                     }
                 }
             }

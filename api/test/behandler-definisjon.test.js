@@ -16,10 +16,34 @@
  * behandler kunne lese enhver definisjon, og da er vi tilbake til en
  * tilgangsmodell ingen kan resonnere om.
  *
+ * ## 03.11.2026: samme regel som for skjemaet
+ *
+ * Definisjonen krevde et AKTIVT steg; skjemaet har siden 05.10.2026 godtatt
+ * ethvert steg (`erBehandlerPaaNoeSteg`). Når steget var avgjort, slapp
+ * skjemaet gjennom og definisjonen ikke — samme feilmelding, på nytt. Testene
+ * under kjører den ekte regelen, og krever at de to rutene bruker den.
+ *
+ * Testen hoppet til samme dato over seg selv når @azure/functions manglet —
+ * og den mangler alltid i `npm test`. Den har derfor aldri kjørt. Nå stubbes
+ * pakken, slik system-miljo.test.js gjør.
+ *
  * Kjøres med:  node api/test/behandler-definisjon.test.js
  */
-let modul = null;
-try { modul = require('../src/functions/skjematyper'); } catch (_) { /* uten @azure/functions */ }
+const fs = require('fs');
+const path = require('path');
+const Module = require('module');
+
+const ekteLoad = Module._load;
+Module._load = function (forespurt, ...rest) {
+    if (forespurt === '@azure/functions') return { app: { http() {}, timer() {} } };
+    return ekteLoad.call(this, forespurt, ...rest);
+};
+let modul;
+try {
+    modul = require('../src/functions/skjematyper');
+} finally {
+    Module._load = ekteLoad;
+}
 
 let ok = 0, feil = 0;
 function sjekk(navn, faktisk, forventet) {
@@ -28,81 +52,94 @@ function sjekk(navn, faktisk, forventet) {
     else { feil++; console.log(`FEIL  ${navn}\n      fikk      ${a}\n      forventet ${b}`); }
 }
 
-if (!modul?._erBehandlerPaaSkjema) {
-    console.log('(hopper over — @azure/functions ikke installert)');
-    console.log('\n0 OK, 0 feil, 1 hoppet over');
-    process.exit(0);
-}
 const erBehandler = modul._erBehandlerPaaSkjema;
+sjekk('skjematyper.js eksporterer regelen', typeof erBehandler, 'function');
 
 const forekomst = require('../src/lib/skjema-forekomst-storage');
-const behandling = require('../src/lib/behandling');
-
+const roller = require('../src/lib/roller-storage');
 const gammelHent = forekomst.hentSkjema;
-const gammelAktive = behandling.beregnAktiveSteg;
-const gammelErBeh = behandling.brukerErBehandlerAsync;
+const gammelErMedlem = roller.erMedlem;
 
-function stub({ skjema = null, aktive = [], erBeh = () => false }) {
-    forekomst.hentSkjema = async () => skjema;
-    behandling.beregnAktiveSteg = () => aktive;
-    behandling.brukerErBehandlerAsync = async (steg, upn) => erBeh(steg, upn);
+/** Stubbet lagring: én sak, og rollemedlemskap som et enkelt kart. */
+function stub({ skjema = null, medlemmer = {}, kast = false }) {
+    forekomst.hentSkjema = async () => { if (kast) throw new Error('lagring nede'); return skjema; };
+    roller.erMedlem = async (rolle, upn) => (medlemmer[rolle] || []).includes(String(upn).toLowerCase());
 }
+
+const MEDLEMMER = {
+    'Emneansvarlig(FKI0301)': ['behandler1@jccodevel.onmicrosoft.com'],
+    'Emneansvarlig(ING2301)': ['behandler2@jccodevel.onmicrosoft.com'],
+    'Bransjeveileder(TESTKLASSE)': ['innsender2@jccodevel.onmicrosoft.com']
+};
+
+// Saken fra testingen 03.11.2026, slik den sto lagret (skjematype 45, sak 10).
+const SAK = {
+    Skjema_id: '10', Skjematype_id: '45', Skjema_status: 2,
+    Behandling: [
+        { Steg: 1, Roller: ['Emneansvarlig(FKI0301)', 'Emneansvarlig(ING2301)'], Personer: [], Team: [], Beslutning: 0 },
+        { Steg: 2, Roller: ['Bransjeveileder(TESTKLASSE)'], Personer: [], Team: [], AvhengigAv: 1, Beslutning: 0 }
+    ]
+};
 
 async function kjor() {
-    const STEG = { Steg: 1, Roller: ['Administrativ godkjenner(Driftstab)'] };
-    const SKJEMA = { Skjema_id: '6', Skjematype_id: '123', Behandling: [STEG] };
-
     // ---------- behandler på aktivt steg ----------
+    stub({ skjema: SAK, medlemmer: MEDLEMMER });
+    sjekk('emneansvarlig 1 slipper til', await erBehandler('45', '10', 'behandler1@jccodevel.onmicrosoft.com'), true);
+    sjekk('emneansvarlig 2 slipper til', await erBehandler('45', '10', 'behandler2@jccodevel.onmicrosoft.com'), true);
+    sjekk('utenforstående avvises', await erBehandler('45', '10', 'kari@jccodevel.onmicrosoft.com'), false);
+
+    // ---------- steg 1 avgjort: behandleren skal fortsatt kunne lese ----------
+    //
+    // Det var dette som feilet. Steg 1 er ikke lenger aktivt, og den aktive-
+    // steg-regelen avviste definisjonen mens skjemaet slapp gjennom.
     {
-        stub({ skjema: SKJEMA, aktive: [STEG], erBeh: () => true });
-        sjekk('behandler slipper til', await erBehandler('123', '6', 'maja@fhs.no'), true);
+        const avgjort = JSON.parse(JSON.stringify(SAK));
+        avgjort.Behandling[0].Beslutning = 1;
+        avgjort.Behandling[0].BehandletAv = 'behandler1@jccodevel.onmicrosoft.com';
+        stub({ skjema: avgjort, medlemmer: MEDLEMMER });
+        sjekk('den som avgjorde, leser fortsatt', await erBehandler('45', '10', 'behandler1@jccodevel.onmicrosoft.com'), true);
+        sjekk('den andre emneansvarlige også', await erBehandler('45', '10', 'behandler2@jccodevel.onmicrosoft.com'), true);
     }
 
-    // ---------- ikke behandler ----------
+    // ---------- blokkert steg: neste behandler kan lese før det er hennes tur ----------
+    stub({ skjema: SAK, medlemmer: MEDLEMMER });
+    sjekk('behandler på blokkert steg 2 leser', await erBehandler('45', '10', 'innsender2@jccodevel.onmicrosoft.com'), true);
+
+    // ---------- det som IKKE skal gi tilgang ----------
+    stub({ skjema: null, medlemmer: MEDLEMMER });
+    sjekk('ukjent skjema gir ingen tilgang', await erBehandler('45', '999', 'behandler1@jccodevel.onmicrosoft.com'), false);
+    stub({ kast: true });
+    sjekk('feil gir ingen tilgang', await erBehandler('45', '10', 'behandler1@jccodevel.onmicrosoft.com'), false);
     {
-        stub({ skjema: SKJEMA, aktive: [STEG], erBeh: () => false });
-        sjekk('utenforstående avvises', await erBehandler('123', '6', 'kari@fhs.no'), false);
+        // Markørene i BehandletAv er ikke personer.
+        const markør = JSON.parse(JSON.stringify(SAK));
+        markør.Behandling[0].BehandletAv = 'system';
+        stub({ skjema: markør, medlemmer: {} });
+        sjekk('markøren «system» gir ingen tilgang', await erBehandler('45', '10', 'system'), false);
     }
 
-    // ---------- steget er ikke aktivt lenger ----------
-    {
-        // Er skjemaet ferdigbehandlet, har hun ikke lenger noe der å gjøre via
-        // denne veien. Er hun eier eller publikum, slipper hun inn på vanlig vis.
-        stub({ skjema: SKJEMA, aktive: [], erBeh: () => true });
-        sjekk('ingen aktive steg gir ingen tilgang', await erBehandler('123', '6', 'maja@fhs.no'), false);
-    }
+    // ---------- de to rutene bruker samme regel ----------
+    const les = (f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'functions', f), 'utf8');
+    const typer = les('skjematyper.js');
+    const fra = typer.indexOf('async function erBehandlerPaaSkjema(');
+    const kropp = typer.slice(fra, typer.indexOf('\n}\n', fra));
+    sjekk('definisjonen bruker erBehandlerPaaNoeSteg', /erBehandlerPaaNoeSteg\(/.test(kropp), true);
+    sjekk('og ikke de aktive stegene', /beregnAktiveSteg\(/.test(kropp), false);
+    sjekk('skjemaet bruker den samme', /erBehandlerPaaNoeSteg\(skjema, upn\)/.test(les('skjemaer.js')), true);
 
-    // ---------- skjemaet finnes ikke ----------
-    {
-        stub({ skjema: null, aktive: [STEG], erBeh: () => true });
-        sjekk('ukjent skjema gir ingen tilgang', await erBehandler('123', '999', 'maja@fhs.no'), false);
-    }
-
-    // ---------- oppslag som feiler ----------
-    {
-        // En feil under oppslaget skal lukke døra, ikke åpne den.
-        forekomst.hentSkjema = async () => { throw new Error('nettverk'); };
-        sjekk('feil gir ingen tilgang', await erBehandler('123', '6', 'maja@fhs.no'), false);
-    }
-
-    // ---------- flere steg, behandler på ett ----------
-    {
-        const a = { Steg: 1, Roller: ['Annen rolle'] };
-        const b = { Steg: 2, Roller: ['Administrativ godkjenner(Driftstab)'] };
-        stub({
-            skjema: { ...SKJEMA, Behandling: [a, b] },
-            aktive: [a, b],
-            erBeh: async (steg) => steg.Steg === 2
-        });
-        sjekk('behandler på ett av flere steg holder', await erBehandler('123', '6', 'maja@fhs.no'), true);
-    }
-
-    forekomst.hentSkjema = gammelHent;
-    behandling.beregnAktiveSteg = gammelAktive;
-    behandling.brukerErBehandlerAsync = gammelErBeh;
-
-    console.log(`\n${ok} OK, ${feil} feil`);
-    process.exit(feil ? 1 : 0);
+    // ---------- en avvisning sier hva og logger hvorfor ----------
+    sjekk('skjematype-avvisningen logges', /loggAvvistTilgang\(\{\s*kall: 'skjematype'/.test(typer), true);
+    sjekk('sak-avvisningen logges', /loggAvvistTilgang\(\{\s*kall: 'sak'/.test(les('skjemaer.js')), true);
+    sjekk('meldingen sier hva som ble nektet', /Ingen tilgang til skjematype \$\{id\}/.test(typer), true);
 }
 
-kjor().catch(e => { console.error('Testen krasjet:', e); process.exit(1); });
+kjor().then(() => {
+    forekomst.hentSkjema = gammelHent;
+    roller.erMedlem = gammelErMedlem;
+    console.log(`\n${ok} OK, ${feil} feil`);
+    process.exit(feil ? 1 : 0);
+}).catch(e => {
+    console.log('FEIL  testen kastet:', e.message);
+    console.log(e.stack);
+    process.exit(1);
+});
