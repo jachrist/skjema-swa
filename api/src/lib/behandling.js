@@ -186,6 +186,41 @@ async function brukerErBehandlerAsync(steg, upn, cache = null) {
  */
 const IKKE_PERSONER = new Set(['alle-behandlere', 'ekstern-flyt', 'system']);
 
+/**
+ * Logg et avvist forsøk på å åpne en sak, med det som trengs for å se HVORFOR.
+ *
+ * Til 03.11.2026 svarte begge kallene på behandlingssiden bare «Ingen
+ * tilgang», og ingenting ble logget. Behandleren så feilen, admin så ingen
+ * ting — og det var umulig å skille «rollen har ikke denne personen» fra
+ * «personen logger inn med et annet navn» fra «det var definisjonen, ikke
+ * saken, som ble nektet».
+ *
+ * Hendelsen bærer hvem som ble avvist, hvilket kall, og behandlerne per steg
+ * slik de står i saken. Feiler loggingen, skal ikke avvisningen feile med den.
+ */
+async function loggAvvistTilgang({ kall, skjematypeId, skjemaId, upn, skjema = null, melding, log = () => {} }) {
+    try {
+        let sak = skjema;
+        if (!sak && skjemaId) {
+            sak = await require('./skjema-forekomst-storage').hentSkjema(skjemaId, skjematypeId).catch(() => null);
+        }
+        const behandlere = (sak?.Behandling || []).map(s => ({
+            Steg: s.Steg, Roller: s.Roller || [], Personer: s.Personer || [], Team: s.Team || [],
+            BehandletAv: s.BehandletAv || ''
+        }));
+        log(`tilgang avvist (${kall}): ${upn} — ${skjematypeId}/${skjemaId || '-'} — behandlere: ${JSON.stringify(behandlere)}`);
+        const hendelser = require('./hendelser-storage');
+        hendelser.logg({
+            Type: 'tilgang.avvist.sak', Aktor: upn,
+            ObjektType: 'skjema', ObjektId: `${skjematypeId}/${skjemaId || ''}`,
+            Melding: melding,
+            Detaljer: { kall, upn, skjematypeId, skjemaId: skjemaId || null, kryptert: !!sak?.Kryptert, behandlere }
+        });
+    } catch (e) {
+        log(`tilgang avvist (${kall}): logging feilet — ${e.message}`);
+    }
+}
+
 async function erBehandlerPaaNoeSteg(skjema, upn, cache = null) {
     if (!upn) return false;
     const upnLower = String(upn).toLowerCase();
@@ -290,6 +325,7 @@ function skipStegSomIkkeSkalKjore(skjema) {
 }
 
 module.exports = {
+    loggAvvistTilgang,
     erBehandlerPaaNoeSteg,
     skalVarsleInnsender,
     noenStegErBehandlet,

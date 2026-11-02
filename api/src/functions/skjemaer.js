@@ -1429,7 +1429,13 @@ app.http('hentSkjema', {
             let erEier = false;
             if (!erInnsender && !erAdmin(upn) && !erBehandlerPaNoeSteg) {
                 erEier = await harEierTilgang(skjematypeId, upn);
-                if (!erEier) return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };
+                if (!erEier) {
+                    const melding = `Ingen tilgang til sak ${skjemaId}: du er verken innsender, eier eller behandler`;
+                    await behandling.loggAvvistTilgang({
+                        kall: 'sak', skjematypeId, skjemaId, upn, skjema, melding, log: (m) => context.log(m)
+                    });
+                    return { status: 403, jsonBody: { status: 'avvist', melding } };
+                }
             }
 
             // Dekrypter for autorisert bruker (admin/eier/innsender/behandler)
