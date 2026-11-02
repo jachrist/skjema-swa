@@ -294,7 +294,26 @@ async function slettSkjema(skjemaId, skjematypeId) {
     }
 }
 
+/**
+ * Bytt bare JSON-en i en lagret sak — slik den er lagret: kompakt forblir
+ * kompakt, og en kryptert sak må være kryptert på nytt av kalleren.
+ *
+ * Brukt av omdøpingen av roller. `lagreSkjema` setter `Sist_endret` og
+ * `Oppdatert`, og en rolle som får nytt navn er ikke en endring av saken —
+ * den ville ellers dukket opp øverst i «sist endret» for alle saker som
+ * nevner rollen. `Merge` lar de andre kolonnene stå.
+ */
+async function erstattJson(skjematypeId, skjemaId, data) {
+    const tabell = await sikreTabell(TABELL);
+    await tabell.upsertEntity({
+        partitionKey: String(skjematypeId),
+        rowKey: String(skjemaId),
+        JSON: JSON.stringify(data)
+    }, 'Merge');
+}
+
 module.exports = {
+    erstattJson,
     hentAntallPerType,
     tellSvarFraBruker,
     hentSkjema,
