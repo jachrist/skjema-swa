@@ -71,7 +71,7 @@ Formen tåler klipp-og-lim, og den tåler at noen setter inn en linje til.
 | ☐ | Key Vault: gjenbruk `fhs-kv-01`, eller ny `kv-skjema-3-prod`? | Se 3.1 — valget avgjør én kommando |
 | ☐ | Flytene er kopiert til prod-tenanten med **Entra-autentisering** | Se trinn 7. Uten dette sender v3 ingenting |
 | ☐ | Domene/subdomene bestemt | Se 10. Ikke nødvendig for oppsettet, men avgjør cutover |
-| ☐ | **Skriver v1 fortsatt?** | Se under. Avklares før cutover, ikke etter |
+| ☑ | **Skriver v1 fortsatt?** | Nei. v1 ble tatt ned 02.11.2026 — se kapittel 10 |
 | ☐ | **Backup-sertifikatet importeres som PEM** | Se 0.4, der hele veien er prøvd i dev. Importeres det som PFX, kan koden ikke lese det — og en omgjøring etterpå krever at privatnøkkelen håndteres manuelt |
 
 ```powershell
@@ -1924,26 +1924,18 @@ lar v2 sine data stå helt urørt.
 
 ### Er v2 den eneste som skriver?
 
-**Observert 19.10.2026, bekreftet 28.10.2026:** den opprinnelige løsningen
-(v1) kjører fortsatt cron-jobber mot sin egen lagringskonto. Den tas ned
-før cutover — se trinn 0 i sjekklisten under. Det ble
-oppdaget fordi en tom LU-kolonne ble feilsøkt i v1 sin `Emner`-tabell i den
-tro at det var prod — tabellen har samme navn og samme form, og v1 sine
-jobber skriver ikke LU-feltet.
+**Ja, fra 02.11.2026.** Den opprinnelige løsningen (v1) kjørte cron-jobber mot
+sin egen lagringskonto til den ble tatt ned den dagen. Det er to stabler å
+holde rede på ved cutover, ikke tre.
 
-To ting følger av det, og begge hører hjemme FØR cutover:
+Den ble oppdaget 19.10.2026 fordi en tom LU-kolonne ble feilsøkt i v1 sin
+`Emner`-tabell i den tro at det var prod — tabellen har samme navn og samme
+form. Lærdommen gjelder fortsatt mellom v2 og v3: **to lagringskontoer med
+samme tabeller kan ikke skilles fra hverandre i en portal.** `/api/system/info`
+melder hvilken konto miljøet faktisk leser fra — sjekk den, ikke hukommelsen.
 
-1. **Planen under forutsetter at v2 er den eneste som skriver.** Er v1 også i
-   drift, er det tre stabler, ikke to — og «ta prod ut av matrisene» dekker
-   ikke v1 sine jobber, som ligger et annet sted.
-2. **Lagringskontoene må kunne skilles fra hverandre på navn alene.** To
-   konti med samme tabellnavn og samme kolonner er ikke til å se forskjell på
-   i en portal. Fra 19.10.2026 melder `/api/system/info` hvilken konto
-   miljøet faktisk leser fra — sjekk den, ikke hukommelsen.
-
-v1 skriver ikke i v2 sin lagring, så den ødelegger ingen data der. Men den
-kan sende varsler og e-post som ser ut til å komme fra løsningen, og da er
-det tre stabler å holde rede på i stedet for to.
+v1 lå ikke i dette repoet. Koden ble rullet ut fra en lokal mappe, og
+timerne lå i v1 sin egen Function App; ingen av workflowene her kalte den.
 
 ### Uansett form: stopp de doble kjøringene
 
@@ -1959,7 +1951,16 @@ blir grønn, og pilot-raden går som før. Ingenting annet i repoet leser de to
 navnene.
 
 Som belte: roter `SCHEDULER_KEY` på **v2-prod-SWA-en**, ikke i GitHub, så et
-gjenglemt cron-kall får 401 i stedet for å kjøre. `SCHEDULER_KEY_PROD` i
+gjenglemt cron-kall får 401 i stedet for å kjøre.
+
+**Ikke slå av workflowene i stedet.** «Disable workflow» i GitHub stopper hele
+workflowen — også `pilot`-raden i matrisen, så v2-dev mister FS-data,
+oppslagslister og backup samme natt. Variabelen stopper bare prod. Og
+tilbakeveien er å legge variabelen inn igjen, ikke å huske hvilke av åtte
+workflows som var slått av.
+
+Workflowene slettes først når både pilot og v2-prod er revet — se ryddelista
+i kapittel 13. `SCHEDULER_KEY_PROD` i
 GitHub kan stå; den er ubrukt når variabelen er borte.
 
 ### Miljønavnet skifter: `Production` → `prod`
@@ -1997,7 +1998,7 @@ v3 sin konto til v2 sin. Pausen er satt til to timer.
 
 | ☐ | Hva | Merknad |
 |---|---|---|
-| ☐ | 0. Ta ned v1 | Se «Er v2 den eneste som skriver?» over |
+| ☑ | 0. Ta ned v1 | Gjort 02.11.2026 |
 | ☐ | 1. Senk TTL på `www` fra 1 time til 5 minutter | Minst en time før pausen, så den gamle verdien er glemt. Uten dette kan både DNS-endringen og tilbakeveien bruke en time |
 | ☐ | 2. Fyll `prod` i nøkkelkalenderen med v3 sine nøkler | Se tabellen i «Miljønavnet skifter» |
 | ☐ | 3. Gå gjennom flytene som forgrener på `miljø` / `SkjemaMiljo` | v3-prod sender `"prod"`, ikke `"production"` |
