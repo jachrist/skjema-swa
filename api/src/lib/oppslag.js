@@ -38,6 +38,7 @@ const rollerStorage = require('./roller-storage');
 const emnerStorage = require('./emner-storage');
 const teamStorage = require('./team-storage');
 const { hentOmfangsalias } = require('./omfang');
+const dynamiskRolle = require('./dynamisk-rolle');
 const terminer = require('./terminer');
 
 const IKKE_IMPLEMENTERT = new Set([
@@ -104,23 +105,26 @@ async function hentDropdownVerdier(datakilde, filterbegrep, filteroperasjon, fil
 }
 
 /**
- * Innehavere for en rollestreng, med alias-fallback på omfanget.
+ * Innehavere for en rollestreng, med samme regel som behandlingssteget.
  *
  * Kommer omfanget fra et Klasser-/Kull-felt, er det FS-nøkkelen
  * ("FHSBA|22H|A") mens rollelista gjerne har klassenavnet admin så i
- * nedtrekket. Vi prøver formene i tur og returnerer første treff.
+ * nedtrekket — og er det skrevet for hånd, kanskje med andre store og små
+ * bokstaver. Hvilken form som gjelder, avgjøres i dynamisk-rolle.js
+ * (rolleForOmfang), ikke her: nedtrekket og behandlingssteget skal finne den
+ * samme klassesjefen for samme verdi.
+ *
+ * Feilet oppslaget og ingen form ga treff, kastes feilen videre — en tom
+ * nedtrekksliste skal ikke skjule at rollelista ikke svarte.
  */
 async function hentInnehavereForRolle(rolleStreng) {
     const s = String(rolleStreng || '').trim();
     const m = /^(.+?)\((.+)\)$/.exec(s);
     if (!m) return await rollerStorage.hentInnehavere(s);
 
-    const navn = m[1].trim();
-    for (const omfang of await hentOmfangsalias(m[2])) {
-        const innehavere = await rollerStorage.hentInnehavere(`${navn}(${omfang})`);
-        if (innehavere.length > 0) return innehavere;
-    }
-    return [];
+    const { rolle, innehavere, feil } = await dynamiskRolle.rolleForOmfang(m[1], m[2]);
+    if (!rolle && feil) throw feil;
+    return innehavere;
 }
 
 /**

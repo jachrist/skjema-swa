@@ -51,21 +51,63 @@ function slaOppSvar(ref, seksjoner) {
 }
 
 /**
- * Finn rollestrengen for én svarverdi, via alias-formene i omfang.js.
- * Returnerer { rolle, kandidater } — kandidatene tas vare på til logging.
+ * Regelen for «hvilken rollestreng gjelder for denne verdien». ÉN gang, her.
+ *
+ * To kallere spør om det samme og skal få samme svar:
+ *   - rolleForVerdi (under) — behandlingssteg og varsler, ved innsending
+ *   - hentInnehavereForRolle i oppslag.js — datakilden Personer med filteret
+ *     Rolle, altså nedtrekkslister over f.eks. klassesjefer
+ *
+ * Fram til 03.11.2026 hadde oppslag.js sin egen løkke over de samme aliasene,
+ * men uten tilbakefallet på store og små bokstaver. En nedtrekksliste over
+ * klassesjefer for «TESTKLASSE» var da tom, mens behandlingssteget for samme
+ * verdi fant klassesjefen lagret som «Testklasse».
+ *
+ * Rekkefølgen:
+ *   1. hver aliasform fra omfang.js, eksakt, i prioritert rekkefølge
+ *   2. omfangene som faktisk er lagret, uten å skille på store og små
+ *      bokstaver (omfangSomLagret) — det LAGREDE omfanget velges
+ *
+ * `tilRolle` gjør en aliasform om til en rollestreng. Det er den eneste
+ * forskjellen på kallerne: den ene har en mal med feltreferanse, den andre et
+ * rollenavn og et omfang.
+ *
+ * Returnerer { rolle, kandidater, innehavere, feil }. `rolle` er null når
+ * ingen form har innehavere. `feil` er siste oppslagsfeil, eller null — et
+ * oppslag som feilet skal kunne skilles fra en rolle som er tom.
  */
-async function rolleForVerdi(mal, verdi) {
-    const kandidater = (await hentOmfangsalias(verdi)).map(a => mal.replace(FELTREF, a).trim());
+async function finnRolle(verdi, tilRolle) {
+    const kandidater = (await hentOmfangsalias(verdi)).map(a => tilRolle(a).trim());
+    let feil = null;
     for (const kandidat of kandidater) {
         try {
             const innehavere = await rollerStorage.hentInnehavere(kandidat);
-            if (innehavere.length > 0) return { rolle: kandidat, kandidater };
-        } catch (_) { /* prøv neste form */ }
+            if (innehavere.length > 0) return { rolle: kandidat, kandidater, innehavere, feil: null };
+        } catch (e) { feil = e; /* prøv neste form */ }
     }
     // Ingen eksakt treff: prøv omfangene som faktisk er lagret, uten å skille
     // på store og små bokstaver. Se omfangSomLagret.
     const lagret = await omfangSomLagret(kandidater);
-    if (lagret) return { rolle: lagret, kandidater };
+    if (lagret) return { ...lagret, kandidater, feil: null };
+    return { rolle: null, kandidater, innehavere: [], feil };
+}
+
+/**
+ * Rollestrengen med innehavere for «Rolle(omfang)», der omfanget er en
+ * svarverdi som kan ha flere former. Samme regel som behandlingssteget.
+ */
+async function rolleForOmfang(rollenavn, omfang) {
+    const navn = String(rollenavn || '').trim();
+    return finnRolle(omfang, a => `${navn}(${a})`);
+}
+
+/**
+ * Finn rollestrengen for én svarverdi i en mal med feltreferanse.
+ * Returnerer { rolle, kandidater } — kandidatene tas vare på til logging.
+ */
+async function rolleForVerdi(mal, verdi) {
+    const { rolle, kandidater } = await finnRolle(verdi, a => mal.replace(FELTREF, a));
+    if (rolle) return { rolle, kandidater };
     // Ingen treff: behold den mest lesbare formen (klassenavnet når vi fant det,
     // ellers nøkkelen) og la sikreBehandler/hendelsesloggen si fra.
     return { rolle: kandidater[kandidater.length > 1 ? 1 : 0], kandidater };
@@ -73,7 +115,8 @@ async function rolleForVerdi(mal, verdi) {
 
 /**
  * Rollestrengen med omfanget skrevet slik det står i rollelista, når det bare
- * skiller seg fra kandidatene i store og små bokstaver. Ellers null.
+ * skiller seg fra kandidatene i store og små bokstaver — som
+ * { rolle, innehavere }. Ellers null.
  *
  * Meldt 03.11.2026, v3-dev: ferdigvarslingen til «Klassesjef({1-01})» nådde
  * ingen. Svaret var «TESTKLASSE» (fra en datakilde), mens klassesjefen var
@@ -101,7 +144,13 @@ async function omfangSomLagret(kandidater) {
         const treff = [...new Set(alle.map(i => String(i.Omfang || '')))]
             .filter(o => o && onsket.has(o.toLowerCase()))
             .sort();
-        return treff.length ? `${navn}(${treff[0]})` : null;
+        if (treff.length === 0) return null;
+        // Innehaverne for det valgte omfanget, slik hentInnehavere ville gitt
+        // dem: eksakt likt omfang. Da trengs ikke et oppslag til.
+        return {
+            rolle: `${navn}(${treff[0]})`,
+            innehavere: alle.filter(i => String(i.Omfang || '') === treff[0])
+        };
     } catch (_) {
         return null;
     }
@@ -287,6 +336,7 @@ async function sikreBehandler(skjema, log = () => {}) {
 
 module.exports = {
     erDynamisk,
+    rolleForOmfang,
     ekspanderRolleStreng,
     ekspanderBehandling,
     sikreBehandler
