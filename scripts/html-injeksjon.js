@@ -139,9 +139,9 @@ const GODTATT_GRUPPER = [
     },
     {
         fil: 'frontend/editor.html',
-        grunn: 'Tellere og indekser i editoren: posisjonen i en liste, sidetall i en '
-            + 'forhåndsvisning, og antall sendte varsler. Alle regnet ut av koden eller API-et.',
-        uttrykk: ['idx', 'sideNr', 'totalt', 'f.antallSendt']
+        grunn: 'Tellere og indekser i editoren: posisjonen i en liste og antall sendte '
+            + 'varsler. Begge regnet ut av koden eller API-et.',
+        uttrykk: ['idx', 'f.antallSendt']
     },
     {
         fil: 'frontend/evaluering.html',
