@@ -137,6 +137,38 @@ async function kjor() {
         sjekk('ingen rader mistet', sett.slettet.length, 250);
     }
 
+    // ---------- nøstet omfang: FS-nøkler inneholder selv `|` ----------
+    //
+    // En klasse har FS-nøkkelen «FHSBA|22H|A» (lib/omfang.js), og RowKey blir
+    // da «FHSBA|22H|A|x@fhs.no». Til 03.11.2026 ble den lest som omfang
+    // «FHSBA», og områdefilteret for «FHSBA» traff den også — så å slette,
+    // eller slå opp, omfanget «FHSBA» tok med klassen.
+    {
+        const nøstet = [
+            { partitionKey: 'Klassesjef', rowKey: 'FHSBA|a@fhs.no' },
+            { partitionKey: 'Klassesjef', rowKey: 'FHSBA|22H|A|b@fhs.no' }
+        ];
+        sjekk('RowKey deles på det siste |',
+            storage.delRadNokkel('FHSBA|22H|A|b@fhs.no'), { omfang: 'FHSBA|22H|A', upn: 'b@fhs.no' });
+        sjekk('og radNokkel er det motsatte',
+            storage.radNokkel('FHSBA|22H|A', 'B@fhs.no'), 'FHSBA|22H|A|b@fhs.no');
+        sjekk('uten | er alt upn', storage.delRadNokkel('a@fhs.no'), { omfang: '', upn: 'a@fhs.no' });
+
+        let { klient, sett } = lagTabell(nøstet);
+        opprinnelig.sikreTabell = async () => klient;
+        const innehavere = await storage.hentInnehavere('Klassesjef(FHSBA|22H|A)');
+        sjekk('innehaverne av klassen leses riktig',
+            innehavere.map(i => [i.Omfang, i.UPN]), [['FHSBA|22H|A', 'b@fhs.no']]);
+        const bare = await storage.hentInnehavere('Klassesjef(FHSBA)');
+        sjekk('«FHSBA» gir ikke med klassen «FHSBA|22H|A»', bare.map(i => i.UPN), ['a@fhs.no']);
+
+        ({ klient, sett } = lagTabell(nøstet));
+        opprinnelig.sikreTabell = async () => klient;
+        const res = await storage.slettRolle({ Rolle: 'Klassesjef', Omfang: 'FHSBA' });
+        sjekk('sletting av «FHSBA» tar bare det omfanget', res.slettet, 1);
+        sjekk('og klassen står igjen', sett.slettet, ['Klassesjef|FHSBA|a@fhs.no']);
+    }
+
     opprinnelig.sikreTabell = gammelSikre;
     opprinnelig.odata = gammelOdata;
     console.log(`\n${ok} OK, ${feil} feil`);

@@ -6,6 +6,7 @@
  *   POST /api/roller/leggtil                  — admin: legg til innehaver
  *   POST /api/roller/fjern                    — admin: fjern innehaver
  *   POST /api/roller/import                   — admin: import fra Excel/CSV
+ *   POST /api/roller/omdop                    — admin: nytt navn eller omfang
  *
  * Alle innloggede kan lese. Kun admin kan endre.
  */
@@ -14,6 +15,7 @@ const { formatStorrelse } = require('../lib/storrelse');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const rollerStorage = require('../lib/roller-storage');
 const rolleImport = require('../lib/rolle-import');
+const { kjorOmdoping } = require('../lib/rolle-omdoping-kjoring');
 const hendelser = require('../lib/hendelser-storage');
 
 const MAKS_IMPORTFIL = 5 * 1024 * 1024;
@@ -180,6 +182,59 @@ app.http('rollerSlett', {
         } catch (e) {
             context.log('roller/slett FEIL:', e.message);
             return { status: 400, jsonBody: { status: 'feil', melding: e.message } };
+        }
+    }
+});
+
+/**
+ * POST /api/roller/omdop — gi en rolle nytt navn, eller en rollegruppe nytt
+ * omfang. Reglene står i lib/rolle-omdoping.js, rekkefølgen i
+ * lib/rolle-omdoping-kjoring.js.
+ *
+ * Body: { type: 'navn', fra, til } eller { type: 'omfang', rolle, fra, til },
+ * og `bekreft: true` for å skrive. Uten `bekreft` er kallet en
+ * forhåndsvisning: alt leses, planen regnes ut, ingenting skrives. Samme
+ * mønster som importen — det admin fikk se, er det som skjer.
+ */
+app.http('rollerOmdop', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'roller/omdop',
+    handler: async (request, context) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        if (!erAdmin(upn)) return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin-tilgang' } };
+        try {
+            const body = await request.json().catch(() => ({}));
+            const utfor = body?.bekreft === true;
+            const plan = await kjorOmdoping(body, { utfor, log: (m) => context.log(m) });
+            if (plan.status === 'ugyldig') return { status: 400, jsonBody: { status: 'feil', melding: plan.melding } };
+
+            if (utfor) {
+                const { op } = plan;
+                const beskrivelse = op.type === 'navn'
+                    ? `Rollen «${op.fra}» heter nå «${op.til}»`
+                    : `«${op.rolle}(${op.fra})» heter nå «${op.rolle}(${op.til})»`;
+                context.log(`roller/omdop: ${upn}: ${beskrivelse}`);
+                hendelser.logg({
+                    Type: 'rolle.omdop', Aktor: upn,
+                    ObjektType: 'rolle', ObjektId: op.type === 'navn' ? op.fra : `${op.rolle}(${op.fra})`,
+                    Melding: beskrivelse,
+                    Detaljer: {
+                        op,
+                        medlemskap: plan.medlemskap.flyttes,
+                        grupper: plan.grupper.flyttes,
+                        skjematyper: plan.skjematyper.length,
+                        rapporter: plan.rapporter.length,
+                        saker: plan.saker.underBehandling + plan.saker.avsluttet,
+                        sakerIkkeLest: plan.saker.ikkeLest.length
+                    }
+                });
+            }
+            return { jsonBody: { status: 'ok', ...plan } };
+        } catch (e) {
+            context.log('roller/omdop FEIL:', e.message);
+            return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
     }
 });

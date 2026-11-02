@@ -1091,8 +1091,12 @@
                         ${innehavere.length} innehaver${innehavere.length === 1 ? '' : 'e'}
                         ${rolleSistTekst(g, true) ? ` — ${escHtml(rolleSistTekst(g, true))}` : ''}
                     </div>
-                    <button class="knapp mini danger" onclick="rollerSlettRolle()">Slett rollen</button>
-                </div>`;
+                    <div style="display: flex; gap: 6px;">
+                        <button class="knapp mini" onclick="rollerVisOmdop()">✏️ Endre navn/omfang</button>
+                        <button class="knapp mini danger" onclick="rollerSlettRolle()">Slett rollen</button>
+                    </div>
+                </div>
+                <div id="rolle-omdop"></div>`;
             const tabell = innehavere.length === 0
                 ? '<div class="tom-melding">Ingen innehavere ennå.</div>'
                 : `
@@ -1422,6 +1426,168 @@
                     `<div class="tom-melding">Slettet «${escHtml(merkelapp)}» med ${res.slettet} innehaver${res.slettet === 1 ? '' : 'e'}.</div>`;
             } catch (e) {
                 alert('Kunne ikke slette rollen: ' + e.message);
+            }
+        };
+
+        // ==================== OMDØPING ====================
+        //
+        // Ønske 03.11.2026: rollenavn og omfang skal kunne rettes. Reglene og
+        // rekkefølgen bor i API-et (lib/rolle-omdoping*.js); her velges hva som
+        // endres, og planen vises før noe skrives.
+
+        /** Forhåndsvisningen av en omdøping, som HTML. Ingen DOM, ingen kall. */
+        function omdopPlanHtml(plan) {
+            const op = plan.op || {};
+            const fra = op.type === 'navn' ? op.fra : `${op.rolle}(${op.fra})`;
+            const til = op.type === 'navn' ? op.til : `${op.rolle}(${op.til})`;
+            const m = plan.medlemskap || {}, g = plan.grupper || {}, s = plan.saker || {};
+            const typer = plan.skjematyper || [], rapporter = plan.rapporter || [];
+            const antSaker = (s.underBehandling || 0) + (s.avsluttet || 0);
+            const ingenting = !m.flyttes && !g.flyttes && !g.eierRolleEndres && !typer.length && !rapporter.length && !antSaker;
+
+            const rad = (tekst) => `<li style="margin: 3px 0;">${tekst}</li>`;
+            const deler = [];
+            deler.push(rad(`<strong>${m.flyttes || 0}</strong> medlemskap flyttes`
+                + (m.alleredeIMaal ? ` — ${m.alleredeIMaal} sto allerede i «${escHtml(til)}» og får ikke en rad til` : '')));
+            if (g.flyttes || g.eierRolleEndres) {
+                deler.push(rad(`<strong>${g.flyttes || 0}</strong> rollegruppe${g.flyttes === 1 ? '' : 'r'} flyttes`
+                    + (g.eierRolleEndres ? `, eierrollen endres på ${g.eierRolleEndres}` : '')));
+            }
+            deler.push(rad(`<strong>${typer.length}</strong> skjematype${typer.length === 1 ? '' : 'r'}`
+                + (typer.length ? `: ${typer.map(t => `${escHtml(t.navn || t.id)} <span style="color: var(--text-secondary);">(${t.endringer.length})</span>`).join(', ')}` : '')));
+            deler.push(rad(`<strong>${rapporter.length}</strong> rapport${rapporter.length === 1 ? '' : 'er'}`
+                + (rapporter.length ? `: ${rapporter.map(r => escHtml(r.navn || r.id)).join(', ')}` : '')));
+            deler.push(rad(`<strong>${s.underBehandling || 0}</strong> sak${s.underBehandling === 1 ? '' : 'er'} under behandling og `
+                + `<strong>${s.avsluttet || 0}</strong> avsluttet${s.kryptert ? ` (${s.kryptert} kryptert)` : ''}`));
+
+            const advarsler = [];
+            if (m.maalFinnesFraFor) {
+                advarsler.push(`«${escHtml(til)}» finnes fra før. Medlemmene slås sammen.`);
+            }
+            for (const k of (g.konflikter || [])) {
+                advarsler.push(`Rollegruppen «${escHtml(til)}» finnes fra før og beholder sitt oppsett `
+                    + `(team «${escHtml(k.til.Team || '—')}»). Teamet til «${escHtml(fra)}» `
+                    + `(«${escHtml(k.fra.Team || '—')}») brukes ikke.`);
+            }
+            for (const ikke of (s.ikkeLest || [])) {
+                advarsler.push(`Sak ${escHtml(ikke.sakId)} kunne ikke leses (${escHtml(ikke.grunn)}) og følger ikke med.`);
+            }
+
+            return `
+                <div style="font-size: 13px;">
+                    <div style="margin-bottom: 6px;">«${escHtml(fra)}» → «${escHtml(til)}»</div>
+                    ${ingenting
+                        ? '<div class="banner info">Ingenting å endre — rollen er ikke i bruk noe sted.</div>'
+                        : `<ul style="margin: 0 0 8px 18px; padding: 0;">${deler.join('')}</ul>`}
+                    ${advarsler.map(a => `<div class="banner advarsel" style="margin: 6px 0;">${a}</div>`).join('')}
+                    <div style="font-size: 11px; color: var(--text-secondary); margin-top: 6px;">
+                        Saker gjennomgås i skjematyper som nevner rollen i dag. Har en skjematype fjernet
+                        rollen etter at saker ble sendt inn, følger ikke de sakene med.
+                    </div>
+                </div>`;
+        }
+
+        /** Body til API-et fra skjemaet i panelet. */
+        function omdopBody(g) {
+            const type = document.querySelector('input[name="omdop-type"]:checked')?.value || 'navn';
+            const til = (document.getElementById('omdop-til')?.value || '').trim();
+            return type === 'omfang'
+                ? { type: 'omfang', rolle: g.Rolle, fra: g.Omfang || '', til }
+                : { type: 'navn', fra: g.Rolle, til };
+        }
+
+        window.rollerVisOmdop = () => {
+            const g = rollerState.valgt;
+            const el = document.getElementById('rolle-omdop');
+            if (!g || !el) return;
+            // Nytt omfang krever et omfang å endre. Rollen uten omfang gjelder
+            // alle, og har bare et navn.
+            const harOmfang = !!g.Omfang;
+            el.innerHTML = `
+                <div class="panel" style="margin: 0 0 14px 0;">
+                    <h2>Endre navn eller omfang</h2>
+                    <div style="font-size: 13px; display: grid; gap: 6px; margin-bottom: 8px;">
+                        <label style="display: flex; gap: 6px; align-items: center;${harOmfang ? '' : ' opacity: 0.5;'}">
+                            <input type="radio" name="omdop-type" value="omfang" ${harOmfang ? 'checked' : 'disabled'} onchange="rollerOmdopTypeEndret()">
+                            Nytt omfang for «${escHtml(g.Rolle)}(${escHtml(g.Omfang || '')})» — bare denne gruppen
+                        </label>
+                        <label style="display: flex; gap: 6px; align-items: center;">
+                            <input type="radio" name="omdop-type" value="navn" ${harOmfang ? '' : 'checked'} onchange="rollerOmdopTypeEndret()">
+                            Nytt navn for rollen «${escHtml(g.Rolle)}» — i alle omfang
+                        </label>
+                    </div>
+                    <div class="rad"><label>Nytt:</label><input type="text" id="omdop-til" value="${escHtml(harOmfang ? g.Omfang : g.Rolle)}"></div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin: 6px 0 8px;">
+                        Medlemskap, rollegrupper, skjematyper, rapporter og saker — også saker under
+                        behandling — følger med. Du ser hva som endres før noe skrives.
+                    </div>
+                    <div class="knapp-rad">
+                        <button class="knapp primær mini" onclick="rollerForhandsvisOmdop()">Forhåndsvis</button>
+                        <button class="knapp mini" onclick="document.getElementById('rolle-omdop').innerHTML = ''">Avbryt</button>
+                    </div>
+                    <div id="omdop-resultat" style="margin-top: 10px;"></div>
+                </div>`;
+        };
+
+        window.rollerOmdopTypeEndret = () => {
+            const g = rollerState.valgt;
+            const body = omdopBody(g);
+            const felt = document.getElementById('omdop-til');
+            if (felt) felt.value = body.type === 'omfang' ? (g.Omfang || '') : g.Rolle;
+            const res = document.getElementById('omdop-resultat');
+            if (res) res.innerHTML = '';
+        };
+
+        window.rollerForhandsvisOmdop = async () => {
+            const g = rollerState.valgt;
+            const res = document.getElementById('omdop-resultat');
+            const body = omdopBody(g);
+            res.innerHTML = '<div class="laster">Leser roller, skjematyper og saker…</div>';
+            try {
+                const { svar, utenSvar } = await startJobb('/api/roller/omdop', body);
+                if (utenSvar) {
+                    res.innerHTML = '<div class="banner advarsel">Ingen svar innen SWA-proxyens tidsgrense. '
+                        + 'Forhåndsvisningen skriver ingenting, så den kan trygt prøves igjen.</div>';
+                    return;
+                }
+                rollerState.omdop = body;
+                res.innerHTML = omdopPlanHtml(svar) + `
+                    <div class="knapp-rad" style="margin-top: 10px;">
+                        <button class="knapp primær mini" onclick="rollerUtforOmdop()">Utfør</button>
+                    </div>`;
+            } catch (e) {
+                res.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`;
+            }
+        };
+
+        window.rollerUtforOmdop = async () => {
+            const body = rollerState.omdop;
+            if (!body) return;
+            const til = body.type === 'navn' ? body.til : `${body.rolle}(${body.til})`;
+            if (!confirm(`Utføre endringen til «${til}»?\n\nDet som ble vist i forhåndsvisningen, skrives nå.`)) return;
+            const res = document.getElementById('omdop-resultat');
+            res.innerHTML = '<div class="laster">Skriver…</div>';
+            try {
+                const { svar, utenSvar } = await startJobb('/api/roller/omdop', { ...body, bekreft: true });
+                if (utenSvar) {
+                    res.innerHTML = '<div class="banner advarsel">Ingen svar innen SWA-proxyens tidsgrense. '
+                        + 'Endringen kan likevel ha gått gjennom — se hendelsesloggen, og forhåndsvis på nytt: '
+                        + 'det som gjenstår, vises der. Ingen mister tilgang underveis.</div>';
+                    return;
+                }
+                rollerState.omdop = null;
+                await rollerLast();
+                const ny = body.type === 'navn'
+                    ? { Rolle: body.til, Omfang: rollerState.valgt?.Omfang || '' }
+                    : { Rolle: body.rolle, Omfang: body.til };
+                const nyIndeks = rollerState.filtrerte.findIndex(x => x.Rolle === ny.Rolle && (x.Omfang || '') === ny.Omfang);
+                if (nyIndeks >= 0) await rollerVelgGruppe(nyIndeks);
+                const melding = document.getElementById('rolle-omdop');
+                if (melding) melding.innerHTML = `<div class="banner suksess" style="margin-bottom: 12px;">✓ Endret til «${escHtml(til)}». `
+                    + `${svar.medlemskap.flyttes} medlemskap, ${svar.skjematyper.length} skjematyper, `
+                    + `${svar.saker.underBehandling + svar.saker.avsluttet} saker.</div>`;
+            } catch (e) {
+                res.innerHTML = `<div class="banner feil">${escHtml(e.message)}</div>`;
             }
         };
 

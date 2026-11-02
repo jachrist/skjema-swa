@@ -125,4 +125,36 @@ async function settResultat(rolle, omfang, { status, melding = '', antall = null
     await t.upsertEntity(rad, 'Merge');
 }
 
-module.exports = { hent, hentAlle, settTeam, settResultat, rowKey, omfangFra, TABELL, TOMT_OMFANG };
+/**
+ * Skriv en hel gruppe under en ny nøkkel — brukt av omdøpingen
+ * (lib/rolle-omdoping.js). Alle feltene følger med, også synkroniseringens,
+ * så fall-sperren i team-synken sammenligner med det samme tallet etterpå.
+ */
+async function skrivGruppe(g) {
+    const t = await tabell();
+    await t.upsertEntity({
+        partitionKey: String(g.Rolle),
+        rowKey: rowKey(g.Omfang),
+        Team: String(g.Team || ''),
+        EierRolle: String(g.EierRolle || ''),
+        SisteAntall: Number(g.SisteAntall || 0),
+        SisteSynk: String(g.SisteSynk || ''),
+        SisteStatus: String(g.SisteStatus || ''),
+        SisteMelding: String(g.SisteMelding || '')
+    }, 'Replace');
+}
+
+/** Slett én gruppe. Ingen feil om den ikke finnes. */
+async function slettGruppe(rolle, omfang = '') {
+    const t = await tabell();
+    try {
+        await t.deleteEntity(String(rolle), rowKey(omfang));
+    } catch (e) {
+        if (e.statusCode !== 404) throw e;
+    }
+}
+
+module.exports = {
+    hent, hentAlle, settTeam, settResultat, skrivGruppe, slettGruppe,
+    rowKey, omfangFra, TABELL, TOMT_OMFANG
+};

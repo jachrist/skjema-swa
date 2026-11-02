@@ -23,11 +23,24 @@ async function tabell() {
     return t;
 }
 
+/**
+ * Del en RowKey `{Omfang}|{upn}` i omfang og upn.
+ *
+ * Deles på det SISTE `|`. En UPN inneholder aldri `|`, men et omfang kan:
+ * FS-nøkkelen for en klasse er `FHSBA|22H|A` (lib/omfang.js). Til 03.11.2026
+ * delte tre lesere på det første, og leste `FHSBA|22H|A|x@mil.no` som omfang
+ * `FHSBA` og upn `22H|A|x@mil.no`. Ett sted, så de ikke kan skille lag igjen.
+ */
+function delRadNokkel(rk) {
+    const s = String(rk || '');
+    const del = s.lastIndexOf('|');
+    return del > -1
+        ? { omfang: s.substring(0, del), upn: s.substring(del + 1) }
+        : { omfang: '', upn: s };
+}
+
 function radTilInnehaver(entity) {
-    const rk = String(entity.rowKey || '');
-    const del = rk.indexOf('|');
-    const omfang = del > -1 ? rk.substring(0, del) : '';
-    const upn = del > -1 ? rk.substring(del + 1) : rk;
+    const { omfang, upn } = delRadNokkel(entity.rowKey);
     return {
         Rolle: entity.partitionKey,
         Omfang: omfang,
@@ -86,9 +99,7 @@ async function hentAlleGrupper() {
     const grupper = new Map(); // "Rolle||Omfang" → gruppe
     for await (const e of t.listEntities()) {
         const rolle = e.partitionKey;
-        const rk = String(e.rowKey || '');
-        const del = rk.indexOf('|');
-        const omfang = del > -1 ? rk.substring(0, del) : '';
+        const { omfang } = delRadNokkel(e.rowKey);
         const key = `${rolle}||${omfang}`;
         if (!grupper.has(key)) {
             grupper.set(key, {
@@ -129,9 +140,7 @@ async function hentNavnekart() {
     try {
         for await (const e of t.listEntities({ queryOptions: { select: ['RowKey', 'FN', 'EN'] } })) {
             if (!e.FN && !e.EN) continue;
-            const rk = String(e.rowKey || '');
-            const del = rk.indexOf('|');
-            const upn = (del > -1 ? rk.substring(del + 1) : rk).trim().toLowerCase();
+            const upn = delRadNokkel(e.rowKey).upn.trim().toLowerCase();
             if (!upn || kart.has(upn)) continue;
             kart.set(upn, { FN: e.FN || '', EN: e.EN || '' });
         }
@@ -146,20 +155,38 @@ async function hentNavnekart() {
  *   "Rolle" — alle omfang
  *   "Rolle(Omfang)" — spesifikt omfang
  */
+/**
+ * «Rolle(Omfang)» → { rolle, omfang }. Uten parentes er omfanget tomt, og
+ * strengen betyr rollen i alle omfang. Null for en tom streng.
+ *
+ * Eksportert fordi omdøpingen (lib/rolle-omdoping.js) må tolke strengen
+ * nøyaktig slik oppslaget gjør — ellers skriver den om en streng oppslaget
+ * leser annerledes.
+ */
+function delRolleStreng(rolleStreng) {
+    const m = /^(.+?)(?:\((.+)\))?$/.exec(String(rolleStreng || '').trim());
+    if (!m) return null;
+    return { rolle: m[1].trim(), omfang: (m[2] || '').trim() };
+}
+
 async function hentInnehavere(rolleStreng) {
     const t = await tabell();
-    const m = /^(.+?)(?:\((.+)\))?$/.exec(String(rolleStreng || '').trim());
-    if (!m) return [];
-    const rolle = m[1].trim();
-    const omfang = (m[2] || '').trim();
+    const delt = delRolleStreng(rolleStreng);
+    if (!delt) return [];
+    const { rolle, omfang } = delt;
 
     const innehavere = [];
     const filter = omfang
         ? storage.odata`PartitionKey eq ${rolle} and RowKey ge ${omfang + '|'} and RowKey lt ${omfang + '|~'}`
         : storage.odata`PartitionKey eq ${rolle}`;
 
+    // Områdefilteret er raskt, men treffer for bredt når et annet omfang
+    // begynner med dette pluss `|`: «FHSBA» ville fått med «FHSBA|22H|A».
+    // Derfor sjekkes omfanget eksakt på hver rad.
     for await (const e of t.listEntities({ queryOptions: { filter } })) {
-        innehavere.push(radTilInnehaver(e));
+        const rad = radTilInnehaver(e);
+        if (omfang && rad.Omfang !== omfang) continue;
+        innehavere.push(rad);
     }
     return innehavere;
 }
@@ -256,7 +283,7 @@ async function hentOmfangForBruker(rolle, upn) {
 async function leggTilInnehaver({ Rolle, Omfang = '', UPN, FN = '', EN = '', Rollebeskrivelse = '', Kilde = 'manuell' }) {
     if (!Rolle || !UPN) throw new Error('Rolle og UPN er påkrevd');
     const t = await tabell();
-    const rk = `${Omfang}|${String(UPN).toLowerCase()}`;
+    const rk = radNokkel(Omfang, UPN);
     await t.upsertEntity({
         partitionKey: Rolle,
         rowKey: rk,
@@ -271,7 +298,7 @@ async function leggTilInnehaver({ Rolle, Omfang = '', UPN, FN = '', EN = '', Rol
 async function fjernInnehaver({ Rolle, Omfang = '', UPN }) {
     if (!Rolle || !UPN) throw new Error('Rolle og UPN er påkrevd');
     const t = await tabell();
-    const rk = `${Omfang}|${String(UPN).toLowerCase()}`;
+    const rk = radNokkel(Omfang, UPN);
     try {
         await t.deleteEntity(Rolle, rk);
         return true;
@@ -307,6 +334,9 @@ async function slettRolle({ Rolle, Omfang = null }) {
 
     const rader = [];
     for await (const e of t.listEntities({ queryOptions: { filter } })) {
+        // Samme eksakte sjekk som i hentInnehavere: å slette «FHSBA» skal
+        // ikke ta med «FHSBA|22H|A».
+        if (Omfang !== null && delRadNokkel(e.rowKey).omfang !== Omfang) continue;
         rader.push({ partitionKey: e.partitionKey, rowKey: e.rowKey });
     }
     if (rader.length === 0) return { slettet: 0 };
@@ -318,6 +348,9 @@ async function slettRolle({ Rolle, Omfang = null }) {
 }
 
 module.exports = {
+    radNokkel,
+    delRadNokkel,
+    delRolleStreng,
     hentAlleGrupper,
     hentNavnekart,
     hentInnehavere,
