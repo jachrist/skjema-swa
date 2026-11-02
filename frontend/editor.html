@@ -777,12 +777,14 @@
                 return;
             }
             document.getElementById('upn').textContent = bruker.userDetails;
-            // Hent admin-status parallelt med resten
-            api.get('/api/whoami').then(w => { meg = w || {}; }).catch(() => { meg = {}; });
-
-            // Hent rolle-grupper og team-navn før første render — dropdown i
-            // tilgang-editor må ha data tilgjengelig når den bygges.
-            [rolleGrupper, teamNavn] = await Promise.all([
+            // Admin-status, rolle-grupper og team-navn hentes parallelt, og
+            // ALLE er på plass før første render. Admin-statusen ble til
+            // 02.11.2026 hentet uten å ventes på: svarte /api/whoami etter at
+            // siden var tegnet, var `meg` null, og «Importer med AI» kom aldri.
+            // Samme kode viste knappen i v2-prod og ikke i v3-prod — det
+            // avgjørende var hvor raskt API-et svarte, ikke hva det svarte.
+            [meg, rolleGrupper, teamNavn] = await Promise.all([
+                api.get('/api/whoami').then(w => w || {}).catch(() => ({})),
                 hentRolleGrupper(api).then(g => g || []),
                 hentTeamNavn(api).then(t => t || [])
             ]);
@@ -3390,28 +3392,25 @@
                 statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Forbereder fil…</div>';
                 analyserBtn.disabled = true;
                 try {
-                    let body;
-                    if (valgtFil.type === 'application/pdf') {
-                        // Konverter PDF til side-bilder klientside — Claude document-mode
-                        // er ustabil for scannede/store PDF-er, image-mode er tryggere.
-                        statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Konverterer PDF-sider til bilder…</div>';
-                        const bilder = await konverterPdfTilBilder(valgtFil, (sideNr, totalt) => {
-                            statusEl.innerHTML = `<div style="font-size: 13px; color: var(--text-secondary);">⏳ Konverterer side ${sideNr}/${totalt}…</div>`;
-                        });
-                        body = { filnavn: valgtFil.name, bilder };
-                    } else {
-                        const b64 = await new Promise((resolve, reject) => {
-                            const rd = new FileReader();
-                            rd.onload = () => resolve(String(rd.result).split(',')[1]);
-                            rd.onerror = () => reject(new Error('Kunne ikke lese fil'));
-                            rd.readAsDataURL(valgtFil);
-                        });
-                        body = {
-                            filnavn: valgtFil.name,
-                            contentType: valgtFil.type || 'application/octet-stream',
-                            base64: b64
-                        };
-                    }
+                    // Bilde og PDF sendes likt. API-et gir en PDF videre som
+                    // `document`, og Claude leser hver side både som bilde og
+                    // som tekst — også skannede.
+                    //
+                    // PDF-er ble til 02.11.2026 gjort om til bilder her, med
+                    // pdf.js hentet fra cdn.jsdelivr.net. CSP-en tillater bare
+                    // skript fra appen selv, så den importen ble avvist i alle
+                    // miljøene, og PDF-import hadde aldri virket.
+                    const b64 = await new Promise((resolve, reject) => {
+                        const rd = new FileReader();
+                        rd.onload = () => resolve(String(rd.result).split(',')[1]);
+                        rd.onerror = () => reject(new Error('Kunne ikke lese fil'));
+                        rd.readAsDataURL(valgtFil);
+                    });
+                    const body = {
+                        filnavn: valgtFil.name,
+                        contentType: valgtFil.type || 'application/octet-stream',
+                        base64: b64
+                    };
                     statusEl.innerHTML = '<div style="font-size: 13px; color: var(--text-secondary);">⏳ Analyserer med AI — kan ta 15-30 sekunder…</div>';
                     // Auto-retry ved 500-timeout (typisk cold-start). Andre forsøk
                     // med varm Function svarer normalt innen få sek.
@@ -3464,49 +3463,6 @@
         // Genererer en unik felt-Id (samme mønster som editor bruker ellers)
         function nyFeltId() {
             return 'f-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
-        }
-
-        // Lazy-load pdf.js kun når PDF konverteres — sparer bundle-size ellers
-        let _pdfjsLib = null;
-        async function hentPdfjs() {
-            if (_pdfjsLib) return _pdfjsLib;
-            // Bruker mozilla/pdfjs-dist ESM via CDN. SWA sin CSP tillater dette
-            // så lenge script kommer fra jsdelivr eller lignende. Hvis CSP blokkerer,
-            // må vi bundle biblioteket.
-            const url = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.min.mjs';
-            const workerUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.8.69/build/pdf.worker.min.mjs';
-            _pdfjsLib = await import(url);
-            _pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
-            return _pdfjsLib;
-        }
-
-        async function konverterPdfTilBilder(fil, progress) {
-            const pdfjs = await hentPdfjs();
-            const buffer = await fil.arrayBuffer();
-            const pdf = await pdfjs.getDocument({ data: buffer }).promise;
-            const bilder = [];
-            const MAKS_SIDER = 20;
-            const antall = Math.min(pdf.numPages, MAKS_SIDER);
-            if (pdf.numPages > MAKS_SIDER) {
-                console.warn(`PDF har ${pdf.numPages} sider, kun første ${MAKS_SIDER} brukes.`);
-            }
-            for (let i = 1; i <= antall; i++) {
-                if (progress) progress(i, antall);
-                const side = await pdf.getPage(i);
-                const skala = 2; // 2x for lesbar oppløsning
-                const viewport = side.getViewport({ scale: skala });
-                const canvas = document.createElement('canvas');
-                canvas.width = viewport.width;
-                canvas.height = viewport.height;
-                const ctx = canvas.getContext('2d');
-                await side.render({ canvasContext: ctx, viewport }).promise;
-                const dataUrl = canvas.toDataURL('image/png');
-                bilder.push({
-                    contentType: 'image/png',
-                    base64: dataUrl.split(',')[1]
-                });
-            }
-            return bilder;
         }
 
         // Gevinstoppfølging: henter to bokser fra SystemInnstillinger og rendrer

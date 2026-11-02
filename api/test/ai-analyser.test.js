@@ -90,5 +90,24 @@ sjekk('ai-analyser eksporterer lesSvar', typeof lesSvar, 'function');
     sjekk('og grensen står med', (kuttet.feil || '').includes(String(modul._MAKS_TOKENS)), true);
 }
 
+// ---------- 4. PDF går som document, bilde som image ----------
+//
+// Til 02.11.2026 ble PDF-er gjort om til bilder i nettleseren med pdf.js fra
+// en CDN, som CSP-en avviste. Nå sendes PDF-en som den er, og API-et må gi
+// den videre som `document` — et `image` med media_type application/pdf
+// avvises av Claude.
+{
+    const byggInnhold = modul._byggInnhold;
+    sjekk('ai-analyser eksporterer byggInnhold', typeof byggInnhold, 'function');
+    const pdf = byggInnhold('application/pdf', Buffer.from('%PDF-1.7'));
+    sjekk('PDF går som document', pdf[0].type, 'document');
+    sjekk('med riktig media_type', pdf[0].source.media_type, 'application/pdf');
+    sjekk('og innholdet base64-kodet', pdf[0].source.data, Buffer.from('%PDF-1.7').toString('base64'));
+    sjekk('fila står før instruksjonen', pdf.map(b => b.type), ['document', 'text']);
+
+    const png = byggInnhold('image/png', Buffer.from([1, 2, 3]));
+    sjekk('bilde går som image', png[0].type, 'image');
+}
+
 console.log(`\n${ok} OK, ${feil} feil`);
 process.exit(feil ? 1 : 0);
