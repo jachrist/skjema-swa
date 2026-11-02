@@ -62,9 +62,49 @@ async function rolleForVerdi(mal, verdi) {
             if (innehavere.length > 0) return { rolle: kandidat, kandidater };
         } catch (_) { /* prøv neste form */ }
     }
+    // Ingen eksakt treff: prøv omfangene som faktisk er lagret, uten å skille
+    // på store og små bokstaver. Se omfangSomLagret.
+    const lagret = await omfangSomLagret(kandidater);
+    if (lagret) return { rolle: lagret, kandidater };
     // Ingen treff: behold den mest lesbare formen (klassenavnet når vi fant det,
     // ellers nøkkelen) og la sikreBehandler/hendelsesloggen si fra.
     return { rolle: kandidater[kandidater.length > 1 ? 1 : 0], kandidater };
+}
+
+/**
+ * Rollestrengen med omfanget skrevet slik det står i rollelista, når det bare
+ * skiller seg fra kandidatene i store og små bokstaver. Ellers null.
+ *
+ * Meldt 03.11.2026, v3-dev: ferdigvarslingen til «Klassesjef({1-01})» nådde
+ * ingen. Svaret var «TESTKLASSE» (fra en datakilde), mens klassesjefen var
+ * lagt inn for hånd med omfang «Testklasse». Rollelista slår opp eksakt —
+ * Table Storage skiller på store og små bokstaver — så rollen var tom, og
+ * bare innsenderen fikk varselet. «Bransjeveileder(TESTKLASSE)» på steget
+ * før virket, fordi den tilfeldigvis var skrevet likt.
+ *
+ * Omfanget som velges er det LAGREDE, ikke det fra svaret. Strengen som
+ * fryses i saken er da nøyaktig den som finnes i rollelista, og tilgangen og
+ * varslingen — som slår opp eksakt — ser det samme senere.
+ *
+ * Er det flere lagrede omfang som bare skiller seg i skrivemåte, velges det
+ * første alfabetisk. Det er et valg, ikke et svar — men rollelista har da to
+ * grupper som burde vært én, og omdøpingen i rolleadmin slår dem sammen.
+ */
+async function omfangSomLagret(kandidater) {
+    try {
+        const delte = kandidater.map(k => rollerStorage.delRolleStreng(k)).filter(d => d && d.omfang);
+        if (delte.length === 0) return null;
+        const navn = delte[0].rolle;
+        if (delte.some(d => d.rolle !== navn)) return null;
+        const onsket = new Set(delte.map(d => d.omfang.toLowerCase()));
+        const alle = await rollerStorage.hentInnehavere(navn);
+        const treff = [...new Set(alle.map(i => String(i.Omfang || '')))]
+            .filter(o => o && onsket.has(o.toLowerCase()))
+            .sort();
+        return treff.length ? `${navn}(${treff[0]})` : null;
+    } catch (_) {
+        return null;
+    }
 }
 
 /**
