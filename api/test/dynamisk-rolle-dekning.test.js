@@ -32,6 +32,10 @@ function sjekk(navn, faktisk, forventet) {
 // Hvilke roller har innehavere — settes per tilfelle.
 let MED_INNEHAVERE = new Set();
 let KASTER = new Set();
+// Rader per rollenavn, for oppslag UTEN omfang (alle omfang i rollen).
+let RADER = {};
+// Den ekte tolkningen av «Rolle(Omfang)» — testen skal ikke ha sin egen.
+const { delRolleStreng } = require('../src/lib/roller-storage');
 
 const origLoad = Module._load;
 Module._load = function (req, ...rest) {
@@ -39,8 +43,10 @@ Module._load = function (req, ...rest) {
         return {
             hentInnehavere: async (rolle) => {
                 if (KASTER.has(rolle)) throw new Error('oppslag nede');
+                if (!rolle.includes('(')) return RADER[rolle] || [];
                 return MED_INNEHAVERE.has(rolle) ? [{ EP: `en@fhs.no` }] : [];
-            }
+            },
+            delRolleStreng
         };
     }
     if (req === './omfang') return { hentOmfangsalias: async (v) => [String(v)] };
@@ -68,6 +74,32 @@ const steg = () => ({ Steg: 1, Roller: ['Emneansvarlig({2-01})'], Beslutning: 0 
         const en = await dyn.ekspanderRolleStreng('Emneansvarlig({2-01})',
             seksjoner(['CU1', 'CU2'], 'Tekst'));
         sjekk('et ikke-flervalgsfelt gir én rolle', en.roller, ['Emneansvarlig(CU1)']);
+    }
+
+    // ---------- omfanget skrevet ulikt: «TESTKLASSE» mot «Testklasse» ----------
+    //
+    // Meldt 03.11.2026, v3-dev: ferdigvarslingen til «Klassesjef({1-01})» nådde
+    // ingen. Svaret var «TESTKLASSE», klassesjefen lagt inn som «Testklasse».
+    {
+        MED_INNEHAVERE = new Set(['Klassesjef(Testklasse)']);
+        RADER = { Klassesjef: [{ Omfang: 'Testklasse', UPN: 'ks@fhs.no' }, { Omfang: 'Annen', UPN: 'x@fhs.no' }] };
+        const r = await dyn.ekspanderRolleStreng('Klassesjef({2-01})', seksjoner(['TESTKLASSE']));
+        sjekk('ulik skrivemåte gir det LAGREDE omfanget', r.roller, ['Klassesjef(Testklasse)']);
+
+        // Eksakt treff vinner alltid — tilbakefallet slår bare inn uten det.
+        MED_INNEHAVERE = new Set(['Klassesjef(TESTKLASSE)', 'Klassesjef(Testklasse)']);
+        RADER = { Klassesjef: [{ Omfang: 'TESTKLASSE' }, { Omfang: 'Testklasse' }] };
+        const eksakt = await dyn.ekspanderRolleStreng('Klassesjef({2-01})', seksjoner(['TESTKLASSE']));
+        sjekk('eksakt skrivemåte vinner', eksakt.roller, ['Klassesjef(TESTKLASSE)']);
+
+        // Et annet omfang er et annet omfang, uansett skrivemåte.
+        MED_INNEHAVERE = new Set();
+        RADER = { Klassesjef: [{ Omfang: 'Testklasse2' }] };
+        const annet = await dyn.ekspanderRolleStreng('Klassesjef({2-01})', seksjoner(['TESTKLASSE']));
+        sjekk('lengre omfang med likt prefiks treffer ikke', annet.roller, ['Klassesjef(TESTKLASSE)']);
+
+        RADER = {};
+        MED_INNEHAVERE = new Set();
     }
 
     // ---------- hele veien: steg.Roller etter ekspandering ----------
