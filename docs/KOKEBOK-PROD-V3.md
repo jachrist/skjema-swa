@@ -1443,6 +1443,21 @@ Og feilmeldingen sier selv at appen er funnet:
 De tre ser like ut i nettleseren og har ikke samme årsak. `AADSTS50011` er
 den billigste av dem: alt annet er på plass.
 
+> **Står URI-en der allerede, les app-ID-en i meldingen.** `AADSTS50011`
+> navngir appen som avviste: «…configured for the application '<id>'». Den
+> appen skal ha URI-en, og den er ikke nødvendigvis den du har åpen i
+> portalen. 04.11.2026 i dev sto `https://dev.v3.fskjema.no/...` riktig på
+> `ad-skjema-3-dev`, men brukeren som testet kom fra en ANNEN tenant, og
+> innloggingen gikk gjennom app-registreringen der. Er det testbrukere i
+> flere tenanter, må hver av appene ha det nye vertsnavnet.
+>
+> ```powershell
+> az ad app show --id <id fra meldingen> --query "{navn:displayName, web:web.redirectUris}" -o json
+> ```
+>
+> Svarer kommandoen «does not exist», ligger appen i en annen tenant enn den
+> du er logget inn i.
+
 ```powershell
 $VERT = az staticwebapp show --name $SWA --resource-group $RG --query defaultHostname -o tsv
 "https://$VERT/.auth/login/aad/callback"

@@ -131,6 +131,26 @@ jobs:
             echo "::error::Stemmer ikke de to, er ett av dem feil — og det er ikke opplagt hvilket."
             exit 1
           fi
+      # v3 nås bare med en egen token-hemmelighet (swa_token_secret); v2-prod
+      # og pilot bruker standarden. Er hemmeligheten valgt OG API-et huket av,
+      # rulles managed functions ut på en SWA med lenket Function App — og
+      # kopien svarer på /api/* i stedet for Function App-en. Det har skjedd to
+      # ganger: 22.10.2026 («Lagring er ikke konfigurert») og 04.11.2026
+      # (vedleggsopplasting som ekstern svarte «Ikke innlogget», fordi den gamle
+      # kopien sto der). Begge ganger fordi boksen står på som standard.
+      #
+      # Når v2-prod er revet og v3 har overtatt standardhemmeligheten, gjelder
+      # ikke vakten lenger. Da skal `deploy_api` sin standard snus til false.
+      - name: Sjekk API-valget mot målet
+        env:
+          TOKEN_VALG: ${{ inputs.swa_token_secret }}
+          DEPLOY_API: ${{ inputs.deploy_api }}
+        run: |
+          if [ -n "$TOKEN_VALG" ] && [ "$DEPLOY_API" != "false" ]; then
+            echo "::error::Egen SWA-hemmelighet ($TOKEN_VALG) er valgt, og «Rull ut API-et som SWA Managed Functions» er huket av."
+            echo "::error::En SWA med egen hemmelighet er v3, og v3 har API-et i en lenket Function App. Kjør på nytt uten haken."
+            exit 1
+          fi
       # Målet skrives i klartekst i kjøringens sammendrag — det er her man ser
       # hva som faktisk skjedde, etterpå.
       - name: Vis mål

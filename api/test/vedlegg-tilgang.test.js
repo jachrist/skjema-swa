@@ -107,6 +107,12 @@ async function utfall(r, sid, handling, st = '45') {
     sjekk('behandler skriver ikke', await utfall(innlogget('beh@jccodevel.onmicrosoft.com'), '10', 'skriv'), [false, 403]);
     sjekk('utenforstående avvises', await utfall(innlogget('noen@jccodevel.onmicrosoft.com'), '10', 'les'), [false, 403]);
     sjekk('ingen innlogging, ingen token', await utfall(req(), '10', 'les'), [false, 401]);
+    // Meldingen skiller «headeren manglet» fra det gamle API-ets «Ikke
+    // innlogget», som det svarte også MED gyldig token. Se UTEN_TOKEN.
+    sjekk('uten token sier meldingen at headeren manglet',
+        /ingen tilgangsnøkkel/.test((await avgjorTilgang(req(), '45', '99', 'skriv')).melding), true);
+    sjekk('og ikke bare «Ikke innlogget»',
+        (await avgjorTilgang(req(), '45', '99', 'skriv')).melding === 'Ikke innlogget', false);
 
     // ---------- alle fire endepunktene går gjennom regelen ----------
     const rot = path.join(__dirname, '..', '..');

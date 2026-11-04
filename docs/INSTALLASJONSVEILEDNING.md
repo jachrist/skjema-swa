@@ -646,7 +646,7 @@ betyr (kokeboka **6**):
 
 | Entra svarer | Steg å se på |
 |---|---|
-| `AADSTS50011` — redirect URI | 7: vertsnavnet mangler på appen |
+| `AADSTS50011` — redirect URI | 7: vertsnavnet mangler på appen. Står det der, se app-ID-en i meldingen (kokeboka 6) |
 | `AADSTS700016` — application not found | 10: `AAD_CLIENT_ID` på SWA-en |
 | `AADSTS700054` — `id_token` not enabled | 7: ID-token |
 | Feil om klientlegitimasjon | 6: SWA-identitetens vault-roller, og 4: sertifikatreferansen |
