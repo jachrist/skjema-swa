@@ -19,6 +19,8 @@ const teamStorage = require('./team-storage');
 const dynamiskRolle = require('./dynamisk-rolle');
 const feltperson = require('./feltperson');
 const { finnBeslutningsvalg, erOmpussValg } = require('./behandling');
+const sakToken = require('./sak-token');
+const { erEksternInnsender } = require('./ekstern-auth');
 
 function standardKvittering() {
     return {
@@ -476,6 +478,32 @@ function skjemaLenke(skjematypeId, skjemaId, request, side = 'evaluering.html') 
     return `${base}/${side}?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
 }
 
+/**
+ * Lenke til INNSENDERENS side om saken.
+ *
+ * En ekstern innsender (OTP eller utsending) har ingen innlogging, og en
+ * vanlig skjemalenke ender på Entras innloggingsside. Lenka får derfor et
+ * sak-token (lib/sak-token.js) bundet til saken og adressen — utstedt på
+ * nytt for hver e-post. Innloggede innsendere får lenka uendret.
+ *
+ * Feiler utstedelsen (typisk OTP_HMAC_KEY mangler), sendes den vanlige lenka
+ * og årsaken logges. En e-post uten en virkende lenke er bedre enn ingen
+ * e-post — men den skal kunne spores.
+ */
+function innsenderLenke(skjema, side, request, log = () => {}) {
+    const lenke = skjemaLenke(skjema?.Skjematype_id, skjema?.Skjema_id, request, side);
+    if (!lenke || !erEksternInnsender(skjema)) return lenke;
+    const mottaker = String(skjema?.Innsender_Epost || skjema?.Innsender_epost || '').trim().toLowerCase();
+    if (!mottaker) return lenke;
+    try {
+        const t = sakToken.utsted({ skjematypeId: skjema.Skjematype_id, skjemaId: skjema.Skjema_id, mottaker });
+        return `${lenke}&t=${encodeURIComponent(t)}`;
+    } catch (e) {
+        log(`varsling: kunne ikke lage sak-token for ${skjema?.Skjema_id} — sender lenke som krever innlogging: ${e.message}`);
+        return lenke;
+    }
+}
+
 function harEpostVarsling(steg) {
     if (!steg) return false;
     if (!steg.Varsling) return true;
@@ -761,28 +789,46 @@ async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
     if (!til) log(`varsling: ingen innsender-epost, men ${kopi.length} kopimottaker(e) — sender til dem`);
 
     const mal = kv.Aktiv === true || kv.Emne || kv.Tekst ? kv : standardKvittering();
+
+    /** Én e-post: første mottaker i TIL, resten i KOPI. */
+    const send = (liste, lenke) => {
+        const kontekst = byggKontekst({ skjema, skjematype, lenke });
+        return sendEpostViaFlyt({
+            handling: 'sendInnsenderKvittering',
+            mottakere: liste,
+            // Kopimottakerne sendes også for seg, så flyten kan sette dem i
+            // KOPI-feltet på én e-post i stedet for å gi hver sin. De ligger
+            // fortsatt i `mottakere` — se flyt-kaller.js for hvorfor.
+            //
+            // `liste.slice(1)` og ikke `kopi`: liste[0] er den som skal stå i
+            // TIL-feltet, og det er innsenderen når vi har adressen hans,
+            // ellers første kopimottaker. Å regne kopi ut fra lista vi faktisk
+            // sender gjør at samme adresse ikke kan ende både i TIL og i KOPI.
+            kopi: liste.slice(1),
+            emne: erstattPlassholdere(mal.Emne || standardKvittering().Emne, kontekst),
+            html: erstattPlassholdere(mal.Tekst || standardKvittering().Tekst, kontekst),
+            lenke,
+            skjemaId: skjema.Skjema_id,
+            skjematypeId: skjema.Skjematype_id,
+            skjemaNavn: kontekst.skjemanavn,
+            request: opts.request
+        }, log);
+    };
+
+    // En ekstern innsender får en lenke med sak-token. Den lenka er
+    // innsenderens adgang til saken, og skal ikke ligge i en e-post
+    // kopimottakerne også leser — da blir det to e-poster: én til
+    // innsenderen med tokenet, og én til kopimottakerne med den vanlige
+    // lenka, som de logger inn med.
     const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request, 'visning.html');
-    const kontekst = byggKontekst({ skjema, skjematype, lenke });
-    const emne = erstattPlassholdere(mal.Emne || standardKvittering().Emne, kontekst);
-    const html = erstattPlassholdere(mal.Tekst || standardKvittering().Tekst, kontekst);
-    return await sendEpostViaFlyt({
-        handling: 'sendInnsenderKvittering',
-        mottakere,
-        // Kopimottakerne sendes også for seg, så flyten kan sette dem i
-        // KOPI-feltet på én e-post i stedet for å gi hver sin. De ligger
-        // fortsatt i `mottakere` — se flyt-kaller.js for hvorfor.
-        //
-        // `mottakere.slice(1)` og ikke `kopi`: mottakere[0] er den som skal
-        // stå i TIL-feltet, og det er innsenderen når vi har adressen hans,
-        // ellers første kopimottaker. Å regne kopi ut fra lista vi faktisk
-        // sender gjør at samme adresse ikke kan ende både i TIL og i KOPI.
-        kopi: mottakere.slice(1),
-        emne, html, lenke,
-        skjemaId: skjema.Skjema_id,
-        skjematypeId: skjema.Skjematype_id,
-        skjemaNavn: kontekst.skjemanavn,
-        request: opts.request
-    }, log);
+    if (til && erEksternInnsender(skjema)) {
+        const innsender = mottakere.slice(0, 1);
+        const andre = mottakere.slice(1);
+        const svar = await send(innsender, innsenderLenke(skjema, 'visning.html', opts.request, log));
+        if (andre.length === 0) return svar;
+        return { status: svar?.status, innsender: svar, kopi: await send(andre, lenke) };
+    }
+    return await send(mottakere, lenke);
 }
 
 async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
@@ -908,8 +954,7 @@ async function sendBeslutningVarsling(skjema, skjematype, steg, beslutningNr, be
     // Regelen for «er dette en ompuss» kommer fra behandling.js, samme sted
     // som lagringen spør.
     const ompuss = erOmpussValg(finnBeslutningsvalg(steg, beslutningNr));
-    const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request,
-        ompuss ? 'index.html' : 'visning.html');
+    const lenke = innsenderLenke(skjema, ompuss ? 'index.html' : 'visning.html', opts.request, log);
     const kontekst = byggKontekst({
         skjema, skjematype, steg,
         beslutningTekst,
@@ -1077,7 +1122,11 @@ async function sendSamtaleVarsling(skjema, skjematype, innlegg, opts = {}) {
     const resultater = [];
     for (const g of grupper) {
         if (g.mottakere.length === 0) continue;
-        const lenke = skjemaLenke(skjematypeId, skjemaId, opts.request, g.side) + '#samtale';
+        // Innsenderens lenke bærer sak-token hvis hen er ekstern; behandlernes
+        // gjør det aldri — de logger inn.
+        const lenke = (g.side === 'kvittering.html'
+            ? innsenderLenke(skjema, g.side, opts.request, log)
+            : skjemaLenke(skjematypeId, skjemaId, opts.request, g.side)) + '#samtale';
         resultater.push(await sendEpostViaFlyt({
             handling: 'sendSamtaleVarsling',
             mottakere: g.mottakere,
@@ -1105,6 +1154,7 @@ module.exports = {
     forklarMottakere,
     _samleBehandlerMottakere: samleBehandlerMottakere,
     _skjemaLenke: skjemaLenke,
+    _innsenderLenke: innsenderLenke,
     // Diagnosen trenger å kunne stille de samme spørsmålene som utsendingen.
     aktiveKanaler, samleBehandlerMottakere,
     // Standardmalene. Editoren viser de samme tekstene som forslag, og

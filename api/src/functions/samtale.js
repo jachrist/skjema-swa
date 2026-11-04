@@ -19,7 +19,7 @@
  */
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn } = require('../lib/auth');
-const { velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
+const { velgAuthvei, autentiserEkstern, eksternInnsenderUpn, autentiserSak } = require('../lib/ekstern-auth');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const skjemaStorage = require('../lib/skjema-storage');
 const samtaleStorage = require('../lib/samtale-storage');
@@ -67,6 +67,12 @@ async function finnSakOgDeltaker(request, context) {
         // stemme overens for at innsenderen skal kjenne igjen sin egen sak.
         eksternId = v.mottaker;
         kilde = 'utsending';
+    } else if (vei === 'sak') {
+        // Lenka i samtalevarselet til en ekstern innsender.
+        const sak = autentiserSak(request, skjematypeId, skjemaId, skjema);
+        if (!sak.ok) return { svar: avvis(sak.status, sak.melding) };
+        eksternId = sak.mottaker;
+        kilde = 'sak';
     } else if (vei === 'ekstern') {
         const forsøk = await autentiserEkstern(request, skjematypeId);
         // Ugyldig token, men innlogget: behandle som vanlig bruker. Samme

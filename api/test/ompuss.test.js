@@ -94,7 +94,10 @@ function les(...d) {
     sjekk('lagringen bruker samme regel', /const erOmpuss = erOmpussValg\(valgtValg\);/.test(s), true);
     sjekk('og har ikke sin egen', /Handling === 'ompuss'/.test(s), false);
     // Ompuss skal fortsatt sette status 3 og nullstille steget.
-    sjekk('ompuss setter status 3', /skjema\.Skjema_status = 3;/.test(s), true);
+    // Verdien står i én konstant: sak-lenka til en ekstern innsender godtar
+    // retting bare i denne statusen, og de to må mene det samme tallet.
+    sjekk('ompuss setter status 3', /skjema\.Skjema_status = STATUS_SENDT_TILBAKE;/.test(s), true);
+    sjekk('og konstanten er 3', /const STATUS_SENDT_TILBAKE = 3;/.test(s), true);
     sjekk('og nullstiller steget', /stegObj\.Beslutning = 0;/.test(s), true);
 }
 

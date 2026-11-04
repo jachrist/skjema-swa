@@ -328,6 +328,7 @@
         import { behandlerlinje } from './js/behandler-visning.js';
         import { statusTekst, statusKlasse } from './js/skjemastatus.js';
         import { GRUNN_PARAM, grunnTekst } from './js/visningsgrunn.js';
+        import { brukSakToken } from './js/sak-lenke.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -336,6 +337,8 @@
         const params = new URLSearchParams(window.location.search);
         const skjematypeId = params.get('skjematype_id');
         const skjemaId = params.get('skjema_id');
+        // Ekstern innsender med lenke fra e-posten. Se js/sak-lenke.js.
+        const sakT = brukSakToken(api, params);
 
 
 
@@ -345,7 +348,9 @@
 
         async function init() {
             bruker = await hentInnloggetBruker();
-            if (!bruker) {
+            // Med sak-lenke trengs ingen innlogging: API-et slipper
+            // innsenderen inn på denne ene saken med tokenet.
+            if (!bruker && !sakT) {
                 window.location.href = '/.auth/login/aad?post_login_redirect_uri=' + encodeURIComponent(window.location.pathname + window.location.search);
                 return;
             }
@@ -368,7 +373,10 @@
             // regelen kjøres på nytt etterpå.
             const ref = document.referrer;
             const tilbakeEl = document.getElementById('tilbake');
-            if (ref && ref.includes('/register.html')) {
+            if (!bruker) {
+                // Ekstern: ingen oversikt å gå tilbake til.
+                tilbakeEl.style.display = 'none';
+            } else if (ref && ref.includes('/register.html')) {
                 tilbakeEl.href = `/register.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
                 tilbakeEl.textContent = '← Til register';
                 tilbakeEl.removeAttribute('data-oversiktslenke');
@@ -383,7 +391,14 @@
                 const [skjematype, skjema] = await Promise.all([
                     // skjema_id er med fordi behandleren ikke noedvendigvis er publikum
                     // paa skjematypen - se erBehandlerPaaSkjema i skjematyper.js.
-                    api.get(`/api/skjematyper/${encodeURIComponent(skjematypeId)}?skjema_id=${encodeURIComponent(skjemaId)}`),
+                    //
+                    // En ekstern har ingen innlogging, og /api/skjematyper/* krever
+                    // det allerede i SWA-rutene. Den leser definisjonen der den
+                    // fylte den ut: publikum-ruten, som bare svarer for skjematyper
+                    // med ekstern tilgang.
+                    api.get(!bruker && sakT
+                        ? `/api/publikum-skjematype/${encodeURIComponent(skjematypeId)}`
+                        : `/api/skjematyper/${encodeURIComponent(skjematypeId)}?skjema_id=${encodeURIComponent(skjemaId)}`),
                     api.get(`/api/skjemaer/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`)
                 ]);
                 rendrer(skjematype, skjema);

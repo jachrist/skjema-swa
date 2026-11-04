@@ -104,9 +104,50 @@ være åpen (nettside) eller lukket (spesifikk e-post) — det er admin sitt val
 Sett `VARSLING_DEAKTIVERT=true` for dry-run: OTP-koden logges til
 Application Insights i stedet for å sendes.
 
+## Lenker i e-post til en ekstern innsender (sak-lenke)
+
+Kvitteringen, beslutningsvarselet og samtalevarselet lenker til saken. Fram
+til 04.11.2026 krevde de lenkene innlogging, og en ekstern har ingen konto:
+OTP-tokenet lever i 30 minutter, og en utsendingslenke er brukt opp i det
+svaret sendes inn.
+
+Lenkene til en ekstern innsender bærer nå `&t=<sak-token>`
+(`api/src/lib/sak-token.js`):
+
+| | |
+|---|---|
+| Bundet til | én skjematype, ett skjema og én adresse |
+| Levetid | 180 dager, regnet fra e-posten — hvert varsel utsteder et nytt |
+| Gir | det innsenderen ville hatt innlogget: lese saken, samtalen og PDF-en, og rette saken når den er sendt tilbake (status 3) |
+| Gir ikke | en annen sak, en ny innsending, eller endring av en sak som ikke er sendt tilbake |
+| Hvem får det | innsendere merket `EksternInnsender` (OTP) eller `Utsending_BatchId` — `erEksternInnsender()` i `lib/ekstern-auth.js` |
+
+Tokenet sjekkes mot saken på hvert kall (`autentiserSak`): er innsenderen en
+annen enn tokenet ble utstedt til, avvises det. Signaturen bruker
+`OTP_HMAC_KEY` med et eget domeneprefiks, så et OTP- eller utsendingstoken
+kan ikke legges fram som sak-token, eller omvendt.
+
+**Rett etter innsending** svarer lagringen med det samme tokenet
+(`SakToken`), og `index.html` tar det med til kvitteringen. Kvitteringen,
+samtalen og «Se skjemaet» virker dermed med én gang, ikke først når e-posten
+kommer.
+
+**Kopimottakere på kvitteringen** får en egen e-post med den vanlige lenka.
+Sak-tokenet er innsenderens adgang og skal ikke ligge i en e-post andre også
+leser.
+
+Sidene leser tokenet via `frontend/js/sak-lenke.js`: `visning.html`,
+`kvittering.html` og `index.html` (retting). Definisjonen hentes fra
+`/api/publikum-skjematype/{id}`, fordi `/api/skjematyper/*` krever innlogging
+i SWA-rutene.
+
 ## Kjente begrensninger
 
-- Ekstern kan ikke laste ned PDF av eget skjema (kunne legges til)
+- **Vedlegg for eksterne.** Opplasting og nedlasting går med `fetch` uten
+  token-headere, og `/api/vedlegg-fil/*` krever innlogging i SWA-rutene. En
+  ekstern kan derfor ikke laste opp nye vedlegg ved retting, eller laste ned
+  vedlegg fra visningen. PDF-en tar vedleggene med.
+
 - Ingen "gjenåpne innsendt skjema"-mulighet for ekstern (kunne legges til
   med samme mekanisme som mellomlagret)
 - Innsender-varsling (kvittering) forutsetter e-post-mottaker. Det er ikke

@@ -22,6 +22,7 @@ const { genererOppsummeringPdf } = require('../lib/pdf-generator');
 const kryptering = require('../lib/kryptering');
 const dialogTilgang = require('../lib/dialog-tilgang');
 const samtaleStorage = require('../lib/samtale-storage');
+const { velgAuthvei, autentiserSak } = require('../lib/ekstern-auth');
 const nokkelStorage = require('../lib/nokkel-storage');
 
 async function harTilgang(skjema, skjematypeId, upn) {
@@ -68,8 +69,10 @@ app.http('genererPdf', {
     authLevel: 'anonymous',
     route: 'skjemaer/{skjematypeId}/{skjemaId}/pdf',
     handler: async (request, context) => {
-        const upn = hentInnloggetUpn(request);
-        if (!upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        let upn = hentInnloggetUpn(request);
+        if (!upn && !request.headers.get('x-sak-token')) {
+            return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
+        }
         try {
             const { skjematypeId, skjemaId } = request.params;
             // `let`, ikke `const`: dekrypteringen under bytter ut hele objektet.
@@ -82,6 +85,14 @@ app.http('genererPdf', {
             // skjematype.
             let skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
+
+            // Ekstern innsender med lenke fra e-posten: PDF-en lages som for
+            // innsenderen innlogget — samme rolle, samme skjulte innlegg.
+            if (velgAuthvei(request, upn) === 'sak') {
+                const sak = autentiserSak(request, skjematypeId, skjemaId, skjema);
+                if (!sak.ok) return { status: sak.status, jsonBody: { status: 'feil', melding: sak.melding } };
+                upn = sak.mottaker;
+            }
 
             if (!(await harTilgang(skjema, skjematypeId, upn))) {
                 return { status: 403, jsonBody: { status: 'avvist', melding: 'Ingen tilgang' } };

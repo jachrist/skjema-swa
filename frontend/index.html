@@ -385,6 +385,7 @@
         import { byggEditWidget, hentSvarFraDom, svarTekstFor, valider, escapeHtml, preSubmitOpplasting, samleSeksjonerFraDom, renderTekst, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
+        import { brukSakToken, medSakToken } from './js/sak-lenke.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -404,6 +405,9 @@
         const eksternModus = params.get('ekstern') === '1';
         const utsendingToken = params.get('utsending');
         const previewParam = params.get('preview') === '1';
+        // Ekstern innsender som retter en sak sendt tilbake, med lenka fra
+        // beslutningsvarselet. Se js/sak-lenke.js og initSak.
+        const sakT = brukSakToken(api, params);
 
         async function init() {
             if (previewParam) {
@@ -412,6 +416,10 @@
             }
             if (utsendingToken) {
                 await initUtsending();
+                return;
+            }
+            if (sakT && skjemaIdParam) {
+                await initSak();
                 return;
             }
             if (!skjematypeId) {
@@ -522,6 +530,32 @@
                     innhold.parentNode.insertBefore(banner, innhold);
                 }
             }, 50);
+        }
+
+        /**
+         * Retting av en sak med sak-lenke — en ekstern uten innlogging.
+         *
+         * Definisjonen leses fra publikum-ruten, som ved ekstern utfylling:
+         * /api/skjematyper/* krever innlogging allerede i SWA-rutene. Saken
+         * hentes med tokenet, og API-et sjekker at den er innsenderens.
+         *
+         * «Lagre for senere» skjules. Tokenet godtar bare lagring av en sak
+         * som står «Til revidering» (status 3); en mellomlagring ville flyttet
+         * den ut av den statusen, og neste innsending ville blitt avvist.
+         */
+        async function initSak() {
+            try {
+                skjematype = await api.get(`/api/publikum-skjematype/${encodeURIComponent(skjematypeId)}`);
+                await forbereedSkjemaId();
+            } catch (e) {
+                visFeil('Kunne ikke hente skjemaet: ' + e.message);
+                return;
+            }
+            document.getElementById('upn').textContent =
+                `${eksisterendeSkjema?.Innsender_Epost || ''} (via lenke)`;
+            rendrer();
+            const lagre = document.getElementById('lagre-knapp');
+            if (lagre) lagre.style.display = 'none';
         }
 
         async function initUtsending() {
@@ -1284,7 +1318,10 @@
                         </div>`;
                     document.getElementById('forklaring').innerHTML = '';
                 } else {
-                    window.location.href = `/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`;
+                    // En ekstern får et sak-token tilbake fra lagringen (null
+                    // for innloggede). Det følger med til kvitteringen, så den
+                    // og samtalen der virker uten innlogging.
+                    window.location.href = medSakToken(`/kvittering.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(resp.Skjema_id)}`, resp.SakToken || sakT);
                 }
             } catch (e) {
                 // 409 fra svargrensen er ikke en teknisk feil — personen har
