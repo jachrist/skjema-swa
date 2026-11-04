@@ -12,7 +12,7 @@ Tilgangen avgjøres i to lag, og tabellene under viser begge:
 * **Handleren** avgjør resten. Hvert endepunkt har minst én vakt her; se
   `docs/SIKKERHET-OG-ARKITEKTUR.md` for hva hver vakt innebærer.
 
-141 endepunkter, hvorav 39 er anonyme i gatewayen.
+141 endepunkter, hvorav 41 er anonyme i gatewayen.
 
 ## Anonyme i gatewayen
 
@@ -38,16 +38,16 @@ SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.
 | `/api/publikum-skjematype/{id}` | GET | _åpent med vilje:_ Returnerer BARE skjematyper med EksternTilgang=true, og bare definisjonen — ingen svar. Er grunnlaget for at en ekstern kan åpne et skjema i det hele tatt. |
 | `/api/refresh-fs` | POST | admin, innlogget, scheduler |
 | `/api/roller-swa` | POST | admin |
-| `/api/skjemaer` | POST | admin, innlogget, otp, utsendingstoken |
+| `/api/skjemaer` | POST | admin, innlogget, otp, utsendingstoken, sak-lenke |
 | `/api/skjemaer/{skjematypeId}/{skjemaId}` | DELETE | admin, innlogget, eier |
-| `/api/skjemaer/{skjematypeId}/{skjemaId}` | GET | admin, innlogget, eier, otp |
+| `/api/skjemaer/{skjematypeId}/{skjemaId}` | GET | admin, innlogget, eier, otp, sak-lenke |
 | `/api/skjemaer/{skjematypeId}/{skjemaId}/beslutning` | POST | innlogget, flytnøkkel |
 | `/api/skjemaer/{skjematypeId}/{skjemaId}/dialog` | POST | innlogget |
 | `/api/skjemaer/{skjematypeId}/{skjemaId}/komprimer` | POST | admin, innlogget, eier |
-| `/api/skjemaer/{skjematypeId}/{skjemaId}/pdf` | POST, GET | admin, innlogget |
-| `/api/skjemaer/{skjematypeId}/{skjemaId}/samtale` | GET | innlogget, otp, utsendingstoken |
-| `/api/skjemaer/{skjematypeId}/{skjemaId}/samtale` | POST | innlogget, otp, utsendingstoken |
-| `/api/skjemaer/{skjematypeId}/{skjemaId}/samtale/demping` | POST | innlogget, otp, utsendingstoken |
+| `/api/skjemaer/{skjematypeId}/{skjemaId}/pdf` | POST, GET | admin, innlogget, sak-lenke |
+| `/api/skjemaer/{skjematypeId}/{skjemaId}/samtale` | GET | innlogget, otp, utsendingstoken, sak-lenke |
+| `/api/skjemaer/{skjematypeId}/{skjemaId}/samtale` | POST | innlogget, otp, utsendingstoken, sak-lenke |
+| `/api/skjemaer/{skjematypeId}/{skjemaId}/samtale/demping` | POST | innlogget, otp, utsendingstoken, sak-lenke |
 | `/api/skjemaer/{skjematypeId}/{skjemaId}/videresend` | POST | innlogget |
 | `/api/skjemaer/{skjematypeId}/import` | POST | admin, innlogget, eier |
 | `/api/systemlogo` | GET | _åpent med vilje:_ Systemets logo og tittel. Vises før innlogging. |
@@ -57,8 +57,10 @@ SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.
 | `/api/utsending/purre` | POST | admin, innlogget, scheduler |
 | `/api/utsending/send-forfalte` | POST | admin, innlogget, scheduler |
 | `/api/utsending/valider` | GET | utsendingstoken |
-| `/api/vedlegg/{skjematypeId}/{skjemaId}` | POST | admin, innlogget, utsendingstoken |
-| `/api/vedlegg/{skjematypeId}/{skjemaId}` | GET | admin, innlogget |
+| `/api/vedlegg-fil/{skjematypeId}/{skjemaId}/{filnavn}` | GET | innlogget, otp, utsendingstoken, sak-lenke |
+| `/api/vedlegg-fil/{skjematypeId}/{skjemaId}/{filnavn}` | DELETE | innlogget, otp, utsendingstoken, sak-lenke |
+| `/api/vedlegg/{skjematypeId}/{skjemaId}` | POST | innlogget, otp, utsendingstoken, sak-lenke |
+| `/api/vedlegg/{skjematypeId}/{skjemaId}` | GET | innlogget, otp, utsendingstoken, sak-lenke |
 
 ## Krever innlogging
 
@@ -163,7 +165,5 @@ SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.
 | `/api/utsending/for-meg` | POST | authenticated | innlogget, utsendingstoken |
 | `/api/varsling/diag` | GET | authenticated | admin, innlogget |
 | `/api/varsling/diag/{skjematypeId}/{skjemaId}` | GET | authenticated | admin, innlogget |
-| `/api/vedlegg-fil/{skjematypeId}/{skjemaId}/{filnavn}` | GET | authenticated | admin, innlogget |
-| `/api/vedlegg-fil/{skjematypeId}/{skjemaId}/{filnavn}` | DELETE | authenticated | admin, innlogget |
 | `/api/whoami` | GET | authenticated | admin, innlogget |
 

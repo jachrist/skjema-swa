@@ -33,6 +33,14 @@ function finnBeslutningsvalg(steg, beslutningNr) {
  * alltid til visning.html. Innsenderen fikk dermed «Fikses» med en lenke til
  * et skrivebeskyttet skjema — en blindvei.
  */
+/**
+ * «Til revidering»: saken er sendt tilbake til innsenderen ved ompuss.
+ *
+ * Tre steder bruker tallet: beslutningen som setter det, og lagringen og
+ * vedleggene, som bare lar en sak-lenke endre en sak i denne statusen.
+ */
+const STATUS_SENDT_TILBAKE = 3;
+
 function erOmpussValg(valg) {
     return valg?.Handling === 'ompuss';
 }
@@ -325,6 +333,7 @@ function skipStegSomIkkeSkalKjore(skjema) {
 }
 
 module.exports = {
+    STATUS_SENDT_TILBAKE,
     loggAvvistTilgang,
     erBehandlerPaaNoeSteg,
     skalVarsleInnsender,

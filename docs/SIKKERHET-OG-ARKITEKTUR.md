@@ -315,8 +315,8 @@ fem som ikke har det, er erklært med begrunnelse i koden, og
 | | |
 |---|---|
 | Endepunkter i alt | 141 |
-| Anonyme i SWA-gatewayen | 39 |
-| — av dem med vakt i handleren | 34 |
+| Anonyme i SWA-gatewayen | 41 |
+| — av dem med vakt i handleren | 36 |
 | — av dem åpne med vilje, erklært og begrunnet | 5 |
 | — av dem åpne UTEN forklaring | 0 |
 | Endepunkter uten noen vakt i handleren | 5 — alle erklærte |

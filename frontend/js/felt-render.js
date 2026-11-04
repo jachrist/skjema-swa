@@ -16,6 +16,7 @@
 import { escapeHtml, escapeJsIAttributt } from './escape.js';
 import { formatStorrelse } from './storrelse.js';
 import { forsteBrudd } from './vilkar.js';
+import { api } from './api-client.js';
 
 
 export const FELTTYPER = [
@@ -997,7 +998,8 @@ export async function preSubmitOpplasting(feltEl, skjematypeId, skjemaId) {
     for (const filnavn of wrapper._slettede) {
         try {
             await fetch(`/api/vedlegg-fil/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}/${encodeURIComponent(filnavn)}`, {
-                method: 'DELETE'
+                method: 'DELETE',
+                headers: api.headere()
             });
         } catch (_) { /* ignorer enkeltfeil, best-effort */ }
     }
@@ -1010,8 +1012,12 @@ export async function preSubmitOpplasting(feltEl, skjematypeId, skjemaId) {
     for (const [filnavn, fil] of wrapper._nyeFiler) {
         const formData = new FormData();
         formData.append('fil', fil, filnavn);
+        // Headerne fra API-klienten: en ekstern innsender er ikke innlogget,
+        // og tokenet hens (OTP, utsending eller sak-lenke) ligger der.
+        // Content-Type settes ikke — nettleseren lager grensen for FormData.
         const resp = await fetch(`/api/vedlegg/${encodeURIComponent(skjematypeId)}/${encodeURIComponent(skjemaId)}`, {
             method: 'POST',
+            headers: api.headere(),
             body: formData
         });
         if (!resp.ok) {
@@ -1025,6 +1031,33 @@ export async function preSubmitOpplasting(feltEl, skjematypeId, skjemaId) {
     wrapper._eksisterende = [...wrapper._eksisterende, ...nyeNavn];
     wrapper._nyeFiler.clear();
     _renderOpplastingListe(wrapper);
+}
+
+/**
+ * Nedlasting for den som ikke er innlogget.
+ *
+ * En vanlig lenke sender cookien, ikke headere. Er brukeren innlogget, er det
+ * nok, og lenka får gå som før. Har API-klienten et token (ekstern innsender),
+ * hentes fila med det og lagres fra en blob — ellers svarer API-et 401.
+ */
+async function lastNedMedToken(e, url, filnavn) {
+    const headere = api.headere();
+    if (Object.keys(headere).length === 0) return;
+    e.preventDefault();
+    try {
+        const r = await fetch(url, { headers: headere });
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const blobUrl = URL.createObjectURL(await r.blob());
+        const ned = document.createElement('a');
+        ned.href = blobUrl;
+        ned.download = filnavn;
+        document.body.appendChild(ned);
+        ned.click();
+        ned.remove();
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    } catch (feil) {
+        alert(`Kunne ikke laste ned «${filnavn}»: ${feil.message}`);
+    }
 }
 
 function _byggVedleggsVisning(svar, ctx) {
@@ -1050,6 +1083,7 @@ function _byggVedleggsVisning(svar, ctx) {
         a.textContent = `📄 ${filnavn}`;
         a.style.color = 'var(--accent, #0a84ff)';
         a.style.textDecoration = 'none';
+        a.addEventListener('click', (e) => lastNedMedToken(e, a.href, filnavn));
         boks.appendChild(a);
     }
     return boks;

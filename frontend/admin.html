@@ -371,6 +371,7 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
+        import { lastOffentligAdresse } from './js/offentlig-adresse.js';
         import { hentInnloggetBruker, styrOversiktslenker } from './js/auth.js';
         import { escapeHtml as escHtml, escapeJsIAttributt } from './js/escape.js';
         import { formatStorrelse } from './js/storrelse.js';
@@ -2185,7 +2186,9 @@
         };
 
         window.logoKopierUrl = async (navn) => {
-            const url = window.location.origin + '/api/logo/' + encodeURIComponent(navn);
+            // Den offentlige adressen: URL-en limes inn i e-postmaler og blir
+            // stående. Se js/offentlig-adresse.js.
+            const url = (await lastOffentligAdresse()) + '/api/logo/' + encodeURIComponent(navn);
             try {
                 await navigator.clipboard.writeText(url);
                 document.getElementById('l-opp-status').innerHTML =

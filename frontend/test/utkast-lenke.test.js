@@ -83,12 +83,16 @@ function klipp(navn, start) {
         innerHTML: '',
         scrollIntoView() { this._rullet = true; }
     };
-    const vis = new Function('document', 'window', 'skjematypeId', 'escapeHtml',
+    // Adressen er den offentlige (SWA_URL via /api/ping), ikke nettleserens —
+    // se js/offentlig-adresse.js. Stubbet her, og nettleserens er en annen,
+    // så testen ser hvilken som ble brukt.
+    const vis = new Function('document', 'window', 'skjematypeId', 'escapeHtml', 'offentligAdresse',
         `${lenkeKilde}\n${kilde}\nreturn visUtkastLenke;`)(
         { getElementById: (id) => (id === 'utkast-lenke-boks' ? boks : null) },
-        { location: { origin: 'https://fskjema.no' } },
+        { location: { origin: 'https://gentle-dune-00a313603.7.azurestaticapps.net' } },
         'ST-7',
-        (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;')
+        (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'),
+        () => 'https://fskjema.no'
     );
 
     vis('SK-42');
@@ -109,9 +113,9 @@ function klipp(navn, start) {
     // Uten id finnes det ingen lenke å vise, og da skal boksen ikke dukke opp
     // tom.
     const boks2 = { ...boks, style: { display: 'none' }, innerHTML: '', scrollIntoView() {} };
-    const vis2 = new Function('document', 'window', 'skjematypeId', 'escapeHtml',
+    const vis2 = new Function('document', 'window', 'skjematypeId', 'escapeHtml', 'offentligAdresse',
         `${lenkeKilde}\n${kilde}\nreturn visUtkastLenke;`)(
-        { getElementById: () => boks2 }, { location: { origin: 'https://x' } }, 'ST', (s) => s);
+        { getElementById: () => boks2 }, { location: { origin: 'https://x' } }, 'ST', (s) => s, () => 'https://x');
     vis2(null);
     sjekk('uten id vises ingenting', boks2.style.display, 'none');
 }

@@ -39,6 +39,7 @@ const VAKTER = [
     ['scheduler', /['"]x-scheduler-key['"]/, 'x-scheduler-key (SCHEDULER_KEY)'],
     ['otp', /autentiserEkstern\s*\(|['"]x-otp-token['"]/, 'OTP-token (ekstern innsender)'],
     ['utsendingstoken', /utsendingToken\.valider\s*\(|['"]x-utsending-token['"]/, 'utsending-token (lenke i e-post)'],
+    ['sak-lenke', /autentiserSak\s*\(|['"]x-sak-token['"]/, 'sak-token (lenke i e-post til ekstern innsender, bundet til én sak)'],
     ['pb-token', /validerPbToken\s*\(/, 'Power BI-token (GUID bundet til UPN, skjematype og utløp)'],
     ['ratelimit', /rate-limitert/, 'rate-limitert']
 ];

@@ -664,6 +664,7 @@
         import { migrerFeltreferanser } from './js/feltref-migrering.js';
         import { byggMdEditor } from './js/md-editor.js';
         import { escapeHtml, escapeJsIAttributt } from './js/escape.js';
+        import { offentligAdresse, lastOffentligAdresse } from './js/offentlig-adresse.js';
         import { formatStorrelse } from './js/storrelse.js';
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
@@ -1069,7 +1070,7 @@
                         <div id="ekstern-lenke-boks" style="display: ${data.EksternTilgang && eksisterendeId ? 'block' : 'none'}; margin-top: 8px; padding: 10px 12px; background: var(--accent-light); border-radius: 6px;">
                             <label style="font-size: 11px; margin-bottom: 4px;">Ekstern tilgangs-URL <small>(kopier og distribuer via e-post, SMS eller nettside)</small></label>
                             <div style="display: flex; gap: 6px;">
-                                <input type="text" id="ekstern-lenke" readonly style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;" value="${eksisterendeId ? window.location.origin + '/index.html?skjematype_id=' + encodeURIComponent(eksisterendeId) + '&ekstern=1' : ''}">
+                                <input type="text" id="ekstern-lenke" readonly style="font-family: 'SF Mono', Menlo, monospace; font-size: 12px;" value="${eksternLenke()}">
                                 <button class="knapp mini sekundær" onclick="kopierEksternLenke()">📋 Kopier</button>
                             </div>
                         </div>
@@ -2322,6 +2323,21 @@
             const felt = document.getElementById('maks-svar');
             if (felt) felt.value = data.MaksSvarPerBruker;
         };
+
+        /**
+         * Lenka eksterne fyller ut skjemaet med. Den offentlige adressen, ikke
+         * nettleserens — se js/offentlig-adresse.js.
+         */
+        function eksternLenke() {
+            return eksisterendeId
+                ? `${offentligAdresse()}/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}&ekstern=1`
+                : '';
+        }
+        // Er feltet tegnet før adressen kom, skrives det om når den gjør det.
+        lastOffentligAdresse().then(() => {
+            const inp = document.getElementById('ekstern-lenke');
+            if (inp) inp.value = eksternLenke();
+        });
 
         window.setEksternTilgang = (v) => {
             data.EksternTilgang = !!v;

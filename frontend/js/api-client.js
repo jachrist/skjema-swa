@@ -110,5 +110,9 @@ export const api = {
     }, opts),
     del: (path, opts) => utfør(path, { method: 'DELETE' }, opts),
     settHeader: (navn, verdi) => { defaultHeaders[navn] = verdi; },
+    // En kopi av headerne over, for kall som må gå utenom `utfør`: opplasting
+    // med FormData og nedlasting som blob (js/felt-render.js). Uten dem
+    // mistet en ekstern innsender tokenet sitt nettopp der.
+    headere: () => ({ ...defaultHeaders }),
     fjernHeader: (navn) => { delete defaultHeaders[navn]; }
 };
