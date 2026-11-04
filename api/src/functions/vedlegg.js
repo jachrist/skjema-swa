@@ -50,6 +50,17 @@ async function harTilgangTilSkjema(skjematypeId, skjemaId, upn) {
 }
 
 const nei = (status, melding) => ({ ok: false, status, melding });
+
+/**
+ * Svaret når kallet verken er innlogget eller bærer et token.
+ *
+ * Det sto «Ikke innlogget» her, og det var det samme som koden FØR
+ * 04.11.2026 svarte en ekstern med gyldig token, fordi den ikke leste
+ * tokenet. «Gammelt API» og «frontend sendte ingen header» ga dermed samme
+ * melding, og de rettes på hver sin deploy. Teksten under kan bare komme
+ * fra den nye koden, og sier at headeren manglet.
+ */
+const UTEN_TOKEN = 'Ikke innlogget, og kallet hadde ingen tilgangsnøkkel (x-otp-token, x-utsending-token eller x-sak-token)';
 const innsenderPaa = (skjema) => String(skjema?.Innsender_Epost || skjema?.Innsender_epost || '').trim().toLowerCase();
 
 /**
@@ -102,11 +113,11 @@ async function avgjorTilgang(request, skjematypeId, skjemaId, handling) {
             if (skjema ? innsenderPaa(skjema) === id.toLowerCase() : skriv) return { ok: true, aktor: id };
             if (!upn) return nei(403, 'Ikke ditt skjema');
         } else if (!upn) {
-            return nei(401, forsøk.melding || 'Ikke innlogget');
+            return nei(401, forsøk.melding || UTEN_TOKEN);
         }
         // Ugyldig eller fremmed OTP-token, men innlogget: vanlige regler.
     }
-    if (!upn) return nei(401, 'Ikke innlogget');
+    if (!upn) return nei(401, UTEN_TOKEN);
     if (await harTilgangTilSkjema(skjematypeId, skjemaId, upn)) return { ok: true, aktor: upn };
     if (!skriv && skjema && await erBehandlerPaaNoeSteg(skjema, upn)) return { ok: true, aktor: upn };
     return nei(403, 'Ingen tilgang');
