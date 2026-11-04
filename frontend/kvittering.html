@@ -221,15 +221,19 @@
     </div>
 
     <script type="module">
+        import { sakToken, brukSakToken, medSakToken } from './js/sak-lenke.js';
         const params = new URLSearchParams(window.location.search);
+        // Ekstern innsender med lenke fra e-posten. Tokenet følger med til
+        // visningen, så «Se skjemaet» virker uten innlogging. Se js/sak-lenke.js.
+        const sakT = sakToken(params);
         const skjemaId = params.get('skjema_id') || '(mangler)';
         const skjematypeId = params.get('skjematype_id') || '(mangler)';
         document.getElementById('skjema-id').textContent = skjemaId;
         document.getElementById('skjematype-id').textContent = skjematypeId;
         document.getElementById('nytt-lignende').href =
             `/index.html?skjematype_id=${encodeURIComponent(skjematypeId)}`;
-        const visningsUrl =
-            `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`;
+        const visningsUrl = medSakToken(
+            `/visning.html?skjematype_id=${encodeURIComponent(skjematypeId)}&skjema_id=${encodeURIComponent(skjemaId)}`, sakT);
         document.getElementById('se-skjemaet').href = visningsUrl;
 
         /**
@@ -251,6 +255,7 @@
         (async () => {
             const { api } = await import('./js/api-client.js');
             const { styrOversiktslenker } = await import('./js/auth.js');
+            brukSakToken(api, params);
             // Lenken til skjemaoversikten er bare for admin, skjemaskapere
             // og eiere. Serveren avgjør, ikke denne siden.
             styrOversiktslenker(api);

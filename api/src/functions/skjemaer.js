@@ -36,10 +36,14 @@ const utsendingToken = require('../lib/utsending-token');
 const utsendingStorage = require('../lib/utsending-storage');
 const brukernavn = require('../lib/brukernavn-storage');
 const dialogTilgang = require('../lib/dialog-tilgang');
-const { harOtpToken, velgAuthvei, autentiserEkstern, eksternInnsenderUpn } = require('../lib/ekstern-auth');
+const { harOtpToken, velgAuthvei, autentiserEkstern, eksternInnsenderUpn, autentiserSak } = require('../lib/ekstern-auth');
 const prefill = require('../lib/utsending-prefill');
 const svargrense = require('../lib/svargrense');
 const periode = require('../lib/periode');
+const sakToken = require('../lib/sak-token');
+
+/** «Til revidering»: satt av beslutningen ved ompuss, se `skjema.Skjema_status = 3` under. */
+const STATUS_SENDT_TILBAKE = 3;
 
 
 
@@ -232,7 +236,7 @@ app.http('lagreBeslutning', {
                 delete stegObj.BehandletAv;
                 delete stegObj.BehandletDato;
                 // Skjemaet: status=3 (Til revidering)
-                skjema.Skjema_status = 3;
+                skjema.Skjema_status = STATUS_SENDT_TILBAKE;
                 context.log(`beslutning: ${upn || 'ekstern-flyt'} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
             } else {
                 // "Alle må avgjøre"-modus: samle beslutninger, sett stegets sluttbeslutning
@@ -688,6 +692,7 @@ app.http('lagreSkjema', {
             const upn = hentInnloggetUpn(request);
             let eksternAuth = null;
             let utsendingAuth = null; // { batchId, mottaker, prefilled }
+            let sakAuth = null;       // { mottaker } — sak-token, se ekstern-auth.js
             const utsendingHeader = request.headers.get('x-utsending-token');
             if (utsendingHeader) {
                 const v = utsendingToken.valider(utsendingHeader);
@@ -712,6 +717,21 @@ app.http('lagreSkjema', {
                     };
                 }
                 utsendingAuth = { batchId: v.batchId, mottaker: v.mottaker, prefilled: post.Prefilled || null };
+            } else if (velgAuthvei(request, upn) === 'sak') {
+                // Lenka fra beslutningsvarselet ved ompuss: innsenderen retter
+                // sin EGEN sak. Tokenet gir ingen ny innsending — uten
+                // Skjema_id, eller med en annen, avvises kallet.
+                const id = String(body.Skjema_id || '');
+                const lagret = id ? await forekomstStorage.hentSkjema(id, skjematypeId) : null;
+                const sak = autentiserSak(request, skjematypeId, id, lagret);
+                if (!sak.ok) return { status: sak.status, jsonBody: { status: 'feil', melding: sak.melding } };
+                // Bare en sak som er sendt TILBAKE (status 3) kan rettes med
+                // lenka. Ellers ville kvitteringslenka vært en vei til å endre
+                // svar etter innsending, forbi behandlerne.
+                if (Number(lagret.Skjema_status) !== STATUS_SENDT_TILBAKE) {
+                    return { status: 409, jsonBody: { status: 'feil', melding: 'Saken kan bare endres når den er sendt tilbake til deg' } };
+                }
+                sakAuth = sak;
             } else if (velgAuthvei(request, upn) === 'ekstern') {
                 // OTP-tokenet går foran en eventuell SWA-cookie — se harOtpToken.
                 const forsøk = await autentiserEkstern(request, skjematypeId);
@@ -734,6 +754,7 @@ app.http('lagreSkjema', {
                 }
             }
             const innsenderId = utsendingAuth ? utsendingAuth.mottaker
+                : sakAuth ? sakAuth.mottaker
                 : (eksternAuth ? eksternInnsenderUpn(eksternAuth.mottaker, eksternAuth.kanal) : upn);
 
             // Hent eksisterende for å avgjøre erNytt og bevare metadata (Behandling, Dialog)
@@ -864,14 +885,14 @@ app.http('lagreSkjema', {
             // ingenting her. Det er riktig — vi kjenner bare e-posten eller
             // mobilnummeret deres. byggKontekst faller da tilbake til den.
             let navnFunn = { navn: '', kilde: null };
-            if (!eksternAuth && !utsendingAuth) {
+            if (!eksternAuth && !utsendingAuth && !sakAuth) {
                 try { navnFunn = await brukernavn.losNavn(request, innsenderId); }
                 catch (_) { /* best-effort — et manglende navn skal ikke stoppe lagring */ }
             }
             // Settes ubetinget: `...body` over har allerede lagt inn det klienten
             // eventuelt sendte, og den verdien skal ikke overleve.
             skjemaData.Innsender_Navn = eksisterende?.Innsender_Navn || navnFunn.navn || '';
-            if (!skjemaData.Innsender_Navn && !eksternAuth && !utsendingAuth) {
+            if (!skjemaData.Innsender_Navn && !eksternAuth && !utsendingAuth && !sakAuth) {
                 // Innlogget, men uten navn noe sted. Da står det på oppsettet,
                 // ikke på brukeren, og det skal være mulig å se i loggen.
                 context.log(`skjemaer: fant ikke navn for ${innsenderId} — Innsender_Navn blir stående tom`);
@@ -1156,11 +1177,29 @@ app.http('lagreSkjema', {
                     + `, innsending=${erInnsending}`);
             }
 
+            // En ekstern som nettopp sendte inn, sendes videre til
+            // kvitteringen — uten innlogging, og OTP-tokenet følger ikke med
+            // til en ny side. Sak-tokenet gjør det: kvitteringen, samtalen og
+            // «Se skjemaet» virker da med én gang, ikke først når e-posten
+            // kommer. Samme token som e-posten bærer, se lib/sak-token.js.
+            //
+            // Feltet settes alltid: null betyr «innlogget, eller ikke
+            // innsendt», ikke «koden er gammel».
+            let sakTokenSvar = null;
+            if ((eksternAuth || utsendingAuth || sakAuth) && Number(skjemaData.Skjema_status) >= 2) {
+                try {
+                    sakTokenSvar = sakToken.utsted({ skjematypeId, skjemaId, mottaker: skjemaData.Innsender_Epost });
+                } catch (e) {
+                    context.log(`skjemaer POST: kunne ikke lage sak-token for ${skjemaId} — ${e.message}`);
+                }
+            }
+
             return {
                 jsonBody: {
                     status: 'ok',
                     Skjema_id: skjemaId,
-                    Skjematype_id: skjematypeId
+                    Skjematype_id: skjematypeId,
+                    SakToken: sakTokenSvar
                 }
             };
         } catch (e) {
@@ -1369,7 +1408,18 @@ app.http('hentSkjema', {
             let skjema = await forekomstStorage.hentSkjema(skjemaId, skjematypeId);
             if (!skjema) return { status: 404, jsonBody: { status: 'feil', melding: 'Skjema ikke funnet' } };
 
-            const upn = hentInnloggetUpn(request);
+            let upn = hentInnloggetUpn(request);
+
+            // Ekstern innsender med lenke fra e-posten (sak-token). Tokenet er
+            // bundet til denne saken og denne innsenderen, og sjekkes mot
+            // saken. Er det gyldig, leses saken som innsenderen ville lest den
+            // innlogget: samme vei videre, så dekryptering, skjulte interne
+            // innlegg og behandlernavn kommer fra den samme koden.
+            if (velgAuthvei(request, upn) === 'sak') {
+                const sak = autentiserSak(request, skjematypeId, skjemaId, skjema);
+                if (!sak.ok) return { status: sak.status, jsonBody: { status: 'feil', melding: sak.melding } };
+                upn = sak.mottaker;
+            }
 
             // Ekstern-tilgang via OTP-token. Tokenet går foran en eventuell
             // SWA-cookie — se harOtpToken.
