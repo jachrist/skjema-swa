@@ -33,6 +33,11 @@ ansvaret: årshjulet, hva som må gjøres når, og hvor hver oppgave er beskreve
 De to som brukes oftest: [Deploy](DEPLOY.md) for utrulling per miljø, og
 [Kokebok prod v3](KOKEBOK-PROD-V3.md) for å sette opp et miljø fra ingenting.
 
+Skal v3 installeres i en ny tenant, følg
+**[Installasjonsveiledningen](INSTALLASJONSVEILEDNING.md)** — bare trinnene,
+med kommandoer som kan kjøres direkte, og henvisninger til kokeboka for
+feilsøking.
+
 ### Jeg skal lage eller endre et skjema
 
 Denne delen er ikke skrevet ennå — den er runde 3 i

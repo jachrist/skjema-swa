@@ -82,6 +82,7 @@ nav:
   - Forvaltning og drift:
       - FORVALTNING.md
       - DEPLOY.md
+      - INSTALLASJONSVEILEDNING.md
       - KOKEBOK-PROD-V3.md
       - LOGGING.md
       - BACKUP-SHAREPOINT.md

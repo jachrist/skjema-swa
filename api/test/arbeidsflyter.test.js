@@ -408,7 +408,11 @@ for (const fil of deployer) {
         ...fs.readdirSync(path.join(rot, 'scripts')).filter(f => f.endsWith('.ps1'))
             .map(f => ['scripts/' + f, fs.readFileSync(path.join(rot, 'scripts', f), 'utf8')]),
         ['docs/KOKEBOK-PROD-V3.md',
-            fs.readFileSync(path.join(rot, 'docs', 'KOKEBOK-PROD-V3.md'), 'utf8')]
+            fs.readFileSync(path.join(rot, 'docs', 'KOKEBOK-PROD-V3.md'), 'utf8')],
+        // Installasjonsveiledningen kjører arbeidsflytene med `gh workflow
+        // run "<navn>"` — et navn som ikke finnes der, feiler først i Cloud Shell.
+        ['docs/INSTALLASJONSVEILEDNING.md',
+            fs.readFileSync(path.join(rot, 'docs', 'INSTALLASJONSVEILEDNING.md'), 'utf8')]
     ];
 
     // Bare navn som ser ut som en arbeidsflyt her: «Deploy …», «Refresh …»,
@@ -422,8 +426,16 @@ for (const fil of deployer) {
             if (navn.has(n) || HISTORISKE.has(n)) continue;
             ukjente.push(`${fil}: ${n}`);
         }
+        // Og navnet en kommando starter arbeidsflyten med. Det er ikke en
+        // henvisning, men en kjøring: `gh` svarer «could not find any
+        // workflows named …» midt i installasjonen.
+        for (const m of tekst.matchAll(/gh workflow run "([^"]+)"/g)) {
+            if (!navn.has(m[1])) ukjente.push(`${fil}: gh workflow run "${m[1]}"`);
+        }
     }
     sjekk('alle arbeidsflyter det henvises til finnes', ukjente, []);
+    sjekk('installasjonsveiledningen kjører arbeidsflyter ved navn',
+        /gh workflow run "/.test(kilder.find(([f]) => f.endsWith('INSTALLASJONSVEILEDNING.md'))[1]), true);
 }
 
 // ---------- 8. frontend-deployene kan velge SWA-ressurs ----------
