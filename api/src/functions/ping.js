@@ -73,6 +73,10 @@ app.http('ping', {
                 status: 'ok',
                 tid: new Date().toISOString(),
                 miljø: process.env.MILJO || 'ukjent',
+                // Adressen kopier-lenkene i grensesnittet skal bruke (SWA_URL),
+                // se frontend/js/offentlig-adresse.js. Ikke en hemmelighet:
+                // det er adressen brukerne går til. Alltid satt, null uten verdi.
+                offentligAdresse: String(process.env.SWA_URL || '').trim().replace(/\/+$/, '') || null,
                 bygg,
                 principal: principalDiagnose(request)
             }

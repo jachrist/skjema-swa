@@ -141,12 +141,27 @@ Sidene leser tokenet via `frontend/js/sak-lenke.js`: `visning.html`,
 `/api/publikum-skjematype/{id}`, fordi `/api/skjematyper/*` krever innlogging
 i SWA-rutene.
 
+## Vedlegg
+
+Rettet 04.11.2026. Før det kunne en ekstern verken laste opp vedlegg eller
+laste ned sine egne: frontend sendte ingen token-headere ved opplasting, og
+nedlastingsruta krevde innlogging i SWA-rutene.
+
+- `avgjorTilgang` i `api/src/functions/vedlegg.js` er én regel for alle fire
+  vedleggsendepunktene og alle fire autentiseringsveiene. En ekstern leser og
+  skriver på sin egen sak, og kan laste opp før saken er lagret (mot den
+  forhåndsgenererte Skjema_id). Med sak-lenke kan vedleggene bare endres når
+  saken er sendt tilbake.
+- `js/felt-render.js` sender API-klientens headere ved opplasting og sletting.
+  Nedlasting går som vanlig lenke for innloggede; har siden et token, hentes
+  fila med det.
+- `/api/vedlegg-fil/*` er anonym i gatewayen, som `/api/vedlegg/*`. Handleren
+  avgjør.
+- Behandlere kan nå laste ned vedleggene på saker de behandler, også uten å
+  være eier.
+
 ## Kjente begrensninger
 
-- **Vedlegg for eksterne.** Opplasting og nedlasting går med `fetch` uten
-  token-headere, og `/api/vedlegg-fil/*` krever innlogging i SWA-rutene. En
-  ekstern kan derfor ikke laste opp nye vedlegg ved retting, eller laste ned
-  vedlegg fra visningen. PDF-en tar vedleggene med.
 
 - Ingen "gjenåpne innsendt skjema"-mulighet for ekstern (kunne legges til
   med samme mekanisme som mellomlagret)

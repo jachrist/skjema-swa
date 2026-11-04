@@ -386,6 +386,9 @@
         import { evaluerVilkar } from './js/vilkar.js';
         import { apneOtpModal } from './js/otp-widget.js';
         import { brukSakToken, medSakToken } from './js/sak-lenke.js';
+        import { offentligAdresse, lastOffentligAdresse } from './js/offentlig-adresse.js';
+        // Hentes ved sidelast, lenge før noen mellomlagrer og trenger utkastlenka.
+        lastOffentligAdresse();
 
         // Lenken til skjemaoversikten er bare for admin, skjemaskapere og
         // eiere. Serveren avgjør (`serSkjemaoversikt`), ikke denne siden.
@@ -1154,7 +1157,7 @@
         function visUtkastLenke(id) {
             const boks = document.getElementById('utkast-lenke-boks');
             if (!boks || !id) return;
-            const lenke = utkastLenke(window.location.origin, skjematypeId, id);
+            const lenke = utkastLenke(offentligAdresse(), skjematypeId, id);
             boks.className = 'status-melding info';
             boks.style.display = 'block';
             boks.style.textAlign = 'left';

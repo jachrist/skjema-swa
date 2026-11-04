@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg, STATUS_SENDT_TILBAKE } = require('../lib/behandling');
 const { startBakgrunnsjobb } = require('../lib/bakgrunn');
 const { listekolonner } = require('../lib/listekolonne');
 const vilkar = require('../lib/vilkar');
@@ -41,9 +41,6 @@ const prefill = require('../lib/utsending-prefill');
 const svargrense = require('../lib/svargrense');
 const periode = require('../lib/periode');
 const sakToken = require('../lib/sak-token');
-
-/** «Til revidering»: satt av beslutningen ved ompuss, se `skjema.Skjema_status = 3` under. */
-const STATUS_SENDT_TILBAKE = 3;
 
 
 

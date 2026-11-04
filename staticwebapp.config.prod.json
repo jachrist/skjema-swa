@@ -66,6 +66,12 @@
             ]
         },
         {
+            "route": "/api/vedlegg-fil/*",
+            "allowedRoles": [
+                "anonymous"
+            ]
+        },
+        {
             "route": "/api/utsending",
             "allowedRoles": [
                 "anonymous"

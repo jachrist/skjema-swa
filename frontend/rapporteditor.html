@@ -436,6 +436,7 @@
 
     <script type="module">
         import { api } from './js/api-client.js';
+        import { offentligAdresse, lastOffentligAdresse } from './js/offentlig-adresse.js';
         import { hentInnloggetBruker, logUt as authLogUt } from './js/auth.js';
         import { byggTilgangEditor, hentRolleGrupper, hentTeamNavn } from './js/tilgang-editor.js';
         import { byggMdEditor } from './js/md-editor.js';
@@ -980,13 +981,17 @@
                 const v = el?.value.trim();
                 if (v) p.set(`bf_${f.id}`, v);
             }
-            return `${location.origin}/rapport.html?${p.toString()}`;
+            return `${offentligAdresse()}/rapport.html?${p.toString()}`;
         }
 
         function oppdaterLenkePreview() {
-            document.getElementById('lenke-preview').textContent = byggLenke() || '—';
+            const forhånd = document.getElementById('lenke-preview');
+            if (!forhånd) return;
+            forhånd.textContent = byggLenke() || '—';
             document.getElementById('kopier-status').style.display = 'none';
         }
+        // Tegnet før den offentlige adressen kom? Tegn på nytt. Se js/offentlig-adresse.js.
+        lastOffentligAdresse().then(oppdaterLenkePreview);
 
         window.apneLenkeGenerator = () => {
             if (!data.Rapporttype_id) { visStatus('Lagre rapporttypen først', 'feil'); return; }
