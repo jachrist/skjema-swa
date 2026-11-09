@@ -119,7 +119,7 @@ jobs:
 
       - name: Logg inn i Azure
         if: steps.auth.outputs.profil != 'true'
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_FUNCAPP_CREDENTIALS }}
 
