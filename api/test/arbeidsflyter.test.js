@@ -438,6 +438,41 @@ for (const fil of deployer) {
         /gh workflow run "/.test(kilder.find(([f]) => f.endsWith('INSTALLASJONSVEILEDNING.md'))[1]), true);
 }
 
+// ---------- 7b. v3 får ikke managed functions ved et uhell ----------
+//
+// Boksen «Rull ut API-et som SWA Managed Functions» står på som standard,
+// fordi v2 trenger den. Den ble glemt mot v3 22.10 og 04.11.2026. Vakten i
+// valider-jobben stopper kjøringen når en egen token-hemmelighet er valgt og
+// boksen er på. Regelen kjøres her med bash, slik den står i fila.
+{
+    const { execFileSync } = require('child_process');
+    const w = fs.readFileSync(path.join(mappe, 'deploy-prod.yml'), 'utf8');
+    const fra = w.indexOf('- name: Sjekk API-valget mot målet');
+    sjekk('vakten finnes', fra > -1, true);
+    sjekk('og ligger i valider-jobben, før utrullingen',
+        fra > w.indexOf('  valider:') && fra < w.indexOf('  build_and_deploy_job:'), true);
+    // Linjene under `run: |` så lenge innrykket holder — blokka slutter der
+    // neste nøkkel eller kommentar begynner på et lavere nivå.
+    const etter = w.slice(fra).split('\n');
+    const iRun = etter.findIndex(l => /^\s*run: \|\s*$/.test(l));
+    const innrykk = (etter[iRun + 1] || '').match(/^ */)[0].length;
+    const skriptLinjer = [];
+    for (const l of etter.slice(iRun + 1)) {
+        if (l.trim() && l.match(/^ */)[0].length < innrykk) break;
+        skriptLinjer.push(l);
+    }
+    const skript = skriptLinjer.join('\n');
+    sjekk('fant skriptet', /exit 1/.test(skript) && !/Vis mål/.test(skript), true);
+    const kjør = (TOKEN_VALG, DEPLOY_API) => {
+        try { execFileSync('bash', ['-c', skript], { env: { TOKEN_VALG, DEPLOY_API }, stdio: 'ignore' }); return 'videre'; }
+        catch { return 'stopp'; }
+    };
+    sjekk('v3 med API: stopp', kjør('AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3', 'true'), 'stopp');
+    sjekk('v3 uten API: videre', kjør('AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3', 'false'), 'videre');
+    sjekk('v2/pilot med API: videre', kjør('', 'true'), 'videre');
+    sjekk('v2/pilot uten API: videre', kjør('', 'false'), 'videre');
+}
+
 // ---------- 8. frontend-deployene kan velge SWA-ressurs ----------
 //
 // Både dev og prod får en NY SWA ved siden av den gamle: dev under
