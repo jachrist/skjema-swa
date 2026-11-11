@@ -2224,9 +2224,9 @@ hvor ren koden er.
 
 Tilbakeveien er sjekklisten baklengs:
 
-0. Ble valg A i 7c brukt: rull ut v2-appen på nytt til v2-prod («Deploy prod
-   eller pilot», `miljo = prod`, uten `swa_token_secret`). Videresendingssiden
-   står der ellers, og sender alt til `www` — som da er v3.
+0. Ble valg A i 7c brukt: rull ut v2-appen på nytt til v2-prod med
+   «Deploy prod eller pilot» (`miljo = prod`, uten `swa_token_secret`).
+   Videresendingssiden står der ellers, og sender alt til `www` — som da er v3.
 1. `www.fskjema.no` fra v3-prod tilbake til v2-prod (trinn 13 med navnene
    byttet), og `SWA_URL` tilbake på begge. Sett `www` som standarddomene på
    v2-prod igjen, så lagrede videresendinger til gentle-dune havner riktig.
