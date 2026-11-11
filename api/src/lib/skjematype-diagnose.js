@@ -30,7 +30,7 @@
  */
 const { finnFeltViaRef, finnFeltViaId } = require('./placeholder');
 const feltperson = require('./feltperson');
-const { harAvhengighet } = require('./behandling');
+const { harAvhengighet, fristFor, finnBeslutningsvalg, erOmpussValg } = require('./behandling');
 
 /** Feltreferanser i dynamiske roller og plassholdere: {2-3} eller {felt-id}. */
 const FELTREF = /\{([^}]+)\}/g;
@@ -451,6 +451,37 @@ function sjekkAvhengighet(steg, nr, alleNumre, funn) {
     }
 }
 
+/**
+ * Forventet behandlingstid: gjør den det skjemaskaperen tror?
+ *
+ * Samme regler som jobben (`fristFor`, `fristTiltak` i lib/behandling.js).
+ * En frist som ikke kan avgjøre, purrer i stedet — det er trygt, men det er
+ * ikke det som står i oppsettet, og det skal sies her og ikke oppdages når
+ * fristen går ut.
+ */
+function sjekkFrist(steg, nr, funn) {
+    if (!steg?.Frist) return;
+    const sted = stedFor(steg, nr, 'Frist');
+    const frist = fristFor(steg);
+    if (!frist) {
+        funn.push({
+            alvor: 'feil', kode: 'steg.frist-ugyldig', sted,
+            melding: 'Forventet behandlingstid må være et helt antall dager over 0. Slik den står, gjelder ingen frist.'
+        });
+        return;
+    }
+    if (frist.vedUtlop !== 'avgjor') return;
+    const valg = finnBeslutningsvalg(steg, frist.valg);
+    if (!valg || erOmpussValg(valg)) {
+        funn.push({
+            alvor: 'feil', kode: 'steg.frist-valg', sted,
+            melding: (valg ? `Valg ${frist.valg} sender saken tilbake til innsenderen, og kan ikke brukes ved utløp.`
+                : `Valg ${frist.valg ?? '(ingen)'} finnes ikke blant stegets beslutningsvalg.`)
+                + ' Når fristen går ut, purres behandlerne i stedet.'
+        });
+    }
+}
+
 /** Har steget i det hele tatt noen som kan behandle det? */
 function sjekkMottakere(steg, nr, funn, def) {
     const innsender = steg?.InnsenderBehandler === true;
@@ -732,6 +763,7 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
         const kanaler = aktiveKanaler(s);
 
         sjekkMottakere(s, nr, funn, def);
+        sjekkFrist(s, nr, funn);
         sjekkAvhengighet(s, nr, alleStegNumre, funn);
         sjekkPlanner(s, nr, kanaler.includes('planner'), funn);
         sjekkTeamskanal(s, nr, kanaler.includes('teamskanal'), funn);

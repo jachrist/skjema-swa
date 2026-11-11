@@ -18,7 +18,7 @@ const rollerStorage = require('./roller-storage');
 const teamStorage = require('./team-storage');
 const dynamiskRolle = require('./dynamisk-rolle');
 const feltperson = require('./feltperson');
-const { finnBeslutningsvalg, erOmpussValg } = require('./behandling');
+const { finnBeslutningsvalg, erOmpussValg, PURRE_INTERVALL_DAGER } = require('./behandling');
 const sakToken = require('./sak-token');
 const { erEksternInnsender } = require('./ekstern-auth');
 
@@ -834,7 +834,15 @@ async function sendInnsenderKvittering(skjema, skjematype, opts = {}) {
 async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
     const log = opts.log || (() => {});
     if (!steg) return { status: 'hoppet-over', melding: 'Ingen steg' };
-    const kanaler = aktiveKanaler(steg);
+    // En purring (forventet behandlingstid er ute) går som e-post og
+    // Teams-melding — ikke som en ny Planner-oppgave eller et nytt innlegg i
+    // kanalen hver uke. Har steget ingen av de to, går den som e-post.
+    const purring = opts.purring || null;
+    const aktive = aktiveKanaler(steg);
+    const kanaler = purring
+        ? (aktive.filter(k => k === 'epost' || k === 'teams').length
+            ? aktive.filter(k => k === 'epost' || k === 'teams') : ['epost'])
+        : aktive;
     if (kanaler.length === 0) {
         log(`varsling: steg ${steg.Steg} har ingen aktive kanaler — hopper over`);
         return { status: 'hoppet-over' };
@@ -847,8 +855,15 @@ async function sendBehandlerVarsling(skjema, skjematype, steg, opts = {}) {
     const mal = (steg.TilBehandler?.Emne || steg.TilBehandler?.Tekst) ? steg.TilBehandler : standardTilBehandler();
     const lenke = skjemaLenke(skjema.Skjematype_id, skjema.Skjema_id, opts.request);
     const kontekst = byggKontekst({ skjema, skjematype, steg, lenke });
-    const emne = erstattPlassholdere(mal.Emne || standardTilBehandler().Emne, kontekst);
-    const html = erstattPlassholdere(mal.Tekst || standardTilBehandler().Tekst, kontekst);
+    let emne = erstattPlassholdere(mal.Emne || standardTilBehandler().Emne, kontekst);
+    let html = erstattPlassholdere(mal.Tekst || standardTilBehandler().Tekst, kontekst);
+    if (purring) {
+        const over = purring.dagerOver > 0 ? ` for ${purring.dagerOver} dag${purring.dagerOver === 1 ? '' : 'er'} siden` : ' i dag';
+        emne = `Påminnelse: ${emne}`;
+        html = `<p><strong>Påminnelse:</strong> forventet behandlingstid for dette steget `
+            + `(${purring.dager} dager) gikk ut${over}. Du får en påminnelse `
+            + `${PURRE_INTERVALL_DAGER === 7 ? 'hver uke' : `hver ${PURRE_INTERVALL_DAGER}. dag`} til steget er avgjort.</p>` + html;
+    }
     // Hver kanal får sitt eget oppsett fra steget, med e-postmalen som
     // fallback. Bygges bare for kanaler som faktisk er på, så payloaden ikke
     // vokser med felter flyten skal ignorere.

@@ -332,8 +332,102 @@ function skipStegSomIkkeSkalKjore(skjema) {
     return totalSkippet;
 }
 
+/*
+ * ------------------------------------------------------------------
+ * Forventet behandlingstid (`Frist` på et steg)
+ * ------------------------------------------------------------------
+ *
+ * Ønsket 11.11.2026: et steg ingen avgjør, blir stående for alltid. Med en
+ * frist purres behandlerne ukentlig når den er ute, eller steget avgjøres med
+ * et valg skjemaskaperen har pekt ut (for eksempel «Jeg klager ikke»).
+ *
+ *   Frist: { Dager: 21, VedUtlop: 'purre' }
+ *   Frist: { Dager: 21, VedUtlop: 'avgjor', Valg: 2 }
+ *
+ * Uten `Dager` er det ingen frist, og ingenting skjer. Fristen regnes i
+ * kalenderdager fra steget ble AKTIVT (`AktivFra`), ikke fra innsending: for
+ * et klagesteg er det vedtaket som starter klokka.
+ *
+ * Reglene står her, ett sted. Nattjobben (lib/behandlingsfrist-jobb.js),
+ * diagnosen og testene spør disse funksjonene.
+ */
+const DAG_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Merket på en beslutning nattjobben treffer når fristen er ute.
+ *
+ * Et Symbol, ikke en header eller et felt i kroppen: det kan ikke sendes over
+ * HTTP, og en forespørsel utenfra kan derfor ikke utgi seg for å være jobben.
+ * Bare kode i samme prosess som har importert det, kan sette det.
+ */
+const SYSTEMBESLUTNING = Symbol('systembeslutning');
+const PURRE_INTERVALL_DAGER = 7;
+
+/** Stegets frist, normalisert — eller null når steget ikke har en. */
+function fristFor(steg) {
+    const f = steg?.Frist;
+    const dager = Number(f?.Dager);
+    if (!f || !Number.isInteger(dager) || dager <= 0) return null;
+    const vedUtlop = f.VedUtlop === 'avgjor' ? 'avgjor' : 'purre';
+    return { dager, vedUtlop, valg: vedUtlop === 'avgjor' ? Number(f.Valg) || null : null };
+}
+
+/**
+ * Sett `AktivFra` på steg som nettopp er blitt aktive. Rører ikke et steg som
+ * har tidspunktet fra før — klokka starter én gang.
+ *
+ * Bare når saken er under behandling (status 2). En sak som er sendt tilbake
+ * til innsenderen (status 3), har steget sitt «aktivt» i beregningen, men
+ * ligger hos innsenderen; klokka skal starte når den kommer tilbake. Ompuss
+ * sletter derfor `AktivFra` på steget, og ny innsending stempler det på nytt.
+ */
+function stempleAktiveSteg(skjema, naa = new Date().toISOString()) {
+    if (Number(skjema?.Skjema_status) !== 2) return 0;
+    let antall = 0;
+    for (const s of beregnAktiveSteg(skjema)) {
+        if (s.AktivFra) continue;
+        s.AktivFra = naa;
+        antall++;
+    }
+    return antall;
+}
+
+/**
+ * Hva skal skje med steget nå? `null` når ingenting.
+ *
+ *   { tiltak: 'purre' | 'avgjor', forfall, dagerOver, frist }
+ *
+ * Purring skjer når fristen er ute og det er minst en uke siden forrige
+ * (`SistPurret`). Avgjøring krever at valget finnes blant stegets
+ * beslutningsvalg og ikke er en ompuss — ellers purres det i stedet, så et
+ * feilsatt oppsett ikke gir et steg som står stille i taushet.
+ */
+function fristTiltak(steg, naa = Date.now()) {
+    const frist = fristFor(steg);
+    if (!frist || !steg?.AktivFra || stegErFerdig(steg)) return null;
+    const start = Date.parse(steg.AktivFra);
+    if (!Number.isFinite(start)) return null;
+    const forfall = start + frist.dager * DAG_MS;
+    if (naa < forfall) return null;
+    const dagerOver = Math.floor((naa - forfall) / DAG_MS);
+    const base = { forfall: new Date(forfall).toISOString(), dagerOver, frist };
+
+    if (frist.vedUtlop === 'avgjor') {
+        const valg = finnBeslutningsvalg(steg, frist.valg);
+        if (valg && !erOmpussValg(valg)) return { tiltak: 'avgjor', ...base };
+    }
+    const sist = Date.parse(steg.SistPurret || '');
+    if (Number.isFinite(sist) && naa - sist < PURRE_INTERVALL_DAGER * DAG_MS) return null;
+    return { tiltak: 'purre', ...base };
+}
+
 module.exports = {
     STATUS_SENDT_TILBAKE,
+    PURRE_INTERVALL_DAGER,
+    SYSTEMBESLUTNING,
+    fristFor,
+    stempleAktiveSteg,
+    fristTiltak,
     loggAvvistTilgang,
     erBehandlerPaaNoeSteg,
     skalVarsleInnsender,

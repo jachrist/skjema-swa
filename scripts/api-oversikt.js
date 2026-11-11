@@ -116,7 +116,14 @@ function lesEndepunkter() {
         const treff = [...tekst.matchAll(/app\.http\(\s*'([^']+)'\s*,\s*\{/g)];
         for (const [i, m] of treff.entries()) {
             const start = m.index;
-            const slutt = i + 1 < treff.length ? treff[i + 1].index : tekst.length;
+            // Kroppen er selve registreringen, fram til `});` på egen linje —
+            // ikke alt fram til neste `app.http(`. Står en navngitt funksjon
+            // mellom to registreringer (lagreBeslutning, 11.11.2026), ble
+            // vaktene dens ellers tilskrevet registreringen FORAN, og
+            // `komprimer` så ut til å godta flytnøkkelen.
+            const neste = i + 1 < treff.length ? treff[i + 1].index : tekst.length;
+            const avslutning = tekst.indexOf('\n});', start);
+            const slutt = avslutning !== -1 && avslutning < neste ? avslutning + 4 : neste;
             const kropp = tekst.slice(start, slutt);
 
             const rute = finnRute(kropp, tekst);
@@ -140,6 +147,13 @@ function lesEndepunkter() {
             // repoet. Dypere rekursjon ville dratt inn halve fila og gjort
             // det motsatte — alt ville sett bevoktet ut.
             const kalt = new Set([...kropp.matchAll(/\b([a-zA-ZæøåÆØÅ_][\w]*)\s*\(/g)].map(x => x[1]));
+            // `handler: lagreBeslutning` — en navngitt funksjon i stedet for
+            // en inline-kropp. Den har ingen parentes i registreringen, og
+            // uten dette så endepunktet ubevoktet ut selv om hele vakten står
+            // i funksjonen. Beslutningen ble navngitt 11.11.2026 fordi
+            // fristjobben kaller den samme.
+            const navngitt = /handler:\s*([a-zA-ZæøåÆØÅ_][\w]*)\s*[,}\n]/.exec(kropp);
+            if (navngitt) kalt.add(navngitt[1]);
             let utvidet = kropp;
             for (const navn of kalt) {
                 const def = new RegExp(`(?:async\\s+)?function\\s+${navn}\\s*\\(`).exec(tekst);

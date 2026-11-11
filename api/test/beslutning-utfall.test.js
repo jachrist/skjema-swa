@@ -75,7 +75,9 @@ const ui = utenKommentarer(
     // sammenlignet de to ville vært grønn mens feltene forsvant fra svaret i
     // alle andre moduser.
     const iErkl = kilde.indexOf('let utfall = null;');
-    const iGren = kilde.indexOf('if (kreverAlle && harKandidater)');
+    // Uten avsluttende parentes: betingelsen har fått `&& !erSystem` (fristen
+    // avgjør steget også i alle-modus), og grenen er den samme.
+    const iGren = kilde.indexOf('if (kreverAlle && harKandidater');
     sjekk('fant både erklæringen og alle-modus-grenen',
         iErkl > -1 && iGren > -1, true);
     sjekk('feltene erklæres UTENFOR alle-modus, så svaret alltid bærer dem',

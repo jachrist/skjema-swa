@@ -493,6 +493,11 @@ const INNGANGER = [
         radnokkel: "'Jobb-Utsending-Purre'"
     },
     {
+        ider: ['behandlingsfrist'], fn: 'behandlingsfrist.js', jobbfil: 'behandlingsfrist-jobb.js',
+        kall: 'kjorBehandlingsfrist', hendelse: 'behandling.frist',
+        radnokkel: "'Jobb-Behandlingsfrist'"
+    },
+    {
         // BACKUP ER UNNTAKET, og det er erklært her med grunn: jobben ble
         // aldri flyttet til en lib, fordi begge inngangsportene allerede
         // delte `kjorBackupJobb` I SAMME FIL. Egenskapen vi er ute etter —

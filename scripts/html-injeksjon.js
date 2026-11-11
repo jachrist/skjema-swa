@@ -53,6 +53,13 @@ const TRYGGE = [
  */
 const GODTATT_GRUPPER = [
     {
+        fil: 'frontend/editor.html',
+        grunn: 'Fristblokka på et behandlingssteg, bygd av fristHtml() i samme fil. Lest 11.11.2026: '
+            + 'valgteksten og -nummeret går gjennom escapeHtml, antall dager er Number() eller tom streng, '
+            + 'og idx er stegets indeks i lista. Ingen andre verdier settes inn.',
+        uttrykk: ['fristHtml(steg, idx)']
+    },
+    {
         fil: 'frontend/admin.html',
         grunn: 'Tellere og varigheter fra vårt eget API, rendret i admin-panelet. '
             + 'Ingen av dem bærer tekst fra lagring; alle er tall API-et selv har regnet ut. '

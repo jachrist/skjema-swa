@@ -21,6 +21,7 @@ const oppslaglisteJobb = require('./oppslagsliste-jobb');
 const nokkelsjekkJobb = require('./nokkelkalender-jobb');
 const teamSynkJobb = require('./team-synk-jobb');
 const utsendingJobb = require('./utsending-jobb');
+const behandlingsfristJobb = require('./behandlingsfrist-jobb');
 
 /**
  * NCRONTAB har SEKS felt — sekund først. GitHub-cron har fem.
@@ -123,6 +124,17 @@ const JOBBER = [
         standardSchedule: '0 0 6 * * *',
         scheduleVar: 'PURRE_UTSENDINGER_SCHEDULE',
         workflow: 'purre-utsendinger.yml'
+    },
+    {
+        id: 'behandlingsfrist',
+        navn: 'Behandlingsfrister (purring og avgjøring)',
+        beskrivelse: 'Purrer behandlere ukentlig når forventet behandlingstid er ute, eller avgjør steget med valget i fristen.',
+        rute: 'behandlingsfrist/sjekk',
+        statusrad: { partisjon: behandlingsfristJobb.PK, rad: behandlingsfristJobb.RK },
+        // 06:15 UTC daglig — etter utsendingspurringen 06:00, før arbeidsdagen.
+        // Ingen `workflow`: jobben finnes bare der timerne finnes (dev, prod v3).
+        standardSchedule: '0 15 6 * * *',
+        scheduleVar: 'BEHANDLINGSFRIST_SCHEDULE'
     },
     // BACKUP ER TO JOBBER, ikke én. Workflowen har to cron-linjer og velger
     // modus ved å lese sin egen cron; en timer kan ikke det. To oppføringer
@@ -230,6 +242,7 @@ function overstyring(jobb) {
         case 'NOKKELSJEKK_SCHEDULE': return process.env.NOKKELSJEKK_SCHEDULE;
         case 'SEND_UTSENDINGER_SCHEDULE': return process.env.SEND_UTSENDINGER_SCHEDULE;
         case 'PURRE_UTSENDINGER_SCHEDULE': return process.env.PURRE_UTSENDINGER_SCHEDULE;
+        case 'BEHANDLINGSFRIST_SCHEDULE': return process.env.BEHANDLINGSFRIST_SCHEDULE;
         case 'BACKUP_FULL_SCHEDULE': return process.env.BACKUP_FULL_SCHEDULE;
         case 'BACKUP_DELTA_SCHEDULE': return process.env.BACKUP_DELTA_SCHEDULE;
         default: return undefined;

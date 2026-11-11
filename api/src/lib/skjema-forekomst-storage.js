@@ -72,6 +72,22 @@ async function hentSkjema(skjemaId, skjematypeId) {
     return await sikrFulltFormat(data);
 }
 
+/**
+ * Én sak SLIK DEN ER LAGRET — kompakt forblir kompakt, kryptert forblir
+ * kryptert. Motstykket til `erstattJson`: les, endre ett felt, skriv tilbake
+ * uten å endre formen. `hentSkjema` ekspanderer, og en skriving av det den
+ * gir ville gjort en kompakt sak full.
+ */
+async function hentLagretSkjema(skjemaId, skjematypeId) {
+    const tabell = await sikreTabell(TABELL);
+    try {
+        return entityTilSkjema(await tabell.getEntity(String(skjematypeId), String(skjemaId)));
+    } catch (e) {
+        if (e.statusCode === 404) return null;
+        throw e;
+    }
+}
+
 async function lagreSkjema(skjemaData, erNytt = false) {
     const tabell = await sikreTabell(TABELL);
 
@@ -317,6 +333,7 @@ module.exports = {
     hentAntallPerType,
     tellSvarFraBruker,
     hentSkjema,
+    hentLagretSkjema,
     lagreSkjema,
     hentAlleSkjemaerForType,
     hentMetadataForType,
