@@ -2006,6 +2006,17 @@ Gjelder **form A, ompeking**, og domenet slik det er satt opp 28.10.2026:
 | `www.fskjema.no` | CNAME | v2-prod i dag (`gentle-dune-00a313603.7.azurestaticapps.net.`), v3-prod etter cutover |
 | `v3.fskjema.no` | CNAME | v3-prod (`swa-skjema-3-prod`), fra 28.10.2026. Blir stående etter cutover |
 
+**`www.fskjema.no` er satt som standarddomene på v2-prod (11.11.2026).**
+Brukere som skrev `fskjema.no`, havnet på `gentle-dune-…`, selv om
+videresendingen hos ServeTheWorld var riktig: `curl.exe -sI` viste
+`Location: https://www.fskjema.no/`. Årsaken var en 301 nettleseren hadde
+lagret fra før 28.10.2026, da apex videresendte til v2-adressen. En 301 er
+permanent; nettleseren spør ikke serveren igjen. Med `www` som standarddomene
+sender gentle-dune selv videre til `www`, og de lagrede videresendingene retter
+seg. Innstillingen ligger under SWA-en → **Custom domains** → **Set default**.
+
+Det har to følger for cutover — se trinn 7c og 13.
+
 Cutover er altså å flytte `www` fra v2-prod til v3-prod, og lagringen fra
 v3 sin konto til v2 sin. Pausen er satt til to timer.
 
@@ -2022,6 +2033,7 @@ v3 sin konto til v2 sin. Pausen er satt til to timer.
 | ☐ | 6. Redirect-URI for `www.fskjema.no` på påloggingsappen | v2 og v3 bruker samme app (kapittel 6), så den er på plass hvis `www` virker på v2 i dag. Kontroller med `az ad app show` |
 | ☐ | 7. Ny `SCHEDULER_KEY` til v2-prod, klar til å limes inn | Lag den nå, ikke i pausen |
 | ☐ | 7b. `HASH_SALT`, `OTP_HMAC_KEY` og `FLOW_CALLBACK_KEY` er LIKE på v2-prod og v3-prod | Se under. `FLOW_CALLBACK_KEY` var ikke satt på v3-prod 28.10.2026 |
+| ☐ | 7c. Bestem hva gentle-dune skal gjøre etter cutover | Se «Gentle-dune etter cutover» under. Må være klart FØR pausen — i pausen er det for sent å bygge noe |
 
 Ny nøkkel:
 
@@ -2049,10 +2061,12 @@ secret-navn, og start Function App-en på nytt så referansen leses igjen.
 
 **I pausen — i denne rekkefølgen**
 
-Varsle brukerne. Ingen datakopi trengs i form A, og en bruker som går inn
-via v2-prod sin gamle `gentle-dune`-adresse etter cutover, skriver i den
-samme lagringen — det er ufarlig. Det som IKKE skal skje to ganger, er
-jobbene: utsending og purring sender ut av huset. Derfor er trinn 8 først.
+Varsle brukerne. Ingen datakopi trengs i form A. En bruker som går inn via
+`gentle-dune`-adressen etter cutover, skriver i den samme lagringen, så
+ingenting går tapt — men med v2 sin kode, og varsler derfra går ut med
+`"miljø": "Production"`. Det skal derfor ikke vare lenger enn pausen; se trinn
+13b. Det som IKKE skal skje to ganger, er jobbene: utsending og purring sender
+ut av huset. Derfor er trinn 8 først.
 
 | ☐ | Hva | Merknad |
 |---|---|---|
@@ -2062,7 +2076,8 @@ jobbene: utsending og purring sender ut av huset. Derfor er trinn 8 først.
 | ☐ | 10. `STORAGE_ACCOUNT_NAME` på v3-prod til v2 sin konto | Fra nå leser og skriver v3 produksjonsdataene |
 | ☐ | 11. Fjern `VARSLING_DEAKTIVERT` på v3-prod | Satt i trinn 4 for testingen. Står den, sender v3-prod ingen varsler i drift |
 | ☐ | 12. `SWA_URL` på v3-prod til `https://www.fskjema.no` | E-postlenker og flyt-callbacks bygges fra den |
-| ☐ | 13. Flytt `www.fskjema.no` fra v2-prod til v3-prod | Se under. Et vertsnavn kan bare ligge på én SWA om gangen |
+| ☐ | 13. Flytt `www.fskjema.no` fra v2-prod til v3-prod | Se under. **Ta `www` av som standarddomene på v2-prod først** (Custom domains → sett `gentle-dune-…` som standard igjen). Et standarddomene kan ikke slettes, og et vertsnavn kan bare ligge på én SWA om gangen |
+| ☐ | 13b. Steng gentle-dune for brukere | Valget fra 7c. Uten det sender en lagret 301 (`fskjema.no` → gentle-dune) brukerne til v2 igjen, nå uten videresending videre |
 | ☐ | 14. `SWA_URL` på v2-prod til sin egen `gentle-dune`-adresse | Bare én stabel skal påstå å være den offentlige adressen |
 | ☐ | 15. Full backup på v3-prod | Deltaene bygger på siste fulle. Den første etter ompekingen skal være full |
 | ☐ | 16. Kontroller | Under |
@@ -2100,6 +2115,21 @@ tar noen minutter etter det.
 `Resolve-DnsName` finnes ikke i Cloud Shell — det er Linux også i
 PowerShell-modus. Bruk `nslookup`.
 
+#### Gentle-dune etter cutover (trinn 7c og 13b)
+
+Når `www` flyttes til v3-prod, må standarddomenet tas av v2-prod først. Da
+slutter gentle-dune å sende videre, og den som har en lagret 301 fra
+`fskjema.no`, eller et bokmerke til gentle-dune, havner i v2-appen — med v2
+sin kode mot produksjonsdataene. Velg én av to, og ha den klar før pausen:
+
+| Valg | Hva | Følge |
+|---|---|---|
+| **A. Videresendingsside** (anbefalt) | Rull ut en side til v2-prod som bare sender alt til `https://www.fskjema.no`, med v2-prod sitt deploy-token | Lagrede videresendinger og bokmerker havner riktig. v2-prod står til den rives, uten noe å vise. Kan ikke legges i `staticwebapp.config.prod.json` — den deles med v3-prod, og en regel der ville sendt v3 i ring |
+| **B. Riv v2-prod** (kapittel 11) | Slett SWA-ressursen | Endelig. Den som har en lagret 301, får en feilside og må skrive `www` selv. Tilbakeveien (under) forsvinner med den |
+
+A beholder tilbakeveien: skal cutover reverseres, rulles v2-appen ut på nytt
+og `www` flyttes tilbake. Med B finnes ikke det lenger.
+
 **«does not have authorization to perform action
 'Microsoft.Web/locations/staticSitesOperationStatuses/read'»** — kom i
 portalen 28.10.2026 da `v3.fskjema.no` ble lagt på v3-prod, og domenet ble
@@ -2120,6 +2150,7 @@ Trinn 16, kontroll:
 |---|---|---|
 | ☐ | `https://www.fskjema.no/api/ping` | `miljø` er `prod`, og commit-SHA-en er den som er deployet |
 | ☐ | `https://fskjema.no` | Havner på `https://www.fskjema.no` — test i en nettleser som ikke har vært der før. En 301 huskes, og Edge i privat vindu slapp ikke innloggingen gjennom 28.10.2026 |
+| ☐ | `https://gentle-dune-00a313603.7.azurestaticapps.net/` | Det 13b sier: videresendes til `www`, eller svarer ikke. Den skal IKKE vise v2-appen |
 | ☐ | Innlogging og skjemalista | De samme skjematypene som på v2-prod |
 | ☐ | `/api/system/info` | Kontoen som leses fra er v2 sin |
 | ☐ | Send inn et testskjema | Kvittering og varsel kommer fram |
@@ -2193,8 +2224,12 @@ hvor ren koden er.
 
 Tilbakeveien er sjekklisten baklengs:
 
+0. Ble valg A i 7c brukt: rull ut v2-appen på nytt til v2-prod med
+   «Deploy prod eller pilot» (`miljo = prod`, uten `swa_token_secret`).
+   Videresendingssiden står der ellers, og sender alt til `www` — som da er v3.
 1. `www.fskjema.no` fra v3-prod tilbake til v2-prod (trinn 13 med navnene
-   byttet), og `SWA_URL` tilbake på begge.
+   byttet), og `SWA_URL` tilbake på begge. Sett `www` som standarddomene på
+   v2-prod igjen, så lagrede videresendinger til gentle-dune havner riktig.
 2. `STORAGE_ACCOUNT_NAME` på v3-prod tilbake til `stskjema3prod`.
 3. Legg inn `SWA_URL_PROD` igjen med `gentle-dune`-adressen, og den nye
    `SCHEDULER_KEY` fra trinn 9 i `SCHEDULER_KEY_PROD`. Da kjører v2-prod sine
