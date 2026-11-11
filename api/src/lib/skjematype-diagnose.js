@@ -452,14 +452,28 @@ function sjekkAvhengighet(steg, nr, alleNumre, funn) {
 }
 
 /** Har steget i det hele tatt noen som kan behandle det? */
-function sjekkMottakere(steg, nr, funn) {
+function sjekkMottakere(steg, nr, funn, def) {
+    const innsender = steg?.InnsenderBehandler === true;
     const antall = (steg?.Personer || []).length
         + (steg?.Roller || []).length
-        + (steg?.Team || []).length;
+        + (steg?.Team || []).length
+        + (innsender ? 1 : 0);
     if (antall === 0) {
         funn.push({
             alvor: 'feil', kode: 'steg.ingen-behandlere', sted: stedFor(steg, nr, ''),
-            melding: 'Steget har hverken personer, roller eller team. Ingen kan behandle det.'
+            melding: 'Steget har hverken personer, roller, team eller innsenderen. Ingen kan behandle det.'
+        });
+    }
+    // Innsenderen legges bare til når hen er innlogget — se
+    // leggTilInnsenderSomBehandler i feltperson.js. Tar skjematypen imot
+    // eksterne, kan steget derfor stå uten behandler for dem.
+    if (innsender && def?.EksternTilgang === true) {
+        const alene = antall === 1;
+        funn.push({
+            alvor: alene ? 'feil' : 'advarsel', kode: 'steg.innsender-ekstern', sted: stedFor(steg, nr, ''),
+            melding: 'Innsenderen er behandler, men skjematypen tar imot eksterne innsendere. En ekstern kan ikke '
+                + 'logge inn, og blir ikke lagt til som behandler.'
+                + (alene ? ' Steget har ingen andre behandlere, og blir stående for dem.' : '')
         });
     }
 }
@@ -717,7 +731,7 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
         const nr = s?.Steg ?? (i + 1);
         const kanaler = aktiveKanaler(s);
 
-        sjekkMottakere(s, nr, funn);
+        sjekkMottakere(s, nr, funn, def);
         sjekkAvhengighet(s, nr, alleStegNumre, funn);
         sjekkPlanner(s, nr, kanaler.includes('planner'), funn);
         sjekkTeamskanal(s, nr, kanaler.includes('teamskanal'), funn);

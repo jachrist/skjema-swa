@@ -268,6 +268,31 @@ det finnes, men er av feil type. Ved innsending skilles fire grunner til at det
 ikke ble noen mottaker — feltet finnes ikke, feil type, ubesvart, ugyldig verdi
 — fordi rettelsen er ulik for hver.
 
+## Innsenderen som behandler (`InnsenderBehandler`)
+
+`"InnsenderBehandler": true` på et steg gjør den som sendte inn skjemaet til
+behandler på steget, i tillegg til Personer, Roller og Team. I editoren er det
+avkrysningen «Innsenderen» under *Behandlere*.
+
+Adressen fryses inn i stegets `Personer` ved innsending
+(`leggTilInnsenderSomBehandler` i `lib/feltperson.js`), etter
+feltreferansene og før skip-logikken. Tilgang, beslutning, varsling og «alle
+må avgjøre» leser `Personer` og trenger ikke kjenne flagget.
+
+**Bare innloggede innsendere.** En ekstern (engangskode eller
+utsendingslenke) har ingen innlogging, og legges ikke til. Hendelsesloggen får
+`behandling.innsender-ikke-behandler` med grunnen. Diagnosen («Sjekk
+oppsettet») advarer når skjematypen også tar imot eksterne, og melder feil
+hvis innsenderen er stegets eneste behandler.
+
+Eksempel, klage på et vedtak:
+
+| Steg | Behandler | Avhengig av | Vilkår |
+|---|---|---|---|
+| 1. Vedtak | saksbehandler | — | — |
+| 2. Klage? | `InnsenderBehandler` — valgene «Jeg klager» / «Jeg klager ikke» | 1 | — |
+| 3. Klagebehandling | klageinstans | 2 | `behandling-2` = «Jeg klager» |
+
 ## Behandlere i oppsummeringen (`_behandlere`)
 
 `GET /api/skjemaer/{type}/{id}` beriker svaret med ett oppslag per steg:

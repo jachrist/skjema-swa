@@ -1571,6 +1571,11 @@
                     <div class="rad">
                         <label>Behandlere</label>
                         <div class="tilgang-slot" data-slot="steg-tilgang-${idx}"></div>
+                        <label class="checkbox-rad" style="margin: 6px 0 0;">
+                            <input type="checkbox" ${steg.InnsenderBehandler === true ? 'checked' : ''} onchange="setStegInnsenderBehandler(${idx}, this.checked)">
+                            Innsenderen — den som sendte inn skjemaet
+                        </label>
+                        <small style="display: block; margin: 2px 0 0 2px;">F.eks. for å la innsenderen svare på om hen vil klage. Gjelder bare innloggede innsendere — eksterne kan ikke logge inn.</small>
                     </div>
 
                     ${harDynamiskRolle(steg) ? `
@@ -1701,6 +1706,12 @@
         };
         window.setStegFlytParametere = (idx, v) => {
             data.Behandling[idx].Flyt_parametere = String(v || '');
+        };
+        // Lagres bare når den er på: en definisjon uten feltet er den samme
+        // som før, og diff-en ved import av en pakke blir ikke støy.
+        window.setStegInnsenderBehandler = (idx, v) => {
+            if (v) data.Behandling[idx].InnsenderBehandler = true;
+            else delete data.Behandling[idx].InnsenderBehandler;
         };
         window.setStegReserverolle = (idx, v) => {
             const verdi = String(v || '').trim();

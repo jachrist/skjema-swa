@@ -988,6 +988,29 @@ app.http('lagreSkjema', {
                 } catch (e) {
                     context.log(`feltperson: ekspansjon feilet — ${e.message}`);
                 }
+
+                // «Innsender» som behandler. Etter feltreferansene, som kan
+                // skrive om Personer, og før skip-logikken og sikreBehandler,
+                // som leser den.
+                try {
+                    const innsenderSteg = feltperson.leggTilInnsenderSomBehandler(skjemaData);
+                    for (const s of innsenderSteg) {
+                        context.log(`innsender-behandler: steg ${s.steg} → ` +
+                            (s.lagtTil ? s.innsender : `ikke lagt til (${s.grunn})`));
+                    }
+                    const ikke = innsenderSteg.filter(s => !s.lagtTil);
+                    if (ikke.length > 0) {
+                        hendelser.logg({
+                            Type: 'behandling.innsender-ikke-behandler', Aktor: innsenderId,
+                            ObjektType: 'skjema', ObjektId: skjemaId,
+                            Melding: `Steg ${ikke.map(s => s.steg).join(', ')}: innsenderen skulle vært behandler, `
+                                + `men ble ikke lagt til — ${ikke[0].grunn}`,
+                            Detaljer: { steg: ikke }
+                        });
+                    }
+                } catch (e) {
+                    context.log(`innsender-behandler: feilet — ${e.message}`);
+                }
             }
 
             // Ved innsending: kjør skip-logikk så steg som ikke oppfyller vilkår
