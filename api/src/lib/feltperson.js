@@ -280,6 +280,49 @@ function ekspanderBehandlingPersoner(skjema) {
     return endret;
 }
 
+/**
+ * «Innsender» som behandler: `InnsenderBehandler: true` på et steg.
+ *
+ * Ønsket 11.11.2026: etter et vedtak skal innsenderen selv kunne si om hen
+ * vil klage. Det er et behandlingssteg med innsenderen som behandler, og et
+ * steg etter det med vilkåret `behandling-N` på svaret.
+ *
+ * Adressen fryses inn i `steg.Personer` ved innsending, slik feltreferansene
+ * over gjør. Varsling, tilgang, beslutning og «alle må avgjøre» leser
+ * `Personer`, så ingen av dem trenger å kjenne flagget.
+ *
+ * **Bare innloggede innsendere.** En ekstern (engangskode eller
+ * utsendingslenke) har ingen innlogging, og behandlingssiden krever det. Å
+ * legge adressen inn ville gitt et steg ingen kan avgjøre, med et varsel som
+ * ender på en innloggingsside. Den hoppes over og meldes, så det står i
+ * hendelsesloggen hvorfor steget mangler behandler. Merkene er de samme som
+ * `erEksternInnsender()` i ekstern-auth.js leser.
+ *
+ * @returns {{ steg, innsender, lagtTil: boolean, grunn?: string }[]}
+ */
+function leggTilInnsenderSomBehandler(skjema) {
+    const ut = [];
+    const innsender = String(skjema?.Innsender_Epost || skjema?.Innsender_epost || '').trim().toLowerCase();
+    const ekstern = skjema?.EksternInnsender === true || !!skjema?.Utsending_BatchId;
+    for (const steg of (skjema?.Behandling || [])) {
+        if (steg?.InnsenderBehandler !== true) continue;
+        if (!innsender) {
+            ut.push({ steg: steg.Steg, innsender: '', lagtTil: false, grunn: 'skjemaet har ingen innsender' });
+            continue;
+        }
+        if (ekstern) {
+            ut.push({ steg: steg.Steg, innsender, lagtTil: false, grunn: 'innsenderen er ekstern og kan ikke logge inn' });
+            continue;
+        }
+        const personer = Array.isArray(steg.Personer) ? steg.Personer : [];
+        if (!personer.some(p => String(p).trim().toLowerCase() === innsender)) {
+            steg.Personer = [...personer, innsender];
+        }
+        ut.push({ steg: steg.Steg, innsender, lagtTil: true });
+    }
+    return ut;
+}
+
 module.exports = {
     GYLDIGE_FELTTYPER,
     PERSON_DATAKILDER,
@@ -290,5 +333,6 @@ module.exports = {
     referansen,
     slaOppEposter,
     ekspanderPersoner,
-    ekspanderBehandlingPersoner
+    ekspanderBehandlingPersoner,
+    leggTilInnsenderSomBehandler
 };

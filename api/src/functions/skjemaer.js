@@ -18,7 +18,7 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
-const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg, STATUS_SENDT_TILBAKE } = require('../lib/behandling');
+const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg, stempleAktiveSteg, SYSTEMBESLUTNING, fristFor, STATUS_SENDT_TILBAKE } = require('../lib/behandling');
 const { startBakgrunnsjobb } = require('../lib/bakgrunn');
 const { listekolonner } = require('../lib/listekolonne');
 const vilkar = require('../lib/vilkar');
@@ -130,20 +130,31 @@ app.http('komprimerSkjema', {
  * Kun bruker som er behandler på steget kan gjøre beslutning.
  * Steget må være aktivt (ikke behandlet, ikke blokkert av avhengighet).
  */
-app.http('lagreBeslutning', {
-    methods: ['POST'],
-    authLevel: 'anonymous',
-    route: 'skjemaer/{skjematypeId}/{skjemaId}/beslutning',
-    handler: async (request, context) => {
+/**
+ * Beslutningen — som funksjon, så fristjobben kan treffe den SAMME.
+ *
+ * Tre veier inn: en innlogget behandler, en flyt-callback (bare steg med
+ * Flyt_url), og systemet når forventet behandlingstid er ute (se
+ * `SYSTEMBESLUTNING` i lib/behandling.js). Alt etter adgangssjekken er felles,
+ * så neste steg, skip-logikk, avslutning, kryptering og varsling blir det
+ * samme uansett hvem som avgjorde.
+ */
+async function lagreBeslutning(request, context) {
+        // Systemet: nattjobben for forventet behandlingstid. Merket kan ikke
+        // komme over HTTP — se SYSTEMBESLUTNING.
+        const erSystem = request?.[SYSTEMBESLUTNING] === true;
+
         // Auth: enten SWA-innlogget bruker (som må være behandler), ELLER
         // ekstern flyt-callback via x-flow-key-header som matcher FLOW_CALLBACK_KEY.
         // Flyt-callback tillater å sette Beslutning på ekstern-flyt-steg uten
         // brukerkontekst (det er PA-flyten som sier "steget er fullført").
-        const flowKey = request.headers.get('x-flow-key');
+        const flowKey = erSystem ? null : request.headers.get('x-flow-key');
         const configuredFlowKey = process.env.FLOW_CALLBACK_KEY;
-        const erFlowCallback = flowKey && configuredFlowKey && flowKey === configuredFlowKey;
+        const erFlowCallback = !!(flowKey && configuredFlowKey && flowKey === configuredFlowKey);
 
-        const upn = hentInnloggetUpn(request);
+        // 'system' er en markør, ikke en person — den samme som skip-logikken
+        // setter i BehandletAv.
+        const upn = erSystem ? 'system' : hentInnloggetUpn(request);
         if (!erFlowCallback && !upn) return { status: 401, jsonBody: { status: 'feil', melding: 'Ikke innlogget' } };
 
         try {
@@ -175,7 +186,15 @@ app.http('lagreBeslutning', {
 
             // Flow-callback får kun fullføre steg som faktisk har Flyt_url — så nøkkelen
             // ikke kan misbrukes til å avgjøre menneske-behandlede steg.
-            if (erFlowCallback) {
+            if (erSystem) {
+                // Fristjobben avgjør bare med valget skjemaskaperen har pekt
+                // ut i stegets egen frist. Står noe annet i kallet, er det en
+                // feil i jobben, ikke noe å gjennomføre.
+                const frist = fristFor(stegObj);
+                if (!frist || frist.vedUtlop !== 'avgjor' || frist.valg !== beslutning) {
+                    return { status: 403, jsonBody: { status: 'avvist', melding: 'Systemet kan bare avgjøre med stegets fristvalg' } };
+                }
+            } else if (erFlowCallback) {
                 if (!(stegObj.Flyt_url || '').trim()) {
                     return { status: 403, jsonBody: { status: 'avvist', melding: 'Flow-callback tillatt kun for steg med Flyt_url' } };
                 }
@@ -232,6 +251,10 @@ app.http('lagreBeslutning', {
                 stegObj.Beslutning = 0;
                 delete stegObj.BehandletAv;
                 delete stegObj.BehandletDato;
+                // Fristen gjelder behandleren, ikke innsenderens retting.
+                // Klokka starter på nytt når saken sendes inn igjen.
+                delete stegObj.AktivFra;
+                delete stegObj.SistPurret;
                 // Skjemaet: status=3 (Til revidering)
                 skjema.Skjema_status = STATUS_SENDT_TILBAKE;
                 context.log(`beslutning: ${upn || 'ekstern-flyt'} sendte ${skjemaId} til revidering fra steg ${stegNr}`);
@@ -246,7 +269,9 @@ app.http('lagreBeslutning', {
                     + (stegObj.Team || []).length > 0;
                 const aktor = upn ? String(upn).toLowerCase() : 'ekstern-flyt';
 
-                if (kreverAlle && harKandidater) {
+                // Fristen avgjør steget, også når alle skulle avgjort: de som
+                // ikke svarte innen fristen, er nettopp grunnen til at den kom.
+                if (kreverAlle && harKandidater && !erSystem) {
                     if (!Array.isArray(stegObj.Beslutninger)) stegObj.Beslutninger = [];
                     // Hindre duplikat fra samme aktør (idempotens ved retry)
                     const eksisterende = stegObj.Beslutninger.find(b => String(b.Aktor || '').toLowerCase() === aktor);
@@ -306,6 +331,11 @@ app.http('lagreBeslutning', {
                 }
             }
 
+            // Steg som ble aktive av denne beslutningen, får tidspunktet sitt
+            // for forventet behandlingstid. Før krypteringen under, som bare
+            // gjelder ferdige saker — og en ferdig sak har ingen aktive steg.
+            stempleAktiveSteg(skjema);
+
             // Varslingene under skal ha skjemaet i klartekst. Krypteringen
             // returnerer en ny kopi, så denne referansen beholder svarene.
             // Uten den fikk varslingen ved siste beslutning et skjema uten
@@ -344,11 +374,11 @@ app.http('lagreBeslutning', {
             await forekomstStorage.lagreSkjema(skjema, false);
             context.log(`beslutning: ${upn || 'ekstern-flyt'} satte steg ${stegNr}=${beslutning} på skjema ${skjemaId}`);
             hendelser.logg({
-                Type: erFlowCallback ? 'skjema.beslutning.ekstern-flyt' : 'skjema.beslutning',
+                Type: erSystem ? 'skjema.beslutning.frist' : (erFlowCallback ? 'skjema.beslutning.ekstern-flyt' : 'skjema.beslutning'),
                 Aktor: upn || 'ekstern-flyt',
                 ObjektType: 'skjema', ObjektId: skjemaId,
                 Melding: `Steg ${stegNr}: beslutning ${beslutning}${valgtValg?.Tekst ? ' (' + valgtValg.Tekst + ')' : ''}${erFlowCallback ? ' (via ekstern-flyt)' : ''}`,
-                Detaljer: { skjematypeId, steg: stegNr, beslutning, tekst: valgtValg?.Tekst || '', nyStatus: skjema.Skjema_status, kilde: erFlowCallback ? 'ekstern-flyt' : 'bruker' }
+                Detaljer: { skjematypeId, steg: stegNr, beslutning, tekst: valgtValg?.Tekst || '', nyStatus: skjema.Skjema_status, kilde: erSystem ? 'frist' : (erFlowCallback ? 'ekstern-flyt' : 'bruker') }
             });
 
             // Varsling — kalles etter lagring, og ventes på der
@@ -420,7 +450,13 @@ app.http('lagreBeslutning', {
             context.log('beslutning FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
-    }
+}
+
+app.http('lagreBeslutning', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'skjemaer/{skjematypeId}/{skjemaId}/beslutning',
+    handler: lagreBeslutning
 });
 
 /**
@@ -988,6 +1024,29 @@ app.http('lagreSkjema', {
                 } catch (e) {
                     context.log(`feltperson: ekspansjon feilet — ${e.message}`);
                 }
+
+                // «Innsender» som behandler. Etter feltreferansene, som kan
+                // skrive om Personer, og før skip-logikken og sikreBehandler,
+                // som leser den.
+                try {
+                    const innsenderSteg = feltperson.leggTilInnsenderSomBehandler(skjemaData);
+                    for (const s of innsenderSteg) {
+                        context.log(`innsender-behandler: steg ${s.steg} → ` +
+                            (s.lagtTil ? s.innsender : `ikke lagt til (${s.grunn})`));
+                    }
+                    const ikke = innsenderSteg.filter(s => !s.lagtTil);
+                    if (ikke.length > 0) {
+                        hendelser.logg({
+                            Type: 'behandling.innsender-ikke-behandler', Aktor: innsenderId,
+                            ObjektType: 'skjema', ObjektId: skjemaId,
+                            Melding: `Steg ${ikke.map(s => s.steg).join(', ')}: innsenderen skulle vært behandler, `
+                                + `men ble ikke lagt til — ${ikke[0].grunn}`,
+                            Detaljer: { steg: ikke }
+                        });
+                    }
+                } catch (e) {
+                    context.log(`innsender-behandler: feilet — ${e.message}`);
+                }
             }
 
             // Ved innsending: kjør skip-logikk så steg som ikke oppfyller vilkår
@@ -1001,6 +1060,10 @@ app.http('lagreSkjema', {
                 if (alleStegFerdig(skjemaData)) {
                     skjemaData.Skjema_status = 5;
                 }
+                // Klokka for forventet behandlingstid starter for stegene som
+                // er aktive nå. Etter skip-logikken: et steg som hoppes over,
+                // skal ikke få en frist.
+                stempleAktiveSteg(skjemaData);
             }
 
             // Rollelista for klassesjefer vedlikeholdes manuelt — fang opp steg
@@ -1539,4 +1602,7 @@ app.http('hentSkjema', {
 // snu ved en senere opprydding, og feilen den gir viser seg bare for den som
 // tester fra en innlogget nettleser — derfor er den festet i test.
 // Re-eksportert for test. Selve reglene bor i lib/ekstern-auth.js.
-module.exports = { _harOtpToken: harOtpToken, _velgAuthvei: velgAuthvei };
+// `lagreBeslutning` eksporteres for fristjobben (functions/behandlingsfrist.js),
+// som avgjør et steg når forventet behandlingstid er ute — gjennom den SAMME
+// beslutningen som en behandler treffer.
+module.exports = { _harOtpToken: harOtpToken, _velgAuthvei: velgAuthvei, lagreBeslutning };

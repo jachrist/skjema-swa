@@ -268,6 +268,72 @@ det finnes, men er av feil type. Ved innsending skilles fire grunner til at det
 ikke ble noen mottaker — feltet finnes ikke, feil type, ubesvart, ugyldig verdi
 — fordi rettelsen er ulik for hver.
 
+## Innsenderen som behandler (`InnsenderBehandler`)
+
+`"InnsenderBehandler": true` på et steg gjør den som sendte inn skjemaet til
+behandler på steget, i tillegg til Personer, Roller og Team. I editoren er det
+avkrysningen «Innsenderen» under *Behandlere*.
+
+Adressen fryses inn i stegets `Personer` ved innsending
+(`leggTilInnsenderSomBehandler` i `lib/feltperson.js`), etter
+feltreferansene og før skip-logikken. Tilgang, beslutning, varsling og «alle
+må avgjøre» leser `Personer` og trenger ikke kjenne flagget.
+
+**Bare innloggede innsendere.** En ekstern (engangskode eller
+utsendingslenke) har ingen innlogging, og legges ikke til. Hendelsesloggen får
+`behandling.innsender-ikke-behandler` med grunnen. Diagnosen («Sjekk
+oppsettet») advarer når skjematypen også tar imot eksterne, og melder feil
+hvis innsenderen er stegets eneste behandler.
+
+Eksempel, klage på et vedtak:
+
+| Steg | Behandler | Avhengig av | Vilkår |
+|---|---|---|---|
+| 1. Vedtak | saksbehandler | — | — |
+| 2. Klage? | `InnsenderBehandler` — valgene «Jeg klager» / «Jeg klager ikke» | 1 | — |
+| 3. Klagebehandling | klageinstans | 2 | `behandling-2` = «Jeg klager» |
+
+## Forventet behandlingstid (`Frist`)
+
+Et steg kan ha en frist. Uten den skjer ingenting.
+
+```json
+"Frist": { "Dager": 21, "VedUtlop": "purre" }
+"Frist": { "Dager": 21, "VedUtlop": "avgjor", "Valg": 2 }
+```
+
+| Felt | Betydning |
+|---|---|
+| `Dager` | Kalenderdager fra steget ble **aktivt**. Et helt tall over 0; ellers ingen frist |
+| `VedUtlop` | `purre` (standard) eller `avgjor` |
+| `Valg` | Ved `avgjor`: nummeret på beslutningsvalget steget avgjøres med. Kan ikke være en ompuss |
+
+**Purre:** behandlerne får en påminnelse på e-post (og Teams, om steget har
+det) når fristen er ute, og deretter én gang i uken til steget er avgjort.
+Ingen ny Planner-oppgave.
+
+**Avgjøre:** steget avgjøres med `Valg`, gjennom den samme beslutningen som en
+behandler treffer — neste steg, vilkår, varsling og avslutning blir de samme.
+`BehandletAv` er `system`, kommentaren sier at fristen gikk ut, og
+hendelsesloggen får `skjema.beslutning.frist`. Også i «alle må avgjøre»-modus:
+de som ikke svarte, er grunnen til at fristen kom. Er `Valg` ugyldig eller en
+ompuss, purres det i stedet, og «Sjekk oppsettet» melder det.
+
+**Feltene på saken.** `Frist` følger steget inn i saken ved innsending, som
+resten av steget. To felt føres underveis:
+
+| Felt | Settes |
+|---|---|
+| `AktivFra` | Når steget blir aktivt — ved innsending og ved beslutningen som frigjør det. Ompuss sletter det; ny innsending setter det på nytt |
+| `SistPurret` | Ved hver purring. Ompuss sletter det |
+
+Saker sendt inn før fristen fantes, har ikke `AktivFra` og får ingen frist.
+
+Reglene står i `lib/behandling.js` (`fristFor`, `stempleAktiveSteg`,
+`fristTiltak`). Jobben er `lib/behandlingsfrist-jobb.js`, kl. 06:15 UTC daglig,
+med «Kjør nå» i Jobber-fanen. Den kjører bare der plattformen har timere (dev
+og v3-prod) — v2 og pilot har ingen cron for den.
+
 ## Behandlere i oppsummeringen (`_behandlere`)
 
 `GET /api/skjemaer/{type}/{id}` beriker svaret med ett oppslag per steg:

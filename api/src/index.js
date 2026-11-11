@@ -44,6 +44,7 @@ require('./functions/skjematype-oversikt');
 require('./functions/arkiv');
 require('./functions/team-synk');
 require('./functions/jobber');
+require('./functions/behandlingsfrist');
 
 // Etter hvert:
 // require('./functions/skjema');
