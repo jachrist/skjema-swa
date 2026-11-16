@@ -139,8 +139,15 @@ jobs:
       # (vedleggsopplasting som ekstern svarte «Ikke innlogget», fordi den gamle
       # kopien sto der). Begge ganger fordi boksen står på som standard.
       #
-      # Når v2-prod er revet og v3 har overtatt standardhemmeligheten, gjelder
-      # ikke vakten lenger. Da skal `deploy_api` sin standard snus til false.
+      # OG MOTSATT (16.11.2026): uten egen hemmelighet er målet v2-prod eller
+      # pilot, og begge har API-et PÅ SWA-en. En deploy uten haken dit
+      # fjerner Managed Functions — kokeboka 5.2 sier at det er nok — og
+      # /api/* svarer «Backend call failure». Det tok ned v2-prod 16.11.2026,
+      # midt i forberedelsene til cutover, etter en deploy med feil token.
+      #
+      # Valget av hemmelighet bestemmer altså API-valget helt, så lenge v2 og
+      # pilot lever. Når de er revet og v3 har overtatt standardhemmeligheten,
+      # gjelder ikke vakten lenger — se ryddelista i kokeboka kapittel 13.
       - name: Sjekk API-valget mot målet
         env:
           TOKEN_VALG: ${{ inputs.swa_token_secret }}
@@ -149,6 +156,11 @@ jobs:
           if [ -n "$TOKEN_VALG" ] && [ "$DEPLOY_API" != "false" ]; then
             echo "::error::Egen SWA-hemmelighet ($TOKEN_VALG) er valgt, og «Rull ut API-et som SWA Managed Functions» er huket av."
             echo "::error::En SWA med egen hemmelighet er v3, og v3 har API-et i en lenket Function App. Kjør på nytt uten haken."
+            exit 1
+          fi
+          if [ -z "$TOKEN_VALG" ] && [ "$DEPLOY_API" = "false" ]; then
+            echo "::error::Ingen egen SWA-hemmelighet er valgt, så målet er v2-prod eller pilot — og «Rull ut API-et som SWA Managed Functions» er IKKE huket av."
+            echo "::error::v2 og pilot har API-et på SWA-en. En deploy uten det fjerner API-et. Skulle dette til v3: oppgi swa_token_secret. Skulle det til v2: huk av."
             exit 1
           fi
       # Målet skrives i klartekst i kjøringens sammendrag — det er her man ser
@@ -376,16 +388,23 @@ jobs:
           # uten innlogging og svarer ikke fra en mellomlagring.
           echo "Forventer commit $KORT i BUILD.commit på $MAAL/js/config.js"
           # SWA bruker et par minutter på å bytte innhold. Prøv i opptil 3 min.
+          #
+          # -L: følg videresendinger. 16.11.2026 var `www` satt som
+          # standarddomene på v2-prod, og gentle-dune svarte 301 til `www`.
+          # Uten -L fikk steget en tom kropp tolv ganger og meldte «(intet
+          # svar)» — på en deploy som hadde landet. Status og endelig adresse
+          # skrives ut, så «videresendt» og «ingenting svarer» ikke ser like ut.
           for FORSOK in 1 2 3 4 5 6 7 8 9 10 11 12; do
-            SVAR=$(curl -sS --max-time 20 "$MAAL/js/config.js" || echo '')
+            SVAR=$(curl -sSL --max-time 20 -w '\n__STATUS__ %{http_code} %{url_effective}' "$MAAL/js/config.js" || echo '')
+            STATUS=$(printf '%s' "$SVAR" | sed -n 's/^__STATUS__ //p' | tail -1)
             UTE=$(printf '%s' "$SVAR" | python3 -c "import sys; t=sys.stdin.read(); i=t.find('BUILD'); j=t.find('\"commit\"', i); print(t[j:].split('\"')[3] if j>-1 else '')" 2>/dev/null || echo '')
-            echo "  forsøk $FORSOK: /js/config.js melder '${UTE:-(intet svar)}'"
+            echo "  forsøk $FORSOK: /js/config.js melder '${UTE:-(intet svar)}' (HTTP ${STATUS:-ingen})"
             if [ "$UTE" = "$KORT" ] || [ "$UTE" = "$FORVENTET" ]; then
               echo "### Deploy verifisert: $HVA kjører \`$KORT\`" >> $GITHUB_STEP_SUMMARY
               exit 0
             fi
             sleep 15
           done
-          echo "::error::Deployen ble rapportert vellykket, men BUILD.commit i /js/config.js på $MAAL melder fortsatt '${UTE:-(intet svar)}' og ikke '$KORT'. FRONTEND i $HVA kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026. (API-et har sin egen SHA i /api/ping og sin egen deploy-jobb — den sier ingenting om denne.)"
+          echo "::error::Deployen ble rapportert vellykket, men BUILD.commit i /js/config.js på $MAAL melder fortsatt '${UTE:-(intet svar)}' (siste HTTP-svar: ${STATUS:-ingen}) og ikke '$KORT'. FRONTEND i $HVA kjører IKKE denne commiten. Dette er den samme stille feilen som 12.10.2026. (API-et har sin egen SHA i /api/ping og sin egen deploy-jobb — den sier ingenting om denne.)"
           echo "### Deploy IKKE verifisert — frontend i $HVA melder \`${UTE:-ukjent}\`, forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
           exit 1
