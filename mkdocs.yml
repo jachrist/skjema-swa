@@ -83,6 +83,7 @@ nav:
       - FORVALTNING.md
       - DEPLOY.md
       - INSTALLASJONSVEILEDNING.md
+      - SJEKKLISTE-CUTOVER-OG-RIVING.md
       - KOKEBOK-PROD-V3.md
       - LOGGING.md
       - BACKUP-SHAREPOINT.md
