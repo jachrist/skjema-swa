@@ -470,7 +470,16 @@ for (const fil of deployer) {
     sjekk('v3 med API: stopp', kjør('AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3', 'true'), 'stopp');
     sjekk('v3 uten API: videre', kjør('AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3', 'false'), 'videre');
     sjekk('v2/pilot med API: videre', kjør('', 'true'), 'videre');
-    sjekk('v2/pilot uten API: videre', kjør('', 'false'), 'videre');
+    // 16.11.2026: en deploy uten haken med standardtokenet fjernet API-et
+    // fra v2-prod. Begge retningene stopper nå.
+    sjekk('v2/pilot uten API: stopp', kjør('', 'false'), 'stopp');
+
+    // Verifiseringen følger videresendinger. Med `www` som standarddomene på
+    // v2-prod svarte gentle-dune 301, og uten -L meldte steget «(intet svar)»
+    // på en deploy som hadde landet.
+    const verif = w.slice(w.indexOf('- name: Verifiser at deployen faktisk landet'));
+    sjekk('verifiseringen følger videresendinger', /curl -sSL\b/.test(verif), true);
+    sjekk('og skriver ut HTTP-status', /%\{http_code\}/.test(verif), true);
 }
 
 // ---------- 8. frontend-deployene kan velge SWA-ressurs ----------
