@@ -305,7 +305,7 @@ Dette er gevinsten. Alt her var umulig så lenge v2 brukte en delt nøkkel.
 | ☐ | G2. Slett `storage-connection-string` i `fhs-kv-01` | Ingen bruker den | `az keyvault secret show --vault-name $KV --name storage-connection-string` gir `SecretNotFound` |
 | ☐ | G3. Fjern klienthemmeligheten på backup-appen | v3 bruker sertifikat. Hemmeligheten vinner over sertifikatet hvis begge er satt (kokeboka 0.5) | `az ad app credential list --id <backup-appens appId> --query "[].{navn:displayName, utloper:endDateTime}" -o table` er tom. Slett `graph-client-secret` i vaulten |
 | ☐ | G4. Slå av delt nøkkel på datakontoen | Da finnes ingen nøkkel å lekke. **Først** etter testen under | `az storage account show --name $DATA --query allowSharedKeyAccess` gir `false` |
-| ☐ | G5. Flytene krever Entra, og `sig=`-adressene slutter å virke | v2 kalte med `sig=`. v3 bruker token | Hver HTTP-trigger: «Spesifikke brukere i leieren». Et kall med den gamle `sig=`-URL-en og uten token gir 401 |
+| ☐ | G5. Slå av v2 sine flyter, og slett `sig=`-adressene | Avklart 16.11.2026: v2 bruker **egne** flyter med `sig=` (andre workflow-ID-er enn v3), v3 bruker nye med Entra og uten `sig=` | v2 sine flyter er slått av i Power Automate. `*_FLOW_URL`-hemmelighetene med `sig=` er slettet fra `fhs-kv-01`. Før sletting: `az functionapp config appsettings list --name $FA --resource-group $RG --query "[?ends_with(name, '_FLOW_URL')].value" -o tsv` — en hemmelighet v3 refererer til, slettes ikke. Raden «PA-flytenes signatur-URLer (sig=)» tas ut av standardinventaret i H4 og slettes under `prod` |
 | ☐ | G6. Fjern SWA-identitetens storage-roller i dev | Levninger (kokeboka 7.3) | E2-kommandoen mot dev gir ingen storage-roller |
 
 G1 — roter én nøkkel om gangen, og test mellom:
