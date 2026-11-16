@@ -676,8 +676,20 @@ Verdiene flytene trenger:
 az keyvault secret show --vault-name $KV --name flow-callback-key --query value -o tsv | Set-Clipboard
 ```
 
-4. Kopier hver flyts trigger-URL inn i vaulten (steg 9 på nytt spør om dem
-   som fortsatt mangler), og kjør steg 10 på nytt.
+4. Sett hver flyts trigger-URL rett i Function App-ens app settings. Med
+   Entra på triggeren har adressen ingen `sig=`, og er ingen hemmelighet
+   (kokeboka 4.3 og 7). Står det `sig=` i en URL, er triggeren ikke satt til
+   Entra — rett den først. Tom verdi hopper over:
+
+```powershell
+$flyter = @('VARSLING_FLOW_URL', 'OTP_FLOW_URL', 'SP_LISTE_FLOW_URL', 'BACKUP_FLOW_URL', 'TEAM_FLOW_URL', 'TEAM_LAST_MEDLEMMER_FLOW_URL', 'TEAM_SOK_EKSTERNT_FLOW_URL', 'DIAGNOSE_FLOW_URL')
+foreach ($navn in $flyter) {
+    $url = Read-Host "$navn (tom = hopp over)"
+    if (-not $url) { continue }
+    if ($url -match '[?&]sig=') { Write-Warning "$navn har sig= — triggeren krever ikke Entra. Hoppet over."; continue }
+    az functionapp config appsettings set --name $FA --resource-group $RG --settings "$navn=$url" --output none
+}
+```
 5. Servicebrukeren som eier connectorene, meldes inn i teamet.
 
 > `Set-Clipboard` finnes ikke i alle Cloud Shell-økter. Mangler den, hent

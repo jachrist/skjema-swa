@@ -362,25 +362,30 @@ for (const miljo of MILJOER) {
     // Flytene i dev krever et Entra-token (FLYT_AUTH=entra), så adressen har
     // ingen `sig=` og er ikke legitimasjon. Da hører den ikke i Key Vault.
     //
-    // PILOT OG PROD er motsatt: deres URL-er bærer fortsatt signaturen, og en
+    // PROD (v3) er som dev fra 16.11.2026: systemsiden viste ingen
+    // sig=-advarsel, og URL-ene sto rett i app settings. Inventaret sa
+    // fortsatt Key Vault — og en oversikt som ser komplett ut og ikke er det,
+    // er verre enn ingen.
+    //
+    // PILOT er motsatt: dens URL-er bærer fortsatt signaturen, og en
     // klartekst-oppføring der ville vært en hemmelighet på avveie. De to
     // retningene sjekkes hver for seg, fordi en kopiert oppføring mellom
     // miljøene er feil begge veier.
     {
         const flytVarer = (d) => Object.keys(d).filter(n => n.endsWith('_FLOW_URL'));
-        sjekk('dev: ingen flyt-URL er en keyvault-referanse',
-            flytVarer(dev).filter(n => 'keyvault' in (dev[n] || {})).sort(), []);
-        // Og de står uten verdi: inventaret skal ikke bære en GUID-adresse
-        // som driver fra virkeligheten når flyten lages på nytt.
-        sjekk('dev: ingen flyt-URL står med verdi',
-            flytVarer(dev).filter(n => 'value' in (dev[n] || {})).sort(), []);
-        sjekk('dev: det finnes flyt-URLer i det hele tatt', flytVarer(dev).length > 0, true);
-
-        for (const miljo of ['pilot', 'prod']) {
+        for (const miljo of ['dev', 'prod']) {
             const d = JSON.parse(fs.readFileSync(path.join(rot, 'config', `env.${miljo}.json`), 'utf8'));
-            sjekk(`${miljo}: hver flyt-URL er fortsatt en keyvault-referanse`,
-                flytVarer(d).filter(n => !('keyvault' in (d[n] || {}))).sort(), []);
+            sjekk(`${miljo}: ingen flyt-URL er en keyvault-referanse`,
+                flytVarer(d).filter(n => 'keyvault' in (d[n] || {})).sort(), []);
+            // Og de står uten verdi: inventaret skal ikke bære en GUID-adresse
+            // som driver fra virkeligheten når flyten lages på nytt.
+            sjekk(`${miljo}: ingen flyt-URL står med verdi`,
+                flytVarer(d).filter(n => 'value' in (d[n] || {})).sort(), []);
+            sjekk(`${miljo}: det finnes flyt-URLer i det hele tatt`, flytVarer(d).length > 0, true);
         }
+        const pilot = JSON.parse(fs.readFileSync(path.join(rot, 'config', 'env.pilot.json'), 'utf8'));
+        sjekk('pilot: hver flyt-URL er fortsatt en keyvault-referanse',
+            flytVarer(pilot).filter(n => !('keyvault' in (pilot[n] || {}))).sort(), []);
     }
 
     // Og motsatt: unntaket skal være ETT, ikke to. TODO_STORAGE_CONNECTION_STRING
