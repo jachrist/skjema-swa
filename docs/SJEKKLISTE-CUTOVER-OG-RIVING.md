@@ -81,6 +81,13 @@ Mye av dette ble gjort i uka før. Testene sier hva som faktisk står.
 | ☐ | A10. Flytene som forgrener på `miljø` tåler `"prod"` | Gå gjennom flytene | Ingen tester `== "production"` alene (kokeboka 10, «Miljønavnet skifter») |
 | ☐ | A11. TTL på `www` er 5 minutter | `nslookup -debug www.fskjema.no 8.8.8.8` | `ttl = 300` eller lavere |
 | ☐ | A12. Beslutningene i B er tatt | — | — |
+| ☐ | A13. Sperren for deploy-valget er ute (PR #212) | `gh run list --repo $GHREPO --workflow deploy-prod.yml --limit 1` etter merge | Siste kjøring har steget «Sjekk API-valget mot målet» |
+
+> **Deploy i denne perioden.** 16.11.2026 gikk en deploy med standardtokenet
+> og uten haken for Managed Functions til v2-prod. Den fjernet API-et, og
+> `/api/*` svarte «Backend call failure» til v2 ble rullet ut på nytt med
+> haken. Etter #212 stopper workflowen den kombinasjonen. Regelen til da:
+> **uten `swa_token_secret` → huk av; med → ikke huk av.**
 
 A2, A4, A5 og A6:
 
@@ -208,6 +215,7 @@ Først når D er grønn og B er avgjort.
 | ☐ | E5. Slett `production`-radene i nøkkelkalenderen | **Administrasjon → 🗓 Nøkkelkalender** på v3-prod — admin-lista viser alle partisjoner |
 | ☐ | E6. Application Insights for v2, hvis den er egen | Portalen. Ikke den v3-prod bruker |
 | ☐ | E7. `stskjema3prod`, hvis B3 sa slett | `az storage account delete --name $V3BLANK --resource-group $RG --yes` |
+| ☐ | E8. De stoppede Function App-ene `fhsskjema` og `fhsSkjemaV2` i `azuufscarg0006` | Rester etter v1, stoppet. Ikke lenket til noen SWA — bekreft først med `az staticwebapp backends show --name Skjema --resource-group fhs-prod-rg-01 -o table` (tom). Avklar med den som stoppet dem, og slett ressurs for ressurs |
 
 E2 — listen først, så sletting. Les lista før du sletter:
 
