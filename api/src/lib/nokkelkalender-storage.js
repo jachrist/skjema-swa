@@ -363,127 +363,182 @@ function skalVarsles(rad, na = new Date()) {
 // uten å overskrive datoer noen har fylt inn. Datoene må fylles inn manuelt —
 // bortsett fra SAS-radene, som leser sin egen `se=`.
 
+/**
+ * Standardinventaret — hemmelighetene v3 faktisk har.
+ *
+ * Skrevet om 16.11.2026. Lista var skrevet for v2: den hadde
+ * STORAGE_CONNECTION_STRING og GRAPH_CLIENT_SECRET, som v3 ikke bruker, og
+ * manglet backup-sertifikatet, deploy-legitimasjonen for API-et,
+ * BACKUP_PASSPHRASE og ANTHROPIC_API_KEY. Og OTP_HMAC_KEY sto som «trygg å
+ * rotere når som helst» — den signerer også utsendingslenker og sak-lenker.
+ *
+ * NAVNET ER NØKKELEN (slug). En rad som beholdes, må beholde navnet, ellers
+ * gir «Legg inn standardinventaret» en ny rad ved siden av den gamle.
+ *
+ * Teksten her er kodens. `seedStandard` skriver den over på eksisterende rader
+ * (type, hvor, konsekvens, rotasjon, roteres, env-var), men rører aldri det
+ * admin har fylt inn: utløp, ansvarlig, notat, varslingsfrist og historikk.
+ */
 const STANDARD = [
     {
         Navn: 'Entra-klientautentisering (sertifikat/secret)',
         Type: 'sertifikat',
-        Hvor: 'Prod: sertifikatet «authapi» i Key Vault fhs-kv-01. Pilot: AAD_CLIENT_SECRET i SWA Configuration.',
+        Hvor: 'Prod: sertifikatet «authapi» i Key Vault fhs-kv-01, hentet av SWA-ressursens egen identitet. Dev: AAD_CLIENT_SECRET i SWA-ressursens app settings.',
         Konsekvens: 'All pålogging stopper umiddelbart, for alle brukere. Ingen kommer inn i løsningen.',
-        Rotasjon: 'Forny sertifikatet i Key Vault (prod) eller lag ny client secret under App registrations → Certificates & secrets (pilot). Referansen i staticwebapp.config.*.json peker på sertifikatet, så prod trenger ingen kodeendring. Pilot må ha den nye verdien inn i SWA Configuration.',
+        Rotasjon: 'Prod: forny sertifikatet i Key Vault, og legg den offentlige delen på påloggingsappen med «az ad app credential reset --keyvault … --cert … --append». Referansen i staticwebapp.config.prod.json har ingen versjon, så ingen kodeendring. Datoen: «az keyvault certificate show --vault-name fhs-kv-01 --name authapi --query attributes.expires». Dev: ny client secret på app-registreringen, inn i SWA-ens app settings.',
         VarsleDagerFor: 60
+    },
+    {
+        Navn: 'Backup-sertifikatet (GRAPH_CLIENT_CERT_PEM)',
+        Type: 'sertifikat',
+        Hvor: 'Key Vault — sertifikatet backup-appen bruker mot SharePoint (Sites.Selected). Function App-en leser det via en @Microsoft.KeyVault-referanse uten versjon.',
+        Konsekvens: 'Backup slutter å bli lastet opp til SharePoint. Selve backupen bygges fortsatt, men kopien ut av tenanten uteblir — og det merkes først når noen trenger den.',
+        Rotasjon: 'Forny sertifikatet i Key Vault med samme PEM-policy, og legg den offentlige delen på BACKUP-appen (ikke deploy-objektet) med --append. Referansen tar nyeste versjon. Fjern det gamle sertifikatet på appen når en backup har gått. Kokeboka 0.4. Datoen: «az keyvault certificate show --query attributes.expires».',
+        VarsleDagerFor: 45
     },
     {
         Navn: 'TODO_STORAGE_CONNECTION_STRING (SAS)',
         Type: 'SAS',
         EnvVar: 'TODO_STORAGE_CONNECTION_STRING',
-        Hvor: 'Key Vault — SAS utstedt på dev-tenantens lagringskonto.',
-        Konsekvens: 'Oppgavelista og nøkkelkalenderen blir utilgjengelige i alle miljøer. Vedlegg kan ikke lastes opp eller vises.',
+        Hvor: 'Key Vault («todo-storage-connection-string») — SAS utstedt på den delte lista-kontoen.',
+        Konsekvens: 'Oppgavelista og nøkkelkalenderen blir utilgjengelige i alle miljøer.',
         Rotasjon: 'Utsted nytt account-SAS på riktig konto med Allowed services = Blob + Table, resource types = Service + Container + Object, rettigheter Read/Write/Delete/List/Add/Create/Update. Lagre som ny versjon av hemmeligheten i Key Vault. Utløpsdatoen leses automatisk herfra.',
-        VarsleDagerFor: 45
-    },
-    {
-        Navn: 'STORAGE_CONNECTION_STRING',
-        Type: 'kontonøkkel',
-        EnvVar: 'STORAGE_CONNECTION_STRING',
-        Hvor: 'Key Vault — miljøets egen lagringskonto.',
-        Konsekvens: 'Hele løsningen slutter å virke: skjemaer, svar, vedlegg og masterdata ligger her.',
-        Rotasjon: 'Roter rullerende via key1/key2 på lagringskontoen: bytt til den ubrukte nøkkelen i Key Vault, verifiser at appen svarer, og regenerer så den gamle. Er verdien et SAS, leses utløpet automatisk.',
         VarsleDagerFor: 45
     },
     {
         Navn: 'FS_API_PASSWORD',
         Type: 'passord',
-        Hvor: 'Key Vault. Brukes av api/src/lib/fs-client.js (Basic auth mot Felles Studentsystem).',
+        Hvor: 'Key Vault («fs-api-password»), lest via referanse. Brukes av api/src/lib/fs-client.js (Basic auth mot Felles Studentsystem).',
         Konsekvens: 'FS-oppdateringen stopper stille — emner og terminer blir liggende uendret, uten at noen får feilmelding i grensesnittet.',
-        Rotasjon: 'Bestill nytt passord for FS-integrasjonsbrukeren hos FS-forvaltningen, og legg det inn som ny versjon i Key Vault.',
+        Rotasjon: 'Bestill nytt passord for FS-integrasjonsbrukeren hos FS-forvaltningen, og legg det inn som ny versjon i Key Vault. Har FS en passordpolicy, er det den som gir datoen; ellers en planlagt dato.',
         VarsleDagerFor: 30
-    },
-    {
-        Navn: 'GRAPH_CLIENT_SECRET',
-        Type: 'passord',
-        Hvor: 'Key Vault, som «graph-client-secret». Brukes av app-registreringen som skriver backup til SharePoint (Sites.Selected).',
-        // Backup er den slags jobb som feiler stille: den kjører om natta, og
-        // ingen sitter og venter på den. Derfor lengst varslingsfrist av alle.
-        Konsekvens: 'Backup slutter å bli lastet opp til SharePoint. Selve backupen bygges fortsatt, men kopien ut av tenanten uteblir — og det merkes først når noen trenger den.',
-        Rotasjon: 'Kjør scripts/opprett-backup-app.ps1 med -NyHemmelighet (og -KeyVault <navn> for å skrive den rett inn). Gammel hemmelighet står til den utløper, så rotering kan gjøres uten nedetid.',
-        VarsleDagerFor: 45
     },
     {
         Navn: 'SWA deployment token',
         Type: 'token',
-        Hvor: 'GitHub → repo → Settings → Secrets (én per miljø).',
-        Konsekvens: 'Deploy feiler. Løsningen kjører videre, men ingen endringer kommer ut.',
-        Rotasjon: 'Hent nytt token under SWA-ressursen → Manage deployment token, og oppdater GitHub-hemmeligheten.',
+        Hvor: 'GitHub → repo → Settings → Secrets, ett per SWA-ressurs.',
+        Konsekvens: 'Deploy av frontend feiler. Løsningen kjører videre, men ingen endringer kommer ut.',
+        Rotasjon: 'Ingen utløpsdato. Hent nytt token under SWA-ressursen → Manage deployment token, og oppdater GitHub-hemmeligheten. Roter når noen med tilgang til det slutter.',
+        VarsleDagerFor: 30
+    },
+    {
+        Navn: 'Deploy-legitimasjon for API-et',
+        Type: 'token',
+        Hvor: 'GitHub-miljøet (dev/prod): AZURE_FUNCAPP_PUBLISH_PROFILE (publiseringsprofil) eller AZURE_FUNCAPP_CREDENTIALS (tjenestehovedobjekt).',
+        Konsekvens: 'Deploy av API-et til Function App-en feiler. Løsningen kjører videre, men ingen endringer kommer ut.',
+        Rotasjon: 'Publiseringsprofil: ingen utløpsdato — tilbakestill den i portalen (Function App → Reset publish profile) og legg den nye inn i GitHub. Tjenestehovedobjekt: klienthemmeligheten utløper (standard ett år); datoen står i «az ad app credential list --id <appId>». Lag ny med --append, legg inn i GitHub, slett den gamle. Kokeboka 8.',
         VarsleDagerFor: 30
     },
     {
         Navn: 'SCHEDULER_KEY',
         Type: 'secret',
-        Hvor: 'SWA Configuration + GitHub Secrets. Må være lik begge steder.',
-        Konsekvens: 'Cron-jobbene (FS-oppdatering, utsending, purring, nøkkelvarsling) avvises med 401 og stopper stille.',
-        Rotasjon: 'Ingen utløpsdato. Sett ny verdi i SWA Configuration og GitHub Secrets i samme operasjon — jobbene feiler i mellomtiden.',
+        Hvor: 'Key Vault («scheduler-key»), lest via referanse. Jobbenes HTTP-ruter godtar den ved siden av admin-innlogging.',
+        Konsekvens: 'I v3 kjører jobbene på timer i Function App-en og bruker ikke nøkkelen. Bare kall utenfra med nøkkelen stopper.',
+        Rotasjon: 'Ingen utløpsdato — sett en planlagt dato. Ny verdi som ny versjon i Key Vault, og omstart av Function App-en så referansen leses på nytt. Så lenge pilot kjører jobbene fra GitHub Actions, må GitHub-hemmeligheten byttes samtidig.',
         VarsleDagerFor: 30
     },
     {
         Navn: 'FLOW_CALLBACK_KEY',
         Type: 'secret',
-        Hvor: 'SWA Configuration. Sendes som x-flow-key fra Power Automate-flytene inn mot appen.',
-        Konsekvens: 'Alle innkommende PA-flyter avvises: teamsynk, utsendingsbestillinger og SharePoint-oppdateringer stopper.',
-        Rotasjon: 'Ingen utløpsdato. Krever koordinering: alle flyter som kaller inn må oppdateres samtidig med SWA Configuration.',
+        Hvor: 'Key Vault («flow-callback-key»). Sendes som x-flow-key fra flytene som kaller inn, og fra stegflytene skjemaeiere har bygd.',
+        Konsekvens: 'Alle innkommende flytkall avvises: backup-kvitteringer, teamcache, hendelser, utsendingsbestillinger og stegflyter som fullfører et steg.',
+        Rotasjon: 'Ingen utløpsdato — sett en planlagt dato. Krever koordinering: alle flyter som kaller inn, også skjemaeiernes stegflyter, må få ny verdi samtidig som Key Vault. Må være lik i alle apper som deler lagring. Se SIKKERHET-OG-ARKITEKTUR.md 9.3.',
         VarsleDagerFor: 30
     },
     {
         Navn: 'OTP_HMAC_KEY',
         Type: 'secret',
-        Hvor: 'Key Vault.',
-        Konsekvens: 'Engangskoder som er sendt ut, men ikke brukt ennå, slutter å validere. Kortvarig, og brukeren kan be om ny kode.',
-        Rotasjon: 'Ingen utløpsdato. Trygg å rotere når som helst — velg et tidspunkt med lite trafikk.',
+        Hvor: 'Key Vault («otp-hmac-key»). Må være lik i alle apper som deler lagring.',
+        Konsekvens: 'Signerer engangskoder, utsendingslenker (gyldige i 90 dager) og sak-lenker til eksterne innsendere (180 dager). Roteres den, slutter ALLE lenker i omløp å virke: mottakere av en utsending kan ikke svare, og eksterne kommer ikke inn på saken sin fra e-posten.',
+        Rotasjon: 'Ingen utløpsdato — sett en planlagt dato, og roter når ingen utsendinger er åpne. Neste e-post om en sak gir en ny sak-lenke. Ny verdi som ny versjon i Key Vault, og omstart av Function App-en.',
         VarsleDagerFor: 30
     },
     {
         Navn: 'PA-flytenes signatur-URLer (sig=)',
         Type: 'flyt-URL',
-        Hvor: 'Key Vault — åtte *_FLOW_URL-varer i PILOT og PROD. Signaturen ligger i query-strengen. Gjelder IKKE dev: der krever flytene et Entra-token (FLYT_AUTH=entra), adressen har ingen sig=, og den settes som klartekst i app settings.',
-        Konsekvens: 'Feil eller manglende URL gjør at varsling, utsending, purring, OTP, backup og teamsøk stopper.',
-        Rotasjon: 'Ingen utløpsdato — en URL gjelder til noen regenererer nøkkelen i flytens trigger-innstillinger. Regenerering krever at den nye URL-en legges inn i Key Vault samtidig. En Entra-beskyttet flyt har ingenting å rotere: tilgang trekkes tilbake ved å fjerne en oid fra triggeren.',
+        Hvor: 'I v3 ingen: flytene krever Entra (FLYT_AUTH=entra), adressene har ingen sig=, og tilgangen er identitetens oid i triggerens liste over tillatte brukere. Raden gjelder bare flyter som fortsatt kalles med sig=.',
+        Konsekvens: 'En flyt-URL med sig= er hele adgangen til flyten. Lekker den, kan hvem som helst utløse flyten.',
+        Rotasjon: 'Ingen utløpsdato. En sig=-URL gjelder til nøkkelen regenereres i triggeren. Bedre: la triggeren kreve Entra — da finnes ingenting å rotere, og tilgang trekkes ved å fjerne en oid.',
         VarsleDagerFor: 30
     },
     {
         Navn: 'HASH_SALT',
         Type: 'secret',
         Roteres: 'nei',
-        Hvor: 'Key Vault.',
+        Hvor: 'Key Vault («hash-salt»). Må være lik i alle apper som deler lagring.',
         Konsekvens: 'SKAL IKKE ROTERES. Saltet gir deterministisk pseudonymisering av innsendere (api/src/lib/kryptering.js). Et bytte gir nye pseudonymer for alle framtidige innsendinger, mens de historiske beholder de gamle — koblingen kan ikke gjenskapes, fordi e-postadressen den ble beregnet fra er slettet.',
         Rotasjon: 'Ikke aktuelt. Skal saltet likevel byttes, må det gjøres som en bevisst migrering der konsekvensen for eksisterende anonymiserte svar er avklart først.',
+        VarsleDagerFor: 30
+    },
+    {
+        Navn: 'BACKUP_PASSPHRASE',
+        Type: 'secret',
+        Roteres: 'nei',
+        Hvor: 'Key Vault («backup-passphrase»).',
+        Konsekvens: 'Backupene krypteres med den. En backup kan bare leses med passordet den ble laget med.',
+        Rotasjon: 'Normalt ikke. Roteres den, skal den gamle verdien tas vare på — som eldre versjon i Key Vault — så lenge backuper laget med den finnes.',
+        VarsleDagerFor: 30
+    },
+    {
+        Navn: 'ANTHROPIC_API_KEY',
+        Type: 'secret',
+        Hvor: 'Key Vault («anthropic-api-key»), lest via referanse.',
+        Konsekvens: 'Skjematolken («Importer med AI») svarer med feil. Resten av løsningen merker ingenting.',
+        Rotasjon: 'Ingen utløpsdato hos Anthropic — sett en planlagt dato. Lag ny nøkkel i Anthropic Console, legg den inn som ny versjon i Key Vault, omstart Function App-en, og slett den gamle i konsollen.',
         VarsleDagerFor: 30
     }
 ];
 
+/**
+ * Legg inn standardinventaret for miljøet — og hold teksten på radene
+ * som finnes fra før i takt med koden.
+ *
+ * Nye rader legges inn. Eksisterende standardrader får kodens tekst på
+ * nytt (type, hvor, konsekvens, rotasjon, roteres, env-var), men det admin
+ * har fylt inn står: utløp, ansvarlig, notat, varslingsfrist og historikken.
+ * Uten det ble rader lagt inn før en rettelse stående med den gamle teksten
+ * — 16.11.2026 var det «OTP_HMAC_KEY er trygg å rotere når som helst».
+ *
+ * Rader i miljøet som IKKE står i lista, røres ikke, men meldes tilbake
+ * (`utenforStandard`): de kan være egne rader, eller rester som skal slettes.
+ */
 async function seedStandard(av, m = miljo()) {
     const t = await tabell();
-    const finnes = new Set((await listAlle({ kunMiljo: m })).map(r => r.Id));
+    const eksisterende = new Map((await listAlle({ kunMiljo: m })).map(r => [r.Id, r]));
     const na = new Date().toISOString();
-    let lagtTil = 0, hoppetOver = 0;
+    let lagtTil = 0, oppdatert = 0, hoppetOver = 0;
 
     for (const mal of STANDARD) {
         const id = slug(mal.Navn);
-        if (finnes.has(id)) { hoppetOver++; continue; }
-        const entitet = {
-            partitionKey: m, rowKey: id,
+        const tekst = {
             Navn: mal.Navn, Type: mal.Type, Hvor: mal.Hvor || '',
-            EnvVar: mal.EnvVar || '', Utloper: '',
-            VarsleDagerFor: mal.VarsleDagerFor || VARSLE_DAGER_STANDARD,
+            EnvVar: mal.EnvVar || '',
             Roteres: mal.Roteres === 'nei' ? 'nei' : 'ja',
-            Ansvarlig: '', Konsekvens: mal.Konsekvens || '',
-            Rotasjon: mal.Rotasjon || '', Notat: '',
+            Konsekvens: mal.Konsekvens || '', Rotasjon: mal.Rotasjon || ''
+        };
+        const finnes = eksisterende.get(id);
+        if (finnes) {
+            const uendret = Object.keys(tekst).every(f => String(finnes[f] ?? '') === String(tekst[f]));
+            if (uendret) { hoppetOver++; continue; }
+            // Merge: bare tekstfeltene skrives — resten av raden står.
+            await t.upsertEntity({ partitionKey: m, rowKey: id, ...tekst }, 'Merge');
+            oppdatert++;
+            continue;
+        }
+        await t.upsertEntity({
+            partitionKey: m, rowKey: id, ...tekst,
+            Utloper: '',
+            VarsleDagerFor: mal.VarsleDagerFor || VARSLE_DAGER_STANDARD,
+            Ansvarlig: '', Notat: '',
             SistVarslet: '', SistVarsletTrinn: '', SistFornyet: '',
             Opprettet: na, OpprettetAv: String(av || ''),
             SistEndret: na, EndretAv: String(av || '')
-        };
-        await t.upsertEntity(entitet, 'Replace');
+        }, 'Replace');
         lagtTil++;
     }
-    return { lagtTil, hoppetOver, totalt: STANDARD.length, miljo: m };
+    const iStandard = new Set(STANDARD.map(mal => slug(mal.Navn)));
+    const utenforStandard = [...eksisterende.values()].filter(r => !iStandard.has(r.Id)).map(r => r.Navn);
+    return { lagtTil, oppdatert, hoppetOver, utenforStandard, totalt: STANDARD.length, miljo: m };
 }
 
 module.exports = {
