@@ -176,7 +176,9 @@ app.http('nokkelkalenderSeed', {
             hendelser.logg({
                 Type: 'nokkelkalender.seed', Aktor: a.upn,
                 ObjektType: 'nokkelkalender', ObjektId: res.miljo,
-                Melding: `Standardinventar: ${res.lagtTil} lagt til, ${res.hoppetOver} fantes fra før`
+                Melding: `Standardinventar: ${res.lagtTil} lagt til, ${res.oppdatert} med oppdatert tekst, `
+                    + `${res.hoppetOver} uendret`
+                    + (res.utenforStandard.length ? `. Utenfor standarden: ${res.utenforStandard.join(', ')}` : '')
             });
             return { jsonBody: { status: 'ok', ...res } };
         } catch (e) {

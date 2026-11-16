@@ -77,7 +77,7 @@ Mye av dette ble gjort i uka før. Testene sier hva som faktisk står.
 | ☐ | A6. Timerne er på | Se under | Tomt — ingen `AzureWebJobs.…Disabled` |
 | ☐ | A7. Cron mot v2-prod er stoppet | `gh variable list --repo $GHREPO` | `SWA_URL_PROD` står **ikke** i lista |
 | ☐ | A8. `HASH_SALT`, `OTP_HMAC_KEY`, `FLOW_CALLBACK_KEY` er like | **Administrasjon → ⚙️ System** i begge appene | Likt avtrykk på alle tre (kokeboka 7b) |
-| ☐ | A9. Nøkkelkalenderen har `prod`-rader | **Administrasjon → 🗓 Nøkkelkalender** på v3-prod | Raderne for v3 sine nøkler, med utløpsdato |
+| ☐ | A9. Nøkkelkalenderen har `prod`-rader | **Administrasjon → 🗓 Nøkkelkalender** på v3-prod → «Legg inn standardinventaret» (også på nytt etter en kodeendring — teksten oppdateres, datoene står) | 13 rader under `prod`, med utløpsdato eller planlagt rotasjonsdato der de ikke leses automatisk. Rader meldingen kaller «ikke i standarden» (`STORAGE_CONNECTION_STRING`, `GRAPH_CLIENT_SECRET`) slettes under `prod` |
 | ☐ | A10. Flytene som forgrener på `miljø` tåler `"prod"` | Gå gjennom flytene | Ingen tester `== "production"` alene (kokeboka 10, «Miljønavnet skifter») |
 | ☐ | A11. TTL på `www` er 5 minutter | `nslookup -debug www.fskjema.no 8.8.8.8` | `ttl = 300` eller lavere |
 | ☐ | A12. Beslutningene i B er tatt | — | — |

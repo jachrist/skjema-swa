@@ -4406,10 +4406,17 @@ Skriv SLETT for å bekrefte.`);
         };
 
         window.nkSeed = async () => {
-            if (!confirm(`Legge inn standardinventaret for «${nkState.miljo}»?\n\nRader som allerede finnes røres ikke, så dette kan trygt kjøres om igjen.`)) return;
+            if (!confirm(`Legge inn standardinventaret for «${nkState.miljo}»?\n\nNye rader legges til. Rader som finnes, får kodens tekst på nytt — utløpsdato, ansvarlig, notat og varslingsfrist står. Trygt å kjøre om igjen.`)) return;
             try {
                 const res = await api.post('/api/nokkelkalender/seed', {});
-                nkMelding(`${res.lagtTil} lagt til, ${res.hoppetOver} fantes fra før. Fyll inn utløpsdatoene — de kan ikke leses automatisk.`, 'suksess');
+                // Rader som ikke står i standarden: egne rader, eller rester
+                // fra v2 (STORAGE_CONNECTION_STRING, GRAPH_CLIENT_SECRET) som
+                // admin kan slette. Navnene kan være skrevet av admin — escapes.
+                const utenfor = (res.utenforStandard || []).length
+                    ? ` Ikke i standarden (slett hvis de er rester): ${res.utenforStandard.map(n => escHtml(n)).join(', ')}.`
+                    : '';
+                nkMelding(`${res.lagtTil} lagt til, ${res.oppdatert || 0} fikk oppdatert tekst, ${res.hoppetOver} uendret.${utenfor} `
+                    + `Fyll inn utløpsdatoene der de ikke leses automatisk.`, 'suksess');
                 await nkLast();
             } catch (e) {
                 nkMelding(escHtml(e.message), 'feil');
