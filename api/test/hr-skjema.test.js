@@ -109,6 +109,19 @@ sjekk('ingen verdi fra strukturdata i utdataene',
 const blandet = h.lagSkjema(Buffer.from('Dato\n2026-01-01\nukjent\n'), {}).items.properties.Dato;
 sjekk('blandet format gir ikke format', [blandet.format, blandet['x-format']], [undefined, undefined]);
 
+// Funnet i det første HR-uttrekket: en liste som alltid er tom, og felt som
+// sier noe om beskyttelse og opphav.
+const hr = h.lagSkjema(Buffer.from(JSON.stringify([
+    { stillinger: [], skjermet: false, dsfSpesStatusKode: '0', nasjonalitet: 'NOR' },
+    { stillinger: [], skjermet: false, dsfSpesStatusKode: '0', nasjonalitet: 'NOR' }
+])), {}).items.properties;
+sjekk('alltid tom liste: ingen items', [hr.stillinger.items, hr.stillinger['x-alltid-tom']], [undefined, true]);
+sjekk('liste med innhold har items', sj.properties.enheter.items.type, 'object');
+sjekk('skjerming', hr.skjermet['x-mistanke'], ['skjerming']);
+sjekk('folkeregister', hr.dsfSpesStatusKode['x-mistanke'], ['folkeregister']);
+sjekk('nasjonalitet', hr.nasjonalitet['x-mistanke'], ['nasjonalitet']);
+sjekk('konkatenert enhetsnavn er ikke personnavn', h.lagSkjema(Buffer.from('[{"konkatenertNavn":"x"},{"konkatenertNavn":"y"}]'), {}).items.properties.konkatenertNavn['x-mistanke'], undefined);
+
 // ---------- 5. tegnkoding ----------
 const latin = Buffer.from('Navn,By\nSynnøve,Tromsø\n', 'latin1');
 const sl = h.lagSkjema(latin, {});

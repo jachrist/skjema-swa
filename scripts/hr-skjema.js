@@ -184,7 +184,13 @@ const NAVNEMISTANKE = [
     ['navn', /(^|_)(for|etter|mellom|full|visnings)?navn$|^name$|first.?name|last.?name|given|surname/i],
     ['e-post', /e-?post|e-?mail|mail$/i],
     ['telefon', /telefon|mobil|phone|tlf/i],
-    ['adresse', /adresse|address|gate|postnr|postnummer|poststed/i]
+    ['adresse', /adresse|address|gate|postnr|postnummer|poststed/i],
+    // Lagt til etter første HR-uttrekk 17.11.2026: feltene som sier noe om
+    // hvem en person er eller hvordan vedkommende skal beskyttes, ikke bare
+    // hvordan hen kontaktes.
+    ['nasjonalitet', /nasjonalitet|nationality|statsborger/i],
+    ['folkeregister', /^dsf|folkereg/i],
+    ['skjerming', /skjermet|anonymisert|fortrolig/i]
 ];
 
 function tilSkjema(node, feltnavn = '') {
@@ -200,7 +206,10 @@ function tilSkjema(node, feltnavn = '') {
         const pakrevd = Object.keys(node.egenskaper).filter(k => node.nokler[k] === node.objekter);
         if (pakrevd.length) ut.required = pakrevd;
     }
-    if (node.elementer) ut.items = tilSkjema(node.elementer, feltnavn);
+    // En liste som var tom i hver eneste rad, sier ingenting om elementene.
+    // Før ble det `items: { type: 'null' }` — som påstår at elementene er null.
+    if (node.elementer && node.elementer.forekomster > 0) ut.items = tilSkjema(node.elementer, feltnavn);
+    else if (node.elementer) ut['x-alltid-tom'] = true;
 
     // Format: bare når ALLE ikke-tomme strengene har det.
     const formater = Object.entries(node.formater);
