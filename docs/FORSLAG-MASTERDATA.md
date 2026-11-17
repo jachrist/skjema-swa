@@ -185,6 +185,54 @@ håndhever dem:
   HR-API-et nede, virker skjemaene med gårsdagens data, og kildesystemet ser
   én henting i døgnet, ikke ett kall per skjema som åpnes.
 
+### 6. Fysisk lagring: én tabell, kilden som partisjon
+
+Lagt til 17.11.2026. Kontrakten og leseveien over sier ikke hvor postene
+ligger. Forslaget er én tabell, `Masterdata`, for alle kilder:
+
+| | Verdi | Eksempel |
+|---|---|---|
+| `PartitionKey` | kilden | `Ansatte`, `Enheter`, `Emner`, `Postnumre` |
+| `RowKey` | postens nøkkel fra kontrakten | ansattnummer, `objid`, emnekode, postnummer |
+| Egenskaper | bare feltene i kontrakten | lister, som `overordnedeOrgLedd`, lagres som JSON-tekst |
+| `Generasjon` | ID-en til importen som skrev raden | brukes ved erstatning, se under |
+
+Ansatte og enheter er to kilder, i hver sin partisjon, koblet med `objid`
+slik HR-filene er.
+
+**Hvorfor én tabell og ikke én per kilde:**
+
+* **Én implementasjon av det kjedelige.** Skriving, sletting, status og alder
+  skrives én gang. Med én tabell per kilde får hver kilde sin egen variant
+  igjen, og det er det forslaget skal fjerne.
+* **Erstatning per partisjon.** Jobben skriver alle radene med ny
+  `Generasjon`, og sletter så radene med gammel. Cachen står aldri tom
+  underveis. Det er FS-mønsteret, gjort felles.
+* **Små mengder.** 2300 personer og 190 enheter. `finn` leser hele
+  partisjonen og holder den i minnet i noen minutter, og filtrerer i koden.
+  Table Storage filtrerer bare effektivt på nøklene, og det trengs ikke her.
+
+**Det man må vite:**
+
+* **Lagringen er ikke tilgangsgrensen.** All kode bruker samme lagringskonto,
+  så persondata i en egen tabell gir ingen ekstra beskyttelse. Beskyttelsen er
+  `finn` og kontrakten (punkt 4). Blir fødselsnummer godkjent (spørsmål 10),
+  krypteres det på feltnivå.
+* **Grensene i Table Storage:** 252 egenskaper og 1 MB per rad. HR-postene
+  har rundt 20 felt etter klassifiseringen.
+* **FS måles før flytting.** `EmneStudenter` (student × emne) er den eneste
+  kilden som kan bli stor. Titusener av rader i én partisjon er greit, men
+  tallet bør være kjent.
+
+**Postnummer passer også**: ikke persondata, tydelig nøkkel, erstattes av en
+jobb. Grunnen til å vente er bare at det virker i dag. Postnummer og FS flyttes
+når de likevel endres (steg 6). HR starter rett i tabellen.
+
+**Ikke masterdata, og blir der de er:** roller og oppslagslister er Skjemas
+egne data, eid av skjemaeierne, ikke en kopi fra et kildesystem. Team hentes
+fra Graph med egen cache (`docs/TEAM-CACHE-KONTRAKT.md`). Alle tre leses
+gjennom `finn`, men lagres som i dag.
+
 ---
 
 ## Rekkefølge
