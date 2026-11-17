@@ -1314,6 +1314,12 @@ SWA-en. I v3 gjør det ikke det, og **seks av de sju leses av API-et selv:**
 | `GRAPH_CLIENT_ID` | `lib/graph-opplast.js` | samme |
 | `BACKUP_SHAREPOINT_SITE` | `lib/graph-opplast.js` | samme |
 | `KEYVAULT_NAME` | bare visning i `functions/system.js` | ingenting i drift |
+| De åtte flyt-URL-ene: `VARSLING_FLOW_URL`, `OTP_FLOW_URL`, `SP_LISTE_FLOW_URL`, `BACKUP_FLOW_URL`, `TEAM_FLOW_URL`, `TEAM_LAST_MEDLEMMER_FLOW_URL`, `TEAM_SOK_EKSTERNT_FLOW_URL`, `DIAGNOSE_FLOW_URL` | `lib/flyt-kaller.js` og jobbene | det tilhørende kallet hopper over — varsel, engangskode, liste eller backup uteblir |
+
+Flyt-URL-ene ble flyttet hit 16.11.2026: med `FLYT_AUTH=entra` har de ingen
+`sig=` og er ikke legitimasjon (kapittel 7). De settes rett i app settings, uten
+Key Vault-referanse. Secret-ene med samme navn i `fhs-kv-01` er v2-prod sine,
+med signatur.
 
 Følger man 4-tabellen bokstavelig slik den sto, får man altså en prod v3 uten
 administratorer, uten identitetsbasert lagring og uten Graph-backup — tre

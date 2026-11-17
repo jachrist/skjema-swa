@@ -212,6 +212,22 @@ endepunktene) og av feltlista. Steg 1–3 kan gjøres før det.
 
 1. **Feltene fra HR.** Hvilke felt trenger Skjema, og til hva? Lista blir
    kontrakten, og den avgjør hva vi behandler.
+
+   Feltene i eksempelfilene hentes ut med `scripts/hr-skjema.js`, uten at
+   filene deles. Verktøyet skriver et JSON-skjema med feltnavn, typer og
+   tellinger, men aldri en verdi. Felt som ser ut som fødselsnummer, navn,
+   e-post eller telefon får `x-mistanke`, og felt der hver verdi er ulik får
+   `unik: true`. Det er kandidatene til nøkler, og det som kobler person til
+   enhet. Det kjører lokalt, uten nettverk og uten `npm install`, og nekter å
+   lese en fil som ligger inni et git-repo:
+
+   ```
+   node scripts/hr-skjema.js C:\HR\person.csv --ut C:\HR\person.schema.json
+   node scripts/hr-skjema.js C:\HR\struktur.json --ut C:\HR\struktur.schema.json
+   ```
+
+   Les skjemaet før det deles. Feltnavn kan i seg selv si noe, og
+   `x-statistikk` sier hvor mange rader fila har.
 2. **Hvem kan se persondata i et nedtrekk?** Forslaget: innloggede kan se navn
    og e-post, ingen anonyme. Flere felt (stilling, enhet for studenter) krever
    en beslutning per felt.
