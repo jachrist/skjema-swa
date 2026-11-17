@@ -244,14 +244,17 @@ Begge er JSON-lister, UTF-8, ett fullt uttrekk per fil. Feltnavnene (`objid`,
   hentes fra strukturfila via `objid`, ellers har vi samme navn i to
   eksemplarer som kan bli ulike.
 
-### Klassifisering — forslag
+### Klassifisering
+
+Svarene på spørsmål 6–9 kom 17.11.2026 og er innarbeidet her.
 
 **Tas inn** (persondata, behandles etter spørsmål 2):
 
 | Felt | Til |
 |---|---|
 | `ansattnummer` | Nøkkel, og kobling til lederne |
-| `epostArbeid` | Kobling til innloggingen (UPN) — se spørsmål 6 |
+| `epostArbeid` | Kobling til innloggingen. Den er UPN-en, men Entra kan skrive domenet med store bokstaver (`MIL.NO`). Begge sider sammenlignes derfor med små bokstaver — samme regel som `hentInnloggetUpn` i `api/src/lib/auth.js` bruker, ikke en egen |
+| `telefonMobil` | Tjenestetelefon, administrert av Forsvaret |
 | `fornavn`, `etternavn`, `navn` | Visning |
 | `tittelKort/LangBetegnelse`, `gradKort/LangBetegnelse`, `stillingKort/LangBetegnelse` | Visning, og filtre i nedtrekk |
 | `objidAvdeling`, `objidEnhet`, `objidDif`, `objidBra` | Kobling til strukturen |
@@ -259,20 +262,24 @@ Begge er JSON-lister, UTF-8, ett fullt uttrekk per fil. Feltnavnene (`objid`,
 | `linjeLeder`, `autoriserendeLeder`, `avdSeksjonsLeder`, `sikkerhetsLeder` | Roller og ruting |
 | `begda`, `endda` | Hvem som er aktiv |
 
-**Brukes til å filtrere, lagres ikke:** `skjermet`, `anonymisert`,
-`dsfSpesStatusKode`. Se spørsmål 7.
+**Skjerming skjer hos HR, ikke hos oss.** Skjermede personer overføres ikke,
+og alle radene har `skjermet: false`. Feltet lagres ikke. Importen sjekker det
+likevel som en del av kontrakten: har én rad `skjermet: true`, er
+leveransen endret uten at vi er varslet, og hele fila avvises. Det er en
+sjekk av avtalen, ikke en filtrering vi er avhengige av.
+
+**Venter på avklaring** (spørsmål 10): `fnr`, `epostPrivat`, `telefonPrivat`.
+Til den er gitt, kastes de.
 
 **Kastes før lagring:**
 
 | Felt | Hvorfor |
 |---|---|
-| `fnr` | Skjema identifiserer med UPN. Ingen funksjon trenger fødselsnummeret |
-| `epostPrivat`, `telefonPrivat` | Private kontaktopplysninger. Varsler går til jobbadressen |
+| `fnr`, `epostPrivat`, `telefonPrivat` | Til spørsmål 10 er besvart |
 | `nasjonalitet`, `nasjonalitet2` | Ingen funksjon i Skjema |
-| `dsf*` (folkeregisterstatus) | Som over. Unntaket er skjermingen i spørsmål 7 |
+| `dsf*` (folkeregisterstatus), `skjermet`, `anonymisert` | Ingen funksjon i Skjema. Skjermingen er gjort før overføringen |
 | `mg*`, `mug*`, `po*`, `pdo*`, `tilsVilkar*`, `deltype*`, `infotype*`, `teknisk*`, `struktur*`, `ansattStatus*`, `auto*`, `otype*` | HR-interne koder |
 | Enhetsnavn på personraden | Hentes fra strukturfila |
-| `telefonMobil` | Inntil spørsmål 8 er besvart |
 
 **Strukturdata** er ikke persondata, bortsett fra lederfeltene, som peker på
 personer. Adressene er enhetenes, ikke personers. `stillinger` var tom i alle
@@ -329,20 +336,27 @@ innlesing.
    enheter.
 5. **Steg 0 nå, eller sammen med resten?** Det er en liten endring, og jeg vil
    anbefale å ta den nå.
-6. **Er `epostArbeid` lik UPN-en i Entra for alle?** Koblingen mellom HR og
-   innloggingen hviler på det. Er det ikke slik, trengs en annen nøkkel —
-   `sapBrukernavn` er unik, men vi vet ikke hva den svarer til.
-7. **Skjermede personer.** `skjermet`, `anonymisert` og `dsfSpesStatusKode`
-   (fortrolig eller strengt fortrolig adresse) hadde én verdi i utdraget, så
-   formen sier ikke hva unntakene ser ut som. Forslaget er at en person med
-   noen av dem **ikke tas inn** i noe nedtrekk, og at det avtales med HR hvilke
-   verdier som betyr skjerming.
-8. **Er `telefonMobil` jobbtelefonen?** Hvis ja, kan den tas inn. Hvis nei,
-   kastes den.
-9. **Er `ansattnummer` unik i hele fila?** Det var den i utdraget på ni
-   personer. En person med to stillinger kan stå på to rader. Kjør
-   `scripts/hr-skjema.js` på hele fila og se på `unik` for `ansattnummer` og
-   `tomme` for `epostArbeid`.
+6. ~~Er `epostArbeid` lik UPN-en?~~ **Ja** (17.11.2026), men domenet kan stå
+   med store bokstaver i Entra. Sammenlignes med små bokstaver.
+7. ~~Skjermede personer?~~ **Overføres ikke** (17.11.2026). `skjermet` er
+   `false` på alle, og lagres ikke.
+8. ~~Er `telefonMobil` jobbtelefonen?~~ **Ja**, administrert av Forsvaret
+   (17.11.2026). Tas inn.
+9. ~~Er `ansattnummer` unik?~~ **Ja**, på øverste nivå i personfila
+   (17.11.2026). Inne i lederobjektene er det en referanse, og gjentar seg med
+   vilje.
+10. **Fødselsnummer, privat e-post og privat telefon.** FHS har som
+    arbeidsgiver rett til å behandle dem, men det avgjør ikke om Skjema skal.
+    Spørsmålet er hvilken funksjon i Skjema som trenger dem. Tas de inn,
+    foreslås disse vilkårene:
+    - **Bare om personen selv.** Feltet kan forhåndsutfylles i et skjema
+      den innloggede sender om seg selv, men vises aldri i et nedtrekk, et
+      oppslag eller et søk på andre.
+    - **Kryptert ved lagring**, som skjemasvar i dag (`docs/FASE-KRYPTERING.md`).
+    - **Ikke i logg eller hendelser**, heller ikke maskert.
+    - **Et eget ja per felt.** Fødselsnummeret er den sterkeste
+      identifikatoren vi ville hatt, og bør ikke følge med fordi de to andre
+      gjør det.
 
 ---
 
