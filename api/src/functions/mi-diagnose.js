@@ -3,9 +3,6 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 // Tokenveien og erklæringen av plattformvariablene bor i lib-en, sammen med
 // den ekte bruken i lib/flyt-auth.js. Prøven skal måle den veien, ikke sin egen.
 const { tokenFraPlattformen, SATT_AV_PLATTFORMEN } = require('../lib/plattform-token');
-// Audiencen flyt-kallene faktisk bruker. Uten `ressurs=` skal prøven måle
-// DEN, ikke en egen standard — ellers sier prøven ja mens kallene får 401.
-const { flytRessurs } = require('../lib/flyt-auth');
 
 /**
  * GET /api/diagnose/mi-token?ressurs=<audience>[&tokenkilde=sdk|plattform] — admin.
@@ -356,11 +353,7 @@ app.http('miFlytDiagnose', {
         const svar = { envVar: navn, url: beskrivUrl(url) };
         if (svar.url.feil) return { status: 400, jsonBody: svar };
 
-        const fraMiljo = flytRessurs();
-        const ressurs = request.query.get('ressurs') || fraMiljo.ressurs;
-        if (!ressurs) {
-            return { status: 400, jsonBody: { status: 'feil', melding: fraMiljo.grunn } };
-        }
+        const ressurs = request.query.get('ressurs') || 'https://service.flow.microsoft.com/';
         const kilde = (request.query.get('tokenkilde') || 'sdk').trim();
         if (!TOKENKILDER.includes(kilde)) {
             return { status: 400, jsonBody: { status: 'feil',
@@ -372,7 +365,6 @@ app.http('miFlytDiagnose', {
                 melding: 'klientId må være en GUID' } };
         }
         svar.ressurs = ressurs;
-        svar.ressursKilde = request.query.get('ressurs') ? 'ressurs= i kallet' : fraMiljo.grunn;
         svar.tokenkilde = kilde;
         svar.klientIdBrukt = klientId || '(ingen)';
 

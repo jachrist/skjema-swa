@@ -4,6 +4,9 @@ Skrevet 17.11.2026. Spørsmålet var om de sentrale flytene skal legges inn i
 API-et, eller flyttes til Logic Apps. Svaret er API-et, i faser, med e-post
 først. Fase 1 er beskrevet som plan nederst.
 
+Logic Apps ble prøvd 18.11.2026 og lagt bort — se «Forsøket 18.11.2026» under
+vei 2. Til fasene er gjennomført, går flytene i Power Automate som før.
+
 Hva flytene gjør i dag, og hvilken nyttelast hver av dem får, står i
 `docs/FLYTER.md`. Dette notatet gjentar det ikke.
 
@@ -104,33 +107,33 @@ ikke Graph-veien.
   forsvinner. Entra på triggeren støttes i Consumption med en OAuth-policy.
   Kallene beholder formen; bare audiencen er en annen.
 
-### Binde en Logic App til Function App-ens identitet
+### Forsøket 18.11.2026, og beslutningen
 
-Lagt til 18.11.2026, for en prøve-app. Gjelder **Consumption**. Standard har
-ikke autorisasjonspolicyen, og må bruke App Service-autentisering.
+**Logic Apps er lagt bort.** Flytene blir i Power Automate som de er, til
+logikken flyttes inn i API-et (fasene under).
 
-1. **Les claimene.** Som admin i v3-dev:
-   `/api/diagnose/mi-token?ressurs=https://management.azure.com/&tokenkilde=plattform`.
-   Svaret viser `iss`, `aud` og `appid` slik tokenet faktisk har dem.
-2. **Policyen.** Logic App → *Settings → Authorization → Add policy*, type
-   `AAD`: `Issuer` og `Audience` fra tokenet, og et eget claim `appid` med
-   identitetens klient-ID (`AZURE_CLIENT_ID`). Alle claimene i én policy må
-   stemme, og det er `appid` som binder den til vår identitet.
-3. **Steng SAS-veien.** Policyen gjør ikke `sig=`-URL-en ugyldig. Sett
-   `"operationOptions": "IncludeAuthorizationHeadersInOutputs"` på triggeren,
-   og triggerbetingelsen
-   `@startsWith(triggerOutputs()?['headers']?['Authorization'], 'Bearer')`.
-4. **Audiencen hos oss.** `FLYT_RESSURS` settes til nøyaktig verdien i
-   policyen, også skråstreken bakerst. Den gjelder alle flytene i miljøet,
-   slik `FLYT_AUTH` gjør, så en blanding av Power Automate og Logic Apps i
-   samme miljø går ikke. Usatt er Power Automate.
-5. **Prøv uten å røre varslingen.** Legg URL-en uten `sp`, `sv` og `sig` i en
-   app setting som slutter på `_FLOW_URL`, og kall
-   `/api/diagnose/mi-flyt?envVar=<NAVN>&ressurs=https://management.azure.com/&tokenkilde=plattform`.
-   Uten `ressurs=` bruker prøven `FLYT_RESSURS`, altså det kallene bruker.
+Varslingsflyten ble bygget på nytt som Logic App for å se hvor mye arbeid en
+overføring er. Det var mer enn antatt:
 
-Logic Apps er riktig bare hvis flytlogikken skal forbli visuell og redigeres av
-andre enn utviklerne. Det løser ingen av problemene vei 1 løser.
+- **Ingenting kunne kopieres.** Handlingene måtte legges inn på nytt fra
+  designeren, og den første lagringen feilet likevel med «The API connection
+  name must be provided». I Standard peker `referenceName` på en nøkkel i
+  appens `connections.json`, og den må finnes under nøyaktig det navnet.
+- **Plantypen avgjør tilgangsstyringen.** Autorisasjonspolicyen som binder
+  appen til Function App-ens identitet, finnes bare i Consumption. Prøve-appen
+  var Standard, og der må det gjøres med App Service-autentisering.
+- **Nyttelasten har to former** (`docs/FLYTER.md`), og uttrykkene fra
+  varslingen virker ikke på utsendingen: der heter adressen `mottaker`, hver
+  mottaker har sin egen `url`, og `kanal` kan være `sms`.
+- **Tilkoblingene må byttes til tjenestebruker én for én.** I Power Automate
+  skjer det i ett steg, ved import av løsningen.
+
+Det siste veide tyngst. Logic Apps flytter flytene til Azure, men tar ikke
+bort det som er tungt i dag — delegerte tilkoblinger og manuell feilsøking —
+og legger til en omskriving av hver flyt.
+
+`FLYT_RESSURS` (audiencen som app setting) ble laget for forsøket, og tatt ut
+igjen før merge. Den ligger i commit `c3c3e41` om den skulle trengs.
 
 ## Rekkefølge
 
