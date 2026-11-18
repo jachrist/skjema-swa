@@ -395,7 +395,7 @@
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
         import { kommentarerSomHtml } from './js/behandling-kommentar.js';
-        import { enkeltutfall, samletUtfall, typeFor } from './js/behandling-utfall.js';
+        import { enkeltutfall, samletUtfall, typeFor, tidligereRunder, FARGER } from './js/behandling-utfall.js';
         import { formaterBehandler } from './js/behandler-visning.js';
         import { visningslenke } from './js/visningsgrunn.js';
 
@@ -773,6 +773,9 @@
                 const alleModusInfo = document.createElement('div');
                 alleModusInfo.style.cssText = 'padding: 8px 10px; background: var(--accent-light, rgba(10,132,255,0.1)); border-radius: 6px; margin-bottom: 10px; font-size: 12px;';
                 let html = `<strong>Alle må avgjøre</strong> — ${dekket} av ${krav.length} har levert.`;
+                // Fra 18.11.2026: ett nei avgjør steget for alle. Den som
+                // svarer, skal vite det før hen trykker.
+                html += '<br><small>Et avslag avgjør steget med en gang, uten å vente på de andre.</small>';
                 if (jegHarLevert) {
                     const min = (steg.Beslutninger || []).find(b => String(b.Aktor || '').toLowerCase() === megLower);
                     const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(min?.Beslutning));
@@ -1038,6 +1041,7 @@
                     ${steg.BehandletAv ? `<div style="width: 100%; font-size: 11px; color: var(--text-secondary);">Behandlet av ${escapeHtml(behandlerNavn(steg))} ${escapeHtml(formaterDato(steg.BehandletDato))}</div>` : ''}
                     ${enkeltutfallSomHtml(steg)}
                     ${kommentarerSomHtml(steg, escapeHtml)}
+                    ${tidligereRunderSomHtml(steg)}
                 `;
                 div.appendChild(rad);
             }
@@ -1076,6 +1080,28 @@
                     + `</div>`;
             }).join('');
             return `<div style="width: 100%; font-size: 11px; margin-top: 2px;">${rader}</div>`;
+        }
+
+        /**
+         * Svar som ble nullstilt av en ompuss, én sammenfoldet blokk per runde.
+         *
+         * Rundene kommer fra tidligereRunder() i js/behandling-utfall.js —
+         * samme regel som PDF-en. Aktør, utfall og kommentar går gjennom
+         * escapeHtml, og fargen kommer fra FARGER, en fast tabell.
+         */
+        function tidligereRunderSomHtml(steg) {
+            const runder = tidligereRunder(steg);
+            if (runder.length === 0) return '';
+            return runder.map(r => {
+                const rader = r.utfall.map(x =>
+                    `<div><span style="color: var(--text-secondary);">${escapeHtml(x.aktor)}:</span> `
+                    + `<span style="color: ${FARGER[x.type] || FARGER.ukjent}; font-weight: 600;">${escapeHtml(x.tekst)}</span>`
+                    + (x.kommentar ? ` <span style="color: var(--text-secondary);">— ${escapeHtml(x.kommentar)}</span>` : '')
+                    + `</div>`).join('');
+                return `<details style="width: 100%; font-size: 11px; margin-top: 4px;">`
+                    + `<summary style="cursor: pointer; color: var(--text-secondary);">Før retting — sendt tilbake ${escapeHtml(formaterDato(r.nullstilt))} (${r.utfall.length} svar)</summary>`
+                    + `<div style="padding: 2px 0 0 12px;">${rader}</div></details>`;
+            }).join('');
         }
 
         function byggFelt(felt, visningsNr, svar, svarTekst = null) {

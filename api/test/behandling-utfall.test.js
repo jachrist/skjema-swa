@@ -70,6 +70,15 @@ const TILFELLER = {
     'ukjent nummer': { Beslutningsvalg: VALG, Beslutning: 9, BehandletAv: 'kari@fhs.no' },
     'uten valgliste': { Beslutning: 1, BehandletAv: 'kari@fhs.no' },
     'tomt steg': {},
+    'nullstilt av ompuss, to runder': {
+        Beslutningsvalg: VALG, Beslutning: 0,
+        TidligereBeslutninger: [
+            { Aktor: 'b@x.no', Beslutning: 2, Nullstilt: '2026-11-20T09:00:00Z', Kommentar: 'Fortsatt uklart' },
+            { Aktor: 'a@x.no', Beslutning: 1, Nullstilt: '2026-11-18T09:00:00Z', Kommentar: 'Ser bra ut' },
+            { Aktor: 'b@x.no', Beslutning: 1, Nullstilt: '2026-11-18T09:00:00Z' },
+            { Aktor: 'c@x.no', Beslutning: 0, Nullstilt: '2026-11-18T09:00:00Z' }
+        ]
+    },
     'avgivelse med 0': {
         Beslutningsvalg: VALG, Beslutning: 1, BehandletAv: 'alle-behandlere',
         Beslutninger: [{ Aktor: 'a@x.no', Beslutning: 0 }, { Aktor: 'b@x.no', Beslutning: 1 }]
@@ -84,7 +93,7 @@ const TILFELLER = {
     {
         const ulike = [];
         for (const [navn, steg] of Object.entries(TILFELLER)) {
-            for (const fn of ['enkeltutfall', 'samletUtfall', 'utfallLinje']) {
+            for (const fn of ['enkeltutfall', 'samletUtfall', 'utfallLinje', 'tidligereRunder']) {
                 const a = JSON.stringify(api[fn](steg));
                 const b = JSON.stringify(front[fn](steg));
                 if (a !== b) ulike.push(`${navn}/${fn}: ${a} ≠ ${b}`);
@@ -128,6 +137,20 @@ const TILFELLER = {
             api.enkeltutfall(TILFELLER['avgivelse med 0']).map(e => e.aktor), ['b@x.no']);
     }
 
+    // ---------- tidligere runder (ompuss i «alle må avgjøre») ----------
+    {
+        const r = api.tidligereRunder(TILFELLER['nullstilt av ompuss, to runder']);
+        sjekk('én runde per nullstilling, eldste først', r.map(x => x.nullstilt),
+            ['2026-11-18T09:00:00Z', '2026-11-20T09:00:00Z']);
+        sjekk('svarene i første runde', r[0].utfall.map(e => [e.aktor, e.tekst]),
+            [['a@x.no', 'Anbefalt'], ['b@x.no', 'Anbefalt']]);
+        sjekk('beslutning 0 er ikke et svar', r[0].utfall.some(e => e.aktor === 'c@x.no'), false);
+        sjekk('kommentaren er med', r[0].utfall[0].kommentar, 'Ser bra ut');
+        sjekk('typen gir fargen', r[1].utfall[0].type, 'negativ');
+        sjekk('uten tidligere svar: tom liste', api.tidligereRunder(TILFELLER['alle enige']), []);
+        sjekk('tomt steg: tom liste', api.tidligereRunder({}), []);
+    }
+
     // ---------- typeFor: erklært vinner, tekst er reserve ----------
     {
         sjekk('erklært ompuss', api.typeFor({ Tekst: 'Hva som helst', Handling: 'ompuss' }), 'ompuss');
@@ -162,6 +185,14 @@ const TILFELLER = {
         }
         sjekk('pdf-generator bruker modulen', /require\('\.\/behandling-utfall'\)/.test(pdf), true);
         sjekk('pdf-generator viser hvert svar', /utfall\.enkeltutfall\(b\)/.test(pdf), true);
+        // Svar fra før en retting: alle tre visningene leser dem herfra.
+        for (const [navn, kilde] of [['evaluering.html', ev], ['visning.html', vi]]) {
+            sjekk(`${navn}: viser tidligere runder`, /tidligereRunder\(steg\)/.test(kilde), true);
+            sjekk(`${navn}: og tegner dem`, /tidligereRunderSomHtml\(steg\)/.test(kilde), true);
+        }
+        sjekk('pdf-generator viser tidligere runder', /utfall\.tidligereRunder\(b\)/.test(pdf), true);
+        sjekk('og tar med uavgjorte steg som har dem',
+            /\.filter\(b =>[\s\S]{0,120}utfall\.tidligereRunder\(b\)\.length > 0/.test(pdf), true);
 
         // Editoren må kunne ERKLÆRE et negativt utfall. Uten bryteren er
         // tekstregelen eneste vei, og et valg som heter noe annet enn
@@ -169,9 +200,14 @@ const TILFELLER = {
         const ed = les('frontend', 'editor.html');
         sjekk('editoren tilbyr Avvisning', /<option value="avvisning"/.test(ed), true);
         sjekk('og holder ompuss adskilt', /<option value="ompuss"/.test(ed), true);
-        // Flyten skal IKKE endres av den: bare fargen.
+        // Fra 18.11.2026 styrer den også flyten: i «alle må avgjøre» avgjør et
+        // negativt valg steget. Det skal skje med SAMME regel som fargen —
+        // ikke en egen sjekk på 'avvisning' et annet sted.
         const beh = les('api', 'src', 'lib', 'behandling.js');
-        sjekk('avvisning styrer ikke flyten', /'avvisning'/.test(beh), false);
+        const sk = les('api', 'src', 'functions', 'skjemaer.js');
+        sjekk('behandling.js har ingen egen avvisningsregel', /'avvisning'/.test(beh), false);
+        sjekk('skjemaer.js har ingen egen avvisningsregel', /'avvisning'/.test(sk), false);
+        sjekk('beslutningsruten leser typeFor', /typeFor\(valgtValg\) === 'negativ'/.test(sk), true);
     }
 
     console.log(`\n${ok} OK, ${feil} feil`);

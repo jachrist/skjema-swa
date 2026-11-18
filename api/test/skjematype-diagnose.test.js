@@ -665,6 +665,77 @@ async function kjor() {
         r.funn.filter(f => f.sted.startsWith('Steg 5')).length, 0);
 }
 
+    // ---------- vilkår på et annet stegs beslutning, uten å vente på det ----------
+    // Funnet 18.11.2026: et steg uten «Avhengig av» vurderer vilkåret ved
+    // innsending, før det andre steget er avgjort, og hoppes over.
+    {
+        const behandling = require('../src/lib/behandling');
+        const PÅ_STEG_1 = { EllerAv: [{ OgAv: [{ Felt: 'behandling-1', Operator: '=', Verdi: '1' }] }] };
+        const steg = (nr, ekstra = {}) => ({
+            Steg: nr, Stegnavn: `S${nr}`, Personer: ['sjef@fhs.no'], Varsling: ['epost'],
+            Beslutningsvalg: [{ Nummer: 1, Tekst: 'Ja' }, { Nummer: 2, Tekst: 'Nei' }], ...ekstra
+        });
+        const diag = (beh) => d.diagnoser({ Seksjoner: SEKSJONER, Behandling: beh }, { antallInnehavere: roller(3) });
+        const vilkårFunn = (r) => r.funn.filter(f => f.kode.startsWith('steg.vilkar')).map(f => `${f.alvor}:${f.kode}:${f.sted}`);
+
+        // Først: at feilen er ekte. Den EKTE behandlingslogikken, på et
+        // nyinnsendt skjema — uten avhengighet hoppes steg 2 over med en gang.
+        const utenAvh = { Seksjoner: SEKSJONER, Behandling: [steg(1), steg(2, { Vilkår: PÅ_STEG_1 })] };
+        behandling.skipStegSomIkkeSkalKjore(utenAvh);
+        sjekk('ekte: uten avhengighet hoppes steget over ved innsending', utenAvh.Behandling[1].Beslutning, 5);
+        const medAvh = { Seksjoner: SEKSJONER, Behandling: [steg(1), steg(2, { Vilkår: PÅ_STEG_1, AvhengigAv: 1 })] };
+        behandling.skipStegSomIkkeSkalKjore(medAvh);
+        sjekk('ekte: med avhengighet venter steget', Number(medAvh.Behandling[1].Beslutning || 0), 0);
+
+        let r = await diag([steg(1), steg(2, { Vilkår: PÅ_STEG_1 })]);
+        sjekk('uten avhengighet: gult', vilkårFunn(r), [`advarsel:steg.vilkar-uten-avhengighet:${r.funn.find(f => f.kode === 'steg.vilkar-uten-avhengighet')?.sted}`]);
+        sjekk('og meldingen sier hva som skal gjøres', /Avhengig av» til steg 1/.test(r.funn.find(f => f.kode === 'steg.vilkar-uten-avhengighet')?.melding || ''), true);
+
+        r = await diag([steg(1), steg(2, { Vilkår: PÅ_STEG_1, AvhengigAv: 1 })]);
+        sjekk('med avhengighet: ingen funn', vilkårFunn(r), []);
+
+        // Kjeden teller: 3 venter på 2, som venter på 1.
+        const PÅ = (n) => ({ EllerAv: [{ OgAv: [{ Felt: `behandling-${n}`, Operator: '=', Verdi: '1' }] }] });
+        r = await diag([steg(1), steg(2, { AvhengigAv: 1 }), steg(3, { AvhengigAv: 2, Vilkår: PÅ(1) })]);
+        sjekk('gjennom kjeden: ingen funn', vilkårFunn(r), []);
+
+        // Å vente på feil steg hjelper ikke.
+        r = await diag([steg(1), steg(2), steg(3, { AvhengigAv: 1, Vilkår: PÅ(2) })]);
+        sjekk('venter på et annet steg: gult', r.funn.filter(f => f.kode === 'steg.vilkar-uten-avhengighet').length, 1);
+
+        // Høyresiden kan også peke på et steg.
+        const HØYRE = { EllerAv: [{ OgAv: [{ Felt: 'felt-a', Operator: '=', Verdi: { Felt: 'behandling-1' } }] }] };
+        r = await diag([steg(1), steg(2, { Vilkår: HØYRE })]);
+        sjekk('stegreferanse på høyresiden: gult', harKode(r, 'steg.vilkar-uten-avhengighet'), true);
+
+        r = await diag([steg(1), steg(2, { Vilkår: PÅ(2), AvhengigAv: 1 })]);
+        sjekk('vilkår på seg selv: rødt', harKode(r, 'steg.vilkar-seg-selv'), true);
+        r = await diag([steg(1), steg(2, { Vilkår: PÅ(9), AvhengigAv: 1 })]);
+        sjekk('vilkår på steg som ikke finnes: rødt', harKode(r, 'steg.vilkar-steg-mangler'), true);
+
+        // Vilkår bare på felt: ingenting å vente på.
+        const FELT = { EllerAv: [{ OgAv: [{ Felt: 'felt-a', Operator: '=', Verdi: 'x' }] }] };
+        r = await diag([steg(1), steg(2, { Vilkår: FELT })]);
+        sjekk('vilkår på felt: ingen funn', vilkårFunn(r), []);
+
+        // To steg som venter på hverandre skal ikke henge diagnosen. Kjøres i
+        // en egen prosess med tidsgrense: en evig løkke her ville ellers hengt
+        // hele testkjøringen i stedet for å feile.
+        const { spawnSync } = require('child_process');
+        const sirkel = spawnSync(process.execPath, ['-e', `
+            const b = require(${JSON.stringify(path.join(__dirname, '..', 'src', 'lib', 'behandling'))});
+            const s = [{ Steg: 1, AvhengigAv: 2 }, { Steg: 2, AvhengigAv: 3 }, { Steg: 3, AvhengigAv: 2 }];
+            console.log(JSON.stringify([...b.stegSomVentesPaa(s[0], s)].sort()));
+        `], { timeout: 5000, encoding: 'utf8' });
+        sjekk('sirkel: kjeden kommer tilbake', [sirkel.error?.code || null, (sirkel.stdout || '').trim()], [null, '[2,3]']);
+
+        // Regelen leses fra kilden, ikke skrevet på nytt.
+        sjekk('kjeden fra behandling.js', [...behandling.stegSomVentesPaa(steg(3, { AvhengigAv: 2 }),
+            [steg(1), steg(2, { AvhengigAv: 1 })])].sort(), [1, 2]);
+        const kilde = utenKommentarer(fs.readFileSync(path.join(__dirname, '..', 'src', 'lib', 'skjematype-diagnose.js'), 'utf8'));
+        sjekk('diagnosen har ikke egen regex for stegreferanser', /behandling-\(\\d/.test(kilde), false);
+    }
+
 console.log(`\n${ok} OK, ${feil} feil`);
     process.exit(feil ? 1 : 0);
 }

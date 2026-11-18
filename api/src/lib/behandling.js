@@ -113,6 +113,32 @@ function stegErBlokkertAvAvhengighet(steg, alleSteg) {
     return !stegErFerdig(avh);
 }
 
+/**
+ * Stegene et steg venter på, direkte eller gjennom kjeden av `AvhengigAv`.
+ *
+ * Steg 3 venter på 2, og 2 venter på 1: da venter 3 på både 2 og 1. Når et
+ * steg slipper løs, er alle stegene i kjeden ferdige — det følger av
+ * `stegErBlokkertAvAvhengighet` over, som er regelen dette leser.
+ *
+ * Diagnosen bruker dette til å se om et vilkår på et annet stegs beslutning
+ * kan vurderes. Gjør steget ikke det, vurderes vilkåret ved innsending, før
+ * beslutningen finnes.
+ *
+ * En sirkel (1 venter på 2, 2 venter på 1) stopper kjeden der den går rundt.
+ */
+function stegSomVentesPaa(steg, alleSteg) {
+    const ut = new Set();
+    let gjeldende = steg;
+    while (harAvhengighet(gjeldende)) {
+        const nr = Number(gjeldende.AvhengigAv);
+        if (ut.has(nr) || nr === Number(steg?.Steg)) break;
+        ut.add(nr);
+        gjeldende = (alleSteg || []).find(s => Number(s.Steg) === nr);
+        if (!gjeldende) break;
+    }
+    return ut;
+}
+
 function beregnAktiveSteg(skjema) {
     const behandling = skjema?.Behandling || [];
     const aktive = [];
@@ -428,6 +454,7 @@ module.exports = {
     fristFor,
     stempleAktiveSteg,
     fristTiltak,
+    stegSomVentesPaa,
     loggAvvistTilgang,
     erBehandlerPaaNoeSteg,
     skalVarsleInnsender,

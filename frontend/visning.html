@@ -323,7 +323,7 @@
         import { byggReadonlyVisning, escapeHtml, renderTekstInline, byggSvarOppslag } from './js/felt-render.js';
         import { evaluerVilkar } from './js/vilkar.js';
         import { byggSamtale } from './js/samtale.js';
-        import { enkeltutfall, samletUtfall } from './js/behandling-utfall.js';
+        import { enkeltutfall, samletUtfall, tidligereRunder, FARGER } from './js/behandling-utfall.js';
         import { kommentarerFor, KOMMENTAR_STIL } from './js/behandling-kommentar.js';
         import { behandlerlinje } from './js/behandler-visning.js';
         import { statusTekst, statusKlasse } from './js/skjemastatus.js';
@@ -615,6 +615,17 @@
                     rad.appendChild(kom);
                 }
 
+                // Svar fra før en retting. Etter ompuss i «alle må avgjøre»
+                // svarer alle på nytt; de gamle svarene teller ikke, men de
+                // er en del av saken.
+                const tidligereHtml = tidligereRunderSomHtml(steg);
+                if (tidligereHtml) {
+                    const t = document.createElement('div');
+                    t.style.cssText = 'width: 100%;';
+                    t.innerHTML = tidligereHtml;
+                    rad.appendChild(t);
+                }
+
                 div.appendChild(rad);
             }
             return div;
@@ -693,6 +704,28 @@
             if (b === 0) return { tekst: 'Venter', farge: '#ff9500' };
             const u = samletUtfall(steg);
             return { tekst: u.tekst || `Beslutning ${b}`, farge: u.farge };
+        }
+
+        /**
+         * Svar som ble nullstilt av en ompuss, én sammenfoldet blokk per runde.
+         *
+         * Rundene kommer fra tidligereRunder() i js/behandling-utfall.js —
+         * samme regel som PDF-en. Aktør, utfall og kommentar går gjennom
+         * escapeHtml, og fargen kommer fra FARGER, en fast tabell.
+         */
+        function tidligereRunderSomHtml(steg) {
+            const runder = tidligereRunder(steg);
+            if (runder.length === 0) return '';
+            return runder.map(r => {
+                const rader = r.utfall.map(x =>
+                    `<div><span style="color: var(--text-secondary);">${escapeHtml(x.aktor)}:</span> `
+                    + `<span style="color: ${FARGER[x.type] || FARGER.ukjent}; font-weight: 600;">${escapeHtml(x.tekst)}</span>`
+                    + (x.kommentar ? ` <span style="color: var(--text-secondary);">— ${escapeHtml(x.kommentar)}</span>` : '')
+                    + `</div>`).join('');
+                return `<details style="width: 100%; font-size: 11px; margin-top: 4px;">`
+                    + `<summary style="cursor: pointer; color: var(--text-secondary);">Før retting — sendt tilbake ${escapeHtml(formaterDato(r.nullstilt))} (${r.utfall.length} svar)</summary>`
+                    + `<div style="padding: 2px 0 0 12px;">${rader}</div></details>`;
+            }).join('');
         }
 
         function byggFelt(felt, visningsNr, svar, skjematypeId, skjemaId, svarTekst = null) {

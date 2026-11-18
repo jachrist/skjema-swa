@@ -442,6 +442,44 @@ bryteren, og editoren låser avkryssingsboksen. Et skjema som sendes tilbake for
 retting uten at noen får beskjed blir liggende: innsenderen vet ikke at ballen
 er hos hen, og behandleren venter på et svar som aldri kommer.
 
+## «Alle må avgjøre» (`Beslutning_alle`)
+
+Med `Beslutning_alle: true` avgir hver behandler sin egen beslutning, lagret i
+`Beslutninger[]`:
+
+```json
+{ "Steg": 1, "Beslutning_alle": true,
+  "Beslutninger": [{ "Aktor": "a@x.no", "Beslutning": 1, "Dato": "…", "Kommentar": "…" }],
+  "BeslutningKrav": [{ "type": "person", "navn": "a@x.no", "dekket": true }] }
+```
+
+Kravene er én per person, én per rollestreng og én per team. En rolle er
+dekket når én av innehaverne har svart (`beregnAlleKrav` i
+`lib/behandling.js`).
+
+Reglene fra 18.11.2026 (`functions/skjemaer.js`):
+
+- **Steget godkjennes når alle har svart.** `Beslutning` blir det siste
+  svaret, `BehandletAv` blir `"alle-behandlere"`.
+- **Et avslag avgjør med en gang.** Er valget negativt etter `typeFor` i
+  `lib/behandling-utfall.js` — erklært `Handling: "avvisning"`, eller en tekst
+  som «Avslått» eller «Ikke anbefalt» — settes `Beslutning` til avslaget og
+  `BehandletAv` til den som avslo, uten å vente på resten. Det er samme regel
+  som gjør utfallet rødt.
+- **Ompuss nullstiller svarene.** `Beslutninger` og `BeslutningKrav` slettes,
+  og svarene flyttes til `TidligereBeslutninger` med tidspunktet de ble
+  nullstilt (`Nullstilt`). Etter retting må alle svare på nytt. Flere runder
+  legges etter hverandre.
+
+Før 18.11.2026 ble steget stående til alle hadde svart, også ved avslag, og
+ompuss lot svarene stå.
+
+`TidligereBeslutninger` vises i saksvisningen (`visning.html`), på
+behandlingssiden (`evaluering.html`) og i PDF-en, som «Før retting — sendt
+tilbake …», én runde per nullstilling med svar og kommentar. Rundene bygges av
+`tidligereRunder(steg)` i `behandling-utfall.js` (begge tvillingene). PDF-en
+tar også med et steg som venter på ny behandling, når det har slike svar.
+
 ## Visningstekst for valglister (`SvarTekst` / `svt`)
 
 Valglister lagrer **verdien**, ikke teksten: en klasse blir FS-nøkkelen

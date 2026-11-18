@@ -27,10 +27,12 @@
  * `api/test/behandling-utfall.test.js` kjører BEGGE mot de samme stegene og
  * krever samme svar.
  *
- * HVA DENNE IKKE GJØR: den endrer ikke hva flyten gjør. `steg.Beslutning`
- * styrer fortsatt veien videre, og ved ulike vurderinger er det fortsatt den
- * siste som avgjør. Det er en reell designbeslutning som hører hjemme hos
- * oppdragsgiver, ikke i en visningsmodul — men nå er den i det minste synlig.
+ * FLYTEN LESER `typeFor` (fra 18.11.2026). I «alle må avgjøre» avgjør et
+ * negativt valg steget med en gang (functions/skjemaer.js), så steget kan
+ * bare ende positivt når alle har svart positivt. «Ulike vurderinger» kan
+ * fortsatt oppstå mellom to positive valg, og da er det den siste som står i
+ * `steg.Beslutning`. Ompuss nullstiller svarene (flyttes til
+ * `TidligereBeslutninger`).
  */
 
 /**
@@ -156,6 +158,38 @@ export function samletUtfall(steg) {
     }
     const f = enkelt[0];
     return { type: f.type, tekst: f.tekst, farge: FARGER[f.type] || FARGER.ukjent, ulike: false, antall: enkelt.length };
+}
+
+/**
+ * Svar som ble nullstilt av en ompuss — én runde per nullstilling, eldste
+ * først.
+ *
+ * I «alle må avgjøre» flytter ompuss svarene til `TidligereBeslutninger`, med
+ * tidspunktet de ble nullstilt (functions/skjemaer.js). Etter rettingen svarer
+ * alle på nytt, og de gamle svarene teller ikke — men de er en del av saken,
+ * og kommentarene i dem skal kunne leses. Denne gir dem i samme form som
+ * `enkeltutfall`, gruppert per runde.
+ *
+ * @returns {{ nullstilt: string, utfall: object[] }[]}
+ */
+export function tidligereRunder(steg) {
+    const liste = Array.isArray(steg?.TidligereBeslutninger) ? steg.TidligereBeslutninger : [];
+    const runder = [];
+    for (const b of liste) {
+        if (!Number(b?.Beslutning || 0)) continue;
+        const nullstilt = String(b.Nullstilt || '');
+        let runde = runder.find(r => r.nullstilt === nullstilt);
+        if (!runde) { runde = { nullstilt, utfall: [] }; runder.push(runde); }
+        runde.utfall.push({
+            aktor: String(b.Aktor || ''),
+            beslutning: Number(b.Beslutning),
+            tekst: tekstFor(steg, b.Beslutning),
+            type: typeFor(valgFor(steg, b.Beslutning)),
+            kommentar: String(b.Kommentar || ''),
+            dato: String(b.Dato || '')
+        });
+    }
+    return runder.sort((a, b) => a.nullstilt.localeCompare(b.nullstilt));
 }
 
 /**

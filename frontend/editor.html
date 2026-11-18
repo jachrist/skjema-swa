@@ -1456,11 +1456,12 @@
                     <select onchange="setBeslutningsvalgHandling(${idx}, ${vIdx}, this.value)" style="width: 130px;" title="Spesialhandling">
                         <option value="" ${!v.Handling ? 'selected' : ''}>Vanlig</option>
                         <option value="ompuss" ${v.Handling === 'ompuss' ? 'selected' : ''}>Ompuss (retur)</option>
-                        <!-- «Avvisning» styrer bare FARGEN på utfallet, ikke
-                             flyten: erOmpussValg ser fortsatt bare etter
-                             'ompuss'. Uten den utledes negativt av teksten
-                             («avslå», «avvis», «ikke anbefalt»), og et valg
-                             som heter noe annet ble vist i grønt. -->
+                        <!-- «Avvisning» merker valget som negativt: rødt
+                             utfall, og i «alle må avgjøre» avgjør det steget
+                             med en gang (typeFor i behandling-utfall.js). Uten
+                             den utledes negativt av teksten («avslå», «avvis»,
+                             «ikke anbefalt»), og et valg som heter noe annet
+                             ble vist i grønt. -->
                         <option value="avvisning" ${v.Handling === 'avvisning' ? 'selected' : ''}>Avvisning (negativ)</option>
                     </select>
                     <label class="checkbox-rad" style="margin: 0; white-space: nowrap;"
@@ -1598,7 +1599,7 @@
                                 ${steg.Beslutning_alle === true ? 'checked' : ''}
                                 onchange="setBeslutningAlle(${idx}, true)"> Alle må avgjøre</label>
                             <span style="color: var(--text-secondary); font-size: 11px;">
-                                Ved "alle": ett svar per person, per rolle og per team. Ompuss trigger umiddelbart.
+                                Ved "alle": ett svar per person, per rolle og per team. Et avslag avgjør steget med en gang. Ompuss sender tilbake med en gang, og alle må svare på nytt etter retting.
                             </span>
                         </div>
                     </div>

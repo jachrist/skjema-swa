@@ -127,15 +127,26 @@ function svarFraFelt(felt) {
     return felt.Svar ?? null;
 }
 
+/**
+ * Stegnummeret en referanse peker på — `behandling-2` gir 2 — eller null når
+ * referansen er et felt.
+ *
+ * Eksportert fordi diagnosen må kjenne igjen stegreferansene med NØYAKTIG
+ * samme regel som evalueringen under.
+ */
+function stegnummerFraRef(feltRef) {
+    const m = /^behandling-(\d+)$/.exec(String(feltRef ?? '').trim());
+    return m ? parseInt(m[1], 10) : null;
+}
+
 function hentSvar(seksjoner, feltRef, behandling) {
     if (!feltRef) return null;
     const ref = String(feltRef).trim();
 
     // Behandlingssteg
-    const behMatch = /^behandling-(\d+)$/.exec(ref);
-    if (behMatch) {
+    const stegNr = stegnummerFraRef(ref);
+    if (stegNr !== null) {
         if (!Array.isArray(behandling)) return null;
-        const stegNr = parseInt(behMatch[1], 10);
         const steg = behandling.find(s => Number(s.Steg) === stegNr);
         if (!steg) return null;
         const beslutning = steg.Beslutning;
@@ -356,7 +367,7 @@ module.exports = {
     erDNFFormat, erLegacyFormat, migrerTilDNF,
     evaluerVilkar, evaluerBetingelse, hentSvar,
     IDAG_REF,
-    samleRefererteFelter,
+    samleRefererteFelter, stegnummerFraRef,
     alleFelterUtfylt,
     forsteBrudd,
     bruddISkjema
