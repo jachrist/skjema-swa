@@ -161,6 +161,38 @@ function samletUtfall(steg) {
 }
 
 /**
+ * Svar som ble nullstilt av en ompuss — én runde per nullstilling, eldste
+ * først.
+ *
+ * I «alle må avgjøre» flytter ompuss svarene til `TidligereBeslutninger`, med
+ * tidspunktet de ble nullstilt (functions/skjemaer.js). Etter rettingen svarer
+ * alle på nytt, og de gamle svarene teller ikke — men de er en del av saken,
+ * og kommentarene i dem skal kunne leses. Denne gir dem i samme form som
+ * `enkeltutfall`, gruppert per runde.
+ *
+ * @returns {{ nullstilt: string, utfall: object[] }[]}
+ */
+function tidligereRunder(steg) {
+    const liste = Array.isArray(steg?.TidligereBeslutninger) ? steg.TidligereBeslutninger : [];
+    const runder = [];
+    for (const b of liste) {
+        if (!Number(b?.Beslutning || 0)) continue;
+        const nullstilt = String(b.Nullstilt || '');
+        let runde = runder.find(r => r.nullstilt === nullstilt);
+        if (!runde) { runde = { nullstilt, utfall: [] }; runder.push(runde); }
+        runde.utfall.push({
+            aktor: String(b.Aktor || ''),
+            beslutning: Number(b.Beslutning),
+            tekst: tekstFor(steg, b.Beslutning),
+            type: typeFor(valgFor(steg, b.Beslutning)),
+            kommentar: String(b.Kommentar || ''),
+            dato: String(b.Dato || '')
+        });
+    }
+    return runder.sort((a, b) => a.nullstilt.localeCompare(b.nullstilt));
+}
+
+/**
  * Enkeltutfallene som én linje, til PDF og regneark.
  *
  * Aktøren tas med bare når det er flere — med én behandler står navnet
@@ -173,4 +205,4 @@ function utfallLinje(steg) {
     return e.map(x => `${x.aktor}: ${x.tekst}`).join(' | ');
 }
 
-module.exports = { FARGER, valgFor, typeFor, tekstFor, enkeltutfall, samletUtfall, utfallLinje };
+module.exports = { FARGER, valgFor, typeFor, tekstFor, enkeltutfall, samletUtfall, utfallLinje, tidligereRunder };

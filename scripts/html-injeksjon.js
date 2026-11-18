@@ -215,6 +215,11 @@ const HTML_PRODUSENTER = [
     // tabell med seks heksadesimale literaler. Ingen verdi fra lagring
     // når attributtet.
     'enkeltutfallSomHtml',
+    // tidligereRunderSomHtml — evaluering.html og visning.html, lest
+    // 18.11.2026. Samme oppbygging som enkeltutfallSomHtml: aktør, utfall,
+    // kommentar og dato går gjennom escapeHtml, antallet er et tall, og
+    // fargen kommer fra FARGER.
+    'tidligereRunderSomHtml',
     // js/skjemastatus.js: returnerer et klassenavn fra et fast sett
     // (STATUSKLASSER), aldri noe som kommer fra lagring.
     'statusKlasse'

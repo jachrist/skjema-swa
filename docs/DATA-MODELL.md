@@ -472,8 +472,13 @@ Reglene fra 18.11.2026 (`functions/skjemaer.js`):
   legges etter hverandre.
 
 Før 18.11.2026 ble steget stående til alle hadde svart, også ved avslag, og
-ompuss lot svarene stå. `TidligereBeslutninger` vises ikke på noen side ennå;
-den er der så ingen kommentar forsvinner.
+ompuss lot svarene stå.
+
+`TidligereBeslutninger` vises i saksvisningen (`visning.html`), på
+behandlingssiden (`evaluering.html`) og i PDF-en, som «Før retting — sendt
+tilbake …», én runde per nullstilling med svar og kommentar. Rundene bygges av
+`tidligereRunder(steg)` i `behandling-utfall.js` (begge tvillingene). PDF-en
+tar også med et steg som venter på ny behandling, når det har slike svar.
 
 ## Visningstekst for valglister (`SvarTekst` / `svt`)
 

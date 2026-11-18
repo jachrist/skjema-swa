@@ -182,7 +182,10 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
     }
 
     // === BEHANDLINGSHISTORIKK ===
-    const behandling = (skjema.Behandling || []).filter(b => b.Beslutning && b.Beslutning !== 0);
+    // Avgjorte steg, og steg med svar fra før en retting — et steg som venter
+    // på ny behandling etter ompuss, har en historikk selv om det er uavgjort.
+    const behandling = (skjema.Behandling || []).filter(b =>
+        (b.Beslutning && b.Beslutning !== 0) || utfall.tidligereRunder(b).length > 0);
     if (behandling.length > 0) {
         nyLinje(8);
         skrivTekst('Behandlingshistorikk', 10, fontBold, BLAA);
@@ -194,10 +197,13 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
             // behandlere med ulike anbefalinger ga én linje i utskriften,
             // og den andre vurderingen fantes bare i dataene.
             const samlet = utfall.samletUtfall(b);
+            const avgjort = Number(b.Beslutning || 0) !== 0;
             const beslTekst = samlet.tekst || (Number(b.Beslutning) === 5 ? 'Hoppet over' : String(b.Beslutning));
             const dato = formatKortDato(b.BehandletDato || b.Tidspunkt);
             skrivTekst(
-                `Steg ${b.Steg}: ${b.Stegnavn || ''} - ${beslTekst} (${b.BehandletAv || b.Epost || ''}, ${dato})`,
+                avgjort
+                    ? `Steg ${b.Steg}: ${b.Stegnavn || ''} - ${beslTekst} (${b.BehandletAv || b.Epost || ''}, ${dato})`
+                    : `Steg ${b.Steg}: ${b.Stegnavn || ''} - Venter på ny behandling etter retting`,
                 7, font, TEKST
             );
             nyLinje(10);
@@ -221,6 +227,20 @@ async function genererOppsummeringPdf(skjema, vedleggData = [], skjematype = nul
                 for (const l of wrapTekst(merket, 7, font, contentW - 10)) {
                     skrivTekst(l, 7, font, MUTED, margin + 10);
                     nyLinje(9);
+                }
+            }
+            // Svar fra før en retting (ompuss i «alle må avgjøre»). De teller
+            // ikke lenger, men de er en del av saken — og kommentarene i dem
+            // finnes ikke noe annet sted i arkivet.
+            for (const r of utfall.tidligereRunder(b)) {
+                skrivTekst(`Før retting (sendt tilbake ${formatKortDato(r.nullstilt)}):`, 7, font, MUTED, margin + 10);
+                nyLinje(9);
+                for (const e of r.utfall) {
+                    const linje = `${e.aktor}: ${e.tekst}` + (e.kommentar ? ` - ${e.kommentar}` : '');
+                    for (const l of wrapTekst(linje, 7, font, contentW - 20)) {
+                        skrivTekst(l, 7, font, MUTED, margin + 20);
+                        nyLinje(9);
+                    }
                 }
             }
         }
