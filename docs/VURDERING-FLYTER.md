@@ -4,6 +4,9 @@ Skrevet 17.11.2026. Spørsmålet var om de sentrale flytene skal legges inn i
 API-et, eller flyttes til Logic Apps. Svaret er API-et, i faser, med e-post
 først. Fase 1 er beskrevet som plan nederst.
 
+Logic Apps ble prøvd 18.11.2026 og lagt bort — se «Forsøket 18.11.2026» under
+vei 2. Til fasene er gjennomført, går flytene i Power Automate som før.
+
 Hva flytene gjør i dag, og hvilken nyttelast hver av dem får, står i
 `docs/FLYTER.md`. Dette notatet gjentar det ikke.
 
@@ -102,11 +105,35 @@ ikke Graph-veien.
 - **Det man vinner:** flytene ligger i Azure ved siden av Function App-en,
   deployes med Bicep, logger til Log Analytics, og hoppet mellom tenantene
   forsvinner. Entra på triggeren støttes i Consumption med en OAuth-policy.
-  `FLYT_AUTH=entra` må da justeres for audience og issuer, men kallene beholder
-  formen.
+  Kallene beholder formen; bare audiencen er en annen.
 
-Logic Apps er riktig bare hvis flytlogikken skal forbli visuell og redigeres av
-andre enn utviklerne. Det løser ingen av problemene vei 1 løser.
+### Forsøket 18.11.2026, og beslutningen
+
+**Logic Apps er lagt bort.** Flytene blir i Power Automate som de er, til
+logikken flyttes inn i API-et (fasene under).
+
+Varslingsflyten ble bygget på nytt som Logic App for å se hvor mye arbeid en
+overføring er. Det var mer enn antatt:
+
+- **Ingenting kunne kopieres.** Handlingene måtte legges inn på nytt fra
+  designeren, og den første lagringen feilet likevel med «The API connection
+  name must be provided». I Standard peker `referenceName` på en nøkkel i
+  appens `connections.json`, og den må finnes under nøyaktig det navnet.
+- **Plantypen avgjør tilgangsstyringen.** Autorisasjonspolicyen som binder
+  appen til Function App-ens identitet, finnes bare i Consumption. Prøve-appen
+  var Standard, og der må det gjøres med App Service-autentisering.
+- **Nyttelasten har to former** (`docs/FLYTER.md`), og uttrykkene fra
+  varslingen virker ikke på utsendingen: der heter adressen `mottaker`, hver
+  mottaker har sin egen `url`, og `kanal` kan være `sms`.
+- **Tilkoblingene må byttes til tjenestebruker én for én.** I Power Automate
+  skjer det i ett steg, ved import av løsningen.
+
+Det siste veide tyngst. Logic Apps flytter flytene til Azure, men tar ikke
+bort det som er tungt i dag — delegerte tilkoblinger og manuell feilsøking —
+og legger til en omskriving av hver flyt.
+
+`FLYT_RESSURS` (audiencen som app setting) ble laget for forsøket, og tatt ut
+igjen før merge. Den ligger i commit `c3c3e41` om den skulle trengs.
 
 ## Rekkefølge
 
