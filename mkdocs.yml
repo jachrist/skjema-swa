@@ -72,6 +72,8 @@ plugins:
 # mangler. `api/test/dokumentasjon-bygg.test.js` krever at lista er komplett.
 nav:
   - Start: index.md
+  - For skjemaskapere:
+      - SKJEMASKAPER-INNSTILLINGER.md
   - Overlevering og sikkerhet:
       - SIKKERHET-OG-ARKITEKTUR.md
       - SECURITY.md
