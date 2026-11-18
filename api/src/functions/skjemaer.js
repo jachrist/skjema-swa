@@ -18,6 +18,10 @@ const vedleggStorage = require('../lib/vedlegg-storage');
 const { genererSkjemaId } = require('../lib/skjema-id');
 const { filtrerTyperPåTilgang, lagTilgangsCache } = require('../lib/tilgang');
 const { erKompaktFormat, komprimerSkjema } = require('../lib/skjema-kompakt');
+// Hva slags beslutning et valg er (positiv, negativ, ompuss). Samme regel som
+// fargen på utfallet — et avslag i «alle må avgjøre» skal være det samme
+// avslaget som vises i rødt.
+const { typeFor } = require('../lib/behandling-utfall');
 const { beregnAktiveSteg, brukerErBehandler, brukerErBehandlerAsync, beregnAlleKrav, alleStegFerdig, stegErFerdig, skipStegSomIkkeSkalKjore, finnBeslutningsvalg, erOmpussValg, noenStegErBehandlet, skalVarsleInnsender, erBehandlerPaaNoeSteg, stempleAktiveSteg, SYSTEMBESLUTNING, fristFor, STATUS_SENDT_TILBAKE } = require('../lib/behandling');
 const { startBakgrunnsjobb } = require('../lib/bakgrunn');
 const { listekolonner } = require('../lib/listekolonne');
@@ -246,6 +250,20 @@ async function lagreBeslutning(request, context) {
                     Tekst: `Sendt til revidering fra steg ${stegNr} (${stegObj.Stegnavn || ''}). Beslutning: ${notat}. Vennligst oppdater og send inn på nytt.`,
                     Dato: new Date().toISOString()
                 });
+                // «Alle må avgjøre»: svarene som er gitt, gjaldt versjonen som
+                // nå sendes tilbake. Besluttet 18.11.2026: etter rettingen skal
+                // ALLE svare på nytt, ikke bare de som ikke hadde svart. Svarene
+                // flyttes til TidligereBeslutninger i stedet for å slettes — en
+                // kommentar noen har skrevet, skal ikke forsvinne.
+                if (Array.isArray(stegObj.Beslutninger) && stegObj.Beslutninger.length > 0) {
+                    const nullstilt = new Date().toISOString();
+                    stegObj.TidligereBeslutninger = [
+                        ...(Array.isArray(stegObj.TidligereBeslutninger) ? stegObj.TidligereBeslutninger : []),
+                        ...stegObj.Beslutninger.map(b => ({ ...b, Nullstilt: nullstilt }))
+                    ];
+                }
+                delete stegObj.Beslutninger;
+                delete stegObj.BeslutningKrav;
                 // Nullstill steget (så det er "aktivt" igjen etter re-innsending)
                 delete stegObj.Beslutning;
                 stegObj.Beslutning = 0;
@@ -299,10 +317,20 @@ async function lagreBeslutning(request, context) {
                     venterPaa = [...gjenstar];
                     levert = { av: krav.filter(k => k.dekket).length, av_totalt: krav.length };
 
-                    if (alleLevert) {
-                        // Sluttbeslutning = siste avgivelse (i praksis samme siden alle må godkjenne)
+                    // Et avslag avgjør steget med en gang. Besluttet 18.11.2026:
+                    // før ble steget stående til alle hadde svart, og da ble det
+                    // SISTE svaret stegets beslutning — et avslag fra én og en
+                    // godkjenning fra en annen ga et utfall som hang på hvem som
+                    // svarte sist. Nå kan steget bare ende positivt når alle har
+                    // svart positivt.
+                    const erAvslag = typeFor(valgtValg) === 'negativ';
+                    if (alleLevert || erAvslag) {
                         stegObj.Beslutning = beslutning;
-                        stegObj.BehandletAv = 'alle-behandlere';
+                        stegObj.BehandletAv = alleLevert ? 'alle-behandlere' : aktor;
+                        if (!alleLevert) {
+                            venterPaa = [];
+                            context.log(`beslutning: ${aktor} avslo på steg ${stegNr} — steget er avgjort uten å vente på ${gjenstar.join(', ')}`);
+                        }
                         stegObj.BehandletDato = new Date().toISOString();
                         const antallSkippet = skipStegSomIkkeSkalKjore(skjema);
                         if (antallSkippet > 0) context.log(`beslutning: skippet ${antallSkippet} steg med uoppfylt vilkår`);

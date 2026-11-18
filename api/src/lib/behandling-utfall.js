@@ -27,10 +27,12 @@
  * `api/test/behandling-utfall.test.js` kjører BEGGE mot de samme stegene og
  * krever samme svar.
  *
- * HVA DENNE IKKE GJØR: den endrer ikke hva flyten gjør. `steg.Beslutning`
- * styrer fortsatt veien videre, og ved ulike vurderinger er det fortsatt den
- * siste som avgjør. Det er en reell designbeslutning som hører hjemme hos
- * oppdragsgiver, ikke i en visningsmodul — men nå er den i det minste synlig.
+ * FLYTEN LESER `typeFor` (fra 18.11.2026). I «alle må avgjøre» avgjør et
+ * negativt valg steget med en gang (functions/skjemaer.js), så steget kan
+ * bare ende positivt når alle har svart positivt. «Ulike vurderinger» kan
+ * fortsatt oppstå mellom to positive valg, og da er det den siste som står i
+ * `steg.Beslutning`. Ompuss nullstiller svarene (flyttes til
+ * `TidligereBeslutninger`).
  */
 
 /**

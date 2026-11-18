@@ -773,6 +773,9 @@
                 const alleModusInfo = document.createElement('div');
                 alleModusInfo.style.cssText = 'padding: 8px 10px; background: var(--accent-light, rgba(10,132,255,0.1)); border-radius: 6px; margin-bottom: 10px; font-size: 12px;';
                 let html = `<strong>Alle må avgjøre</strong> — ${dekket} av ${krav.length} har levert.`;
+                // Fra 18.11.2026: ett nei avgjør steget for alle. Den som
+                // svarer, skal vite det før hen trykker.
+                html += '<br><small>Et avslag avgjør steget med en gang, uten å vente på de andre.</small>';
                 if (jegHarLevert) {
                     const min = (steg.Beslutninger || []).find(b => String(b.Aktor || '').toLowerCase() === megLower);
                     const valg = (steg.Beslutningsvalg || []).find(v => Number(v.Nummer) === Number(min?.Beslutning));
