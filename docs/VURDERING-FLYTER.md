@@ -102,8 +102,32 @@ ikke Graph-veien.
 - **Det man vinner:** flytene ligger i Azure ved siden av Function App-en,
   deployes med Bicep, logger til Log Analytics, og hoppet mellom tenantene
   forsvinner. Entra på triggeren støttes i Consumption med en OAuth-policy.
-  `FLYT_AUTH=entra` må da justeres for audience og issuer, men kallene beholder
-  formen.
+  Kallene beholder formen; bare audiencen er en annen.
+
+### Binde en Logic App til Function App-ens identitet
+
+Lagt til 18.11.2026, for en prøve-app. Gjelder **Consumption**. Standard har
+ikke autorisasjonspolicyen, og må bruke App Service-autentisering.
+
+1. **Les claimene.** Som admin i v3-dev:
+   `/api/diagnose/mi-token?ressurs=https://management.azure.com/&tokenkilde=plattform`.
+   Svaret viser `iss`, `aud` og `appid` slik tokenet faktisk har dem.
+2. **Policyen.** Logic App → *Settings → Authorization → Add policy*, type
+   `AAD`: `Issuer` og `Audience` fra tokenet, og et eget claim `appid` med
+   identitetens klient-ID (`AZURE_CLIENT_ID`). Alle claimene i én policy må
+   stemme, og det er `appid` som binder den til vår identitet.
+3. **Steng SAS-veien.** Policyen gjør ikke `sig=`-URL-en ugyldig. Sett
+   `"operationOptions": "IncludeAuthorizationHeadersInOutputs"` på triggeren,
+   og triggerbetingelsen
+   `@startsWith(triggerOutputs()?['headers']?['Authorization'], 'Bearer')`.
+4. **Audiencen hos oss.** `FLYT_RESSURS` settes til nøyaktig verdien i
+   policyen, også skråstreken bakerst. Den gjelder alle flytene i miljøet,
+   slik `FLYT_AUTH` gjør, så en blanding av Power Automate og Logic Apps i
+   samme miljø går ikke. Usatt er Power Automate.
+5. **Prøv uten å røre varslingen.** Legg URL-en uten `sp`, `sv` og `sig` i en
+   app setting som slutter på `_FLOW_URL`, og kall
+   `/api/diagnose/mi-flyt?envVar=<NAVN>&ressurs=https://management.azure.com/&tokenkilde=plattform`.
+   Uten `ressurs=` bruker prøven `FLYT_RESSURS`, altså det kallene bruker.
 
 Logic Apps er riktig bare hvis flytlogikken skal forbli visuell og redigeres av
 andre enn utviklerne. Det løser ingen av problemene vei 1 løser.

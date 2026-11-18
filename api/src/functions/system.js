@@ -7,7 +7,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { lagringsvalg } = require('../lib/lagringsvalg');
-const { flytAuthModus, sasIUrlTrossEntra } = require('../lib/flyt-auth');
+const { flytAuthModus, flytRessurs, sasIUrlTrossEntra } = require('../lib/flyt-auth');
 // Miljønavnet og plattformens evner bor i lib-en, sammen med timer-vakten
 // i postnumre.js. Samme type liste, samme dag de endres.
 const {
@@ -35,7 +35,7 @@ const OFFENTLIGE_ENV = [
     // Hvordan vi autentiserer oss mot flytene. Ikke hemmelig, og den forklarer
     // et symptom som ellers ser likt ut fra begge kanter: en 401 fra flyten
     // betyr noe helt annet når modusen er «sas» enn når den er «entra».
-    'FLYT_AUTH',
+    'FLYT_AUTH', 'FLYT_RESSURS',
     'PURRE_MAKS_DAGER', 'PURRE_MIN_DAGER_MELLOM',
     // Overstyring av timer-schedulen (lib/jobber.js). Ikke hemmelig, og den
     // forklarer en jobb som kjører til et annet tidspunkt enn koden sier.
@@ -303,6 +303,9 @@ app.http('systemInfo', {
                 // som ikke er en kjent verdi — da er den i praksis «sas», og
                 // det er ikke åpenbart fra verdien alene.
                 flytAuth: flytAuthModus(),
+                // Hvilken audience tokenet får. Power Automate og en Logic App
+                // venter hver sin, og en 401 ser lik ut fra begge.
+                flytRessurs: flytRessurs(),
                 request: {
                     host: request.headers.get('host') || null,
                     xForwardedHost: request.headers.get('x-forwarded-host') || null,

@@ -42,6 +42,41 @@ const { tokenFraPlattformen } = require('./plattform-token');
  */
 const FLYT_RESSURS = 'https://service.flow.microsoft.com/';
 
+/**
+ * Hvilken audience tokenet skal ha. `FLYT_RESSURS` overstyrer standarden.
+ *
+ * Lagt til 18.11.2026 for Logic Apps. En Consumption-app med
+ * autorisasjonspolicy sammenligner `aud` med verdien i policyen, og den er
+ * ikke Power Automate sin. Med en app setting kan flytene stå på hver sin
+ * plattform under overgangen uten kodeendring — men alle flytene i et miljø
+ * deler fortsatt ÉN audience, slik de deler én `FLYT_AUTH`.
+ *
+ * Verdien brukes BOKSTAVELIG. Det legges ikke til eller fjernes en skråstrek:
+ * Power Automate krever den, og en policy i Logic Apps krever nøyaktig det
+ * den er skrevet med. Å «rette» verdien ville gjøre feilen usynlig.
+ *
+ * En verdi som ikke er en https-URL, gir `gyldig: false`, og da KASTER
+ * `flytAutorisasjon` med årsaken. Den faller ikke tilbake på standarden: et
+ * token for Power Automate til en Logic App gir en 401 som ser ut som feil
+ * policy, og da er tastefeilen umulig å finne.
+ *
+ * Alle tre feltene er alltid satt — systemsiden viser dem.
+ *
+ * @returns {{ ressurs: string|null, gyldig: boolean, grunn: string }}
+ */
+function flytRessurs(env = process.env) {
+    const satt = String(env.FLYT_RESSURS || '').trim();
+    if (!satt) {
+        return { ressurs: FLYT_RESSURS, gyldig: true, grunn: 'FLYT_RESSURS er ikke satt — Power Automate (standard)' };
+    }
+    let url = null;
+    try { url = new URL(satt); } catch (_) { /* se under */ }
+    if (!url || url.protocol !== 'https:') {
+        return { ressurs: null, gyldig: false, grunn: 'FLYT_RESSURS er satt, men er ikke en https-URL — ingen token hentes' };
+    }
+    return { ressurs: satt, gyldig: true, grunn: 'FLYT_RESSURS er satt — brukes ordrett, med eller uten skråstrek bakerst' };
+}
+
 /** Lovlige verdier for `FLYT_AUTH`. */
 const MODUS = ['sas', 'entra'];
 
@@ -92,13 +127,18 @@ function flytAuthModus(env = process.env) {
 async function flytAutorisasjon() {
     if (flytAuthModus().modus !== 'entra') return null;
     const na = Date.now();
-    if (bufret && (bufret.utloper === null || bufret.utloper - FORNY_FOR_MS > na)) {
+    const { ressurs, gyldig, grunn } = flytRessurs();
+    if (!gyldig) throw new Error(`FLYT_AUTH=entra, men ${grunn}`);
+    // Bufferen gjelder én audience. Et token for Power Automate skal ikke
+    // gjenbrukes når ressursen er byttet.
+    if (bufret && bufret.ressurs === ressurs
+        && (bufret.utloper === null || bufret.utloper - FORNY_FOR_MS > na)) {
         return bufret.verdi;
     }
     const klientId = String(process.env.AZURE_CLIENT_ID || '').trim();
     let svar;
     try {
-        svar = await tokenFraPlattformen(FLYT_RESSURS, klientId);
+        svar = await tokenFraPlattformen(ressurs, klientId);
     } catch (e) {
         throw new Error(`FLYT_AUTH=entra, men tokenet kunne ikke hentes: ${e.message}`);
     }
@@ -108,7 +148,7 @@ async function flytAutorisasjon() {
     // Kan utløpet ikke leses, caches ingenting. Et token vi ikke vet levetiden
     // på er verre å gjenbruke enn å hente på nytt.
     const ms = Date.parse(svar.utloper);
-    bufret = { verdi: `Bearer ${svar.token}`, utloper: Number.isFinite(ms) ? ms : na };
+    bufret = { verdi: `Bearer ${svar.token}`, utloper: Number.isFinite(ms) ? ms : na, ressurs };
     return bufret.verdi;
 }
 
@@ -148,6 +188,6 @@ function sasIUrlTrossEntra(verdi, modus = flytAuthModus()) {
 }
 
 module.exports = {
-    flytAuthModus, flytAutorisasjon, FLYT_RESSURS, MODUS,
+    flytAuthModus, flytAutorisasjon, flytRessurs, FLYT_RESSURS, MODUS,
     sasIUrlTrossEntra, _glemToken: glemToken
 };

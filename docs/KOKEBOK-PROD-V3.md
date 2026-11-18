@@ -1639,7 +1639,8 @@ az identity show --name $MI --resource-group $RG --query principalId -o tsv
 3. **Skråstreken er VÅR, ikke flytens.** Det er ingenting å sette i Power
    Automate: `aud` kommer av hvilken ressurs vi ber om et token for.
    `lib/flyt-auth.js` ber om `https://service.flow.microsoft.com/` **med
-   skråstrek**, og `lib/plattform-token.js` finnes utelukkende fordi
+   skråstrek** (eller `FLYT_RESSURS`, ordrett, når den er satt — for Logic
+   Apps), og `lib/plattform-token.js` finnes utelukkende fordi
    Azure-SDK-en ville klippet den bort — den oversetter `<ressurs>/.default`
    til plattformens `resource` ved å fjerne `/.default`, og da forsvinner
    skråstreken med. Power Automate sammenligner `aud` bokstavelig, så det

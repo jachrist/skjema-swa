@@ -46,7 +46,7 @@ const auth = require('../src/lib/flyt-auth');
 const flytKaller = require('../src/lib/flyt-kaller');
 
 const KLIENTID = '11111111-2222-3333-4444-555555555555';
-const VARER = ['FLYT_AUTH', 'AZURE_CLIENT_ID', 'IDENTITY_ENDPOINT', 'IDENTITY_HEADER',
+const VARER = ['FLYT_AUTH', 'FLYT_RESSURS', 'AZURE_CLIENT_ID', 'IDENTITY_ENDPOINT', 'IDENTITY_HEADER',
     'FLOW_CALLBACK_KEY'];
 
 // Identity-endepunktet stubbes med en fetch vi styrer. Da kan vi se nøyaktig
@@ -332,6 +332,65 @@ async function main() {
     const sys = utenKommentarer(les('api', 'src', 'functions', 'system.js'));
     sjekk('helsesjekken viser modusen fra regelen', /flytAuth: flytAuthModus\(\)/.test(sys), true);
     sjekk('og FLYT_AUTH står i den offentlige lista', /'FLYT_AUTH'/.test(sys), true);
+    sjekk('helsesjekken viser ressursen fra regelen', /flytRessurs: flytRessurs\(\)/.test(sys), true);
+    sjekk('og FLYT_RESSURS står i den offentlige lista', /'FLYT_RESSURS'/.test(sys), true);
+}
+
+// ---------- 8. FLYT_RESSURS — audiencen kan overstyres (Logic Apps) ----------
+{
+    const LOGIC = 'https://management.azure.com/';
+    sjekk('usatt → Power Automate', auth.flytRessurs({}).ressurs, 'https://service.flow.microsoft.com/');
+    sjekk('usatt er gyldig', auth.flytRessurs({}).gyldig, true);
+    sjekk('satt → brukes', auth.flytRessurs({ FLYT_RESSURS: LOGIC }).ressurs, LOGIC);
+    // Ordrett: ingen skråstrek legges til eller tas bort. En policy i Logic
+    // Apps krever nøyaktig det den er skrevet med.
+    sjekk('uten skråstrek → uten skråstrek', auth.flytRessurs({ FLYT_RESSURS: 'https://management.azure.com' }).ressurs,
+        'https://management.azure.com');
+    sjekk('mellomrom rundt fjernes', auth.flytRessurs({ FLYT_RESSURS: `  ${LOGIC}\n` }).ressurs, LOGIC);
+    for (const tull of ['management.azure.com', 'http://management.azure.com/', 'entra']) {
+        const r = auth.flytRessurs({ FLYT_RESSURS: tull });
+        sjekk(`ugyldig «${tull}» → ingen ressurs`, [r.ressurs, r.gyldig], [null, false]);
+    }
+    sjekk('alltid tre felt', [{}, { FLYT_RESSURS: LOGIC }, { FLYT_RESSURS: 'x' }]
+        .every(e => Object.keys(auth.flytRessurs(e)).sort().join() === 'grunn,gyldig,ressurs'), true);
+
+    // Det som faktisk sendes til identity-endepunktet.
+    await medMiljo({ ...MI, FLYT_RESSURS: LOGIC }, async () => {
+        await auth.flytAutorisasjon();
+        sjekk('FLYT_RESSURS går ordrett som resource', new URL(kall[0].url).searchParams.get('resource'), LOGIC);
+    });
+
+    // Ugyldig verdi: kast med årsaken, og ikke spør om et token i det hele tatt.
+    // Å falle tilbake på Power Automate ville gitt en 401 fra Logic App-en som
+    // ser ut som feil policy.
+    await medMiljo({ ...MI, FLYT_RESSURS: 'management.azure.com' }, async () => {
+        let melding = '(kastet ikke)';
+        try { await auth.flytAutorisasjon(); } catch (e) { melding = e.message; }
+        sjekk('ugyldig ressurs kaster', /ikke en https-URL/.test(melding), true);
+        sjekk('og identity-endepunktet kalles ikke', kall.length, 0);
+    });
+
+    // Bufferen gjelder én audience. Byttes ressursen, hentes et nytt token.
+    await medMiljo(MI, async () => {
+        await auth.flytAutorisasjon();
+        process.env.FLYT_RESSURS = LOGIC;
+        await auth.flytAutorisasjon();
+        sjekk('ny ressurs gir nytt token', kall.length, 2);
+        sjekk('og det andre er for den nye', new URL(kall[1].url).searchParams.get('resource'), LOGIC);
+        await auth.flytAutorisasjon();
+        sjekk('samme ressurs igjen bruker bufferen', kall.length, 2);
+    });
+
+    // sas: FLYT_RESSURS skal ikke føre til tokenhenting.
+    await medMiljo({ ...MI, FLYT_AUTH: undefined, FLYT_RESSURS: LOGIC }, async () => {
+        sjekk('sas med FLYT_RESSURS: ingen header', await auth.flytAutorisasjon(), null);
+        sjekk('og ingen tokenhenting', kall.length, 0);
+    });
+
+    // mi-flyt-prøven skal måle den audiencen kallene bruker, ikke en egen.
+    const diag = utenKommentarer(les('api', 'src', 'functions', 'mi-diagnose.js'));
+    sjekk('mi-flyt leser standarden fra flytRessurs', /flytRessurs\(\)/.test(diag), true);
+    sjekk('og har ingen egen standard', /\|\|\s*'https:\/\/service\.flow/.test(diag), false);
 }
 
 }
