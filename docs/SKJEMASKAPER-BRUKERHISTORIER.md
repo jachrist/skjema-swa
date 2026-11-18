@@ -1,6 +1,6 @@
 # Brukerhistorier for skjemaskapere
 
-Ti historier som til sammen viser egenskapene i skjemaeditoren. Hver historie
+Elleve historier som til sammen viser egenskapene i skjemaeditoren. Hver historie
 er et realistisk skjema fra FHS, med oppsettet steg for steg og det som skal
 skje når det brukes.
 
@@ -186,7 +186,7 @@ ikke».
 
 > **Vilkår på et tidligere steg krever avhengighet.** Uten «Avhengig av»
 > starter steget ved innsending, og vilkåret vurderes før det andre steget er
-> avgjort. Da hoppes steget over.
+> avgjort. Da hoppes steget over. «Sjekk oppsettet» varsler om det.
 
 **Sjekk at**
 - varsel for ompuss ikke kan slås av
@@ -343,6 +343,59 @@ døgnet.
 
 ---
 
+## 11. Ny emnebeskrivelse som alle må godkjenne
+
+**Behovet.** Som emneansvarlig vil jeg sende inn en ny emnebeskrivelse som
+fagmiljøet, studieleder og kvalitetsrådgiver alle må ha godkjent før den
+publiseres. Én innvending skal være nok til at den kommer tilbake til meg.
+
+**Oppsettet**
+
+1. *Felt*:
+   - Flervalg-dropdown «Emne» med **datakilde** `Emner` (§7.3)
+   - E-post «Fagansvarlig», Obligatorisk
+   - Informasjon og Tekst flerlinje for selve beskrivelsen
+   - Opplasting «Emneplan» (Office og PDF)
+2. *Steg 1 «Godkjenning»* (§8.1):
+   - Behandlere: personen fra feltet «Fagansvarlig», rollen
+     `Studieleder(EA)` og rollen `Kvalitetsrådgiver`
+   - **Krav ved flere behandlere: Alle må avgjøre**
+   - Beslutningsvalg: 1 «Godkjent», 2 «Må revideres» med Handling **Ompuss**.
+     Ikke et eget «Avslått» — se under
+   - **Forventet behandlingstid** 14 dager, ved utløp **purre**
+3. *Steg 2 «Publisering»*:
+   - Behandlere: rollen `Studieadministrasjon`. **Første behandler avgjør**
+   - **Avhengig av** steg 1
+4. *Samtale* (§8.5): **Alle deltakere kan starte**, så de tre kan stille
+   spørsmål til emneansvarlig i samme tråd.
+
+**Slik virker det.** Alle tre får saken samtidig. Steget står åpent til hver
+av dem har svart. Behandlingssiden viser hvem som er ferdige, og hvem det
+ventes på. En rolle er dekket når én av innehaverne har svart: har
+studieprogrammet to studieledere, holder det at én av dem godkjenner. Svarer
+noen «Må revideres», går saken tilbake til emneansvarlig med én gang, uten å
+vente på de andre. Når alle har godkjent, går saken videre til publisering.
+
+**Slik avgjøres steget.** Når siste behandler har svart, blir **det siste
+svaret** stegets beslutning. Det finnes ingen flertallsregel. Derfor har
+oppsettet bare «Godkjent» og et ompussvalg: et «Avslått» fra én og
+«Godkjent» fra en annen ville gitt et utfall som avhenger av hvem som svarte
+sist.
+
+> **Godkjenninger før en retting står seg.** Ompuss nullstiller steget, men
+> ikke svarene som alt er gitt. Etter at emneansvarlig har rettet og sendt
+> inn igjen, trenger bare de som ikke har godkjent å svare. Skal alle se på
+> den nye versjonen, må de åpne saken og godkjenne på nytt selv.
+
+**Sjekk at**
+- steget ikke er avgjort når to av tre har godkjent, og at siden viser hvem
+  det ventes på
+- én av to studieledere er nok for rollen
+- «Må revideres» fra én av dem sender saken tilbake straks
+- steg 2 starter først når alle tre har godkjent
+
+---
+
 ## Dekning
 
 | Egenskap | Historie |
@@ -375,17 +428,16 @@ døgnet.
 | Rolle med omfang fra felt, reserverolle | 4 |
 | Person fra felt som behandler | 3 |
 | Første avgjør / team som behandler | 6 |
+| Alle må avgjøre | 11 |
 | Beslutningsvalg: avvisning, varsle av | 3 |
-| Ompuss | 5, 8 |
+| Ompuss | 5, 8, 11 |
 | Innsenderen som behandler | 5 |
 | Forventet behandlingstid: purre / avgjøre | 6 / 5 |
 | Kanaler: Planner, Teams-kanal / Teams-melding | 6 / 10 |
 | Melding per beslutningsvalg | 3 |
-| Samtale | 5 |
+| Samtale: behandlere starter / alle kan starte | 5 / 11 |
 | Ekstern PA-flyt | 10 |
 
-**Ikke med i noen historie:** «Alle må avgjøre» på et steg, Merk alle i
-flervalg, AI-import, kopiering av skjematype og datakildene Personer,
-Studenter, Roller, Team, Kull og Studieprogrammer. De kan tas inn som
-varianter, eller i en egen historie om behandling i panel («Alle må
-avgjøre», f.eks. en opptakskomité).
+**Ikke med i noen historie:** Merk alle i flervalg, AI-import, kopiering av
+skjematype og datakildene Personer, Studenter, Roller, Team, Kull og
+Studieprogrammer. De kan tas inn som varianter av historiene over.

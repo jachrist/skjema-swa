@@ -40,7 +40,7 @@ const BACKEND = path.join('api', 'src', 'lib', 'vilkar.js');
 // Avhengighetene i den rekkefølgen de må erklæres.
 const DELER = ['UUID_RE', 'IDAG_REF', 'ISO_DATO_RE',
     'erDNFFormat', 'erLegacyFormat', 'migrerTilDNF',
-    'svarFraFelt', 'hentSvar', 'parsTall',
+    'svarFraFelt', 'stegnummerFraRef', 'hentSvar', 'parsTall',
     'erIsoDato', 'idagISO', 'datoPlussDager', 'hoyreVerdi',
     'evaluerBetingelse'];
 
@@ -288,7 +288,7 @@ for (const [navn, verdi, ventet] of HOYRE) {
 // skjemaet åpnes.
 {
     const DELER_UTFYLT = ['UUID_RE', 'IDAG_REF', 'erDNFFormat', 'erLegacyFormat',
-        'migrerTilDNF', 'svarFraFelt', 'hentSvar', 'samleRefererteFelter'];
+        'migrerTilDNF', 'svarFraFelt', 'stegnummerFraRef', 'hentSvar', 'samleRefererteFelter'];
     const uFra = hentEksport(les(FRONTEND), 'alleFelterUtfylt', DELER_UTFYLT);
     const uBak = hentEksport(les(BACKEND), 'alleFelterUtfylt', DELER_UTFYLT);
 

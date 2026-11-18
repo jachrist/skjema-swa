@@ -76,14 +76,19 @@ function svarFraFelt(felt) {
     return felt.Svar ?? null;
 }
 
+/** Stegnummeret en referanse peker på — `behandling-2` gir 2 — ellers null. Tvilling i api/src/lib/vilkar.js. */
+export function stegnummerFraRef(feltRef) {
+    const m = /^behandling-(\d+)$/.exec(String(feltRef ?? '').trim());
+    return m ? parseInt(m[1], 10) : null;
+}
+
 export function hentSvar(seksjoner, feltRef, behandling) {
     if (!feltRef) return null;
     const ref = String(feltRef).trim();
 
-    const behMatch = /^behandling-(\d+)$/.exec(ref);
-    if (behMatch) {
+    const stegNr = stegnummerFraRef(ref);
+    if (stegNr !== null) {
         if (!Array.isArray(behandling)) return null;
-        const stegNr = parseInt(behMatch[1], 10);
         const steg = behandling.find(s => Number(s.Steg) === stegNr);
         if (!steg) return null;
         const beslutning = steg.Beslutning;

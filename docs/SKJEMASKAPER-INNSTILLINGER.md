@@ -180,12 +180,12 @@ Ingen steg = skjemaet avsluttes ved innsending.
 | **Behandlere** (`Personer`, `Roller`, `Team`) | Personer, roller, team (se 8.2) | Hvem som kan avgjøre steget |
 | **Innsenderen som behandler** (`InnsenderBehandler`) | Av/på | Innsenderen blir behandler på steget, f.eks. for å svare på om hen vil klage. Bare innloggede innsendere |
 | **Reserverolle** (`Reserverolle`) | En rolle | Bare når en behandlerrolle har omfang fra et felt. Brukes hvis rollen ikke har innehavere for det svaret |
-| **Krav ved flere behandlere** (`Beslutning_alle`) | `Første behandler avgjør` · `Alle må avgjøre` | Alle: ett svar per person, per rolle og per team. Ompuss slår inn med en gang |
+| **Krav ved flere behandlere** (`Beslutning_alle`) | `Første behandler avgjør` · `Alle må avgjøre` | Alle: ett svar per person, per rolle og per team. Når alle har svart, blir det **siste** svaret stegets beslutning — det finnes ingen flertallsregel. Ompuss slår inn med en gang, og nullstiller ikke svarene som alt er gitt |
 | **Beslutningsvalg** (`Beslutningsvalg`) | Nummer, tekst, handling, varsle (se 8.3) | Det behandleren kan velge. Standard: Godkjent, Avslått |
 | **Forventet behandlingstid** (`Frist`) | Antall kalenderdager fra steget blir aktivt · ved utløp: **purre ukentlig** eller **avgjøre med et valg** | Tomt = ingen frist. Ompussvalg kan ikke velges for automatisk avgjørelse |
 | **Varsling** (`Varsling`) | E-post · Teams-melding · Planner-oppgave · Teams-kanal (se 8.4) | Kanaler når steget blir aktivt. Standard: e-post |
 | **Avhengig av** (`AvhengigAv`) | Et steg med lavere nummer | Steget starter først når det andre er ferdig. Uten: parallelt |
-| **Steget kjøres kun hvis** (`Vilkår`) | Vilkår mot svar og tidligere stegs beslutninger | Ellers hoppes steget over. Et vilkår på et annet stegs beslutning krever **Avhengig av** det steget — ellers vurderes det ved innsending, før beslutningen finnes |
+| **Steget kjøres kun hvis** (`Vilkår`) | Vilkår mot svar og tidligere stegs beslutninger | Ellers hoppes steget over. Et vilkår på et annet stegs beslutning krever **Avhengig av** det steget — ellers vurderes det ved innsending, før beslutningen finnes. «Sjekk oppsettet» varsler om det |
 | **Ekstern PA-flyt** (`Flyt_url`, `Flyt_parametere`) | URL · notat | Satt: flyten kalles og avgjør steget i stedet for en behandler. Det vanlige oppsettet dempes |
 | Rekkefølge | Piler, slett | |
 

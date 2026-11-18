@@ -30,7 +30,8 @@
  */
 const { finnFeltViaRef, finnFeltViaId } = require('./placeholder');
 const feltperson = require('./feltperson');
-const { harAvhengighet, fristFor, finnBeslutningsvalg, erOmpussValg } = require('./behandling');
+const { harAvhengighet, fristFor, finnBeslutningsvalg, erOmpussValg, stegSomVentesPaa } = require('./behandling');
+const { samleRefererteFelter, stegnummerFraRef } = require('./vilkar');
 
 /** Feltreferanser i dynamiske roller og plassholdere: {2-3} eller {felt-id}. */
 const FELTREF = /\{([^}]+)\}/g;
@@ -452,6 +453,52 @@ function sjekkAvhengighet(steg, nr, alleNumre, funn) {
 }
 
 /**
+ * Har steget et vilkår på et annet stegs beslutning, uten å vente på det?
+ *
+ * Lagt til 18.11.2026, funnet mens brukerhistoriene ble skrevet. Et steg uten
+ * `AvhengigAv` slipper løs ved innsending, og da vurderes vilkåret mens det
+ * andre steget ennå ikke er avgjort. Referansen gir ingen verdi, vilkåret
+ * holder ikke, og steget hoppes over — før noen har behandlet noe. Det ser ut
+ * som riktig oppsett i editoren, og ingenting i driften sier fra.
+ *
+ * Advarsel og ikke feil: et steg som selv hoppes over ved innsending, ER
+ * avgjort da («Hoppet over»), og et vilkår på det kan være meningen.
+ *
+ * Kjeden leses fra `stegSomVentesPaa` og referansene fra `stegnummerFraRef` —
+ * de samme reglene som blokkerer steget og evaluerer vilkåret.
+ */
+function sjekkVilkarAvhengighet(steg, nr, alleSteg, alleNumre, funn) {
+    if (!steg?.Vilkår) return;
+    const sted = stedFor(steg, nr, 'Vilkår');
+    const venter = stegSomVentesPaa(steg, alleSteg);
+    const referert = new Set(samleRefererteFelter(steg.Vilkår)
+        .map(stegnummerFraRef).filter(n => n !== null));
+    for (const mål of [...referert].sort((a, b) => a - b)) {
+        if (mål === Number(nr)) {
+            funn.push({
+                alvor: 'feil', kode: 'steg.vilkar-seg-selv', sted,
+                melding: 'Vilkåret ser på stegets egen beslutning, som ikke finnes før '
+                    + 'steget er avgjort. Steget hoppes over ved innsending.'
+            });
+        } else if (!alleNumre.has(mål)) {
+            funn.push({
+                alvor: 'feil', kode: 'steg.vilkar-steg-mangler', sted,
+                melding: `Vilkåret ser på steg ${mål}, som ikke finnes. Det gir aldri en `
+                    + 'beslutning, og steget hoppes over ved innsending.'
+            });
+        } else if (!venter.has(mål)) {
+            funn.push({
+                alvor: 'advarsel', kode: 'steg.vilkar-uten-avhengighet', sted,
+                melding: `Vilkåret ser på beslutningen i steg ${mål}, men steget venter ikke `
+                    + `på det. Da vurderes vilkåret ved innsending, før steg ${mål} er avgjort, `
+                    + `og steget hoppes over. Sett «Avhengig av» til steg ${mål} — eller til et `
+                    + `steg som selv venter på steg ${mål}.`
+            });
+        }
+    }
+}
+
+/**
  * Forventet behandlingstid: gjør den det skjemaskaperen tror?
  *
  * Samme regler som jobben (`fristFor`, `fristTiltak` i lib/behandling.js).
@@ -765,6 +812,7 @@ async function diagnoser(def, { antallInnehavere = standardAntallInnehavere } = 
         sjekkMottakere(s, nr, funn, def);
         sjekkFrist(s, nr, funn);
         sjekkAvhengighet(s, nr, alleStegNumre, funn);
+        sjekkVilkarAvhengighet(s, nr, steg, alleStegNumre, funn);
         sjekkPlanner(s, nr, kanaler.includes('planner'), funn);
         sjekkTeamskanal(s, nr, kanaler.includes('teamskanal'), funn);
 

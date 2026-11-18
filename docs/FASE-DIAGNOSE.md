@@ -64,6 +64,9 @@ riktig, og sluttet å tro på lista.
 | `steg.avhengig-mangler` | `AvhengigAv` peker på et steg som ikke finnes — steget blir aldri aktivt |
 | `steg.avhengig-seg-selv` | Steget venter på seg selv |
 | `steg.avhengig-senere` | Venter på et steg med høyere nummer *(advarsel)* |
+| `steg.vilkar-uten-avhengighet` | Vilkåret ser på et annet stegs beslutning, men steget venter ikke på det — direkte eller gjennom kjeden av `AvhengigAv`. Vilkåret vurderes da ved innsending, og steget hoppes over *(advarsel — et steg som selv hoppes over ved innsending ER avgjort, og et vilkår på det kan være meningen)* |
+| `steg.vilkar-seg-selv` | Vilkåret ser på stegets egen beslutning |
+| `steg.vilkar-steg-mangler` | Vilkåret ser på et steg som ikke finnes |
 | `rolle.tom` | Rollen gir ingen mottakere |
 | `rolle.feltref-mangler` | Dynamisk rolle peker på et felt som ikke finnes |
 | `rolle.dynamisk` | Rollen settes sammen av svar og kan ikke slås opp *(info)* |
