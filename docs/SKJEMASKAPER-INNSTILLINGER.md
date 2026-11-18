@@ -185,7 +185,7 @@ Ingen steg = skjemaet avsluttes ved innsending.
 | **Forventet behandlingstid** (`Frist`) | Antall kalenderdager fra steget blir aktivt · ved utløp: **purre ukentlig** eller **avgjøre med et valg** | Tomt = ingen frist. Ompussvalg kan ikke velges for automatisk avgjørelse |
 | **Varsling** (`Varsling`) | E-post · Teams-melding · Planner-oppgave · Teams-kanal (se 8.4) | Kanaler når steget blir aktivt. Standard: e-post |
 | **Avhengig av** (`AvhengigAv`) | Et steg med lavere nummer | Steget starter først når det andre er ferdig. Uten: parallelt |
-| **Steget kjøres kun hvis** (`Vilkår`) | Vilkår mot svar og tidligere stegs beslutninger | Ellers hoppes steget over |
+| **Steget kjøres kun hvis** (`Vilkår`) | Vilkår mot svar og tidligere stegs beslutninger | Ellers hoppes steget over. Et vilkår på et annet stegs beslutning krever **Avhengig av** det steget — ellers vurderes det ved innsending, før beslutningen finnes |
 | **Ekstern PA-flyt** (`Flyt_url`, `Flyt_parametere`) | URL · notat | Satt: flyten kalles og avgjør steget i stedet for en behandler. Det vanlige oppsettet dempes |
 | Rekkefølge | Piler, slett | |
 
