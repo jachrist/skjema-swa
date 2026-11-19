@@ -292,6 +292,18 @@ async function sendEpostViaFlyt(args, log = () => {}) {
  *   sms   → HTTP/connector mot SMS-leverandør (Twilio/Sveve/LinkMobility/ACS)
  */
 async function sendOtpViaFlyt({ kanal, mottaker, kode, gyldigMinutter = 15 }, log = () => {}) {
+    // E-POST VIA GRAPH (lib/graph-epost.js). Teksten lages her, ikke i flyten
+    // — se lib/epost-maler.js. Koden logges ikke, bortsett fra i tørrkjøring,
+    // som før.
+    if (String(kanal) === 'epost' && graphEpost.epostVei().vei === 'graph') {
+        if (varslingAv()) {
+            log(`otp DRY-RUN (graph): mottaker=${mottaker} kode=${kode}`);
+            return { status: 'deaktivert' };
+        }
+        const mal = require('./epost-maler').engangskode({ kode, gyldigMinutter });
+        const r = await graphEpost.sendEpost({ mottakere: [{ epost: mottaker }], emne: mal.emne, html: mal.html }, { log });
+        return r.status === 'ok' ? { status: 'ok' } : { status: r.status, melding: r.melding };
+    }
     const url = process.env.OTP_FLOW_URL;
     if (!url) {
         log('otp-flyt: OTP_FLOW_URL ikke satt — hopper over (kode logges NOT for sikkerhet)');
