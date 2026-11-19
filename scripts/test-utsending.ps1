@@ -22,7 +22,9 @@
     Skjematypen må ha «Ekstern innsender» på — ellers avviser API-et
     utsendingen. Mottakerne får ekte e-post.
 
-    Krever PowerShell 7 (pwsh) — Cloud Shell har det.
+    Virker i Windows PowerShell 5.1 og i PowerShell 7 (Cloud Shell). Bruker
+    derfor verken «??» eller -SkipHttpErrorCheck, som 5.1 ikke kjenner — og
+    hele fila tolkes før første linje kjøres, så en versjonssjekk hjelper ikke.
 
 .PARAMETER SkjematypeId
     Skjematypen som sendes ut. Må ha Ekstern innsender på.
@@ -64,7 +66,12 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-if ($PSVersionTable.PSVersion.Major -lt 7) { throw 'Skriptet krever PowerShell 7 (pwsh).' }
+
+# Verdien, eller en reserve når den er tom. Erstatter «??», som 5.1 ikke har.
+function Eller($verdi, $reserve) {
+    if ($null -ne $verdi -and "$verdi" -ne '') { return $verdi }
+    return $reserve
+}
 
 # ---------- mottakerne ----------
 $ugyldige = @($Mottakere | Where-Object { $_ -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$' })
@@ -117,7 +124,7 @@ $planNokkel = Hent-Nokkel 'scheduler-key' 'SCHEDULER_KEY'
 
 function Vis-Utfall($svar, [string] $antallFelt) {
     $d = $svar.Data
-    Write-Host "   HTTP $($svar.Status), $($antallFelt): $($d.$antallFelt ?? 0) av $($d.antallKandidater ?? '?') kandidater"
+    Write-Host "   HTTP $($svar.Status), $($antallFelt): $(Eller $d.$antallFelt 0) av $(Eller $d.antallKandidater '?') kandidater"
     if ($d.gjenstaar -gt 0) {
         Write-Host "   $($d.gjenstaar) gjenstår til neste kjøring (høyst 25 per kjøring via Graph). Kjør jobben igjen fra Administrasjon → Jobber." -ForegroundColor Yellow
     }
@@ -127,10 +134,29 @@ function Vis-Utfall($svar, [string] $antallFelt) {
 
 function Kall([string] $sti, [hashtable] $headere, $innhold) {
     $json = $innhold | ConvertTo-Json -Depth 5
-    $svar = Invoke-WebRequest -Uri "$Base$sti" -Method Post -Headers $headere -ContentType 'application/json; charset=utf-8' -Body ([System.Text.Encoding]::UTF8.GetBytes($json)) -SkipHttpErrorCheck
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($json)
+    $status = 0
+    $tekst = ''
+    try {
+        $svar = Invoke-WebRequest -Uri "$Base$sti" -Method Post -Headers $headere -ContentType 'application/json; charset=utf-8' -Body $bytes -UseBasicParsing
+        $status = [int]$svar.StatusCode
+        # Lest som UTF-8 fra bytene: 5.1 gjetter ellers feil tegnsett, og
+        # æ, ø og å i meldingene blir til rot.
+        $tekst = [System.Text.Encoding]::UTF8.GetString($svar.RawContentStream.ToArray())
+    } catch {
+        # Et svar med feilkode kaster i begge versjoner. Svaret er likevel
+        # det vi vil se — meldingen fra API-et sier hvorfor.
+        $resp = $_.Exception.Response
+        if (-not $resp) { throw }
+        $status = [int]$resp.StatusCode
+        $tekst = $_.ErrorDetails.Message
+        if (-not $tekst) {
+            try { $tekst = (New-Object System.IO.StreamReader($resp.GetResponseStream())).ReadToEnd() } catch { $tekst = '' }
+        }
+    }
     $data = $null
-    try { $data = $svar.Content | ConvertFrom-Json } catch { $data = $svar.Content }
-    return [pscustomobject]@{ Status = [int]$svar.StatusCode; Data = $data }
+    try { $data = $tekst | ConvertFrom-Json } catch { $data = $tekst }
+    return [pscustomobject]@{ Status = $status; Data = $data }
 }
 
 try {
@@ -139,7 +165,7 @@ try {
     Write-Host '1. Oppretter utsendingen ...'
     $r = Kall '/api/utsending' @{ 'x-flow-key' = $flytNokkel } $kropp
     if ($r.Status -ne 200) {
-        Write-Host "   Avvist ($($r.Status)): $($r.Data.melding ?? $r.Data)" -ForegroundColor Red
+        Write-Host "   Avvist ($($r.Status)): $(Eller $r.Data.melding $r.Data)" -ForegroundColor Red
         return
     }
     # Lenkene er personlige — bare mottaker og utløp skrives ut.
