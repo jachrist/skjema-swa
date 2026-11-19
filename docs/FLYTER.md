@@ -228,6 +228,11 @@ Brukeren opplever det som tre kvitteringer på samme skjema, uten at den ene
 viser at de andre fikk den samme. Det skal være ÉN e-post, med kopimottakerne
 i kopi-feltet.
 
+> **Med `EPOST_VEI=graph` er dette løst uten flyten** (19.11.2026): e-posten
+> sendes via Graph, og kvitteringen med kopi blir én e-post med Cc. Se
+> «Fase 1» i `docs/VURDERING-FLYTER.md`. Resten av avsnittet gjelder
+> flytveien, som pilot og prod fortsatt bruker.
+
 **Koden er ute, flyten er ikke.** Det er derfor dette avsnittet står her:
 
 ```jsonc

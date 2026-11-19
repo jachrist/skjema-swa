@@ -36,6 +36,9 @@ const OFFENTLIGE_ENV = [
     // et symptom som ellers ser likt ut fra begge kanter: en 401 fra flyten
     // betyr noe helt annet når modusen er «sas» enn når den er «entra».
     'FLYT_AUTH',
+    // E-post via Graph i stedet for varslingsflyten (lib/graph-epost.js).
+    // Ikke hemmelige: en vei og en postboksadresse.
+    'EPOST_VEI', 'EPOST_AVSENDER',
     'PURRE_MAKS_DAGER', 'PURRE_MIN_DAGER_MELLOM',
     // Overstyring av timer-schedulen (lib/jobber.js). Ikke hemmelig, og den
     // forklarer en jobb som kjører til et annet tidspunkt enn koden sier.
@@ -303,6 +306,9 @@ app.http('systemInfo', {
                 // som ikke er en kjent verdi — da er den i praksis «sas», og
                 // det er ikke åpenbart fra verdien alene.
                 flytAuth: flytAuthModus(),
+                // Hvilken vei e-posten går, fra regelen selv — ikke utledet
+                // av hvilke env-varer som er satt.
+                epostVei: require('../lib/graph-epost').epostVei(),
                 request: {
                     host: request.headers.get('host') || null,
                     xForwardedHost: request.headers.get('x-forwarded-host') || null,
