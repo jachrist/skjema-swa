@@ -25,6 +25,8 @@ const utsendingStorage = require('./utsending-storage');
 const utsendingToken = require('./utsending-token');
 const flytUtfall = require('./flyt-utfall');
 const { miljo, flytHeadere, varslingAv } = require('./flyt-kaller');
+const graphEpost = require('./graph-epost');
+const epostMaler = require('./epost-maler');
 const hendelser = require('./hendelser-storage');
 const skjemaStorage = require('./skjema-storage');
 
@@ -226,6 +228,81 @@ function deaktivertSvar(kandidater, navn, log) {
     return melding;
 }
 
+/**
+ * Med e-post via Graph: så mange e-poster per kjøring, og ikke flere.
+ *
+ * Exchange tillater rundt 30 meldinger i minuttet per postboks. Flyten sprer
+ * kallene selv; her sendes hver e-post for seg, og en kjøring med 200
+ * mottakere ville blitt strupet midt i. Hver mottaker markeres for seg, så
+ * resten tas av neste kjøring — i dev med `SEND_UTSENDINGER_SCHEDULE` og
+ * `PURRE_UTSENDINGER_SCHEDULE` satt til hvert tiende minutt.
+ */
+const MAKS_PER_KJORING_GRAPH = 25;
+
+/**
+ * Én kjøring via Graph, for begge jobbene. Kaster ikke for enkeltmottakere.
+ *
+ * `mottakere` står i samme rekkefølge som `kandidater` (byggUtsendingsposter
+ * mapper dem én til én). En mottaker markeres bare når DENS e-post gikk — det
+ * er forskjellen fra flytveien, der hele kallet ble markert under ett.
+ *
+ * En mottaker med annen kanal enn e-post sendes ikke og markeres ikke.
+ */
+async function kjorViaGraph({ art, kandidater, mottakere, ferdig, kilde, batchFilter, log, navn }) {
+    const erSend = art === 'send';
+    const mal = erSend ? epostMaler.utsending : epostMaler.purring;
+    const marker = erSend ? utsendingStorage.markerSendt : utsendingStorage.markerPurret;
+    const antallFelt = erSend ? 'AntallSendt' : 'AntallPurret';
+    const antallSvar = erSend ? 'antallSendt' : 'antallPurret';
+    const hendelseType = erSend ? 'utsending.send-forfalte' : 'utsending.purre';
+
+    const vei = graphEpost.epostVei();
+    if (!vei.gyldig) {
+        log(`${navn}: ${vei.grunn}`);
+        return ferdig('feil',
+            { [antallFelt]: 0, AntallKandidater: kandidater.length, SistFeil: vei.grunn.slice(0, 500) },
+            { [antallSvar]: 0, antallKandidater: kandidater.length, feil: vei.grunn });
+    }
+
+    let markert = 0, forsokt = 0, annenKanal = 0;
+    const feil = [];
+    for (let i = 0; i < mottakere.length && forsokt < MAKS_PER_KJORING_GRAPH; i++) {
+        const p = mottakere[i];
+        const k = kandidater[i];
+        if ((p.kanal || 'epost') !== 'epost') {
+            feil.push(`${k.Mottaker}: kanal ${p.kanal} sendes ikke via Graph`);
+            annenKanal++;
+            continue;
+        }
+        forsokt++;
+        const m = mal(p);
+        const r = await graphEpost.sendEnEpost({ til: [{ epost: p.mottaker }], emne: m.emne, html: m.html }, { avsender: vei.avsender });
+        if (r.status !== 'ok') {
+            feil.push(`${k.Mottaker}: ${r.melding}`);
+            continue;
+        }
+        try {
+            await marker(k.BatchId, k.Mottaker);
+            markert++;
+        } catch (e) {
+            log(`${navn}: markering feilet for ${k.BatchId}/${k.Mottaker}: ${e.message}`);
+        }
+    }
+    const gjenstaar = mottakere.length - forsokt - annenKanal;
+    const tekst = `${markert} ${erSend ? 'sendt' : 'purret'} via Graph`
+        + (feil.length ? `, ${feil.length} feilet` : '')
+        + (gjenstaar > 0 ? `, ${gjenstaar} tas neste kjøring` : '');
+    log(`${navn}: ${tekst}`);
+    hendelser.logg({
+        Type: hendelseType, Aktor: kilde, ObjektType: 'utsending', ObjektId: batchFilter || '(alle)',
+        Melding: `${tekst} (${kandidater.length} kandidater)`,
+        Detaljer: { vei: 'graph', [antallSvar]: markert, feil: feil.slice(0, 20), gjenstaar, antallKandidater: kandidater.length }
+    });
+    return ferdig(feil.length ? 'delvis' : 'ok',
+        { [antallFelt]: markert, AntallKandidater: kandidater.length, SistFeil: feil.join(' | ').slice(0, 500) },
+        { [antallSvar]: markert, antallKandidater: kandidater.length, gjenstaar, ...(feil.length ? { feil: feil[0] } : {}) });
+}
+
 /** Felles bokføring for begge utsendingsjobbene. */
 function bokfoerer(pk, rk) {
     return async (felter) => {
@@ -282,6 +359,10 @@ async function kjorSendForfalte({ kilde, batchFilter = '', request = null, log =
         // sendt, og catch-en under bokfører årsaken.
         const basis = baseUrl(request);
         const mottakere = await byggUtsendingsposter(kandidater, basis, log, 'utsending/send-forfalte');
+
+        if (graphEpost.epostVei().vei === 'graph') {
+            return await kjorViaGraph({ art: 'send', kandidater, mottakere, ferdig, kilde, batchFilter, log, navn: 'utsending/send-forfalte' });
+        }
 
         const res = await kallUtsendingsflyt('sendUtsendinger', mottakere, log, 'utsending/send-forfalte');
 
@@ -390,6 +471,10 @@ async function kjorPurring({ kilde, batchFilter = '', tekstOverstyring = '', req
             tekstOverstyring
         });
 
+        if (graphEpost.epostVei().vei === 'graph') {
+            return await kjorViaGraph({ art: 'purre', kandidater, mottakere, ferdig, kilde, batchFilter, log, navn: 'utsending/purre' });
+        }
+
         const res = await kallUtsendingsflyt('purreUtsendinger', mottakere, log, 'utsending/purre');
         const feil = res.ok ? null : res.feil;
         if (feil) log(`utsending/purre: ${feil}`);
@@ -441,7 +526,7 @@ async function kjorPurring({ kilde, batchFilter = '', tekstOverstyring = '', req
 }
 
 module.exports = {
-    baseUrl, byggUtsendingsposter, kallUtsendingsflyt,
+    baseUrl, byggUtsendingsposter, kallUtsendingsflyt, MAKS_PER_KJORING_GRAPH,
     kjorSendForfalte, kjorPurring,
     BESKRIVELSE_MAKS, SEND_PK, SEND_RK, PURRE_PK, PURRE_RK
 };

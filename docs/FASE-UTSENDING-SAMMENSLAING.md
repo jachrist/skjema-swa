@@ -147,6 +147,11 @@ sammenslåingen.
 
 ## Steg
 
+> **Med `EPOST_VEI=graph` (19.11.2026) er steg 3 og 4 gjort for Graph-veien:**
+> `lib/markdown.js` er tvillingen av `parseMarkdown`, og tekstene står i
+> `lib/epost-maler.js`. Utsending og purring sender da via Graph uten flyt,
+> se «Fase 1» i `docs/VURDERING-FLYTER.md`. Flytveien under er uendret.
+
 1. ~~**Krav om `EksternTilgang` ved opprettelse.**~~ Levert.
 2. **Avklar om koblingen får sende eksternt.** Ingenting under her er verdt å
    begynne på først.

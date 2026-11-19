@@ -150,16 +150,34 @@ og reserveveien rives med v2 (sjekklista H4).
 
 ## Fase 1: e-post via Graph — plan
 
-### Status 19.11.2026: første del bygget, prøves i dev
+### Status 19.11.2026: all e-post bygget, prøves i dev
 
 Bygget: e-posten i **varslingene** — kvittering, behandlervarsel, beslutning,
 ferdig, samtale og nøkkelkalenderens påminnelser — via Graph når
 `EPOST_VEI=graph`. Teams, Planner og Teams-kanal går fortsatt til flyten,
 med «epost» tatt ut av kanalene. Kvitteringen med kopi blir én e-post med Cc.
 
-Ikke bygget ennå: utsending og purring (trenger struping), engangskoden
-(flyten lager teksten i dag) og sertifikatveien for en annen tenant. Pilot
-og prod er uendret: uten `EPOST_VEI` går alt til flyten som før.
+Bygget i andre runde, samme dag:
+
+- **Engangskoden** på e-post. SMS går fortsatt til OTP-flyten.
+- **Utsending og purring.** Teksten bygges i API-et (`lib/epost-maler.js`),
+  med skjemabeskrivelsen som Markdown når skjematypen sier det
+  (`lib/markdown.js`, tvilling av frontendens `parseMarkdown`). Hver
+  kjøring sender **høyst 25** e-poster — Exchange tillater rundt 30 i
+  minuttet — og markerer hver mottaker for seg. Resten tas av neste kjøring.
+
+Ikke bygget ennå: sertifikatveien for en annen tenant. Pilot og prod er
+uendret: uten `EPOST_VEI` går alt til flytene som før.
+
+**Tekstene i utsending, purring og engangskode er nye.** Flyten satte dem
+sammen selv, og repoet hadde dem ikke. De står i `lib/epost-maler.js` og
+bør leses før de går til eksterne:
+
+| E-post | Emne | Innhold |
+|---|---|---|
+| Utsending | «Skjema til utfylling: *navn*» | Hei, du er bedt om å fylle ut «*navn*» · skjemabeskrivelsen · Åpne skjemaet · Svarfrist · Lenken er personlig |
+| Purring | «Påminnelse: *navn*» | Hei · skjemaeierens purretekst, eller «Vi har ennå ikke fått svaret ditt på *navn*» · Åpne skjemaet · Svarfrist · Lenken er personlig |
+| Engangskode | «Engangskode til FHS Skjema» | Koden · gyldig i *n* minutter · se bort fra den om du ikke ba om den |
 
 | Hva | Hvor |
 |---|---|
@@ -167,7 +185,9 @@ og prod er uendret: uten `EPOST_VEI` går alt til flyten som før.
 | Valget mellom Graph og flyt | `sendVarslerViaFlyt` i `api/src/lib/flyt-kaller.js` |
 | Prøve: én e-post til admin selv | `POST /api/varsling/graph-test` |
 | Veien vises | `GET /api/varsling/diag` (`epost`) og `GET /api/system/info` (`epostVei`) |
-| Tester | `api/test/graph-epost.test.js` |
+| Tekstene i utsending, purring og engangskode | `api/src/lib/epost-maler.js` |
+| Grensen per kjøring og markeringen | `kjorViaGraph` i `api/src/lib/utsending-jobb.js` |
+| Tester | `api/test/graph-epost.test.js`, `graph-utsending.test.js`, `markdown-tvilling.test.js` |
 
 #### Oppsett i dev-tenanten
 
@@ -212,7 +232,14 @@ bare når Microsoft 365 ligger i samme tenant som identiteten.
    Teams eller Planner på et steg. E-posten skal komme fra postboksen, og
    Teams-meldingen fortsatt fra flyten.
 
-6. **Tilbake:** fjern `EPOST_VEI`, eller sett den til `flyt`.
+6. **Utsending og purring:** med 25 per kjøring tar en utsending til 200
+   mottakere åtte kjøringer. Sett kjøreplanen tettere i dev, for eksempel
+   `SEND_UTSENDINGER_SCHEDULE=0 */10 5-7 * * *` og
+   `PURRE_UTSENDINGER_SCHEDULE=0 */10 6-8 * * *` (hvert tiende minutt i et
+   vindu). Planen leses ved oppstart, så Function App-en må startes på nytt.
+   En kjøring uten noe å gjøre koster ingenting.
+
+7. **Tilbake:** fjern `EPOST_VEI`, eller sett den til `flyt`.
 
 > Med Graph-veien på sender dev ekte e-post. Har testdataene adresser utenfor
 > dev-tenanten, får de e-post.
