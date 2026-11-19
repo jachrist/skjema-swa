@@ -272,6 +272,8 @@ async function main() {
     const IKKE_FLYTKALL = {
         [path.join('api', 'src', 'lib', 'graph-opplast.js')]:
             'Microsoft Graph, med eget token fra en app-registrering.',
+        [path.join('api', 'src', 'lib', 'graph-epost.js')]:
+            'Microsoft Graph (sendMail), med token fra Function App-ens identitet.',
         [path.join('api', 'src', 'lib', 'fs-client.js')]:
             'Felles Studentsystem over GraphQL, med Basic auth.',
         [path.join('api', 'src', 'functions', 'ai-analyser.js')]:

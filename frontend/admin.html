@@ -482,6 +482,11 @@
                 return 'Varslinger sendes ikke i dette miljøet. VARSLING_DEAKTIVERT er på, '
                     + 'så e-post, Planner-oppgaver og Teams-meldinger bygges og logges, men sendes aldri.';
             }
+            // E-post via Graph er slått på, men satt opp feil: da går ingen
+            // e-post, og det er ikke VARSLING_FLOW_URL som er grunnen.
+            if (diag.epost && diag.epost.vei === 'graph' && !diag.epost.gyldig) {
+                return 'E-post sendes ikke i dette miljøet. ' + diag.epost.grunn;
+            }
             if (diag.sender_ikke) {
                 return 'Varslinger sendes ikke i dette miljøet. VARSLING_FLOW_URL mangler, '
                     + 'så kallene hoppes over.';

@@ -7,6 +7,7 @@
 const { app } = require('@azure/functions');
 const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const { baseUrl, varslingAv } = require('../lib/flyt-kaller');
+const graphEpost = require('../lib/graph-epost');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const varsling = require('../lib/varsling');
@@ -36,7 +37,11 @@ app.http('varslingDiag', {
                 // skal ikke tolke strengen paa nytt og risikere aa svare noe
                 // annet enn kallene gjoer.
                 varsling_av: varslingAv(),
-                sender_ikke: varslingAv() || !process.env.VARSLING_FLOW_URL,
+                // Med e-post via Graph går e-posten uten flyt. Da sender
+                // miljøet, selv om VARSLING_FLOW_URL mangler — det er bare
+                // Teams og Planner som uteblir.
+                sender_ikke: varslingAv() || (!process.env.VARSLING_FLOW_URL && graphEpost.epostVei().vei !== 'graph'),
+                epost: graphEpost.epostVei(),
                 eksempel_lenke: base ? `${base}/evaluering.html?skjematype_id=108&skjema_id=1` : '(base_url tom!)'
             }
         };
@@ -202,5 +207,50 @@ app.http('varslingDiagSkjema', {
             context.log('varsling/diag/skjema FEIL:', e.message, e.stack);
             return { status: 500, jsonBody: { status: 'feil', melding: e.message } };
         }
+    }
+});
+
+/**
+ * POST /api/varsling/graph-test — admin.
+ *
+ * Sender ÉN e-post via Graph til admin selv, for å prøve oppsettet før noen
+ * varsling går den veien: at identiteten får et token, at den har Mail.Send,
+ * og at avsenderpostboksen finnes.
+ *
+ * Mottakeren er alltid den innloggede. En diagnose som sender til en adresse
+ * fra kallet, er en åpen e-postsender med systemets avsender.
+ *
+ * Sender også når EPOST_VEI ikke er satt, så oppsettet kan prøves FØR det slås
+ * på — men da må EPOST_AVSENDER være satt. VARSLING_DEAKTIVERT gjelder ikke:
+ * dette er en eksplisitt prøve, ikke en varsling.
+ */
+app.http('varslingGraphTest', {
+    methods: ['POST'],
+    authLevel: 'anonymous',
+    route: 'varsling/graph-test',
+    handler: async (request) => {
+        const upn = hentInnloggetUpn(request);
+        if (!upn || !erAdmin(upn)) {
+            return { status: 403, jsonBody: { status: 'avvist', melding: 'Krever admin' } };
+        }
+        const vei = graphEpost.epostVei({ ...process.env, EPOST_VEI: 'graph' });
+        const svar = { mottaker: upn, avsender: vei.avsender || null, epostVei: graphEpost.epostVei() };
+        if (!vei.gyldig) {
+            return { status: 400, jsonBody: { ...svar, status: 'feil', melding: 'EPOST_AVSENDER må være satt til postboksen det skal sendes fra' } };
+        }
+        try {
+            await graphEpost.graphToken();
+            svar.token = { ok: true };
+        } catch (e) {
+            return { jsonBody: { ...svar, status: 'feil', token: { ok: false, feil: e.message } } };
+        }
+        const tid = new Date().toISOString();
+        const r = await graphEpost.sendEnEpost({
+            til: [{ epost: upn }],
+            emne: 'Prøve: e-post via Graph fra FHS Skjema',
+            html: `<p>Denne e-posten er sendt fra FHS Skjema via Microsoft Graph, som en prøve av oppsettet.</p>`
+                + `<p>Sendt ${tid} fra ${vei.avsender}, miljø ${process.env.MILJO || 'ukjent'}.</p>`
+        }, { avsender: vei.avsender });
+        return { jsonBody: { ...svar, status: r.status, sending: r } };
     }
 });

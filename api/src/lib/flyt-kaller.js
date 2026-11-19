@@ -26,6 +26,7 @@
  */
 
 const { flytAutorisasjon } = require('./flyt-auth');
+const graphEpost = require('./graph-epost');
 
 function baseUrl(request) {
     const fra_env = String(process.env.SWA_URL || '').replace(/\/+$/, '');
@@ -231,7 +232,46 @@ async function sendVarslerViaFlyt(args, log = () => {}) {
     };
     log(`flyt payload: kanaler=[${varslinger.join(',')}] base_url=${base || '(TOM!)'} `
         + `mottakere=${payload.mottakere.length} kopi=${payload.kopi.length}`);
-    return await kallVarslingFlyt(payload, log);
+
+    // E-POST VIA GRAPH, når EPOST_VEI=graph (lib/graph-epost.js). Bare
+    // e-postkanalen flyttes: Teams, Planner og Teams-kanal går til flyten med
+    // den samme nyttelasten, uten «epost» i kanalene. Er e-post den eneste
+    // kanalen, kalles ikke flyten i det hele tatt.
+    const vei = graphEpost.epostVei();
+    if (vei.vei !== 'graph' || !varslinger.includes('epost')) {
+        return await kallVarslingFlyt(payload, log);
+    }
+    let epost;
+    if (varslingAv()) {
+        log(`epost DRY-RUN (graph): mottakere=${payload.mottakere.map(m => m.epost).join(',')} `
+            + `kopi=${payload.kopi.map(m => m.epost).join(',')} emne="${payload.epost_og_teams.emne}"`);
+        epost = { status: 'deaktivert', mottakere: payload.mottakere };
+    } else {
+        epost = await graphEpost.sendEpost({
+            mottakere: payload.mottakere, kopi: payload.kopi,
+            emne: payload.epost_og_teams.emne, html: payload.epost_og_teams.html
+        }, { log });
+    }
+    const resten = varslinger.filter(k => k !== 'epost');
+    if (resten.length === 0) return epost;
+
+    const flyt = await kallVarslingFlyt({ ...payload, varslinger: resten }, log);
+    return slaaSammen(epost, flyt);
+}
+
+/**
+ * Ett utfall av to: e-posten via Graph og resten via flyten.
+ *
+ * Gikk begge, er det `ok`. Ellers er det den første som ikke gikk, med
+ * hvilken vei det gjaldt i meldingen — «det kom ingen e-post» og «det kom
+ * ingen Teams-melding» er to ulike feilsøkinger. Begge delresultatene er
+ * med, så ingenting forsvinner.
+ */
+function slaaSammen(epost, flyt) {
+    const deler = { epost, flyt };
+    if (epost?.status === 'ok' && flyt?.status === 'ok') return { status: 'ok', deler };
+    const [hvem, r] = epost?.status !== 'ok' ? ['e-post via Graph', epost] : ['flyten (Teams/Planner)', flyt];
+    return { status: r?.status || 'feil', melding: `${hvem}: ${r?.melding || r?.status || 'ukjent'}`, deler };
 }
 
 // Bakoverkompatibel wrapper — kun e-post

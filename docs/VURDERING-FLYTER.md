@@ -150,6 +150,74 @@ og reserveveien rives med v2 (sjekklista H4).
 
 ## Fase 1: e-post via Graph — plan
 
+### Status 19.11.2026: første del bygget, prøves i dev
+
+Bygget: e-posten i **varslingene** — kvittering, behandlervarsel, beslutning,
+ferdig, samtale og nøkkelkalenderens påminnelser — via Graph når
+`EPOST_VEI=graph`. Teams, Planner og Teams-kanal går fortsatt til flyten,
+med «epost» tatt ut av kanalene. Kvitteringen med kopi blir én e-post med Cc.
+
+Ikke bygget ennå: utsending og purring (trenger struping), engangskoden
+(flyten lager teksten i dag) og sertifikatveien for en annen tenant. Pilot
+og prod er uendret: uten `EPOST_VEI` går alt til flyten som før.
+
+| Hva | Hvor |
+|---|---|
+| Veien, mottakerfordelingen og sendingen | `api/src/lib/graph-epost.js` |
+| Valget mellom Graph og flyt | `sendVarslerViaFlyt` i `api/src/lib/flyt-kaller.js` |
+| Prøve: én e-post til admin selv | `POST /api/varsling/graph-test` |
+| Veien vises | `GET /api/varsling/diag` (`epost`) og `GET /api/system/info` (`epostVei`) |
+| Tester | `api/test/graph-epost.test.js` |
+
+#### Oppsett i dev-tenanten
+
+Tokenet hentes med Function App-ens identitet (`AZURE_CLIENT_ID`). Det virker
+bare når Microsoft 365 ligger i samme tenant som identiteten.
+
+1. **Postboksen.** I Exchange Online PowerShell:
+
+   ```powershell
+   Connect-ExchangeOnline
+   New-Mailbox -Shared -Name "FHS Skjema" -PrimarySmtpAddress skjema@<dev-domene>
+   ```
+
+2. **Tillatelsen.** En managed identity har ingen *API permissions*-side i
+   portalen; rollen gis med Microsoft Graph PowerShell. Dette gir `Mail.Send`
+   for **hele tenanten**, og er greit i dev — ikke i prod:
+
+   ```powershell
+   Connect-MgGraph -Scopes "AppRoleAssignment.ReadWrite.All","Application.Read.All"
+   $mi = Get-MgServicePrincipal -Filter "appId eq '<AZURE_CLIENT_ID>'"
+   $graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+   $rolle = $graph.AppRoles | Where-Object { $_.Value -eq 'Mail.Send' -and $_.AllowedMemberTypes -contains 'Application' }
+   New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $mi.Id -PrincipalId $mi.Id -ResourceId $graph.Id -AppRoleId $rolle.Id
+   ```
+
+   Vil du prøve innskrenkingen til én postboks også, er det *RBAC for
+   Applications* (`New-ServicePrincipal`, `New-ManagementScope`,
+   `New-ManagementRoleAssignment -Role "Application Mail.Send"`) — og da skal
+   rollen over IKKE gis, for de to legges sammen. Om Exchange godtar en
+   managed identity der, er en del av det som skal prøves.
+
+3. **App settings på dev-Function App-en:** `EPOST_AVSENDER=skjema@<dev-domene>`.
+   La `EPOST_VEI` stå usatt foreløpig.
+
+4. **Prøv tilgangen:** `POST /api/varsling/graph-test` som admin. Den sender
+   én e-post til deg, også før `EPOST_VEI` er satt. Svaret har `token.ok` og
+   `sending.status`. `403 ErrorAccessDenied` betyr at rollen mangler eller
+   ikke er lest ennå: plattformen kan holde på et token uten den nye rollen en
+   god stund, så vent og prøv igjen før du leter etter feil.
+
+5. **Slå på:** `EPOST_VEI=graph`. Send inn en sak med kopimottaker, og en med
+   Teams eller Planner på et steg. E-posten skal komme fra postboksen, og
+   Teams-meldingen fortsatt fra flyten.
+
+6. **Tilbake:** fjern `EPOST_VEI`, eller sett den til `flyt`.
+
+> Med Graph-veien på sender dev ekte e-post. Har testdataene adresser utenfor
+> dev-tenanten, får de e-post.
+
+
 ### Mål
 
 All e-post Skjema sender, går fra én felles postboks via Graph. Varslingsflyten
