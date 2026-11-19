@@ -232,7 +232,10 @@ bare når Microsoft 365 ligger i samme tenant som identiteten.
    Teams eller Planner på et steg. E-posten skal komme fra postboksen, og
    Teams-meldingen fortsatt fra flyten.
 
-6. **Utsending og purring:** med 25 per kjøring tar en utsending til 200
+6. **Utsending og purring:** `scripts/test-utsending.ps1` oppretter en
+   utsending til noen få adresser og sender den med en gang, uten flyt —
+   `-Purr` purrer den også. Nøklene hentes fra dev sin vault og skrives aldri
+   ut. Med 25 per kjøring tar en utsending til 200
    mottakere åtte kjøringer. Sett kjøreplanen tettere i dev, for eksempel
    `SEND_UTSENDINGER_SCHEDULE=0 */10 5-7 * * *` og
    `PURRE_UTSENDINGER_SCHEDULE=0 */10 6-8 * * *` (hvert tiende minutt i et
