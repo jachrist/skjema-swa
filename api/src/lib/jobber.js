@@ -22,6 +22,7 @@ const nokkelsjekkJobb = require('./nokkelkalender-jobb');
 const teamSynkJobb = require('./team-synk-jobb');
 const utsendingJobb = require('./utsending-jobb');
 const behandlingsfristJobb = require('./behandlingsfrist-jobb');
+const ubruktVarsel = require('./ubrukt-varsel');
 
 /**
  * NCRONTAB har SEKS felt — sekund først. GitHub-cron har fem.
@@ -136,6 +137,17 @@ const JOBBER = [
         standardSchedule: '0 15 6 * * *',
         scheduleVar: 'BEHANDLINGSFRIST_SCHEDULE'
     },
+    {
+        id: 'ubrukt-varsel',
+        navn: 'Ubrukte skjematyper med M365-kobling',
+        beskrivelse: 'Spør eierne en gang i måneden om skjematyper som skriver til Microsoft 365, men ikke er brukt på et halvt år, kan arkiveres.',
+        rute: 'm365-koblinger/varsle-ubrukte',
+        statusrad: { partisjon: ubruktVarsel.PK, rad: ubruktVarsel.RK },
+        // 05:33 UTC den første i måneden. Ingen `workflow`: jobben finnes
+        // bare der timerne finnes (dev, prod v3), som behandlingsfristen.
+        standardSchedule: '0 33 5 1 * *',
+        scheduleVar: 'UBRUKT_VARSEL_SCHEDULE'
+    },
     // BACKUP ER TO JOBBER, ikke én. Workflowen har to cron-linjer og velger
     // modus ved å lese sin egen cron; en timer kan ikke det. To oppføringer
     // er også det ærligste i panelet: «når gikk siste FULLE backup» er
@@ -243,6 +255,7 @@ function overstyring(jobb) {
         case 'SEND_UTSENDINGER_SCHEDULE': return process.env.SEND_UTSENDINGER_SCHEDULE;
         case 'PURRE_UTSENDINGER_SCHEDULE': return process.env.PURRE_UTSENDINGER_SCHEDULE;
         case 'BEHANDLINGSFRIST_SCHEDULE': return process.env.BEHANDLINGSFRIST_SCHEDULE;
+        case 'UBRUKT_VARSEL_SCHEDULE': return process.env.UBRUKT_VARSEL_SCHEDULE;
         case 'BACKUP_FULL_SCHEDULE': return process.env.BACKUP_FULL_SCHEDULE;
         case 'BACKUP_DELTA_SCHEDULE': return process.env.BACKUP_DELTA_SCHEDULE;
         default: return undefined;

@@ -22,7 +22,24 @@ const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const { byggOversikt, tilEksportRader } = require('../lib/skjematype-oversikt');
 const { byggKoblinger } = require('../lib/m365-koblinger');
+const { lesAvslatte, kandidater, GRENSE_DAGER } = require('../lib/ubrukt-varsel');
 const { genererExcel } = require('../lib/datauttrekk');
+
+/**
+ * Merk koblingene med om skjematypen regnes som ubrukt — med JOBBENS regel
+ * (`kandidater` i lib/ubrukt-varsel.js), ikke en egen. Panelet viser «kan
+ * ryddes» ut fra dette, og skal svare det samme som varselet gjør.
+ *
+ * Avkrysningen er ikke med her: en skjematype med varselet av er like ubrukt.
+ */
+function merkUbrukte(koblinger, skjematyper, rader) {
+    const ubrukte = new Set(kandidater(skjematyper, rader, new Set()).map(k => k.id));
+    for (const rad of koblinger) {
+        for (const s of rad.Skjematyper) s.Ubrukt = ubrukte.has(String(s.Skjematype_id));
+        rad.KanRyddes = rad.Skjematyper.every(s => s.Ubrukt);
+    }
+    return koblinger;
+}
 
 app.http('skjematypeOversikt', {
     methods: ['GET'],
@@ -35,9 +52,10 @@ app.http('skjematypeOversikt', {
             return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun for administratorer' } };
         }
         try {
-            const [skjematyper, antall] = await Promise.all([
+            const [skjematyper, antall, varselAv] = await Promise.all([
                 skjemaStorage.hentAlleSkjematyper(),
-                forekomstStorage.hentAntallPerType()
+                forekomstStorage.hentAntallPerType(),
+                lesAvslatte()
             ]);
             const rader = byggOversikt(skjematyper, antall);
 
@@ -55,7 +73,8 @@ app.http('skjematypeOversikt', {
                     // M365-koblingene: hvilke team og områder skjematypene
                     // skriver til, med siste aktivitet fra radene over — samme
                     // tall, ikke en ny opptelling. Se lib/m365-koblinger.js.
-                    koblinger: byggKoblinger(skjematyper, rader),
+                    koblinger: merkUbrukte(byggKoblinger(skjematyper, rader, varselAv), skjematyper, rader),
+                    ubruktGrenseDager: GRENSE_DAGER,
                     // Summen er med fordi den er det første man ser etter, og
                     // fordi den avslører om noe mangler: stemmer den ikke med
                     // det man vet om installasjonen, er det raden man leter

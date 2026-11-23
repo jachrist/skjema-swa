@@ -3317,14 +3317,50 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         være medlem der. Den kan meldes ut av et team først når <strong>ingen</strong> av
                         skjematypene på raden er i bruk lenger. Siste aktivitet er den samme som i tabellen over.
                     </div>
-                    <div class="oversikt-ramme">${byggKoblingTabell(data.koblinger || [])}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+                        En gang i måneden spørres eierne av skjematyper som ikke er brukt på et halvt år, om de kan
+                        arkiveres. Fjern haken ved «Varsle eier» for skjematyper som ikke skal gi varsel, for eksempel
+                        testskjemaer. Haken gjelder skjematypen, også der den står på flere rader.
+                    </div>
+                    <div class="knapp-rad" style="margin-bottom: 12px;">
+                        <button class="knapp" onclick="ubruktVarselAlle(true)">🔔 Varsle alle</button>
+                        <button class="knapp" onclick="ubruktVarselAlle(false)">🔕 Skru av alle</button>
+                        <span id="ubrukt-varsel-status" style="font-size: 12px; color: var(--text-secondary);"></span>
+                    </div>
+                    <div class="oversikt-ramme">${byggKoblingTabell(data.koblinger || [], data.ubruktGrenseDager)}</div>
                 </div>`;
         }
 
-        /** Over så mange dager uten aktivitet markeres en kobling som mulig å rydde. */
-        const KOBLING_UBRUKT_DAGER = 180;
+        /**
+         * Slå månedsvarselet på eller av for skjematyper, og vis det samme
+         * på alle rader der de står. Feiler lagringen, settes hakene tilbake —
+         * en hake som viser noe annet enn det som er lagret, er verre enn ingen.
+         */
+        async function lagreUbruktVarsel(ider, varsle) {
+            const status = document.getElementById('ubrukt-varsel-status');
+            const bokser = [...document.querySelectorAll('input.ubrukt-varsel')].filter(b => ider.includes(b.dataset.id));
+            const foer = bokser.map(b => b.checked);
+            bokser.forEach(b => { b.checked = varsle; b.disabled = true; });
+            if (status) status.textContent = 'Lagrer…';
+            try {
+                await api.post('/api/m365-koblinger/varsling', { skjematypeIder: ider, varsle });
+                if (status) status.textContent = `✓ Varsel ${varsle ? 'på' : 'av'} for ${ider.length} skjematype${ider.length === 1 ? '' : 'r'}`;
+            } catch (e) {
+                bokser.forEach((b, i) => { b.checked = foer[i]; });
+                if (status) status.textContent = 'Feil: ' + e.message;
+            } finally {
+                bokser.forEach(b => { b.disabled = false; });
+            }
+        }
 
-        function byggKoblingTabell(koblinger) {
+        window.settUbruktVarsel = (boks) => lagreUbruktVarsel([boks.dataset.id], boks.checked);
+
+        window.ubruktVarselAlle = (varsle) => {
+            const ider = [...new Set([...document.querySelectorAll('input.ubrukt-varsel')].map(b => b.dataset.id))];
+            if (ider.length > 0) lagreUbruktVarsel(ider, varsle);
+        };
+
+        function byggKoblingTabell(koblinger, grenseDager) {
             if (koblinger.length === 0) {
                 return '<div style="font-size: 13px; color: var(--text-secondary);">Ingen skjematyper skriver til SharePoint, Planner eller Teams-kanaler.</div>';
             }
@@ -3336,22 +3372,30 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         <th>Skjematyper</th>
                         <th>Siste aktivitet</th>
                     </tr></thead>
-                    <tbody>${koblinger.map(koblingRad).join('')}</tbody>
+                    <tbody>${koblinger.map(k => koblingRad(k, grenseDager)).join('')}</tbody>
                 </table>`;
         }
 
-        function koblingRad(k) {
+        /**
+         * «Kan ryddes» kommer fra serveren (`KanRyddes`), med samme regel som
+         * månedsvarselet: ingen bruk og ingen endring på `grenseDager` dager.
+         * Siden regner bare ut antall dager til teksten.
+         */
+        function koblingRad(k, grenseDager) {
             const typer = { sharepoint: 'SharePoint-liste', planner: 'Planner', teamskanal: 'Teams-kanal' };
             const sist = k.SisteAktivitet ? new Date(k.SisteAktivitet) : null;
             const dager = sist && !isNaN(sist) ? Math.floor((Date.now() - sist.getTime()) / 86400000) : null;
-            const ubrukt = dager === null || dager > KOBLING_UBRUKT_DAGER;
+            const ubrukt = k.KanRyddes === true;
             const skjematyper = (k.Skjematyper || []).map(s => `
                 <div style="margin-bottom: 4px;">
+                    <label style="font-size: 11px; margin-right: 6px; white-space: nowrap;" title="Månedsvarsel til eierne når skjematypen ikke er brukt på et halvt år">
+                        <input type="checkbox" class="ubrukt-varsel" data-id="${escHtml(s.Skjematype_id)}" ${s.Varsle === false ? '' : 'checked'} onchange="settUbruktVarsel(this)"> Varsle eier
+                    </label>
                     <a href="/editor.html?skjematype_id=${encodeURIComponent(s.Skjematype_id)}">${escHtml(s.Skjema_navn || '(uten navn)')}</a>
                     <span style="font-size: 11px; color: var(--text-secondary);">· ${escHtml(s.Hvor)} · ${escHtml(s.Detalj)} · ${escHtml(s.Fase)} · ${escHtml(String(s.Utfylte))} innsendt · sist ${escHtml(kortDato(s.SisteDato))}</span>
                 </div>`).join('');
             const merknad = ubrukt
-                ? `<div style="font-size: 11px; color: var(--warning);">${dager === null ? 'Aldri brukt' : `Ikke brukt på ${escHtml(String(dager))} dager`} — kan ryddes</div>`
+                ? `<div style="font-size: 11px; color: var(--warning);" title="Ingen bruk og ingen endring på over ${escHtml(String(grenseDager || ''))} dager">${dager === null ? 'Aldri brukt' : `Ikke brukt på ${escHtml(String(dager))} dager`} — kan ryddes</div>`
                 : '';
             const dynamisk = k.Dynamisk
                 ? '<div style="font-size: 11px; color: var(--text-secondary);">Hentes fra svaret ved innsending — kan være flere team</div>'

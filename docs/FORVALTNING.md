@@ -249,6 +249,17 @@ Flere skjematyper kan dele et team. Servicebrukeren kan meldes ut først når
 **ingen** av dem på raden er i bruk. Et team som hentes fra et svar (`{2-01}`)
 står som én rad med merknad: det kan være flere team, og hvilke vises ikke.
 
+**Månedsvarselet** (jobben `ubrukt-varsel`, den første i måneden, timer i
+v3) spør eierne av skjematyper med M365-kobling som verken er brukt eller
+endret på 180 dager, om de kan arkiveres (`lib/ubrukt-varsel.js`). Det samme
+spørsmålet kommer hver måned til noen har tatt stilling. «Kan ryddes» i
+oversikten bruker samme regel, regnet ut på serveren.
+
+**Testskjemaer** som ligger igjen i et miljø, skal ikke gi varsel: fjern haken
+«Varsle eier» i oversikten, eller bruk «Skru av alle». Hakene lagres i
+SystemInnstillinger (`UbruktVarsel.Av`), ikke i skjematypen, så de endrer
+ikke «sist endret». Hver endring står i Hendelser (`m365-koblinger.varsling`).
+
 ---
 
 ## 10. Endringshåndtering ⚠️
