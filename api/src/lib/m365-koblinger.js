@@ -80,9 +80,10 @@ function nyest(a, b) {
  * @param skjematyper  `hentAlleSkjematyper()`: `{ id, JSON }[]`
  * @param oversikt     radene fra `byggOversikt` — der står siste aktivitet og
  *                     antall, og det skal være SAMME tall som i tabellen over
+ * @param varselAv    `Set` med skjematyper der månedsvarselet er slått av
  * @returns rader sortert med det som har stått lengst ubrukt først
  */
-function byggKoblinger(skjematyper, oversikt) {
+function byggKoblinger(skjematyper, oversikt, varselAv = new Set()) {
     const bruk = new Map((oversikt || []).map(r => [String(r.Skjematype_id), r]));
     const mal = new Map();
 
@@ -103,7 +104,10 @@ function byggKoblinger(skjematyper, oversikt) {
                 Detalj: m.detalj,
                 Hvor: m.hvor,
                 Utfylte: Number(b.Utfylte || 0),
-                SisteDato: b.SisteDato || ''
+                SisteDato: b.SisteDato || '',
+                // Får eierne månedsvarselet om ubrukte skjematyper?
+                // Avkrysningen i admin — se lib/ubrukt-varsel.js.
+                Varsle: !varselAv.has(id)
             });
             rad.SisteAktivitet = nyest(rad.SisteAktivitet, b.SisteDato);
         }

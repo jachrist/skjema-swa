@@ -12,7 +12,7 @@ Tilgangen avgjøres i to lag, og tabellene under viser begge:
 * **Handleren** avgjør resten. Hvert endepunkt har minst én vakt her; se
   `docs/SIKKERHET-OG-ARKITEKTUR.md` for hva hver vakt innebærer.
 
-143 endepunkter, hvorav 41 er anonyme i gatewayen.
+145 endepunkter, hvorav 41 er anonyme i gatewayen.
 
 ## Anonyme i gatewayen
 
@@ -100,6 +100,8 @@ SWA slipper hvem som helst fram til handleren. Vakten der er eneste sperre.
 | `/api/logoer` | GET | authenticated | innlogget |
 | `/api/logoer` | POST | authenticated | admin, innlogget |
 | `/api/logoer/{filnavn}` | DELETE | authenticated | admin, innlogget |
+| `/api/m365-koblinger/varsle-ubrukte` | POST | authenticated | admin, innlogget, scheduler |
+| `/api/m365-koblinger/varsling` | POST | authenticated | admin, innlogget |
 | `/api/mine-behandlinger` | GET | authenticated | innlogget |
 | `/api/mine-mellomlagrede` | GET | authenticated | innlogget |
 | `/api/nokkel/{skjematypeId}` | GET | authenticated | admin, innlogget, eier |

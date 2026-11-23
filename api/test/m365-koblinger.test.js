@@ -96,13 +96,21 @@ const { byggOversikt } = require('../src/lib/skjematype-oversikt');
 {
     const les = (...p) => utenKommentarer(fs.readFileSync(path.join(__dirname, '..', '..', ...p), 'utf8'));
     const endepunkt = les('api', 'src', 'functions', 'skjematype-oversikt.js');
-    sjekk('endepunktet bygger koblingene av de samme radene', /koblinger:\s*byggKoblinger\(skjematyper,\s*rader\)/.test(endepunkt), true);
+    sjekk('endepunktet bygger koblingene av de samme radene', /byggKoblinger\(skjematyper,\s*rader,\s*varselAv\)/.test(endepunkt), true);
+    sjekk('og leser avkrysningen fra jobbens egen lagring', /lesAvslatte\(\)/.test(endepunkt), true);
     const lib = les('api', 'src', 'lib', 'm365-koblinger.js');
     // Reglene er diagnosens, ikke en egen lesing.
     sjekk('kanalregelen fra diagnosen', /require\('\.\/skjematype-diagnose'\)/.test(lib), true);
     sjekk('ingen egen split på kolon', /split\(':'\)/.test(lib), false);
     const admin = les('frontend', 'admin.html');
     sjekk('admin viser koblingene', /byggKoblingTabell\(data\.koblinger/.test(admin), true);
+    // «Kan ryddes» er serverens svar med jobbens regel — ikke en egen
+    // dagegrense i siden, som kunne svart annerledes enn varselet.
+    const rad = admin.slice(admin.indexOf('function koblingRad'), admin.indexOf('function', admin.indexOf('function koblingRad') + 10));
+    sjekk('fant koblingRad', rad.length > 100, true);
+    sjekk('admin har ingen egen dagegrense', /UBRUKT_DAGER|[<>]=?\s*\d{2,}/.test(rad), false);
+    sjekk('admin leser KanRyddes', /k\.KanRyddes/.test(admin), true);
+    sjekk('endepunktet merker med jobbens regel', /kandidater\(skjematyper,\s*rader/.test(endepunkt), true);
 }
 
 console.log(`\n${ok} OK, ${feil} feil`);

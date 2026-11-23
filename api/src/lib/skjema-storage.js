@@ -62,7 +62,11 @@ async function hentAlleSkjematyper() {
         typer.push({
             id: entity.rowKey,
             navn: entity.Tittel || data?.Skjema_navn || '',
-            JSON: data
+            JSON: data,
+            // Radens tidsstempel: når skjematypen sist ble lagret. Brukt av
+            // lib/ubrukt-varsel.js, så en skjematype noen jobber med ikke
+            // får varsel om at den er ubrukt.
+            endret: entity.timestamp || ''
         });
     }
     return typer;
