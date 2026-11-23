@@ -203,6 +203,10 @@ const HTML_PRODUSENTER = [
     // onclick-attributtet gjennom escapeJsIAttributt. Datoene kommer fra
     // formatDato, som står lenger ned i samme liste.
     'jobbRadHtml',
+    // M365-koblinger (Skjematyper-fanen), lest 23.11.2026: hver tekstverdi —
+    // type, mål, skjematypenavn, hvor, detalj, fase, antall og dato — går
+    // gjennom escHtml, og id-en i lenka gjennom encodeURIComponent.
+    'byggKoblingTabell', 'koblingRad',
     // Dato formatert fra et Date-objekt — kan ikke bære markup.
     'formatDato', 'kortDato', 'formatTid',
     // js/behandling-kommentar.js: tar escape-funksjonen som argument og

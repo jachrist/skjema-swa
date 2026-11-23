@@ -21,6 +21,7 @@ const { hentInnloggetUpn, erAdmin } = require('../lib/auth');
 const skjemaStorage = require('../lib/skjema-storage');
 const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const { byggOversikt, tilEksportRader } = require('../lib/skjematype-oversikt');
+const { byggKoblinger } = require('../lib/m365-koblinger');
 const { genererExcel } = require('../lib/datauttrekk');
 
 app.http('skjematypeOversikt', {
@@ -51,6 +52,10 @@ app.http('skjematypeOversikt', {
             return {
                 jsonBody: {
                     rader,
+                    // M365-koblingene: hvilke team og områder skjematypene
+                    // skriver til, med siste aktivitet fra radene over — samme
+                    // tall, ikke en ny opptelling. Se lib/m365-koblinger.js.
+                    koblinger: byggKoblinger(skjematyper, rader),
                     // Summen er med fordi den er det første man ser etter, og
                     // fordi den avslører om noe mangler: stemmer den ikke med
                     // det man vet om installasjonen, er det raden man leter

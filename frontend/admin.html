@@ -3309,7 +3309,60 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         alltid en forhåndsvisning først.
                     </div>
                     <div class="oversikt-ramme">${byggOversiktTabell(data.rader || [])}</div>
+                </div>
+                <div class="panel">
+                    <h2>M365-koblinger <small style="font-weight: 400; text-transform: none;">— lengst ubrukt først</small></h2>
+                    <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 12px;">
+                        Teamene og SharePoint-områdene skjematypene skriver til via flytene. Tjenestebrukeren må
+                        være medlem der. Den kan meldes ut av et team først når <strong>ingen</strong> av
+                        skjematypene på raden er i bruk lenger. Siste aktivitet er den samme som i tabellen over.
+                    </div>
+                    <div class="oversikt-ramme">${byggKoblingTabell(data.koblinger || [])}</div>
                 </div>`;
+        }
+
+        /** Over så mange dager uten aktivitet markeres en kobling som mulig å rydde. */
+        const KOBLING_UBRUKT_DAGER = 180;
+
+        function byggKoblingTabell(koblinger) {
+            if (koblinger.length === 0) {
+                return '<div style="font-size: 13px; color: var(--text-secondary);">Ingen skjematyper skriver til SharePoint, Planner eller Teams-kanaler.</div>';
+            }
+            return `
+                <table class="oversikt">
+                    <thead><tr>
+                        <th>Type</th>
+                        <th class="navnkol">Team eller område</th>
+                        <th>Skjematyper</th>
+                        <th>Siste aktivitet</th>
+                    </tr></thead>
+                    <tbody>${koblinger.map(koblingRad).join('')}</tbody>
+                </table>`;
+        }
+
+        function koblingRad(k) {
+            const typer = { sharepoint: 'SharePoint-liste', planner: 'Planner', teamskanal: 'Teams-kanal' };
+            const sist = k.SisteAktivitet ? new Date(k.SisteAktivitet) : null;
+            const dager = sist && !isNaN(sist) ? Math.floor((Date.now() - sist.getTime()) / 86400000) : null;
+            const ubrukt = dager === null || dager > KOBLING_UBRUKT_DAGER;
+            const skjematyper = (k.Skjematyper || []).map(s => `
+                <div style="margin-bottom: 4px;">
+                    <a href="/editor.html?skjematype_id=${encodeURIComponent(s.Skjematype_id)}">${escHtml(s.Skjema_navn || '(uten navn)')}</a>
+                    <span style="font-size: 11px; color: var(--text-secondary);">· ${escHtml(s.Hvor)} · ${escHtml(s.Detalj)} · ${escHtml(s.Fase)} · ${escHtml(String(s.Utfylte))} innsendt · sist ${escHtml(kortDato(s.SisteDato))}</span>
+                </div>`).join('');
+            const merknad = ubrukt
+                ? `<div style="font-size: 11px; color: var(--warning);">${dager === null ? 'Aldri brukt' : `Ikke brukt på ${escHtml(String(dager))} dager`} — kan ryddes</div>`
+                : '';
+            const dynamisk = k.Dynamisk
+                ? '<div style="font-size: 11px; color: var(--text-secondary);">Hentes fra svaret ved innsending — kan være flere team</div>'
+                : '';
+            return `
+                <tr class="${ubrukt ? 'ubrukt' : ''}">
+                    <td style="white-space: nowrap;">${escHtml(typer[k.Type] || k.Type)}</td>
+                    <td class="navnkol">${escHtml(k.Mal)}${dynamisk}</td>
+                    <td>${skjematyper}</td>
+                    <td style="white-space: nowrap; font-size: 12px; color: var(--text-secondary);">${escHtml(kortDato(k.SisteAktivitet))}${merknad}</td>
+                </tr>`;
         }
 
         /**
