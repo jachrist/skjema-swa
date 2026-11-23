@@ -232,6 +232,23 @@ er nede, og hvem man ringer.
 flytendring er ikke en kodeendring, går ikke gjennom deploy, og kan ikke rulles
 tilbake av oss.
 
+### Hvor servicebrukeren er medlem — og når den kan meldes ut
+
+Servicebrukeren skriver til SharePoint-lister, Planner og Teams-kanaler som et
+vanlig medlem, invitert av teameieren. Den har ingen rettigheter ut over det
+(vurdert 23.11.2026: tilgang per team, gitt og tatt av teameieren, er tryggere
+enn brede rettigheter for brukeren eller for appen).
+
+Ulempen er at medlemskapet blir liggende når skjematypen slutter å brukes.
+**Administrasjon → Skjematyper → M365-koblinger** viser hvert team og område
+skjematypene skriver til, hvilke skjematyper det gjelder, og når de sist ble
+brukt (`lib/m365-koblinger.js`). Lengst ubrukt står først, og over 180 dager
+uten aktivitet merkes raden «kan ryddes».
+
+Flere skjematyper kan dele et team. Servicebrukeren kan meldes ut først når
+**ingen** av dem på raden er i bruk. Et team som hentes fra et svar (`{2-01}`)
+står som én rad med merknad: det kan være flere team, og hvilke vises ikke.
+
 ---
 
 ## 10. Endringshåndtering ⚠️
