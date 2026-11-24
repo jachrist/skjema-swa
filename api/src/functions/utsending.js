@@ -298,13 +298,17 @@ app.http('utsendingForMeg', {
                 // Oppdater prefilled hvis endret
                 await utsendingStorage.opprett({
                     batchId, mottaker: upn, skjematypeId, jti, prefilled,
-                    kanalHint: 'epost', senderSkjemaId: '', opprettetAv: upn
+                    kanalHint: 'epost', senderSkjemaId: '', opprettetAv: upn,
+                    // En lenke i editoren, ikke en utsending — purres ikke.
+                    ikkePurr: true
                 });
             } else {
                 jti = crypto.randomBytes(8).toString('hex');
                 await utsendingStorage.opprett({
                     batchId, mottaker: upn, skjematypeId, jti, prefilled,
-                    kanalHint: 'epost', senderSkjemaId: '', opprettetAv: upn
+                    kanalHint: 'epost', senderSkjemaId: '', opprettetAv: upn,
+                    // En lenke i editoren, ikke en utsending — purres ikke.
+                    ikkePurr: true
                 });
             }
             const token = utsendingToken.utsted({ batchId, mottaker: upn, skjematypeId, jti });

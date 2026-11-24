@@ -28,9 +28,13 @@ const REF_FELT = 1;
 // baseline-skjema teller ikke — da er nullpunktet ikke registrert.
 const STATUS_INNSENDT = 2;
 
-async function baselineSkjematypeId() {
+/** Innstillingene som peker ut de to gevinstskjemaene. */
+const BASELINE = 'Gevinstestimat.SkjemaId';
+const RAPPORT = 'Gevinstrapportering.SkjemaId';
+
+async function baselineSkjematypeId(nokkel = BASELINE) {
     try {
-        const rad = await innstillinger.hent('Gevinstestimat.SkjemaId');
+        const rad = await innstillinger.hent(nokkel);
         const id = String(rad?.Verdi || '').trim();
         return id || null;
     } catch (_) {
@@ -44,10 +48,14 @@ async function baselineSkjematypeId() {
  * Én spørring dekker hele oversikten, i stedet for én per skjematype. Kalles
  * av skjemaoversikten for å merke de som mangler.
  *
+ * `nokkel` velger skjemaet: `BASELINE` (standard, gevinstestimatet) eller
+ * `RAPPORT` (gevinstrapporteringen). Regelen for «sendt inn for skjematype X»
+ * er den samme — felt 1-01 har X — så den står her én gang.
+ *
  * @returns {Promise<{konfigurert: boolean, baselineTypeId: string|null, dekkede: string[]}>}
  */
-async function hentDekkede() {
-    const baselineTypeId = await baselineSkjematypeId();
+async function hentDekkede(nokkel = BASELINE) {
+    const baselineTypeId = await baselineSkjematypeId(nokkel);
     if (!baselineTypeId) return { konfigurert: false, baselineTypeId: null, dekkede: [] };
 
     let skjemaer = [];
@@ -114,4 +122,4 @@ async function nullpunktRegistrert(skjematypeId) {
     };
 }
 
-module.exports = { hentDekkede, nullpunktRegistrert, normaliser, REF_SEKSJON, REF_FELT };
+module.exports = { hentDekkede, nullpunktRegistrert, normaliser, REF_SEKSJON, REF_FELT, BASELINE, RAPPORT };

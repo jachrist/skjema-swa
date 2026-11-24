@@ -40,29 +40,20 @@ const PK = 'Meta';
 const RK = 'Jobb-UbruktVarsel';
 const DAG_MS = 24 * 3600 * 1000;
 
+const innstillingSett = require('./innstilling-sett');
+
 /** Lista over skjematyper med varselet slått av. Tom ved feil eller ukjent form. */
-async function lesAvslatte(innstillinger = require('./innstillinger-storage')) {
-    try {
-        const rad = await innstillinger.hent(INNSTILLING);
-        const liste = JSON.parse(rad?.Verdi || '[]');
-        return new Set(Array.isArray(liste) ? liste.map(String) : []);
-    } catch (_) {
-        return new Set();
-    }
+async function lesAvslatte(innstillinger) {
+    return innstillingSett.les(INNSTILLING, innstillinger);
 }
 
 /**
  * Slå varselet på eller av for skjematypene i `ider`. Returnerer lista over
- * avslåtte etterpå, sortert.
+ * avslåtte etterpå, sortert. Lagringen er lib/innstilling-sett.js — samme som
+ * kravet om gevinstskjemaer.
  */
-async function settVarsling(ider, varsle, aktor, innstillinger = require('./innstillinger-storage')) {
-    const av = await lesAvslatte(innstillinger);
-    for (const id of (ider || []).map(String).filter(Boolean)) {
-        if (varsle) av.delete(id); else av.add(id);
-    }
-    const liste = [...av].sort((a, b) => a.localeCompare(b, 'no', { numeric: true }));
-    await innstillinger.sett(INNSTILLING, JSON.stringify(liste), aktor);
-    return liste;
+async function settVarsling(ider, varsle, aktor, innstillinger) {
+    return innstillingSett.sett(INNSTILLING, ider, !varsle, aktor, innstillinger);
 }
 
 /** Den nyeste av to ISO-tider, eller '' når ingen er satt. */

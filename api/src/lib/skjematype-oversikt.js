@@ -116,7 +116,9 @@ const EKSPORT_KOLONNER = [
     ['Under behandling', 'UnderBehandling'],
     ['Avsluttet', 'Avsluttet'],
     ['Totalt', 'Totalt'],
-    ['Siste aktivitet', 'SisteDato']
+    ['Siste aktivitet', 'SisteDato'],
+    // Satt av endepunktet (lib/gevinst-status.js), tom for skjematyper uten krav.
+    ['Gevinst', 'GevinstStatus']
 ];
 
 /**

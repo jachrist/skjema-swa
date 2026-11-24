@@ -23,6 +23,34 @@ const forekomstStorage = require('../lib/skjema-forekomst-storage');
 const { byggOversikt, tilEksportRader } = require('../lib/skjematype-oversikt');
 const { byggKoblinger } = require('../lib/m365-koblinger');
 const { lesAvslatte, kandidater, GRENSE_DAGER } = require('../lib/ubrukt-varsel');
+const gevinstSjekk = require('../lib/gevinst-sjekk');
+const { gevinstStatus, FRITATT, STATUS_TEKST } = require('../lib/gevinst-status');
+const innstillingSett = require('../lib/innstilling-sett');
+
+/**
+ * Det gevinststatusen trenger: hvilke skjematyper som har baseline og
+ * rapportering sendt inn, og hvilke admin har fritatt. Feiler oppslaget,
+ * blir statusen tom — oversikten skal ikke velte på gevinstoppfølgingen.
+ */
+async function hentGevinst() {
+    try {
+        const [b, r, fritatt] = await Promise.all([
+            gevinstSjekk.hentDekkede(gevinstSjekk.BASELINE),
+            gevinstSjekk.hentDekkede(gevinstSjekk.RAPPORT),
+            innstillingSett.les(FRITATT)
+        ]);
+        return {
+            konfigurert: b.konfigurert,
+            baselineTypeId: b.baselineTypeId,
+            rapportTypeId: r.baselineTypeId,
+            baseline: new Set(b.dekkede.map(String)),
+            rapport: new Set(r.dekkede.map(String)),
+            fritatt
+        };
+    } catch (_) {
+        return { konfigurert: false, baselineTypeId: null, rapportTypeId: null };
+    }
+}
 const { genererExcel } = require('../lib/datauttrekk');
 
 /**
@@ -52,12 +80,19 @@ app.http('skjematypeOversikt', {
             return { status: 403, jsonBody: { status: 'avvist', melding: 'Kun for administratorer' } };
         }
         try {
-            const [skjematyper, antall, varselAv] = await Promise.all([
+            const [skjematyper, antall, varselAv, gevinst] = await Promise.all([
                 skjemaStorage.hentAlleSkjematyper(),
                 forekomstStorage.hentAntallPerType(),
-                lesAvslatte()
+                lesAvslatte(),
+                hentGevinst()
             ]);
             const rader = byggOversikt(skjematyper, antall);
+            // Gevinststatusen per rad — fargen regnes ut her, ikke i siden.
+            const status = gevinstStatus(rader, gevinst);
+            for (const r of rader) {
+                r.Gevinst = status.get(String(r.Skjematype_id)) ?? null;
+                r.GevinstStatus = r.Gevinst ? STATUS_TEKST[r.Gevinst.status] : '';
+            }
 
             if (String(request.query.get('format') || '').toLowerCase() === 'excel') {
                 // Samme generator som datauttrekket. Den kan auto-kolonnebredde
@@ -75,6 +110,11 @@ app.http('skjematypeOversikt', {
                     // tall, ikke en ny opptelling. Se lib/m365-koblinger.js.
                     koblinger: merkUbrukte(byggKoblinger(skjematyper, rader, varselAv), skjematyper, rader),
                     ubruktGrenseDager: GRENSE_DAGER,
+                    gevinst: {
+                        konfigurert: !!gevinst.konfigurert,
+                        baselineTypeId: gevinst.baselineTypeId || null,
+                        rapportTypeId: gevinst.rapportTypeId || null
+                    },
                     // Summen er med fordi den er det første man ser etter, og
                     // fordi den avslører om noe mangler: stemmer den ikke med
                     // det man vet om installasjonen, er det raden man leter

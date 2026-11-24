@@ -108,7 +108,7 @@ function normaliserDato(verdi, { slutten = false } = {}) {
     return d.toISOString();
 }
 
-async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalHint, senderSkjemaId, opprettetAv, purretekst, utsendingsdato, purredato, avslutningsdato }) {
+async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalHint, senderSkjemaId, opprettetAv, purretekst, utsendingsdato, purredato, avslutningsdato, ikkePurr = false }) {
     const t = await tabell();
     const prefilledJson = prefilled ? JSON.stringify(prefilled) : '';
     if (prefilledJson.length > PREFILLED_MAKS) {
@@ -134,7 +134,10 @@ async function opprett({ batchId, mottaker, skjematypeId, jti, prefilled, kanalH
         Utsendingsdato: normaliserDato(utsendingsdato) || '',
         Purredato: normaliserDato(purredato) || '',
         Avslutningsdato: normaliserDato(avslutningsdato, { slutten: true }) || '',
-        Sendt: ''
+        Sendt: '',
+        // Lenker som ikke er utsendinger: «for-meg» fra editoren og
+        // gevinstlenkene admin lager. De skal ikke purres — se purresperre().
+        IkkePurr: !!ikkePurr
     }, 'Replace');
 }
 
@@ -242,6 +245,28 @@ async function listBatch(batchId) {
  * Alderen regnes fra den effektive utsendingsdatoen, ikke fra opprettelsen —
  * en lenke som ble laget i juni og sendt i august skal purres fra august.
  */
+/**
+ * Skal raden holdes utenfor den automatiske purringen?
+ *
+ * Besluttet 24.11.2026: «for-meg»-radene som editoren lager for
+ * gevinstlenkene, ble purret som utsendinger — hvert tredje døgn til
+ * gevinstskjemaet var sendt inn, uten tekst, og med perioden startet på nytt
+ * hver gang editoren ble åpnet. En lenke i editoren er en snarvei, ikke en
+ * utsending noen har bedt om. Admin purrer gevinstskjemaene manuelt fra
+ * Skjematyper-oversikten i stedet.
+ *
+ * Nye rader har `IkkePurr`. Rader fra før kjennes igjen på formen
+ * `utsending/for-meg` gir dem: opprettet av mottakeren selv, og batch-id-en
+ * er «<suffiks>-<mottaker>-<skjematype>».
+ */
+function purresperre(e) {
+    if (e.IkkePurr === true) return true;
+    const mottaker = String(e.rowKey || '').toLowerCase();
+    return !!mottaker
+        && String(e.OpprettetAv || '').toLowerCase() === mottaker
+        && String(e.partitionKey || '').toLowerCase().includes(`-${mottaker}-`);
+}
+
 async function listUbesvarte({ maksDagerSidenOpprettet = 14, minDagerSidenPurring = 3 } = {}) {
     const t = await tabell();
     const nå = Date.now();
@@ -251,6 +276,7 @@ async function listUbesvarte({ maksDagerSidenOpprettet = 14, minDagerSidenPurrin
     const ut = [];
     for await (const e of t.listEntities()) {
         if (e.SvarSkjemaId) continue;
+        if (purresperre(e)) continue;                           // ikke en utsending
         if (erAvsluttet(e, nåIso)) continue;                    // fristen er ute
         if (effektivUtsendingsdato(e) > nåIso) continue;        // ikke sendt ennå
 
@@ -320,5 +346,5 @@ function tryParseJson(s) { try { return JSON.parse(s); } catch { return null; } 
 module.exports = {
     opprett, hent, markerBesvart, markerPurret, markerSendt,
     listBatch, listUbesvarte, listForfalteUtsendinger,
-    normaliserDato, erAvsluttet, sjekkEksternUtsending
+    normaliserDato, erAvsluttet, sjekkEksternUtsending, purresperre
 };
