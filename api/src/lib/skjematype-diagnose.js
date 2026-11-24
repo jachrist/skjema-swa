@@ -673,7 +673,7 @@ function eksterneReferanser(def) {
 }
 
 /** Statusene flyten kan svare med. */
-const FLYT_STATUS = ['finnes', 'finnes-ikke', 'ingen-tilgang', 'kan-ikke-sjekkes'];
+const FLYT_STATUS = ['finnes', 'finnes-ikke', 'ikke-medlem', 'ingen-tilgang', 'kan-ikke-sjekkes'];
 
 /**
  * Flett flytens svar inn i funnene.
@@ -683,6 +683,12 @@ const FLYT_STATUS = ['finnes', 'finnes-ikke', 'ingen-tilgang', 'kan-ikke-sjekkes
  * `ingen-tilgang` er en ADVARSEL, ikke en feil. Flyten kjører som sin egen
  * tilkobling, og at den ikke ser noe betyr ikke at det ikke finnes. Slår man
  * de to sammen, ender skjemaeier med å jage et navn som er helt riktig.
+ *
+ * `ikke-medlem` er en FEIL. Teamet eller området finnes, men tjenestebrukeren
+ * er ikke medlem — og flytene som skriver dit, kjører som tjenestebrukeren.
+ * Skjemaet vil feile første gang det brukes. Lagt til 24.11.2026: før det
+ * meldte flyten dette som `ingen-tilgang`, med teksten «navnet kan være
+ * riktig», og den som leste trodde det var flytens problem, ikke oppsettets.
  *
  * Svarer flyten ingenting om referansene — som når den bare kvitterer 200 —
  * blir det ÉN linje, ikke én per referanse. Et halvferdig endepunkt skal
@@ -744,6 +750,13 @@ function flettFlytsvar(referanser, svar) {
             });
             continue;
         }
+        if (status === 'ikke-medlem') {
+            funn.push({
+                alvor: 'feil', kode: 'flyt.ikke-medlem', sted: ref.Sted,
+                melding: `${ikkeMedlemTekst(ref)}${fraFlyten ? ` ${fraFlyten}` : ''}`
+            });
+            continue;
+        }
         if (status === 'ingen-tilgang') {
             funn.push({
                 alvor: 'advarsel', kode: 'flyt.ingen-tilgang', sted: ref.Sted,
@@ -764,7 +777,7 @@ function flettFlytsvar(referanser, svar) {
     for (const [forelderId, antall] of undertrykt) {
         const forelder = (referanser || []).find(r => r.Id === forelderId);
         const linje = funn.find(f => f.sted === forelder?.Sted
-            && (f.kode === 'flyt.finnes-ikke' || f.kode === 'flyt.ingen-tilgang'
+            && (f.kode === 'flyt.finnes-ikke' || f.kode === 'flyt.ingen-tilgang' || f.kode === 'flyt.ikke-medlem'
                 || f.kode === 'flyt.kan-ikke-sjekkes'));
         const tekst = antall === 1
             ? ' Den underliggende referansen er derfor ikke sjekket.'
@@ -772,6 +785,21 @@ function flettFlytsvar(referanser, svar) {
         if (linje) linje.melding += tekst;
     }
     return funn;
+}
+
+/**
+ * Teksten for `ikke-medlem`. Den sier hva som må gjøres, og av hvem: det er
+ * teameieren — ikke skjemaeier og ikke admin — som kan legge til et medlem.
+ */
+function ikkeMedlemTekst(ref) {
+    const team = String(ref?.Team || '').trim();
+    if (team) {
+        return `Tjenestebrukeren er ikke medlem av teamet «${team}», og flyten kan ikke skrive dit. `
+            + 'Be en eier av teamet legge den til som medlem.';
+    }
+    const omrade = String(ref?.Adresse || '').trim();
+    return `Tjenestebrukeren har ikke tilgang til SharePoint-området${omrade ? ` «${omrade}»` : ''}, og flyten kan ikke skrive dit. `
+        + 'Be en eier av området (teamet bak det) legge den til som medlem.';
 }
 
 /** Menneskelig beskrivelse av en referanse, til meldingene. */

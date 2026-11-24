@@ -502,6 +502,24 @@ async function kjor() {
         sjekk('ingen-tilgang undertrykker også', utenTilgang.length, 1);
         sjekk('og forblir en advarsel', utenTilgang[0].alvor, 'advarsel');
 
+        // ikke-medlem: teamet finnes, men tjenestebrukeren er ikke med. Flyten
+        // som skriver dit vil feile — det er en feil ved oppsettet, ikke en
+        // usikkerhet. Lagt til 24.11.2026.
+        const ikkeMedlem = d.flettFlytsvar(refs.slice(3), { Referanser: [
+            { Id: 'steg1.team', Status: 'ikke-medlem' },
+            { Id: 'steg1.kanal', Status: 'kan-ikke-sjekkes' }
+        ] });
+        sjekk('ikke-medlem: én linje, kanalen undertrykt', ikkeMedlem.map(f => f.kode), ['flyt.ikke-medlem']);
+        sjekk('ikke-medlem er en feil', ikkeMedlem[0].alvor, 'feil');
+        sjekk('ikke-medlem navngir teamet og sier hva som må gjøres',
+            [/medlem av teamet «T»/.test(ikkeMedlem[0].melding), /eier av teamet/.test(ikkeMedlem[0].melding)], [true, true]);
+        sjekk('ikke-medlem: undertrykte barn nevnes på linja',
+            ikkeMedlem[0].melding.includes('Den underliggende referansen'), true);
+        const spIkkeMedlem = d.flettFlytsvar(refs.slice(0, 1).map(r => ({ ...r, Adresse: 'https://x/sites/y' })),
+            { Referanser: [{ Id: 'sp.liste', Status: 'ikke-medlem' }] });
+        sjekk('ikke-medlem på SharePoint navngir området', /området «https:\/\/x\/sites\/y»/.test(spIkkeMedlem[0].melding), true);
+        sjekk('ikke-medlem er en status flyten kan svare med', d.FLYT_STATUS.includes('ikke-medlem'), true);
+
         // Men et UBESVART foreldre undertrykker IKKE — da vet vi ingenting
         // om årsaken, og barnas egne svar kan fortsatt være verdt å lese.
         const forelderTaus = d.flettFlytsvar(refs.slice(0, 3), { Referanser: [
