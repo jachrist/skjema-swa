@@ -252,12 +252,25 @@ Feltet er valgfritt å bruke. Ignorerer flyten det, virker alt som før.
 |---|---|---|
 | `finnes` | ingenting | |
 | `finnes-ikke` | **feil** | Navnet peker ingen steder |
+| `ikke-medlem` | **feil** | Teamet eller området finnes, men tjenestebrukeren er ikke medlem. Flyten som skriver dit, vil feile |
 | `ingen-tilgang` | advarsel | Flyten kjører som sin egen tilkobling. At den ikke ser noe, betyr ikke at det ikke finnes |
 | `kan-ikke-sjekkes` | info | Flyten klarte ikke å avgjøre det |
 
 **`finnes-ikke` og `ingen-tilgang` må holdes fra hverandre.** Slås de sammen,
 ender skjemaeier med å jage et navn som er helt riktig, fordi tilkoblingen
 mangler tilgang.
+
+**`ikke-medlem` og `ingen-tilgang` må også holdes fra hverandre** (lagt til
+24.11.2026). `ikke-medlem` er et sikkert svar: flyten har sett at teamet
+finnes, og at tjenestebrukeren ikke står blant medlemmene. Da vet vi at
+Planner-oppgaven, kanalinnlegget eller listeoppdateringen vil feile, og det er
+en feil ved oppsettet. Teksten sier hvem som kan rette den, nemlig teameieren:
+
+> Tjenestebrukeren er ikke medlem av teamet «FHS test», og flyten kan ikke
+> skrive dit. Be en eier av teamet legge den til som medlem.
+
+`ingen-tilgang` er for det flyten ikke klarer å forklare, og blir fortsatt en
+advarsel med «navnet kan være riktig».
 
 `Melding` er valgfri og legges til i vår egen tekst. Hold den kort og konkret.
 
@@ -275,8 +288,8 @@ kolonner gitt **tjueén røde linjer for én skrivefeil**.
 
 To presiseringer:
 
-* `ingen-tilgang` undertrykker også — ser ikke flyten lista, ser den ikke
-  kolonnene heller.
+* `ingen-tilgang` og `ikke-medlem` undertrykker også — ser ikke flyten
+  lista, ser den ikke kolonnene heller.
 * Et **ubesvart** foreldre undertrykker ikke. Da vet vi ingenting om årsaken,
   og barnas egne svar kan fortsatt være verdt å lese.
 
@@ -303,6 +316,155 @@ koster.
 
 `?flyt=0` på endepunktet hopper over runden. Til feilsøking, og for å
 sammenligne svartiden med og uten.
+
+### Byggebeskrivelse for flyten
+
+Skrevet 24.11.2026. Flyten er ikke bygget ennå, og stegene under er ikke
+prøvd i en ekte flyt. Det som står om API-ets side, er testet. Kontrollér
+Graph-kallene ett og ett før resten bygges (punkt 8).
+
+#### Hvorfor flyten må kjøre som tjenestebrukeren
+
+Spørsmålet er ikke bare «finnes teamet?», men «kan flytene som skriver dit,
+skrive dit?». De kjører som tjenestebrukeren. **Alle tilkoblingene i denne
+flyten skal derfor også være tjenestebrukerens**, ellers sjekkes noen andres
+tilgang.
+
+#### Feilstavet og ikke-medlem ser like ut
+
+Ser flyten bare i «mine team», er et feilstavet team og et team uten
+tjenestebrukeren begge usynlige. Derfor går hver referanse med team i to
+trinn:
+
+1. **Finnes teamet?** Søk i katalogen. Vanlige brukere kan lese grupper
+   uten å være medlem. Ingen treff gir `finnes-ikke`.
+2. **Er tjenestebrukeren medlem?** Se etter teamet i tjenestebrukerens egne
+   team. Står det ikke der, svar `ikke-medlem`.
+
+Først når begge er ja, gir det mening å lete etter kanalen, planen eller
+bucketen. Uten medlemskap ser ikke flyten dem.
+
+#### Stegene
+
+**1. Trigger: «When a HTTP request is received».** Bruk samme oppsett som de
+andre flytene i miljøet. I v3-prod betyr det samme autentisering
+(`FLYT_AUTH=entra`, se `docs/FLYTER.md`). JSON-skjema for kroppen:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "Handling": { "type": "string" },
+    "Skjematype_id": { "type": "string" },
+    "Miljo": { "type": "string" },
+    "Referanser": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "Id": { "type": "string" }, "Type": { "type": "string" },
+          "Team": { "type": "string" }, "Kanal": { "type": "string" },
+          "Plan": { "type": "string" }, "Bucket": { "type": "string" },
+          "Adresse": { "type": "string" }, "Liste": { "type": "string" },
+          "Kolonne": { "type": "string" }, "Avhenger": { "type": "string" }
+        }
+      }
+    }
+  }
+}
+```
+
+**2. Sjekk `x-flow-key`** som første steg, som i de andre flytene: en
+betingelse på `triggerOutputs()?['headers']?['x-flow-key']` mot
+miljøvariabelen med nøkkelen. Feil nøkkel gir Response 401 og Terminate.
+
+**3. «Initialize variable» `Svar`**, type Array, tom (`[]`).
+
+**4. «Apply to each» over `Referanser`.** Slå på **Concurrency control** med
+for eksempel 10 parallelle. API-et venter bare i **ti sekunder** (se «Tid»
+over), og et skjema med tjue SharePoint-kolonner gir tjue oppslag.
+
+Hver gren er selvstendig: en kanal slår selv opp teamet sitt i stedet for å
+lese svaret fra team-referansen. Det gir noen ekstra kall, men ingen
+avhengighet av rekkefølgen, og gjør den parallelle løkka trygg.
+
+Inne i løkka: **«Switch» på `items('Apply_to_each')?['Type']`**, med én gren
+per type (tabellen under). Hver gren slutter med **«Append to array
+variable»** `Svar`:
+
+```json
+{ "Id": "@{items('Apply_to_each')?['Id']}", "Status": "<status>", "Melding": "<valgfri>" }
+```
+
+**Default-grenen** (ukjent type) svarer `kan-ikke-sjekkes`. Da vet API-et at
+flyten fikk referansen, men ikke forsto den.
+
+**5. Grenene.** «Team-oppslaget» under er trinn 1 og 2 over, og brukes i fire
+av grenene:
+
+| Type | Kall | Svar |
+|---|---|---|
+| `team` | Team-oppslaget | `finnes` / `finnes-ikke` / `ikke-medlem` |
+| `kanal` | Team-oppslaget, så **Teams → «List channels»** (team-ID) og let etter `displayName` lik `Kanal` | ingen kanal gir `finnes-ikke`, ellers `finnes` |
+| `plan` | Team-oppslaget, så **Planner → «List plans»** (gruppe-ID = team-ID) og let etter `title` lik `Plan` | ingen plan gir `finnes-ikke`, ellers `finnes` |
+| `bucket` | Som `plan`, så **Planner → «List buckets»** (plan-ID) og let etter `name` lik `Bucket` | ingen plan eller bucket gir `finnes-ikke` (si hvilken i `Melding`), ellers `finnes` |
+| `sp-liste` | **SharePoint → «Send an HTTP request to SharePoint»**, Site Address = `Adresse`, GET `_api/web/lists/getbytitle('<Liste>')?$select=Id` | 200 gir `finnes`, 404 gir `finnes-ikke`, 401/403 gir `ikke-medlem` |
+| `sp-kolonne` | Samme handling: GET `_api/web/lists/getbytitle('<Liste>')/fields/getbyinternalnameortitle('<Kolonne>')?$select=InternalName` | som over |
+
+Henter Team-oppslaget `ikke-medlem` eller `finnes-ikke` i en `kanal`-, `plan`-
+eller `bucket`-gren, svar med den statusen og gå ikke videre. API-et viser én
+linje for årsaken (se «Én årsak gir én linje»).
+
+**Team-oppslaget:**
+
+- **Trinn 1, finnes teamet:** Office 365 Groups → **«Send an HTTP request»**,
+  GET
+  `https://graph.microsoft.com/v1.0/groups?$filter=displayName eq '<Team>'&$select=id,displayName,resourceProvisioningOptions`.
+  Behold treffene der `resourceProvisioningOptions` inneholder `Team`. Ingen
+  treff gir `finnes-ikke`. Mer enn ett treff gir `kan-ikke-sjekkes`, med
+  `Melding: "Flere team heter dette."`. Da vet ikke flyten hvilket av dem
+  skjemaet mener.
+- **Trinn 2, er tjenestebrukeren medlem:** **Teams → «List joined teams»**
+  (tjenestebrukerens egne team). Står ikke team-ID-en fra trinn 1 der, er
+  svaret `ikke-medlem`.
+
+**Store og små bokstaver.** Teams, Planner og SharePoint skiller ikke mellom
+dem i navn. Sammenlign derfor med `toLower()` på begge sider i alle
+filtreringer. `$filter=displayName eq` i Graph skiller heller ikke.
+
+**Apostrof i navn.** Både OData-filteret og `getbytitle('…')` brytes av `'`.
+Doble den: `replace(<navn>, '''', '''''')`.
+
+**6. Feil i et kall skal ikke velte løkka.** Legg hver gren i en **«Scope»**.
+Etter den kommer en handling med *Configure run after* = «has failed» /
+«has timed out», som legger til `kan-ikke-sjekkes` med statuskoden i
+`Melding`. For SharePoint-kallene leses statuskoden ut med
+`outputs('<handling>')?['statusCode']`: 404 og 403 er svar, ikke feil.
+
+**7. Response** etter løkka: status 200, kropp
+
+```json
+{ "Referanser": @{variables('Svar')} }
+```
+
+**8. Prøv Graph-kallene før resten bygges.** Kjør trinn 1 med et team du vet
+finnes, og ett du vet ikke finnes. Kjør «List joined teams» og se at teamene
+tjenestebrukeren er med i, kommer ut. Feiler katalogsøket med 403, har
+tenanten begrenset hva vanlige brukere kan lese. Da kan ikke flyten skille
+feilstavet fra ikke-medlem, og `team`-grenen må svare `kan-ikke-sjekkes`
+når teamet ikke er blant de tjenestebrukeren er med i.
+
+#### Slå den på
+
+1. Kopiér trigger-URL-en til app setting **`DIAGNOSE_FLOW_URL`** på
+   API-et. Den bærer ingen `sig=` når flytene krever Entra-token, og settes
+   rett i app settings som de andre flyt-URL-ene (se `config/env.prod.json`).
+2. Åpne en skjematype med Teams-kanal, Planner eller SharePoint-liste i
+   editoren, og trykk **Sjekk oppsettet**. Overskriften viser antall oppslag
+   og tiden. Finner du ikke noe, prøv med et team tjenestebrukeren ikke er
+   med i. Da skal det komme en rød linje om medlemskapet.
+3. `GET /api/skjematyper/{id}/diagnose?flyt=0` viser svaret uten flyten,
+   til sammenligning.
 
 ### Fortsatt igjen
 
