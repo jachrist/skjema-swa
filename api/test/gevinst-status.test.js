@@ -135,6 +135,14 @@ const { gevinstStatus, STATUS_TEKST } = require('../src/lib/gevinst-status');
     sjekk('tabellen har ikke Mellomlagret-kolonnen', /Mellomlagret/.test(tabell), false);
     sjekk('tabellen har Gevinst-kolonnen', /<th[^>]*>Gevinst<\/th>/.test(tabell), true);
     sjekk('siden avgjør ikke fargen selv', /g\.status/.test(admin) && !/baseline\s*&&\s*rapport/.test(admin), true);
+    // Bare streker i kolonnen: siden skal si hvorfor, og skille gammelt API
+    // fra baseline som ikke er valgt.
+    const rå = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'admin.html'), 'utf8');
+    const kilde = rå.slice(rå.indexOf('function gevinstMangler'), rå.indexOf('function gevinstCelle'));
+    const gevinstMangler = new Function(`${kilde}; return gevinstMangler;`)();
+    sjekk('melding: gammelt API', /eldre versjon/.test(gevinstMangler({ rader: [] })), true);
+    sjekk('melding: baseline ikke valgt', /ikke valgt/.test(gevinstMangler({ gevinst: { konfigurert: false } })), true);
+    sjekk('meldingen vises når status mangler', /:\s*gevinstMangler\(data\)/.test(admin), true);
     const eksport = require('../src/lib/skjematype-oversikt').EKSPORT_KOLONNER.map(k => k[0]);
     sjekk('eksporten har fortsatt Mellomlagret, og Gevinst', [eksport.includes('Mellomlagret'), eksport.includes('Gevinst')], [true, true]);
 

@@ -210,7 +210,7 @@ const HTML_PRODUSENTER = [
     // Gevinstcellen i Skjematyper-tabellen, lest 24.11.2026: tittel, id og
     // eiere går gjennom escHtml; status og «hva» er faste verdier fra
     // ikontabellen i funksjonen, ikke fra lagring.
-    'gevinstCelle',
+    'gevinstCelle', 'gevinstMangler',
     // Dato formatert fra et Date-objekt — kan ikke bære markup.
     'formatDato', 'kortDato', 'formatTid',
     // js/behandling-kommentar.js: tar escape-funksjonen som argument og

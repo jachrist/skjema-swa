@@ -3312,8 +3312,9 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         <strong>Gevinst</strong> (skjematyper i produksjon): 🟢 baseline og gevinstrapportering sendt inn ·
                         🟡 baseline sendt inn · 🔴 ingenting sendt inn · ⚪ kravet er slått av. Trykk på 🔴 eller 🟡 for en
                         forhåndsutfylt lenke til skjemaet som mangler — den legges på utklippstavla, og du sender den selv.
+                        ${data.gevinst.rapportTypeId ? '' : '<br>⚠️ Gevinstrapporteringsskjemaet er ikke valgt under Gevinstoppfølging — 🟡 kan ikke lage lenke før det er satt.'}
                         <span id="gevinst-status" style="display: block; margin-top: 4px;"></span>
-                    </div>` : ''}
+                    </div>` : gevinstMangler(data)}
                     <div class="oversikt-ramme">${byggOversiktTabell(data.rader || [])}</div>
                 </div>
                 <div class="panel">
@@ -3504,6 +3505,19 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
          * skjemaet som mangler, og legger den på utklippstavla. Avkrysningen
          * «Krav» slår kravet av for skjematyper der det ikke er relevant.
          */
+        /**
+         * Hvorfor Gevinst-kolonnen bare har streker. To årsaker ser like ut i
+         * tabellen: API-et er eldre enn siden (feltet `gevinst` mangler i
+         * svaret), eller baseline-skjemaet er ikke valgt. Meldingen skiller dem.
+         */
+        function gevinstMangler(data) {
+            const stil = 'font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px;';
+            if (!data.gevinst) {
+                return `<div style="${stil}">⚠️ <strong>Gevinst</strong>: API-et svarer uten gevinststatus — det kjører trolig en eldre versjon enn siden. Sjekk commit i <code>/api/ping</code>.</div>`;
+            }
+            return `<div style="${stil}">⚠️ <strong>Gevinst</strong>: baseline-skjemaet er ikke valgt, så det finnes ingen status å vise. Velg det under Gevinstoppfølging.</div>`;
+        }
+
         function gevinstCelle(r) {
             const g = r.Gevinst;
             if (!g) return '<span style="color: var(--text-secondary);">–</span>';
