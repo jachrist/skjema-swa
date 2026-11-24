@@ -260,6 +260,36 @@ oversikten bruker samme regel, regnet ut på serveren.
 SystemInnstillinger (`UbruktVarsel.Av`), ikke i skjematypen, så de endrer
 ikke «sist endret». Hver endring står i Hendelser (`m365-koblinger.varsling`).
 
+### Gevinstoppfølging: hvem har levert baseline og rapportering
+
+**Administrasjon → Skjematyper** har en kolonne **Gevinst** for skjematyper i
+produksjon (`lib/gevinst-status.js`):
+
+| Ikon | Betyr | Trykk |
+|---|---|---|
+| 🟢 | Baseline og gevinstrapportering er sendt inn | — |
+| 🟡 | Baseline er sendt inn, rapporteringen ikke | Lenke til gevinstrapporteringen |
+| 🔴 | Ingen baseline er sendt inn | Lenke til baseline-skjemaet |
+| ⚪ | Admin har slått av kravet | — |
+
+Et skjema regnes som sendt inn for skjematype X når felt 1-01 har X — samme
+regel for begge (`lib/gevinst-sjekk.js`). Hvilke skjematyper som er baseline
+og rapportering, settes under Administrasjon → Gevinstoppfølging.
+
+**Lenka** er forhåndsutfylt med skjematypen og personlig: den som åpner den,
+sender inn som mottakeren. Admin velger mottaker (forslaget er første eier med
+e-post), lenka legges på utklippstavla, og admin sender den selv. Det er den
+manuelle purringen.
+
+**Avkrysningen «Krav»** slår kravet av for skjematyper der gevinstskjemaene
+ikke er relevante. Lagres i SystemInnstillinger (`Gevinst.Fritatt`), ikke i
+skjematypen, og hver endring står i Hendelser (`gevinst.fritak`).
+
+**Ingen automatisk purring av gevinstskjemaene** (besluttet 24.11.2026).
+Lenkene i editoren («for-meg») og lenkene herfra er ikke utsendinger, og
+purrejobben hopper over dem (`purresperre` i `lib/utsending-storage.js`). Før
+dette ble alle som hadde åpnet editoren, purret hvert tredje døgn.
+
 ---
 
 ## 10. Endringshåndtering ⚠️

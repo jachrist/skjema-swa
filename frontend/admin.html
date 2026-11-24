@@ -3308,6 +3308,12 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         oppslagslister. Den er laget for å fylle et nytt miljø. Importen viser
                         alltid en forhåndsvisning først.
                     </div>
+                    ${data.gevinst?.konfigurert ? `<div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 8px;">
+                        <strong>Gevinst</strong> (skjematyper i produksjon): 🟢 baseline og gevinstrapportering sendt inn ·
+                        🟡 baseline sendt inn · 🔴 ingenting sendt inn · ⚪ kravet er slått av. Trykk på 🔴 eller 🟡 for en
+                        forhåndsutfylt lenke til skjemaet som mangler — den legges på utklippstavla, og du sender den selv.
+                        <span id="gevinst-status" style="display: block; margin-top: 4px;"></span>
+                    </div>` : ''}
                     <div class="oversikt-ramme">${byggOversiktTabell(data.rader || [])}</div>
                 </div>
                 <div class="panel">
@@ -3457,9 +3463,9 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                         <th>Fase</th>
                         <th>Eiere</th>
                         <th class="tall">Innsendt</th>
-                        <th class="tall">Mellomlagret</th>
                         <th class="tall">Avsluttet</th>
                         <th>Siste aktivitet</th>
+                        <th title="Gevinstoppfølging: baseline og gevinstrapportering for skjematyper i produksjon">Gevinst</th>
                     </tr></thead>
                     <tbody>${rader.map(oversiktRad).join('')}</tbody>
                 </table>`;
@@ -3484,11 +3490,85 @@ ${(r.forhandsvisning || []).map(t => escHtml(t)).join('\n')}
                     <td><span class="merkelapp ${fase.toLowerCase()}">${escHtml(fase)}</span></td>
                     <td class="eierkol">${eiere}</td>
                     <td class="tall">${r.Utfylte}</td>
-                    <td class="tall">${r.Mellomlagret}</td>
                     <td class="tall">${r.Avsluttet}</td>
                     <td style="white-space: nowrap; font-size: 12px; color: var(--text-secondary);">${escHtml(kortDato(r.SisteDato))}</td>
+                    <td style="white-space: nowrap;">${gevinstCelle(r)}</td>
                 </tr>`;
         }
+
+        /**
+         * Gevinstcellen. Fargen og «krav» kommer fra serveren
+         * (lib/gevinst-status.js) — siden avgjør ingenting selv.
+         *
+         * Rødt og gult er knapper: de lager en forhåndsutfylt lenke til det
+         * skjemaet som mangler, og legger den på utklippstavla. Avkrysningen
+         * «Krav» slår kravet av for skjematyper der det ikke er relevant.
+         */
+        function gevinstCelle(r) {
+            const g = r.Gevinst;
+            if (!g) return '<span style="color: var(--text-secondary);">–</span>';
+            const ikoner = {
+                gronn: ['🟢', 'Baseline og gevinstrapportering er sendt inn', null],
+                gul: ['🟡', 'Baseline er sendt inn — trykk for lenke til gevinstrapporteringen', 'rapport'],
+                rod: ['🔴', 'Ingen gevinstskjema er sendt inn — trykk for lenke til baseline-skjemaet', 'baseline'],
+                fritatt: ['⚪', 'Kravet er slått av for denne skjematypen', null]
+            };
+            const [ikon, tittel, hva] = ikoner[g.status] || ['', '', null];
+            const id = escHtml(r.Skjematype_id);
+            const knapp = hva
+                ? `<button class="knapp mini sekundær" style="padding: 0 4px;" title="${escHtml(tittel)}" onclick="lagGevinstLenke(this)" data-id="${id}" data-hva="${hva}" data-eiere="${escHtml(r.Eiere || '')}">${ikon}</button>`
+                : `<span title="${escHtml(tittel)}">${ikon}</span>`;
+            return `${knapp}
+                <label style="font-size: 11px; margin-left: 4px;" title="Fjern haken når gevinstskjemaene ikke er relevante for skjematypen">
+                    <input type="checkbox" class="gevinst-krav" data-id="${id}" ${g.krav ? 'checked' : ''} onchange="settGevinstKrav(this)"> Krav
+                </label>`;
+        }
+
+        /**
+         * Lag en forhåndsutfylt lenke til baseline- eller rapporteringsskjemaet
+         * og legg den på utklippstavla. Lenka er personlig — den som åpner den,
+         * sender inn som mottakeren — så admin velger hvem den er til. Forslaget
+         * er den første eieren med e-postadresse.
+         */
+        window.lagGevinstLenke = async (knapp) => {
+            // Verdiene ligger i data-attributter, ikke i onclick-teksten: en
+            // id i en JS-streng i et attributt er en injeksjon escHtml ikke
+            // beskytter mot.
+            const skjematypeId = knapp.dataset.id;
+            const hva = knapp.dataset.hva;
+            const forslag = (String(knapp?.dataset?.eiere || '').split(',').map(s => s.trim()).find(s => /@/.test(s)) || '');
+            const mottaker = window.prompt('Lenken er personlig: den som åpner den, sender inn som mottakeren. Hvem skal fylle ut?', forslag);
+            if (!mottaker) return;
+            const status = document.getElementById('gevinst-status');
+            try {
+                const res = await api.post('/api/gevinst/lenke', { skjematypeId, hva, mottaker: mottaker.trim() });
+                let kopiert = false;
+                try { await navigator.clipboard.writeText(res.url); kopiert = true; } catch (_) { /* vises under */ }
+                if (status) {
+                    status.textContent = kopiert
+                        ? `✓ Lenke til ${hva === 'baseline' ? 'baseline-skjemaet' : 'gevinstrapporteringen'} for ${res.mottaker} ligger på utklippstavla`
+                        : `Lenke for ${res.mottaker}: ${res.url}`;
+                }
+            } catch (e) {
+                if (status) status.textContent = 'Feil: ' + e.message;
+            }
+        };
+
+        /** Slå kravet av eller på. Feiler lagringen, settes haken tilbake. */
+        window.settGevinstKrav = async (boks) => {
+            const status = document.getElementById('gevinst-status');
+            const krav = boks.checked;
+            boks.disabled = true;
+            try {
+                await api.post('/api/gevinst/fritak', { skjematypeIder: [boks.dataset.id], fritatt: !krav });
+                if (status) status.textContent = `✓ Krav om gevinstskjemaer ${krav ? 'på' : 'av'} for skjematype ${boks.dataset.id} — last siden på nytt for ny farge`;
+            } catch (e) {
+                boks.checked = !krav;
+                if (status) status.textContent = 'Feil: ' + e.message;
+            } finally {
+                boks.disabled = false;
+            }
+        };
 
         /** Dato uten klokkeslett — en oversikt trenger ikke minuttet. */
         function kortDato(iso) {
