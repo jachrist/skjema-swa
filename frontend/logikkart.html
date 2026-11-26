@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logikkart</title>
+    <script>
+        (function() {
+            const t = localStorage.getItem('theme');
+            if (t === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+        })();
+    </script>
+    <!--
+        Logikkart for en skjematype: hvilke seksjoner og felt som vises når, og
+        hvilke behandlingssteg som følger hverandre. Åpnes fra editoren med
+        knappen «🗺 Logikkart», med definisjonen slik den står i editoren —
+        også ulagrede endringer. Treet bygges av js/logikkart.js; denne siden
+        viser det, og lar det skrives ut eller lastes ned som en frittstående
+        HTML-fil.
+    -->
+    <style id="kart-stil">
+        :root {
+            --bg-page: #e8edf2;
+            --bg-node: #ffffff;
+            --text-primary: #1c1c1e;
+            --text-secondary: #6e6e73;
+            --border-color: rgba(0, 0, 0, 0.12);
+            --linje: #3d8bd4;
+            --accent: #0a84ff;
+            --vilkar-bg: #fff4d6;
+            --vilkar-tekst: #7a5200;
+        }
+        [data-theme="dark"] {
+            --bg-page: #0d1117;
+            --bg-node: #1c2230;
+            --text-primary: #f0f0f5;
+            --text-secondary: #8e8e93;
+            --border-color: rgba(255, 255, 255, 0.14);
+            --linje: #5aa2e6;
+            --vilkar-bg: #3a2f12;
+            --vilkar-tekst: #f2d48a;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            font-size: 13px;
+        }
+        .topp {
+            display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+            padding: 12px 16px; border-bottom: 1px solid var(--border-color);
+        }
+        .topp h1 { font-size: 17px; margin: 0 12px 0 0; }
+        .topp .hjelp { color: var(--text-secondary); font-size: 12px; flex-basis: 100%; }
+        .knapp {
+            border: 1px solid var(--accent); color: var(--accent); background: transparent;
+            border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer;
+        }
+        .knapp:hover { background: rgba(10, 132, 255, 0.1); }
+        .kart { padding: 16px; overflow: auto; }
+
+        /* Treet: hver gren er en node og en kolonne med barn til høyre. */
+        .gren { display: flex; align-items: center; }
+        .barn { display: flex; flex-direction: column; margin-left: 24px; position: relative; padding: 2px 0; }
+        .barn::before {
+            content: ''; position: absolute; left: -24px; top: 50%; width: 24px;
+            border-top: 1.5px solid var(--linje);
+        }
+        .barn > .gren { position: relative; padding: 4px 0 4px 18px; }
+        .barn > .gren::before {
+            content: ''; position: absolute; left: 0; top: 50%; width: 18px;
+            border-top: 1.5px solid var(--linje);
+        }
+        .barn > .gren::after {
+            content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+            border-left: 1.5px solid var(--linje);
+        }
+        .barn > .gren:first-child::after { top: 50%; }
+        .barn > .gren:last-child::after { bottom: 50%; }
+        .barn > .gren:only-child::after { display: none; }
+
+        .node {
+            background: var(--bg-node); border: 1.5px solid var(--linje); border-radius: 10px;
+            padding: 6px 10px; max-width: 340px; min-width: 120px; flex-shrink: 0;
+        }
+        .node.rot { font-size: 16px; padding: 10px 16px; }
+        .node.seksjon, .node.behandling { border-radius: 18px; font-weight: 600; }
+        .node.steg { border-style: dashed; }
+        .node:target { box-shadow: 0 0 0 3px var(--accent); }
+        .tittel { line-height: 1.35; }
+        .ref { color: var(--text-secondary); font-size: 11px; margin-right: 6px; font-weight: 400; }
+        .gren-tekst {
+            font-size: 11px; color: var(--vilkar-tekst); background: var(--vilkar-bg);
+            border-radius: 6px; padding: 1px 6px; margin: -2px 0 4px; display: inline-block;
+        }
+        .betingelse {
+            font-size: 11px; color: var(--vilkar-tekst); background: var(--vilkar-bg);
+            border-radius: 6px; padding: 2px 6px; margin-top: 4px; font-weight: 400;
+        }
+        .behandlere, .styrer { font-size: 11px; color: var(--text-secondary); margin-top: 4px; font-weight: 400; }
+        .styrer a { color: var(--accent); }
+        .merker { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+        .merke {
+            font-size: 10.5px; border-radius: 4px; padding: 1px 6px; font-weight: 400;
+            border: 1px solid var(--border-color); background: #eef0f3; color: #333;
+        }
+        .merke.enkeltvalg { background: #c9f2cf; color: #145a1f; }
+        .merke.flervalg { background: #bdf0ea; color: #0b5b52; }
+        .merke.tekst { background: #ffe5b3; color: #6b4600; }
+        .merke.info { background: #ffd0d0; color: #7a1010; }
+        .merke.vedlegg, .merke.dato { background: #dfe4ff; color: #26317a; }
+        .merke.obligatorisk { background: transparent; color: #c0392b; border-color: #c0392b; }
+        .merke.vilkar { background: var(--vilkar-bg); color: var(--vilkar-tekst); }
+        .merke.fase, .merke.flyt { background: transparent; color: var(--text-secondary); }
+        .merke.valg-positiv { background: #d4f5dc; color: #1e7a34; }
+        .merke.valg-negativ { background: #ffd9d6; color: #a3170d; }
+        .merke.valg-ompuss { background: #fff0c2; color: #7a5600; }
+
+        .tom { padding: 32px 16px; color: var(--text-secondary); }
+
+        @media print {
+            .topp { display: none; }
+            body { background: #fff; }
+            .kart { overflow: visible; padding: 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="topp">
+        <h1 id="overskrift">🗺 Logikkart</h1>
+        <button class="knapp" id="kompakt-knapp" type="button">Vis bare logikken</button>
+        <button class="knapp" id="skriv-ut" type="button">🖨 Skriv ut / PDF</button>
+        <button class="knapp" id="last-ned" type="button">⬇ Last ned HTML</button>
+        <div class="hjelp">
+            Et felt som vises på vilkår om ett annet felt i samme seksjon, henger under det feltet.
+            Andre vilkår står som gul merkelapp der elementet står i skjemaet, og feltet de avhenger av
+            sier hva det styrer. Behandlingssteg henger under steget de venter på.
+            <span id="kilde"></span>
+        </div>
+    </div>
+    <div class="kart" id="kart"></div>
+
+    <script type="module">
+        import { byggLogikkart, tilHtml } from './js/logikkart.js';
+        import { escapeHtml } from './js/escape.js';
+
+        const kart = document.getElementById('kart');
+        let def = null;
+        try { def = JSON.parse(localStorage.getItem('skjematype-logikkart') || 'null'); } catch (_) { def = null; }
+
+        if (!def) {
+            kart.innerHTML = '<div class="tom">Ingen skjematype å vise. Åpne logikkartet fra editoren med knappen «🗺 Logikkart».</div>';
+        } else {
+            const tid = Number(localStorage.getItem('skjematype-logikkart-tid') || 0);
+            const navn = def.Skjema_navn || 'Skjematype';
+            document.title = `Logikkart – ${navn}`;
+            document.getElementById('overskrift').textContent = `🗺 ${navn}`;
+            document.getElementById('kilde').textContent = tid
+                ? `Slik skjematypen sto i editoren ${new Date(tid).toLocaleString('nb-NO')}, også ulagrede endringer.`
+                : '';
+        }
+        const modell = def ? byggLogikkart(def) : null;
+        let bareLogikk = false;
+        const tegn = () => { if (modell) kart.innerHTML = tilHtml(modell, { bareLogikk }); };
+        tegn();
+
+        const kompakt = document.getElementById('kompakt-knapp');
+        kompakt.addEventListener('click', () => {
+            bareLogikk = !bareLogikk;
+            kompakt.textContent = bareLogikk ? 'Vis alle felt' : 'Vis bare logikken';
+            tegn();
+        });
+        document.getElementById('skriv-ut').addEventListener('click', () => window.print());
+
+        // En frittstående fil: stilen og kartet, uten skript. Kan sendes til
+        // noen som ikke har tilgang til skjemasystemet.
+        document.getElementById('last-ned').addEventListener('click', () => {
+            const stil = document.getElementById('kart-stil').textContent;
+            const tittel = escapeHtml(document.title);
+            const fil = `<!DOCTYPE html><html lang="nb"><head><meta charset="UTF-8"><title>${tittel}</title>`
+                + `<style>${stil}</style></head><body><h1 style="font-size:17px;margin:12px 16px">${tittel}</h1>`
+                + `<div class="kart">${kart.innerHTML}</div></body></html>`;
+            const url = URL.createObjectURL(new Blob([fil], { type: 'text/html' }));
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `logikkart-${String(def?.Skjematype_id || 'skjematype').replace(/[^\w-]/g, '')}.html`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        });
+    </script>
+</body>
+</html>
