@@ -694,22 +694,24 @@ const FLYT_STATUS = ['finnes', 'finnes-ikke', 'ikke-medlem', 'ingen-tilgang', 'k
  * blir det ÉN linje, ikke én per referanse. Et halvferdig endepunkt skal
  * ikke fylle skjermen.
  */
-function flettFlytsvar(referanser, svar) {
+function flettFlytsvar(referanser, svar, raatekst = '') {
     const funn = [];
-    const liste = Array.isArray(svar?.Referanser) ? svar.Referanser : null;
+    const liste = flytliste(svar);
 
     if (!liste || liste.length === 0) {
         if ((referanser || []).length > 0) {
             funn.push({
                 alvor: 'info', kode: 'flyt.ingen-svar', sted: 'Eksterne oppslag',
                 melding: `Flyten svarte, men sa ingenting om de ${referanser.length} referansene `
-                    + 'som ble sendt. De er ikke sjekket.'
+                    + `som ble sendt. De er ikke sjekket. ${beskrivSvar(svar, raatekst)}`
             });
         }
         return funn;
     }
 
-    const perId = new Map(liste.map(r => [String(r?.Id || ''), r]));
+    const perId = new Map(liste.map(r => [String(r?.Id ?? '').trim(), {
+        ...r, Status: String(r?.Status ?? '').trim().toLowerCase()
+    }]));
 
     // Referansene henger sammen: en bucket ligger i en plan, en kanal i et
     // team, en kolonne i en liste. Svarer flyten at forelderen ikke finnes,
@@ -785,6 +787,54 @@ function flettFlytsvar(referanser, svar) {
         if (linje) linje.melding += tekst;
     }
     return funn;
+}
+
+/**
+ * Lista i flytens svar, tolerant for formene Power Automate lett lager:
+ *
+ *   - `Referanser` som TEKST med JSON i — det blir det når Response-kroppen
+ *     har `"@{variables('Svar')}"` i anførselstegn
+ *   - elementer som tekst med JSON i — det blir det når «Append to array
+ *     variable» får objektet som tekst
+ *   - lista alene, uten `{ "Referanser": … }` rundt
+ *   - `referanser` med liten forbokstav
+ *
+ * Oppdaget 26.11.2026: flyten svarte riktig, men editoren sa «sa ingenting
+ * om de 7 referansene». Et svar vi ikke forstår, er ikke et tomt svar.
+ */
+function flytliste(svar) {
+    const jsonEllerSelv = (v) => {
+        if (typeof v !== 'string') return v;
+        try { return JSON.parse(v); } catch (_) { return v; }
+    };
+    const kropp = jsonEllerSelv(svar);
+    let liste = Array.isArray(kropp) ? kropp : jsonEllerSelv(kropp?.Referanser ?? kropp?.referanser);
+    if (!Array.isArray(liste)) return null;
+    return liste.map(jsonEllerSelv).filter(r => r && typeof r === 'object');
+}
+
+/**
+ * Hva flyten faktisk svarte, i én setning — så «sa ingenting» kan skilles
+ * fra «sa noe vi ikke forsto» uten å lete i flytloggen.
+ */
+function beskrivSvar(svar, raatekst = '') {
+    const utdrag = (t) => {
+        const s = String(t || '').replace(/\s+/g, ' ').trim();
+        return s.length > 160 ? `${s.slice(0, 160)}…` : s;
+    };
+    if (raatekst && (svar == null || (typeof svar === 'object' && Object.keys(svar).length === 0))) {
+        return `Svaret var ikke JSON: «${utdrag(raatekst)}».`;
+    }
+    if (svar == null || (typeof svar === 'object' && !Array.isArray(svar) && Object.keys(svar).length === 0)) {
+        return 'Svaret var tomt.';
+    }
+    if (typeof svar === 'object' && !Array.isArray(svar)) {
+        const r = svar.Referanser ?? svar.referanser;
+        if (r === undefined) return `Svaret hadde ikke «Referanser», bare: ${Object.keys(svar).slice(0, 8).join(', ')}.`;
+        if (Array.isArray(r) && r.length === 0) return '«Referanser» var en tom liste.';
+        return `«Referanser» var ikke en liste: «${utdrag(typeof r === 'string' ? r : JSON.stringify(r))}».`;
+    }
+    return `Svaret hadde uventet form: «${utdrag(typeof svar === 'string' ? svar : JSON.stringify(svar))}».`;
 }
 
 /**

@@ -520,6 +520,25 @@ async function kjor() {
         sjekk('ikke-medlem på SharePoint navngir området', /området «https:\/\/x\/sites\/y»/.test(spIkkeMedlem[0].melding), true);
         sjekk('ikke-medlem er en status flyten kan svare med', d.FLYT_STATUS.includes('ikke-medlem'), true);
 
+        // Formene Power Automate lett lager. 26.11.2026 svarte flyten riktig,
+        // men editoren sa «sa ingenting om de 7 referansene».
+        const svar = [{ Id: 'steg1.team', Status: 'ikke-medlem' }, { Id: 'steg1.kanal', Status: 'finnes' }];
+        const koder = (s, raa) => d.flettFlytsvar(refs.slice(3), s, raa).map(f => f.kode);
+        sjekk('Referanser som JSON-tekst forstås', koder({ Referanser: JSON.stringify(svar) }), ['flyt.ikke-medlem']);
+        sjekk('elementer som JSON-tekst forstås', koder({ Referanser: svar.map(x => JSON.stringify(x)) }), ['flyt.ikke-medlem']);
+        sjekk('lista alene forstås', koder(svar), ['flyt.ikke-medlem']);
+        sjekk('hele kroppen som JSON-tekst forstås', koder(JSON.stringify({ Referanser: svar })), ['flyt.ikke-medlem']);
+        sjekk('referanser med liten forbokstav forstås', koder({ referanser: svar }), ['flyt.ikke-medlem']);
+        sjekk('Status med store bokstaver og mellomrom forstås',
+            koder({ Referanser: [{ Id: 'steg1.team', Status: ' Ikke-Medlem ' }] }), ['flyt.ikke-medlem']);
+        // Et svar vi ikke forstår, sier hva det var.
+        const tekst = (s, raa) => d.flettFlytsvar(refs.slice(3), s, raa)[0].melding;
+        sjekk('ukjent nøkkel: nøklene nevnes', /bare: Svar\b/.test(tekst({ Svar: svar })), true);
+        sjekk('ikke JSON: teksten vises', /ikke JSON: «hei»/.test(tekst({}, 'hei')), true);
+        sjekk('tomt svar sies', /Svaret var tomt/.test(tekst({})), true);
+        sjekk('tom liste sies', /tom liste/.test(tekst({ Referanser: [] })), true);
+        sjekk('tekst som ikke er en liste vises', /ikke en liste: «ok»/.test(tekst({ Referanser: 'ok' })), true);
+
         // Men et UBESVART foreldre undertrykker IKKE — da vet vi ingenting
         // om årsaken, og barnas egne svar kan fortsatt være verdt å lese.
         const forelderTaus = d.flettFlytsvar(refs.slice(0, 3), { Referanser: [
