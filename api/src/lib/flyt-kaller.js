@@ -434,9 +434,14 @@ async function kallDiagnoseFlyt(payload, log = () => {}, { timeoutMs = 10000 } =
         }
         // Et tomt svar er lovlig: flyten kan kvittere 200 uten å ha sjekket
         // noe ennå. Kalleren skiller på det, og sier det med ÉN linje.
-        const data = await respons.json().catch(() => ({}));
+        //
+        // Teksten tas vare på: et svar som ikke er JSON skal kunne vises som
+        // det var, ikke forsvinne som et tomt objekt.
+        const raatekst = await respons.text().catch(() => '');
+        let data = {};
+        try { data = raatekst ? JSON.parse(raatekst) : {}; } catch (_) { data = {}; }
         log(`diagnose-flyt OK: ${payload.Referanser.length} referanser på ${ms} ms`);
-        return { status: 'ok', respons: data, ms };
+        return { status: 'ok', respons: data, raatekst: raatekst.slice(0, 2000), ms };
     } catch (e) {
         const ms = Date.now() - start;
         if (e.name === 'AbortError') {

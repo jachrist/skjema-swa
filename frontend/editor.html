@@ -3542,7 +3542,7 @@
                     // Sørg for stabile IDer på nye felt (samme som ved kopi)
                     data.Seksjoner = (ny.Seksjoner || []).map(sek => ({
                         ...sek,
-                        Felter: (sek.Felter || []).map(f => ({ ...f, Id: nyFeltId(), Svar: [] }))
+                        Felter: (sek.Felter || []).map(f => ({ ...f, Id: nyId(), Svar: [] }))
                     }));
                     lukk();
                     rendrer();
@@ -3554,10 +3554,6 @@
             });
         };
 
-        // Genererer en unik felt-Id (samme mønster som editor bruker ellers)
-        function nyFeltId() {
-            return 'f-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
-        }
 
         // Gevinstoppfølging: henter to bokser fra SystemInnstillinger og rendrer
         // Markdown-teksten med $lenke erstattet til en utsending-token-URL.
@@ -3687,8 +3683,13 @@
         }
 
         // ---- Felt ----
+        // Feltets Id. En UUID; uten crypto.randomUUID (bare utenfor https) på
+        // formen `f-xxxx-xxxx`, som papirskjema-importen brukte fram til
+        // 26.11.2026. Begge kjennes igjen som feltreferanse — en Id på en
+        // tredje form ville stått urørt som `{…}` i e-postene.
+        // Se api/test/felt-id.test.js.
         function nyId() {
-            return crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+            return crypto.randomUUID ? crypto.randomUUID() : 'f-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36);
         }
 
         function nyttFelt() {

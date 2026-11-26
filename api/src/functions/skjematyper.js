@@ -266,7 +266,7 @@ app.http('skjematypeDiagnose', {
                 res.flyt = { status: svar.status, ms: svar.ms ?? null, antallSendt: referanser.length };
 
                 if (svar.status === 'ok') {
-                    res.funn.push(...diagnose.flettFlytsvar(referanser, svar.respons));
+                    res.funn.push(...diagnose.flettFlytsvar(referanser, svar.respons, svar.raatekst));
                 } else if (svar.status === 'tidsavbrudd' || svar.status === 'feil') {
                     // Ikke en feil ved SKJEMATYPEN. Den som leser lista skal
                     // ikke tro at oppsettet er galt fordi et oppslag ikke kom

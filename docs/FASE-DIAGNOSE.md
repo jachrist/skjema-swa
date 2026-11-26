@@ -441,11 +441,22 @@ Etter den kommer en handling med *Configure run after* = «has failed» /
 `Melding`. For SharePoint-kallene leses statuskoden ut med
 `outputs('<handling>')?['statusCode']`: 404 og 403 er svar, ikke feil.
 
-**7. Response** etter løkka: status 200, kropp
+**7. Response** etter løkka: status 200, header
+`Content-Type: application/json`, kropp
 
 ```json
 { "Referanser": @{variables('Svar')} }
 ```
+
+Sett inn `Svar` uten anførselstegn rundt. Står det `"@{variables('Svar')}"`,
+blir lista en tekst. Det samme gjelder verdien i «Append to array variable»:
+skriv den som et objekt, ikke som tekst.
+
+API-et tåler begge feilene (sjekket 26.11.2026), men de er lette å rette her.
+Forstår API-et likevel ikke svaret, sier editoren hva det fikk, for eksempel
+«Svaret hadde ikke «Referanser», bare: body» eller «Svaret var ikke JSON:
+«…»». Det er det første du ser på når en flyt som virker i flytloggen,
+gir «sa ingenting om referansene» i editoren.
 
 **8. Prøv Graph-kallene før resten bygges.** Kjør trinn 1 med et team du vet
 finnes, og ett du vet ikke finnes. Kjør «List joined teams» og se at teamene
