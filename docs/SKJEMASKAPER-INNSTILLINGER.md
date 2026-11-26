@@ -41,7 +41,7 @@ på et felt som ikke finnes lenger.
 | **Ikon** (`Logo_url`) | Velg fra logoene admin har lastet opp | Vises til venstre for tittelen på utfyllingssiden |
 | **Skjemaforklaring** (`Skjemaforklaring`) | Tekst, format `Ren tekst` eller `Markdown` | Informasjon øverst på utfyllingssiden |
 | **Innsenderkvittering** (`Innsenderkvittering`) | Av/på (standard på) · egen melding (emne og tekst) · **Kopi til**: personer og roller | E-post til innsender ved innsending. Kopimottakerne står i kopi-feltet, så det sendes én e-post. Rolleomfang kan hentes fra et felt, og et flervalgsfelt gir én rolle per valg. Har skjemaet ingen innsenderadresse, går kvitteringen til den første i kopilista |
-| **Ferdigvarsling** (`Ferdigvarsling`) | Av/på (standard av) · egen melding · mottakere: personer og roller | E-post når siste behandlingssteg er avgjort. Feltreferanser i mottakerne slås opp mot svarene slik de står ved ferdigstillelse |
+| **Ferdigvarsling** (`Ferdigvarsling`) | Av/på (standard av) · egen melding · mottakere: personer og roller | E-post når siste behandlingssteg er avgjort, eller ved innsending når skjematypen ikke har behandlingssteg eller alle ble hoppet over. Feltreferanser i mottakerne slås opp mot svarene slik de står ved ferdigstillelse |
 | **Kryptering** (`Krypteres`) | `Nei` · `Svar` (svarene, metadata i klartekst) · `Alt` (hele skjemaet) | Gjøres ved avslutning. Krever en nøkkel (Admin → Nøkler) |
 | **Anonymiser innsender** (`Anonymiseres`) | Av/på | Innsenderens navn og e-post byttes med et pseudonym ved avslutning. Pseudonymet er det samme for samme person, så antall svar per person telles fortsatt riktig |
 

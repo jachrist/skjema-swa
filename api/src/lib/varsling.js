@@ -762,10 +762,9 @@ async function forklarMottakere(oppsett, skjema) {
  * Send innsender-kvittering. Kalles ved innsending.
  *
  * `Innsenderkvittering.Kopi` ({ Personer, Roller }) får samme melding, i
- * kopi-feltet på én e-post og ikke som en e-post hver. Det er
- * veien til «varsle en rolle når skjemaet er ferdig» for skjematyper uten
- * behandlingssteg: de er ferdige i det de sendes inn, så en egen ferdigvarsling
- * ville bare vært den samme e-posten en gang til.
+ * kopi-feltet på én e-post og ikke som en e-post hver. Ferdigvarslingen er
+ * noe annet — egne mottakere og egen tekst — og sendes også for skjematyper
+ * uten behandlingssteg når den er slått på (fra 26.11.2026).
  *
  * opts: { log, request } — request brukes for base_url-fallback.
  */

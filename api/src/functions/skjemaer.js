@@ -1232,18 +1232,21 @@ app.http('lagreSkjema', {
                 const flytSteg = aktive.filter(s => (s.Flyt_url || '').trim());
                 const vanligeSteg = aktive.filter(s => !(s.Flyt_url || '').trim());
 
-                // Ferdigvarslingen gjelder skjematyper som HAR behandling, men
-                // hvor alle stegene ble hoppet over. Har typen ingen steg i det
-                // hele tatt, er kvitteringens Kopi riktig kanal — ellers ville
-                // det gått to like e-poster i samme sekund.
-                const harBehandling = Array.isArray(skjemaKlartekst.Behandling) && skjemaKlartekst.Behandling.length > 0;
+                // Ferdigvarslingen sendes når skjemaet er ferdig i det det sendes
+                // inn — alle steg hoppet over, eller ingen steg i det hele tatt.
+                //
+                // Fram til 26.11.2026 ble den holdt tilbake for skjematyper UTEN
+                // steg, med kvitteringens Kopi som kanalen der. Editoren lot den
+                // likevel slås på, uten å si fra, og den som hadde slått den på
+                // fikk ingenting. Er den slått på, er det fordi noen vil ha den:
+                // egne mottakere og egen tekst, ikke den samme e-posten to ganger.
 
                 const log = (m) => context.log(m);
                 log(`innsending: varsler ${vanligeSteg.length} aktive steg`
                     + `${flytSteg.length ? `, ${flytSteg.length} eksterne flyt-steg` : ''}`);
                 const varslinger = [
                     varsling.sendInnsenderKvittering(skjemaKlartekst, skjematype, varslOpts),
-                    ...(bleFerdigVedInnsending && harBehandling
+                    ...(bleFerdigVedInnsending
                         ? [varsling.sendFerdigVarsling(skjemaKlartekst, skjematype, varslOpts)]
                         : []),
                     varsling.sendVarslingAktiveSteg(skjemaKlartekst, skjematype, vanligeSteg, varslOpts),
