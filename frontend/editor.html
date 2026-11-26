@@ -912,6 +912,7 @@
                     <button class="knapp primær" onclick="lagre()">💾 Lagre</button>
                     <span id="lagre-status" class="lagre-status"></span>
                     <button class="knapp sekundær" onclick="visForhandsvisning()" title="Åpne skjemaet i ny fane med gjeldende (ulagrede) endringer">👁 Vis skjema</button>
+                    <button class="knapp sekundær" onclick="visLogikkart()" title="Vilkårene på seksjoner, felt og behandlingssteg som et tre — med ulagrede endringer">🗺 Logikkart</button>
                     ${eksisterendeId ? `<a class="knapp sekundær" href="/index.html?skjematype_id=${encodeURIComponent(eksisterendeId)}&fra=editor" target="_blank">🧪 Test utfylling (lagret)</a>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="sjekkOppsettet()" title="Finner roller uten medlemmer, oppsett som ikke brukes og referanser til felter som ikke finnes">🩺 Sjekk oppsettet</button>` : ''}
                     ${eksisterendeId ? `<button class="knapp sekundær" onclick="kopier()">📋 Kopier</button>` : ''}
@@ -3424,6 +3425,19 @@
                 window.open('/index.html?preview=1', '_blank', 'noopener');
             } catch (e) {
                 alert('Kunne ikke åpne forhåndsvisning: ' + e.message);
+            }
+        };
+
+        // Logikkartet: samme vei som forhåndsvisningen — definisjonen slik den
+        // står i editoren, også ulagret, via localStorage til en ny fane.
+        // Se logikkart.html og js/logikkart.js.
+        window.visLogikkart = () => {
+            try {
+                localStorage.setItem('skjematype-logikkart', JSON.stringify(data));
+                localStorage.setItem('skjematype-logikkart-tid', String(Date.now()));
+                window.open('/logikkart.html', '_blank', 'noopener');
+            } catch (e) {
+                alert('Kunne ikke åpne logikkartet: ' + e.message);
             }
         };
 

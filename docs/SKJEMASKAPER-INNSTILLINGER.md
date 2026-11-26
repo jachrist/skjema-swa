@@ -21,6 +21,7 @@ trenger dem ikke.
 | 💾 Lagre | Lagrer skjematypen. Ulagrede endringer holdes som utkast i nettleseren, og tilbys gjenopprettet neste gang editoren åpnes |
 | 👁 Vis skjema | Åpner skjemaet i ny fane med endringene som ikke er lagret ennå |
 | 🧪 Test utfylling | Åpner den **lagrede** versjonen for utfylling |
+| 🗺 Logikkart | Viser vilkårene som et tre i ny fane, med ulagrede endringer: felt som vises på vilkår om ett felt i samme seksjon henger under det feltet, andre vilkår står som merkelapp, og steg henger under steget de venter på. «Vis bare logikken» skjuler felt uten vilkår. Kan skrives ut eller lastes ned som HTML |
 | 🩺 Sjekk oppsettet | Diagnose: roller uten medlemmer, oppsett som ikke brukes, referanser til felt som ikke finnes, frister uten gyldig valg osv. Tre grader: feil, advarsel, info |
 | 📋 Kopier | Ny skjematype med samme innhold, i fase Utvikling, med «(kopi)» bak navnet |
 | 🤖 Importer med AI | (Bare admin) Last opp bilde eller PDF av et papirskjema, og få en definisjon foreslått |

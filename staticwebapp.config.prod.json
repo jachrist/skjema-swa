@@ -210,6 +210,12 @@
             ]
         },
         {
+            "route": "/logikkart.html",
+            "allowedRoles": [
+                "authenticated"
+            ]
+        },
+        {
             "route": "/login",
             "redirect": "/.auth/login/aad?post_login_redirect_uri=/"
         },
