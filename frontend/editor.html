@@ -977,8 +977,7 @@
                             <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 4px;">
                                 Kopi til <small>— disse settes i <em>kopi-feltet</em> på kvitteringen, så det sendes
                                 én e-post og ikke én til hver. Rolleomfang kan hentes fra et felt, og et flervalgsfelt
-                                gir én mottakerrolle per valg. Dette er kanalen for skjematyper <em>uten</em>
-                                behandlingssteg, som er ferdige i det de sendes inn. Har skjemaet ingen
+                                gir én mottakerrolle per valg. De får samme tekst som innsenderen. Har skjemaet ingen
                                 innsender-adresse, går kvitteringen til den første her.</small>
                             </div>
                             <div class="tilgang-slot" data-slot="kv-kopi"></div>
@@ -994,7 +993,8 @@
                             <button class="knapp mini sekundær" onclick="apneFerdigvarslingEditor()" title="Sendes som e-post">${EPOST_IKON} Rediger melding…</button>
                         </div>
                         <div style="font-size: 11px; color: var(--text-secondary); margin: 4px 0;">
-                            Sendes når siste behandlingssteg er avgjort. Feltreferanser i mottakerrollen slås opp
+                            Sendes når siste behandlingssteg er avgjort — eller ved innsending, når skjematypen ikke
+                            har behandlingssteg eller alle ble hoppet over. Feltreferanser i mottakerrollen slås opp
                             på nytt der og da, mot svarene slik de står ved ferdigstillelse.
                         </div>
                         <div class="tilgang-slot" data-slot="fv-mottakere"></div>
