@@ -161,7 +161,9 @@ function erstattPlassholdere(streng, kontekst = {}) {
             const svar = forsteSvar(f);
             return svar == null ? '' : visningsverdi(f, svar);
         });
-        s = s.replace(/\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}/gi, (_m, id) => {
+        // Feltets Id: en UUID, eller `f-xxxx-xxxx` fra papirskjema-importen.
+        // Samme mønster alle steder — api/test/felt-id.test.js.
+        s = s.replace(/\{((?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|f-[a-z0-9]+-[a-z0-9]+))\}/gi, (_m, id) => {
             const f = finnFeltViaId(kontekst.seksjoner, id);
             const svar = forsteSvar(f);
             return svar == null ? '' : visningsverdi(f, svar);

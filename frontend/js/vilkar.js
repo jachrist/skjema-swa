@@ -3,7 +3,9 @@
  * Se api/src/lib/vilkar.js for full dokumentasjon. Identisk logikk.
  */
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Feltets Id: en UUID, eller `f-xxxx-xxxx` fra papirskjema-importen (se
+// api/test/felt-id.test.js — samme mønster alle steder).
+const UUID_RE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|f-[a-z0-9]+-[a-z0-9]+)$/i;
 // Eksportert: dnf-editor.js bygger nedtrekket «Dagens dato» av den, slik at
 // editoren og motoren ikke kan bli uenige om hva verdien heter.
 export const IDAG_REF = '@idag';

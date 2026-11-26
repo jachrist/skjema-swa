@@ -55,7 +55,9 @@
  * klokka, i LOKAL tid: «i dag» for den som fyller ut skjemaet.
  */
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Feltets Id: en UUID, eller `f-xxxx-xxxx` fra papirskjema-importen (se
+// api/test/felt-id.test.js — samme mønster alle steder).
+const UUID_RE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|f-[a-z0-9]+-[a-z0-9]+)$/i;
 // Eksportert av samme grunn som i frontend-kopien: navnet skal stå ett sted.
 const IDAG_REF = '@idag';
 const ISO_DATO_RE = /^\d{4}-\d{2}-\d{2}$/;

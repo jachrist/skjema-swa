@@ -20,7 +20,9 @@
  *     Dynamisk oppfrisking ved klient-endring kommer i fase 5.
  */
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Feltets Id: en UUID, eller `f-xxxx-xxxx` fra papirskjema-importen (se
+// api/test/felt-id.test.js — samme mønster alle steder).
+const UUID_RE = /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|f-[a-z0-9]+-[a-z0-9]+)$/i;
 
 /**
  * Parse FasteData til DNF-format. Aksepterer:

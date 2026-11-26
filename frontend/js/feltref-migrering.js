@@ -25,7 +25,9 @@
  */
 
 const POSISJONELL = /\{(\d+)-(\d+)\}/g;
-const UUID = /\{([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\}/gi;
+// Feltets Id: en UUID, eller `f-xxxx-xxxx` fra papirskjema-importen (fram
+// til 26.11.2026). Samme mønster alle steder — api/test/felt-id.test.js.
+const UUID = /\{((?:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|f-[a-z0-9]+-[a-z0-9]+))\}/gi;
 
 /** Posisjonsnøkkel på samme form som resten av koden bruker: "1-02". */
 function nokkel(sekNr, feltNr) {
