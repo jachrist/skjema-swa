@@ -1,5 +1,9 @@
 name: Deploy API til Function App
 
+# ERSTATTET av deploy-v3.yml («Deploy v3 (dev eller prod)») 28.11.2026, som
+# ruller ut API-et til Function App-en sammen med resten, fra samme commit. Denne står til den
+# nye er prøvd i dev og prod, og slettes da (ryddelista i KOKEBOK-PROD-V3.md).
+
 # Deployer BARE api/ til en frittstående Function App. Frontend og
 # SWA-oppsettet røres ikke av denne jobben.
 #

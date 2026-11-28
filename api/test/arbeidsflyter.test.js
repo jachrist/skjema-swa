@@ -701,5 +701,50 @@ for (const fil of deployer) {
         /API-deploy: publiseringsprofil/.test(w) && /API-deploy: tjenestehovedobjekt/.test(w), true);
 }
 
+// ---------- deploy-v3.yml: én utrulling for v3 ----------
+//
+// Laget 28.11.2026. Valgene er bare miljøet og om API-et skal med; token og
+// Function App følger av miljøet. Det er hele poenget: et fritt appnavn og
+// et fritt hemmelighetsnavn er to steder å skrive feil i produksjon.
+{
+    const w = les('deploy-v3.yml');
+    sjekk('v3: bare manuell', triggere(w), ['workflow_dispatch']);
+    sjekk('v3: miljøet er dev eller prod, dev som standard',
+        [/options: \[dev, prod\]/.test(w), /miljo:[\s\S]*?default: 'dev'/.test(w)], [true, true]);
+    sjekk('v3: API-et er en bryter', /deploy_api:\s*\n\s*description:[^\n]*\n\s*required: false\s*\n\s*default: true\s*\n\s*type: boolean/.test(w), true);
+    sjekk('v3: ingen frie navn å skrive feil i', /appnavn:|swa_token_secret:/.test(w), false);
+    sjekk('v3: GitHub-miljøet og konfigurasjonen følger valget',
+        [/environment: \$\{\{ inputs\.miljo \}\}/.test(w), /build-config\.js \$\{\{ inputs\.miljo \}\}/.test(w)], [true, true]);
+    sjekk('v3: tokenet følger miljøet',
+        /SWA_TOKEN_NAVN: \$\{\{ inputs\.miljo == 'prod' && 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3' \|\| 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV' \}\}/.test(w), true);
+    sjekk('v3: ikke v2-prod sitt token til utrullingen',
+        /azure_static_web_apps_api_token: \$\{\{ secrets\[env\.SWA_TOKEN_NAVN\] \}\}/.test(w), true);
+    sjekk('v3: prod-tokenet sammenlignes med v2-prod sitt', /"\$SWA_TOKEN" = "\$V2_TOKEN"/.test(w), true);
+    sjekk('v3: Function App-en følger miljøet', /APPNAVN: fa-skjema-3-\$\{\{ inputs\.miljo \}\}/.test(w), true);
+    sjekk('v3: ingen Managed Functions på SWA-en', /api_location: ""/.test(w) && !/api_location: "api"/.test(w), true);
+
+    // Hvert API-steg står bak bryteren — et steg uten `if:` ville kjørt
+    // azure/login eller functions-action også når API-et ikke skal med.
+    const steg = w.split(/\n      - (?=name:|uses:)/).slice(1);
+    const apiSteg = steg.filter(s => /working-directory: api|id: auth|azure\/login|functions-action/.test(s));
+    sjekk('v3: fire API-steg', apiSteg.length, 4);
+    sjekk('v3: alle API-stegene står bak bryteren', apiSteg.every(s => /\n\s+if: inputs\.deploy_api\b/.test(s)), true);
+    const i = (re) => steg.findIndex(s => re.test(s));
+    sjekk('v3: testene før API-et, API-et før frontenden, frontenden før verifiseringen',
+        i(/kjor-tester/) < i(/functions-action/) && i(/functions-action/) < i(/static-web-apps-deploy/)
+            && i(/static-web-apps-deploy/) < i(/Verifiser at utrullingen landet/), true);
+
+    const v = steg[i(/Verifiser at utrullingen landet/)] || '';
+    sjekk('v3: verifiserer adressen fra opplastingen', /steps\.swa\.outputs\.static_web_app_url/.test(v), true);
+    sjekk('v3: frontenden mot /js/config.js, API-et mot /api/ping',
+        [/\/js\/config\.js/.test(v), /\/api\/ping/.test(v)], [true, true]);
+    sjekk('v3: stopper hvis frontenden landet på gentle-dune', /\*gentle-dune\*\)[\s\S]*?exit 1/.test(v), true);
+
+    // Samme hemmeligheter for API-et som den gamle jobben, som kapittel 8 i
+    // kokeboka setter (kokebok.test.js sjekker den mot kapittelet).
+    const navn = (k) => [...new Set([...k.matchAll(/secrets\.(AZURE_FUNCAPP_\w+)/g)].map(x => x[1]))].sort();
+    sjekk('v3: samme API-hemmeligheter som kokeboka setter', navn(w), navn(les('deploy-funcapp-pilot.yml')));
+}
+
 console.log(`\n${ok} OK, ${feil} feil  (${deployer.length} deploy-arbeidsflyter)`);
 process.exit(feil ? 1 : 0);

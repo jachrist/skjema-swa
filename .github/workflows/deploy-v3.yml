@@ -1,0 +1,203 @@
+name: Deploy v3 (dev eller prod)
+
+# Én utrulling for v3: API-et til Function App-en og frontenden til SWA-en,
+# FRA SAMME COMMIT. Laget 28.11.2026, etter cutover.
+#
+# Erstatter to arbeidsflyter for v3:
+#   deploy-dev.yml           frontend til dev-SWA-en
+#   deploy-funcapp-pilot.yml API-et til en Function App («Deploy API til
+#                            Function App»), med appnavnet skrevet inn for hånd
+# og v3-delen av deploy-prod.yml (`swa_token_secret` og `deploy_api`). To
+# jobber ga to SHA-er som kunne skille lag, og et fritt appnavn og et fritt
+# hemmelighetsnavn er to steder å skrive feil i produksjon.
+#
+# De to gamle står til denne er prøvd i dev og prod. deploy-prod.yml står
+# så lenge pilot og v2-prod finnes (se «Det som forsvinner når v2 og pilot
+# rives» i docs/KOKEBOK-PROD-V3.md).
+#
+# Valgene er bare MILJØET og OM API-ET skal med. Resten følger av miljøet:
+#
+#   | miljø | SWA-token                               | Function App     |
+#   |-------|-----------------------------------------|------------------|
+#   | dev   | AZURE_STATIC_WEB_APPS_API_TOKEN_DEV     | fa-skjema-3-dev  |
+#   | prod  | AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3 | fa-skjema-3-prod |
+#
+# Prod krever godkjenning på GitHub-miljøet «prod», som før.
+
+on:
+  workflow_dispatch:
+    inputs:
+      miljo:
+        description: 'Hvilket v3-miljø?'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, prod]
+      deploy_api:
+        description: 'Rull ut API-et til Function App-en også (frontenden rulles alltid ut)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.miljo }}
+    env:
+      MILJO: ${{ inputs.miljo }}
+      # Navnene, ett sted. Verdiene slås opp med secrets[env.…] der de trengs.
+      SWA_TOKEN_NAVN: ${{ inputs.miljo == 'prod' && 'AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3' || 'AZURE_STATIC_WEB_APPS_API_TOKEN_DEV' }}
+      APPNAVN: fa-skjema-3-${{ inputs.miljo }}
+      # Se deploy-funcapp-pilot.yml: publiseringsprofilen vinner når den er
+      # satt, ellers tjenestehovedobjektet. Boolsk her, så selve profilen bare
+      # sendes til deploy-steget.
+      HAR_PROFIL: ${{ secrets.AZURE_FUNCAPP_PUBLISH_PROFILE != '' }}
+    steps:
+      - name: Vis mål
+        run: |
+          echo "### Mål: v3-$MILJO" >> $GITHUB_STEP_SUMMARY
+          echo "Frontend til SWA-en med \`$SWA_TOKEN_NAVN\`." >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.deploy_api }}" = "true" ]; then
+            echo "API-et til \`$APPNAVN\`." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "API-et rulles IKKE ut. \`/api/ping\` beholder sin forrige commit." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      # Et navn som ikke finnes, blir en TOM streng, og SWA-actionen svarer
+      # da «deployment token is invalid» — som ser ut som en utløpt token.
+      #
+      # I prod sammenlignes tokenet med v2-prod sitt. Er de like, ville
+      # frontenden landet på gentle-dune og overskrevet videresendingen der.
+      - name: Sjekk SWA-tokenet
+        env:
+          SWA_TOKEN: ${{ secrets[env.SWA_TOKEN_NAVN] }}
+          V2_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+        run: |
+          if [ -z "$SWA_TOKEN" ]; then
+            echo "::error::Hemmeligheten «$SWA_TOKEN_NAVN» finnes ikke, eller er tom. Legg den inn under Settings → Secrets → Actions (repo eller miljøet «$MILJO»)."
+            exit 1
+          fi
+          if [ "$MILJO" = "prod" ] && [ -n "$V2_TOKEN" ] && [ "$SWA_TOKEN" = "$V2_TOKEN" ]; then
+            echo "::error::$SWA_TOKEN_NAVN har samme verdi som v2-prod sitt token (AZURE_STATIC_WEB_APPS_API_TOKEN_PROD). Frontenden ville landet på gentle-dune. Stopper."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          lfs: false
+
+      - name: Sett opp Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Testene først. Røde tester stopper begge utrullingene.
+      - name: Kjør tester
+        run: node scripts/kjor-tester.js
+
+      # Skriver frontend/js/config.js og api/src/versjon.json med samme
+      # byggstempel — begge lagene skal kunne vise at de kom fra denne commiten.
+      - name: Bygg konfigurasjon
+        run: node scripts/build-config.js ${{ inputs.miljo }}
+
+      # ---------------- API-et ----------------
+
+      - name: Installer avhengigheter for API-et
+        if: inputs.deploy_api
+        run: npm ci --omit=dev
+        working-directory: api
+
+      - name: Vis autentiseringsvei for API-et
+        if: inputs.deploy_api
+        id: auth
+        run: |
+          echo "profil=$HAR_PROFIL" >> "$GITHUB_OUTPUT"
+          if [ "$HAR_PROFIL" = "true" ]; then
+            echo "### API-deploy: publiseringsprofil" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### API-deploy: tjenestehovedobjekt" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Logg inn i Azure
+        if: inputs.deploy_api && steps.auth.outputs.profil != 'true'
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_FUNCAPP_CREDENTIALS }}
+
+      - name: Rull ut API-et
+        if: inputs.deploy_api
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ env.APPNAVN }}
+          package: api
+          respect-funcignore: true
+          publish-profile: ${{ secrets.AZURE_FUNCAPP_PUBLISH_PROFILE }}
+
+      # ---------------- Frontenden ----------------
+
+      - name: Bygg dokumentasjonen
+        uses: ./.github/actions/dokumentasjon
+
+      - name: Rull ut frontenden
+        id: swa
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets[env.SWA_TOKEN_NAVN] }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "./frontend"
+          # Tom = ingen Managed Functions. API-et er den lenkede Function App-en.
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
+
+      # ---------------- Verifisering ----------------
+      #
+      # En grønn opplasting er ikke et bevis på at koden er ute (12.10.2026).
+      # Adressen kommer fra opplastingen selv: den følger tokenet. Frontenden
+      # leses i /js/config.js, API-et i /api/ping — hvert lag sitt stempel. Det
+      # er samme SWA-adresse, for /api/* går til den lenkede Function App-en.
+      - name: Verifiser at utrullingen landet
+        env:
+          DEPLOYET_URL: ${{ steps.swa.outputs.static_web_app_url }}
+          FORVENTET: ${{ github.sha }}
+          MED_API: ${{ inputs.deploy_api }}
+        run: |
+          MAAL="${DEPLOYET_URL%/}"
+          KORT="${FORVENTET:0:7}"
+          if [ -z "$MAAL" ]; then
+            echo "::error::Opplastingen ga ingen adresse tilbake. Åpne miljøets /js/config.js og /api/ping, og sjekk at begge melder $KORT."
+            exit 1
+          fi
+          case "$MAAL" in
+            *gentle-dune*)
+              echo "::error::Frontenden landet på gentle-dune (v2-prod), ikke på v3. Tokenet $SWA_TOKEN_NAVN tilhører feil SWA. Kjør «Videresending på v2-prod» for å legge videresendingen tilbake."
+              exit 1 ;;
+          esac
+          echo "Forventer $KORT på $MAAL"
+
+          frontend() {
+            curl -sSL --max-time 20 "$MAAL/js/config.js" 2>/dev/null \
+              | python3 -c "import sys; t=sys.stdin.read(); i=t.find('BUILD'); j=t.find('\"commit\"', i); print(t[j:].split('\"')[3] if j>-1 else '')" 2>/dev/null
+          }
+          api() {
+            curl -sS --max-time 20 "$MAAL/api/ping" 2>/dev/null \
+              | python3 -c "import json,sys; print(json.load(sys.stdin).get('bygg',{}).get('commit',''))" 2>/dev/null
+          }
+          treff() { [ "$1" = "$KORT" ] || [ "$1" = "$FORVENTET" ]; }
+
+          for FORSOK in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            F=$(frontend || echo '')
+            A=''
+            if [ "$MED_API" = "true" ]; then A=$(api || echo ''); fi
+            echo "  forsøk $FORSOK: frontend '${F:-(intet svar)}'$( [ "$MED_API" = "true" ] && echo ", API '${A:-(intet svar)}'")"
+            if treff "$F" && { [ "$MED_API" != "true" ] || treff "$A"; }; then
+              echo "### Verifisert: v3-$MILJO kjører \`$KORT\`$( [ "$MED_API" = "true" ] && echo ' i både frontend og API' || echo ' i frontenden')" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Utrullingen ble rapportert vellykket, men $MAAL melder frontend '${F:-(intet svar)}'$( [ "$MED_API" = "true" ] && echo " og API '${A:-(intet svar)}'"), ikke '$KORT'."
+          echo "### IKKE verifisert — frontend \`${F:-ukjent}\`$( [ "$MED_API" = "true" ] && echo ", API \`${A:-ukjent}\`"), forventet \`$KORT\`" >> $GITHUB_STEP_SUMMARY
+          exit 1

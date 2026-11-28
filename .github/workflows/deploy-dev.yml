@@ -1,5 +1,9 @@
 name: Deploy frontend til dev-SWA
 
+# ERSTATTET av deploy-v3.yml («Deploy v3 (dev eller prod)») 28.11.2026, som
+# ruller ut frontenden til dev sammen med resten, fra samme commit. Denne står til den
+# nye er prøvd i dev og prod, og slettes da (ryddelista i KOKEBOK-PROD-V3.md).
+
 # Steg 0 i docs/BESLUTNING-EGEN-FUNCTION-APP.md — dev-miljøet.
 #
 # DENNE DEPLOYER BARE FRONTEND. `api_location: ""` er ikke en forglemmelse:
