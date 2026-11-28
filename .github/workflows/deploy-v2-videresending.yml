@@ -1,0 +1,158 @@
+name: Videresending på v2-prod (gentle-dune)
+
+# Erstatter v2-appen på v2-prod med én side som sender alt videre til
+# https://www.fskjema.no, med sti og spørrestreng. Valg A i «Gentle-dune etter
+# cutover» (trinn 7c og 13b) i docs/KOKEBOK-PROD-V3.md.
+#
+# Hvorfor: nettlesere som besøkte fskjema.no før 28.10.2026, har lagret en
+# permanent 301 til gentle-dune. Fram til cutover sendte gentle-dune videre
+# til www, fordi www var standarddomene der. Etter cutover viste gentle-dune
+# v2-appen, med v2 sin kode mot produksjonsdataene.
+#
+# Innholdet er mappa videresending-v2/. API-et rulles IKKE ut: v2-prod skal
+# ikke svare på /api/* lenger. Managed Functions forsvinner med denne
+# utrullingen, og det er meningen.
+#
+# Tilbakeveien: rull ut v2-appen på nytt med «Deploy prod eller pilot»
+# (miljo=prod, uten swa_token_secret, med API), og flytt www tilbake.
+#
+# ## Vakten mot feil SWA
+#
+# Tokenet er det eneste som bestemmer hvor opplastingen havner. Lander denne
+# siden på v3-prod, sender produksjonen alt til seg selv i en evig ring. Det
+# skal derfor bevises FØR produksjonsmiljøet røres:
+#
+#   1. Tokenet kan ikke være det samme som v3-prod sitt.
+#   2. Siden lastes først opp til et preview-miljø (`maalsjekk`). Azure
+#      svarer med preview-adressen, og den bærer SWA-ens vertsnavn. Starter
+#      den ikke med gentle-dune sitt navn, stopper jobben — med bare et
+#      preview-miljø rørt.
+#
+# Preview-miljøet blir stående. Det er ufarlig, og kan slettes under SWA-en
+# → Environments når v2-prod rives.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bekreft:
+        description: "Skriv VIDERESEND-V2 — erstatter v2-appen på gentle-dune med videresending til www.fskjema.no"
+        required: true
+        type: string
+
+env:
+  # Vertsnavnet til v2-prod, uten domenet bak. Fra KOKEBOK-PROD-V3.md.
+  V2_VERT: gentle-dune-00a313603
+
+jobs:
+  valider:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sjekk bekreftelse
+        env:
+          BEKREFT: ${{ inputs.bekreft }}
+        run: |
+          if [ "$BEKREFT" != "VIDERESEND-V2" ]; then
+            echo "::error::Bekreftelsen må være 'VIDERESEND-V2'. Fikk: '$BEKREFT'"
+            exit 1
+          fi
+
+  videresend:
+    needs: valider
+    runs-on: ubuntu-latest
+    # Samme godkjenning som en vanlig prod-deploy.
+    environment: prod
+    steps:
+      - name: Sjekk tokenet
+        env:
+          V2_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+          V3_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD_V3 }}
+        run: |
+          if [ -z "$V2_TOKEN" ]; then
+            echo "::error::Hemmeligheten AZURE_STATIC_WEB_APPS_API_TOKEN_PROD finnes ikke, eller er tom."
+            exit 1
+          fi
+          if [ -n "$V3_TOKEN" ] && [ "$V2_TOKEN" = "$V3_TOKEN" ]; then
+            echo "::error::AZURE_STATIC_WEB_APPS_API_TOKEN_PROD har samme verdi som v3-prod sitt token. Denne jobben ville lagt videresendingen på v3-prod, og sendt produksjonen i ring. Stopper."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+
+      # Som alle deploy-arbeidsflytene (api/test/arbeidsflyter.test.js).
+      # Testene leser også videresending-v2/ — se frontend/test/videresending-v2.test.js.
+      - name: Sett opp Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Kjør tester
+        run: node scripts/kjor-tester.js
+
+      - name: Last opp til preview-miljøet maalsjekk
+        id: preview
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "./videresending-v2"
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
+          deployment_environment: maalsjekk
+
+      - name: Sjekk at tokenet tilhører gentle-dune
+        env:
+          URL: ${{ steps.preview.outputs.static_web_app_url }}
+        run: |
+          VERT="${URL#https://}"
+          VERT="${VERT%%/*}"
+          echo "Preview-adressen er '$VERT'"
+          # Preview-navnet limes på FØRSTE ledd: gentle-dune-00a313603-maalsjekk.7.…
+          case "$VERT" in
+            "$V2_VERT"-*|"$V2_VERT".*) echo "### Tokenet tilhører v2-prod ($V2_VERT)" >> $GITHUB_STEP_SUMMARY ;;
+            "")
+              echo "::error::Azure ga ingen preview-adresse tilbake, så det er ikke bevist at tokenet tilhører v2-prod. Produksjonsmiljøet røres ikke."
+              exit 1 ;;
+            *)
+              echo "::error::Tokenet tilhører IKKE v2-prod: preview-adressen er '$VERT', forventet '$V2_VERT-…'. Produksjonsmiljøet røres ikke."
+              exit 1 ;;
+          esac
+
+      - name: Rull ut videresendingen
+        id: deploy
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN_PROD }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "./videresending-v2"
+          # Tom = ingen Managed Functions. v2-prod skal ikke svare på /api/*.
+          api_location: ""
+          output_location: ""
+          skip_app_build: true
+
+      # Som i deploy-prod.yml: en grønn opplasting er ikke et bevis på at
+      # innholdet er ute. En dyp sti sjekkes også — den er grunnen til at
+      # siden er en fallback og ikke bare en forside.
+      - name: Verifiser
+        env:
+          URL: ${{ steps.deploy.outputs.static_web_app_url }}
+        run: |
+          MAAL="${URL%/}"
+          if [ -z "$MAAL" ]; then
+            echo "::error::Opplastingen ga ingen adresse tilbake. Åpne https://$V2_VERT.7.azurestaticapps.net/ og sjekk at den sender til www.fskjema.no."
+            exit 1
+          fi
+          for FORSOK in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            FORSIDE=$(curl -s --max-time 20 "$MAAL/" || echo '')
+            DYP=$(curl -s --max-time 20 "$MAAL/visning.html?id=1" || echo '')
+            if printf '%s' "$FORSIDE" | grep -q 'Skjemasystemet har flyttet' \
+              && printf '%s' "$DYP" | grep -q 'Skjemasystemet har flyttet'; then
+              echo "### Videresending verifisert på $MAAL" >> $GITHUB_STEP_SUMMARY
+              exit 0
+            fi
+            echo "  forsøk $FORSOK: videresendingen svarer ikke ennå"
+            sleep 15
+          done
+          echo "::error::Opplastingen ble rapportert vellykket, men $MAAL viser ikke videresendingen (forsiden eller /visning.html)."
+          exit 1
