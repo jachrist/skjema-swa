@@ -2081,10 +2081,10 @@ ut av huset. Derfor er trinn 8 først.
 | ☐ | 9. Sett ny `SCHEDULER_KEY` på v2-prod-SWA-en | Belte i tillegg til 8 |
 | ☐ | 10. `STORAGE_ACCOUNT_NAME` på v3-prod til v2 sin konto | Fra nå leser og skriver v3 produksjonsdataene |
 | ☐ | 11. Fjern `VARSLING_DEAKTIVERT` på v3-prod | Satt i trinn 4 for testingen. Står den, sender v3-prod ingen varsler i drift |
-| ☐ | 12. `SWA_URL` på v3-prod til `https://www.fskjema.no` | E-postlenker og flyt-callbacks bygges fra den |
+| ☑ | 12. `SWA_URL` på v3-prod til `https://www.fskjema.no` | E-postlenker og flyt-callbacks bygges fra den. Gjort 28.11.2026, etter at brukere havnet på gentle-dune via lenker; inventaret er oppdatert |
 | ☐ | 13. Flytt `www.fskjema.no` fra v2-prod til v3-prod | Se under. **Ta `www` av som standarddomene på v2-prod først** (Custom domains → sett `gentle-dune-…` som standard igjen). Et standarddomene kan ikke slettes, og et vertsnavn kan bare ligge på én SWA om gangen |
-| ☐ | 13b. Steng gentle-dune for brukere | Valget fra 7c. Uten det sender en lagret 301 (`fskjema.no` → gentle-dune) brukerne til v2 igjen, nå uten videresending videre |
-| ☐ | 14. `SWA_URL` på v2-prod til sin egen `gentle-dune`-adresse | Bare én stabel skal påstå å være den offentlige adressen |
+| ☑ | 13b. Steng gentle-dune for brukere | Valget fra 7c. Uten det sender en lagret 301 (`fskjema.no` → gentle-dune) brukerne til v2 igjen, nå uten videresending videre |
+| ☑ | 14. `SWA_URL` på v2-prod til sin egen `gentle-dune`-adresse | Bortfalt 28.11.2026: videresendingen (13b, valg A) fjernet API-et fra v2-prod, så ingen v2-kode leser den lenger |
 | ☐ | 15. Full backup på v3-prod | Deltaene bygger på siste fulle. Den første etter ompekingen skal være full |
 | ☐ | 16. Kontroller | Under |
 
