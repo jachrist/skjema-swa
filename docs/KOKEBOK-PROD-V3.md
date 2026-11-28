@@ -2130,7 +2130,7 @@ sin kode mot produksjonsdataene. Velg én av to, og ha den klar før pausen:
 
 | Valg | Hva | Følge |
 |---|---|---|
-| **A. Videresendingsside** (anbefalt) | Rull ut en side til v2-prod som bare sender alt til `https://www.fskjema.no`, med v2-prod sitt deploy-token | Lagrede videresendinger og bokmerker havner riktig. v2-prod står til den rives, uten noe å vise. Kan ikke legges i `staticwebapp.config.prod.json` — den deles med v3-prod, og en regel der ville sendt v3 i ring |
+| **A. Videresendingsside** (anbefalt) | Kjør arbeidsflyten **«Videresending på v2-prod (gentle-dune)»** (`deploy-v2-videresending.yml`, bekreft med `VIDERESEND-V2`). Den ruller ut `videresending-v2/`, som sender alt til `https://www.fskjema.no` med sti og spørrestreng, med v2-prod sitt deploy-token. Før produksjonsmiljøet røres, lastes siden opp til preview-miljøet `maalsjekk`, og jobben stopper hvis adressen ikke er gentle-dune sin | Lagrede videresendinger og bokmerker havner riktig. v2-prod står til den rives, uten noe å vise. Kan ikke legges i `staticwebapp.config.prod.json` — den deles med v3-prod, og en regel der ville sendt v3 i ring |
 | **B. Riv v2-prod** (kapittel 11) | Slett SWA-ressursen | Endelig. Den som har en lagret 301, får en feilside og må skrive `www` selv. Tilbakeveien (under) forsvinner med den |
 
 A beholder tilbakeveien: skal cutover reverseres, rulles v2-appen ut på nytt
