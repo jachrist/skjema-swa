@@ -38,10 +38,19 @@ utrulling dit ruller ut halvferdig arbeid i et miljø ingen ser på.
 
 | Miljø | Arbeidsflyt | Bekreftelse |
 |---|---|---|
-| dev (frontend) | **Deploy frontend til dev-SWA** | — |
-| dev (API) | **Deploy API til Function App** | — |
-| pilot | **Deploy prod eller pilot**, `miljo = pilot` | `DEPLOY-PILOT` |
-| prod | **Deploy prod eller pilot**, `miljo = prod` | `DEPLOY-PROD` |
+| v3-dev | **Deploy v3 (dev eller prod)**, `miljo = dev` | — |
+| v3-prod | **Deploy v3 (dev eller prod)**, `miljo = prod` | Godkjenning på GitHub-miljøet `prod` |
+| pilot (v2-dev) | **Deploy prod eller pilot**, `miljo = pilot` | `DEPLOY-PILOT` |
+
+**Deploy v3** (`deploy-v3.yml`, fra 28.11.2026) har to valg: miljøet, og en
+bryter for om API-et skal med. Frontenden rulles alltid ut. Token og Function
+App følger av miljøet, og API-et og frontenden kommer fra samme commit.
+Etterpå sjekkes `/js/config.js` og `/api/ping` mot commiten.
+
+De gamle v3-veiene, **Deploy frontend til dev-SWA** og **Deploy API til
+Function App**, står til den nye er prøvd i dev og prod, og slettes da.
+**Deploy prod eller pilot** med `miljo = prod` er nå tilbakeveien til v2-prod
+(se «Tilbakevei» i `KOKEBOK-PROD-V3.md`), ikke måten å rulle ut v3 på.
 
 Deployen gjør, i denne rekkefølgen:
 

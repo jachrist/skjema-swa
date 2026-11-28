@@ -2249,6 +2249,37 @@ Med et eget domene kan versjonene også adresseres hver for seg, f.eks.
 `v3prod.fskjema.no` for v3-prod mens v2-prod har `www`. Hvert navn trenger
 sin egen redirect-URI.
 
+### Når kan v2-prod rives?
+
+Skrevet 28.11.2026, etter cutover. Videresendingen (13b, valg A) står på
+v2-prod-SWA-en, og den er grunnen til å beholde ressursen. Det finnes ingen
+fast frist, men to slags gamle lenker holder den i live:
+
+- **Lagrede 301-er i nettlesere** (`fskjema.no` → gentle-dune, fra før
+  28.10.2026). De har ingen utløpsdato, og ligger til hurtigbufferen tømmes
+  eller fortrenges. For de fleste er de borte etter noen uker eller måneder.
+- **Lenker skrevet ned andre steder**, og de forsvinner ikke av seg selv:
+  e-poster sendt mens `SWA_URL` pekte på gentle-dune, Planner-oppgaver og
+  Teams-innlegg flytene laget i v2-tiden, bokmerker og lenker limt inn i
+  dokumenter og SharePoint.
+
+**Rådet:** la SWA-en stå, og riv den når trafikken har vært nær null en
+stund — for eksempel etter **6–12 måneder**. Følg med under SWA-en →
+*Monitoring → Metrics* → **Site Hits**, summert per dag. Det haster ikke:
+Standard-planen koster lite, og et forsøk på å gå over til Free 28.11.2026
+lyktes ikke, så den står på Standard.
+
+**Når den rives:**
+
+- Slett **bare SWA-ressursen** (`az staticwebapp delete`). Lagringskontoen i
+  samme ressursgruppe er v3-prods produksjonsdata (trinn 10). Aldri
+  `az group delete`.
+- Tilbakeveien under forsvinner med den.
+- Preview-miljøet `maalsjekk` fra videresendings-arbeidsflyten forsvinner med
+  ressursen. Arbeidsflyten `deploy-v2-videresending.yml` og mappa
+  `videresending-v2/` kan slettes i samme runde.
+- Fjern gentle-dune-adressen fra redirect-URI-ene i app-registreringen.
+
 ### Domenet: DNS, egendefinert domene og CORS
 
 Et eget domene er det som gjør cutover til én DNS-endring. Oppsettet er tre
@@ -2487,7 +2518,7 @@ versjoner kjører samtidig, eller fordi pilot har en annen arkitektur:
 | 0.3 og 0.5 i sin helhet | Begge handler om å dele ressursgruppe og app-registreringer med v2 |
 | `production` i `MILJO_ALIAS` | v2-prods `MILJO`. Aliaset får den til å lese som pilot, og må stå så lenge v2-prod finnes |
 | **De åtte cron-workflowene** (`refresh-fs.yml`, `refresh-postnumre.yml`, `refresh-oppslagsliste.yml`, `team-synk.yml`, `sjekk-nokler.yml`, `send-utsendinger.yml`, `purre-utsendinger.yml`, `backup.yml`) | De kjører jobbene der plattformen ikke har timere — pilot og v2-prod. Når begge er revet, har alle miljøene timere. Ta med det som leser workflowene: `workflow` og `workflowCron` i `lib/jobber.js`, cron-sammenligningen i `api/test/timer-trigger.test.js`, og GitHub Actions-merknaden i `functions/jobber.js`. `SCHEDULER_KEY` og HTTP-veien inn til jobbene kan stå — «Kjør nå» bruker den |
-| **Tre deploy-workflows → én** (`deploy-dev.yml`, `deploy-prod.yml`, `deploy-funcapp-pilot.yml`) | Tre fordi tre arkitekturer: frontend til dev-SWA, SWA med Managed Functions, og API til Function App. Med bare v3-dev og v3-prod igjen er det én: én workflow med `miljo: dev \| prod` som ruller ut API-et til Function App-en og så frontenden til SWA-en, **fra samme commit**. Da forsvinner `swa_token_secret`, `deploy_api`, `appnavn` og to SHA-er som kan skille lag. Prod beholder Environment approval |
+| **Tre deploy-workflows → én** (`deploy-dev.yml`, `deploy-prod.yml`, `deploy-funcapp-pilot.yml`) | Tre fordi tre arkitekturer: frontend til dev-SWA, SWA med Managed Functions, og API til Function App. **Den ene finnes fra 28.11.2026:** `deploy-v3.yml`, med `miljo: dev \| prod` og en bryter for API-et, ruller ut API-et og frontenden fra samme commit. Slett `deploy-dev.yml` og `deploy-funcapp-pilot.yml` når den er prøvd i dev og prod. `deploy-prod.yml` (med `swa_token_secret` og `deploy_api`) står så lenge pilot og v2-prod finnes |
 | `refresh-fs-diag.yml` og `refresh-fs-diag-lu.yml` | Kaller pilot (`vars.SWA_URL`). Diagnostikk-knappen i FS-panelet gjør det samme fra appen |
 
 > **Rydd ikke før v3 er verifisert i begge tenantene.** Hver av linjene over

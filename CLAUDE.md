@@ -152,8 +152,9 @@ som skal bort. Se «Miljønavnet skifter» i kapittel 10 i
 
 - **dev** — `config/env.dev.json`. Dev-tenanten. **Lenket Function App**, ikke
   SWA Managed Functions: her har koden en managed identity, og lagringen går
-  uten tilkoblingsstreng. Deploy er manuell (`deploy-dev.yml` for frontend,
-  «Deploy API til Function App» for API-et — to jobber, to SHA-er).
+  uten tilkoblingsstreng. Deploy er manuell: «Deploy v3 (dev eller prod)»
+  (`deploy-v3.yml`) ruller ut API-et og frontenden fra samme commit, med en
+  bryter for API-et. Samme arbeidsflyt for v3-prod.
 - **pilot** — `config/env.pilot.json` + Key Vault `kv-fhsskjema-pilot`.
 - **prod** — `config/env.prod.json` + Key Vault `fhs-kv-01`. Deploy krever Environment approval.
 
